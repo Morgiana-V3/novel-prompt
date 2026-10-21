@@ -1,9 +1,10 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import { pinyin } from 'pinyin-pro'
 import type { DbStatus, SearchHit, SearchOptions, TagCategory, TagInfo } from '../../shared/types'
 import { dataFile } from '../paths'
 import { NAI_TAGS, YEAR_TAG_RE } from './nai-tags'
 import type { RawTag } from './fetcher'
+import { pickTagSource, readDefault, readFrom, readUser, type DataSource } from './layers'
 
 /** 统一成 danbooru 形式：小写、去转义、空格转下划线 */
 export function normalizeTag(s: string): string {
@@ -27,15 +28,8 @@ interface Entry {
   pyInit?: string
 }
 
-function readJson<T>(file: string, fallback: T): T {
-  const p = dataFile(file)
-  if (!existsSync(p)) return fallback
-  try {
-    return JSON.parse(readFileSync(p, 'utf8')) as T
-  } catch {
-    return fallback
-  }
-}
+type Dict<T = string> = Record<string, T>
+type TagsFile = { fetchedAt?: string; minCount?: number; tags: RawTag[] }
 
 function levenshtein(a: string, b: string, max: number): number {
   if (Math.abs(a.length - b.length) > max) return max + 1
@@ -63,22 +57,33 @@ class TagStore {
   private byLength = new Map<number, Entry[]>()
   private aliases = new Map<string, string>()
   private aliasList: [string, string][] = []
-  private zhCommunity: Record<string, string> = {}
-  private zhAi: Record<string, string> = {}
-  private zhUser: Record<string, string> = {}
-  private pyCache: Record<string, [string, string]> = {}
+  private zhCommunity: Dict = {}
+  /** 合并后的视图（默认层 + 用户层，用户层优先） */
+  private zhAi: Dict = {}
+  private zhUser: Dict = {}
+  private pyCache: Dict<[string, string]> = {}
+  /** 只属于用户层、需要写回磁盘的部分 */
+  private zhAiMine: Dict = {}
+  private zhUserMine: Dict = {}
+  private pyMine: Dict<[string, string]> = {}
   private suggestCache = new Map<string, TagInfo[]>()
-  private meta: { fetchedAt?: string; minCount?: number } = {}
+  private meta: { fetchedAt?: string; minCount?: number; source?: DataSource } = {}
   loaded = false
 
   load(): void {
-    const raw = readJson<{ fetchedAt?: string; minCount?: number; tags: RawTag[] }>('tags.json', { tags: [] })
-    this.meta = { fetchedAt: raw.fetchedAt, minCount: raw.minCount }
-    this.aliasList = readJson<[string, string][]>('aliases.json', [])
-    this.zhCommunity = readJson('zh-community.json', {})
-    this.zhAi = readJson('zh-ai.json', {})
-    this.zhUser = readJson('zh-user.json', {})
-    this.pyCache = readJson('pinyin-cache.json', {})
+    const userTags = readUser<TagsFile>('tags.json')
+    const source = pickTagSource(userTags?.fetchedAt)
+    const raw = (source === 'user' ? userTags : readDefault<TagsFile>('tags.json')) ?? { tags: [] }
+    this.meta = { fetchedAt: raw.fetchedAt, minCount: raw.minCount, source }
+    this.aliasList = readFrom<[string, string][]>(source, 'aliases.json') ?? []
+    this.zhCommunity = readFrom<Dict>(source, 'zh-community.json') ?? {}
+
+    this.zhAiMine = readUser<Dict>('zh-ai.json') ?? {}
+    this.zhUserMine = readUser<Dict>('zh-user.json') ?? {}
+    this.pyMine = readUser<Dict<[string, string]>>('pinyin-cache.json') ?? {}
+    this.zhAi = { ...readDefault<Dict>('zh-ai.json'), ...this.zhAiMine }
+    this.zhUser = { ...readDefault<Dict>('zh-user.json'), ...this.zhUserMine }
+    this.pyCache = { ...readDefault<Dict<[string, string]>>('pinyin-cache.json'), ...this.pyMine }
 
     this.entries = []
     this.byName.clear()
@@ -124,6 +129,7 @@ class TagStore {
           const arr = pinyin(e.info.zh, { toneType: 'none', type: 'array', nonZh: 'removed' }) as string[]
           py = [arr.join(''), arr.map((s) => s[0] ?? '').join('')]
           this.pyCache[e.info.zh] = py
+          this.pyMine[e.info.zh] = py
           cacheDirty = true
         }
         e.py = py[0]
@@ -132,7 +138,7 @@ class TagStore {
         e.py = e.pyInit = undefined
       }
     }
-    if (cacheDirty) writeFileSync(dataFile('pinyin-cache.json'), JSON.stringify(this.pyCache), 'utf8')
+    if (cacheDirty) writeFileSync(dataFile('pinyin-cache.json'), JSON.stringify(this.pyMine), 'utf8')
   }
 
   status(): DbStatus {
@@ -143,7 +149,8 @@ class TagStore {
       aliasCount: this.aliases.size,
       zhCount,
       fetchedAt: this.meta.fetchedAt,
-      minCount: this.meta.minCount
+      minCount: this.meta.minCount,
+      source: this.meta.source
     }
   }
 
@@ -254,9 +261,14 @@ class TagStore {
 
   setTranslation(name: string, zh: string): void {
     const n = normalizeTag(name)
-    if (zh.trim()) this.zhUser[n] = zh.trim()
-    else delete this.zhUser[n]
-    writeFileSync(dataFile('zh-user.json'), JSON.stringify(this.zhUser), 'utf8')
+    if (zh.trim()) {
+      this.zhUserMine[n] = zh.trim()
+      this.zhUser[n] = zh.trim()
+    } else {
+      delete this.zhUserMine[n]
+      delete this.zhUser[n]
+    }
+    writeFileSync(dataFile('zh-user.json'), JSON.stringify(this.zhUserMine), 'utf8')
     this.applyTranslations()
   }
 
@@ -267,8 +279,9 @@ class TagStore {
   }
 
   addAiTranslations(map: Record<string, string>): void {
+    Object.assign(this.zhAiMine, map)
     Object.assign(this.zhAi, map)
-    writeFileSync(dataFile('zh-ai.json'), JSON.stringify(this.zhAi), 'utf8')
+    writeFileSync(dataFile('zh-ai.json'), JSON.stringify(this.zhAiMine), 'utf8')
   }
 
   refreshTranslations(): void {

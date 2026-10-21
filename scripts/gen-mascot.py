@@ -7,6 +7,7 @@ import io
 import json
 import os
 import sys
+import time
 import urllib.request
 import zipfile
 
@@ -17,32 +18,37 @@ if not KEY:
 OUT = os.path.join(os.path.dirname(__file__), "..", "assets-src", "mascot")
 os.makedirs(OUT, exist_ok=True)
 
-SEED = 1314520
+SEED = int(os.environ.get("NAI_SEED", "1314520"))
+SUFFIX = os.environ.get("NAI_SUFFIX", "")
+# 画风：普通头身（非 Q 版）、彩色描边、扁平上色、极少阴影，类似 VTuber 官方立绘 / 动画截图
 BASE = (
-    "1girl, solo, chibi, cat girl, cat ears, animal ear fluff, cat tail, white hair, short hair, bob cut, "
-    "pink hair tips, multicolored hair, pink eyes, sparkling eyes, fang, blush stickers, "
-    "white hoodie, oversized hoodie, hood down, paw print, pink drawstrings, pink skirt, pleated skirt, "
-    "white socks, pink footwear, tail ribbon, pink ribbon, "
-    "full body, white background, simple background, flat color, thick outline, cel shading, "
+    "1girl, solo, cat girl, cat ears, animal ear fluff, cat tail, white hair, medium hair, bob cut, "
+    "pink hair tips, gradient hair, ahoge, pink eyes, sparkling eyes, star-shaped pupils, fang, blush stickers, "
+    "white hoodie, oversized hoodie, hood down, paw print, pink drawstrings, sleeves past wrists, "
+    "pink skirt, pleated skirt, white socks, pink footwear, tail ribbon, pink ribbon, "
+    "white background, simple background, "
+    "flat color, colored lineart, thick outline, no shading, soft colors, anime coloring, official art, "
     "very aesthetic, masterpiece, no text"
 )
 UC = (
     "lowres, artistic error, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, "
     "chromatic aberration, multiple views, logo, too many watermarks, signature, text, watermark, "
-    "shadow, gradient background, nsfw, realistic, animal, furry, cat, extra ears"
+    "chibi, super deformed, mini person, big head, "
+    "shadow, drop shadow, gradient background, heavy shading, realistic, 3d, "
+    "nsfw, animal, furry, cat, extra ears"
 )
 
 POSES = {
-    "idle": "standing, smile, open mouth, waving, looking at viewer, holding paintbrush",
-    "happy": "jumping, arms up, closed eyes, ^_^, open mouth, happy, sparkle, motion lines",
-    "busy": "sitting, drawing, holding paintbrush, holding sketchbook, focused, looking down, sweatdrop",
-    "confused": "standing, head tilt, question mark, confused, finger to cheek, :o",
-    "sleep": "sitting, sleeping, closed eyes, eyes closed, zzz, hugging own tail, peaceful, :3, nose bubble",
-    "wink": "upper body, one eye closed, v, smile, looking at viewer, close-up, portrait",
-    "avatar": "portrait, face focus, head only, smile, open mouth, looking at viewer, close-up",
+    "idle": "full body, standing, smile, open mouth, waving, looking at viewer, holding paintbrush",
+    "happy": "cowboy shot, arms up, closed eyes, ^_^, open mouth, happy, sparkle, jumping",
+    "busy": "upper body, holding paintbrush, holding sketchbook, drawing, focused, looking down, sweatdrop",
+    "confused": "cowboy shot, head tilt, question mark, confused, index finger raised, finger to cheek, :o",
+    "chill": "upper body, closed eyes, smile, :3, hugging own tail, holding own tail, relaxed",
+    "wink": "upper body, one eye closed, v, smile, open mouth, looking at viewer",
+    "avatar": "portrait, face focus, smile, open mouth, looking at viewer, clenched hands, hands up",
 }
 
-SEEDS = {"sleep": 20260521}
+SEEDS: dict[str, int] = {}
 
 
 def generate(name: str, pose: str) -> None:
@@ -86,15 +92,23 @@ def generate(name: str, pose: str) -> None:
         },
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(req, timeout=180) as res:
-            data = res.read()
-    except urllib.error.HTTPError as e:
-        print(f"[{name}] HTTP {e.code}: {e.read()[:500]!r}")
+    data = None
+    for attempt in range(6):
+        try:
+            with urllib.request.urlopen(req, timeout=180) as res:
+                data = res.read()
+            break
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < 5:
+                time.sleep(4 + attempt * 3)
+                continue
+            print(f"[{name}] HTTP {e.code}: {e.read()[:500]!r}")
+            return
+    if data is None:
         return
     with zipfile.ZipFile(io.BytesIO(data)) as z:
         png = z.read(z.namelist()[0])
-    path = os.path.join(OUT, f"{name}.png")
+    path = os.path.join(OUT, f"{name}{SUFFIX}.png")
     with open(path, "wb") as f:
         f.write(png)
     print(f"[{name}] saved {path} ({len(png)} bytes)")
@@ -103,3 +117,4 @@ def generate(name: str, pose: str) -> None:
 names = sys.argv[1:] or list(POSES)
 for n in names:
     generate(n, POSES[n])
+    time.sleep(1.5)

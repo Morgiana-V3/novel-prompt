@@ -1,28 +1,28 @@
 """
 把 assets-src/mascot/*.png 处理为透明底素材，输出到 src/renderer/src/assets/mascot/
-- 从四周泛洪去掉白色背景（角色有深色描边，内部白色不会被误删）
+- 从四周泛洪去掉白色背景（角色有描边，内部白色不会被误删）
+- 身体被画面底边截断的图，底部做渐隐，避免生硬切边
 - 按内容裁边，缩放到最长边 MAX
-- avatar 额外裁出头部，生成正方形 logo 与应用图标
+- avatar 额外裁出头部：生成侧栏 logo、应用图标（粉色圆角底）
 """
 import os
 import sys
 from collections import deque
 
-from PIL import Image, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 SRC = os.path.join(ROOT, "assets-src", "mascot")
 DST = os.path.join(ROOT, "src", "renderer", "src", "assets", "mascot")
 BUILD = os.path.join(ROOT, "build")
-MAX = 420
-RENAME = {"sleep": "chill"}
+MAX = 460
 
 os.makedirs(DST, exist_ok=True)
 os.makedirs(BUILD, exist_ok=True)
 
 
-def remove_bg(img: Image.Image, tol: int = 26) -> Image.Image:
-    img = img.convert("RGBA")
+def bg_mask(img: Image.Image, tol: int = 24) -> Image.Image:
+    """返回前景 mask（255 = 角色）"""
     w, h = img.size
     px = img.load()
     seen = bytearray(w * h)
@@ -35,8 +35,8 @@ def remove_bg(img: Image.Image, tol: int = 26) -> Image.Image:
         q.append((w - 1, y))
 
     def is_bg(p):
-        r, g, b, _ = p
-        return r > 255 - tol and g > 255 - tol and b > 255 - tol and max(r, g, b) - min(r, g, b) < 18
+        r, g, b = p[:3]
+        return r > 255 - tol and g > 255 - tol and b > 255 - tol and max(r, g, b) - min(r, g, b) < 16
 
     mask = Image.new("L", (w, h), 255)
     mp = mask.load()
@@ -57,16 +57,35 @@ def remove_bg(img: Image.Image, tol: int = 26) -> Image.Image:
             q.append((x, y - 1))
         if y < h - 1:
             q.append((x, y + 1))
+    return mask.filter(ImageFilter.MinFilter(3)).filter(ImageFilter.GaussianBlur(0.8))
 
-    # 轻微收缩 + 羽化，去掉白边锯齿
-    mask = mask.filter(ImageFilter.MinFilter(3)).filter(ImageFilter.GaussianBlur(0.8))
+
+def cut_out(src: Image.Image) -> Image.Image:
+    img = src.convert("RGBA")
+    mask = bg_mask(img)
+    w, h = img.size
+    # 底边是否有前景像素（身体被截断）
+    bottom = mask.crop((0, h - 3, w, h)).getextrema()[1]
+    if bottom > 200:
+        fade_h = int(h * 0.16)
+        grad = Image.new("L", (1, fade_h))
+        for y in range(fade_h):
+            t = y / (fade_h - 1)
+            grad.putpixel((0, y), int(255 * (1 - t) ** 1.6))
+        grad = grad.resize((w, fade_h))
+        region = mask.crop((0, h - fade_h, w, h))
+        region = Image.composite(region, Image.new("L", region.size, 0), grad)
+        mask.paste(region, (0, h - fade_h))
     img.putalpha(mask)
     return img
 
 
+def bbox(img: Image.Image):
+    return img.getchannel("A").point(lambda a: 255 if a > 10 else 0).getbbox()
+
+
 def fit(img: Image.Image, max_side: int, pad: int = 6) -> Image.Image:
-    bbox = img.getchannel("A").point(lambda a: 255 if a > 8 else 0).getbbox()
-    img = img.crop(bbox)
+    img = img.crop(bbox(img))
     scale = max_side / max(img.size)
     if scale < 1:
         img = img.resize((round(img.width * scale), round(img.height * scale)), Image.LANCZOS)
@@ -75,28 +94,51 @@ def fit(img: Image.Image, max_side: int, pad: int = 6) -> Image.Image:
     return canvas
 
 
-def square(img: Image.Image, size: int) -> Image.Image:
-    side = max(img.size)
-    canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
-    canvas.paste(img, ((side - img.width) // 2, (side - img.height) // 2), img)
-    return canvas.resize((size, size), Image.LANCZOS)
+def head_crop(img: Image.Image) -> Image.Image:
+    """以头部为中心裁正方形：取前景顶部，宽度为前景宽度的 0.72"""
+    l, t, r, b = bbox(img)
+    w = r - l
+    side = int(w * 0.72)
+    cx = l + w // 2
+    # 头部的水平中心：取顶部 40% 区域的前景中心，更准确
+    top = img.getchannel("A").crop((l, t, r, t + int((b - t) * 0.4)))
+    tb = top.point(lambda a: 255 if a > 10 else 0).getbbox()
+    if tb:
+        cx = l + (tb[0] + tb[2]) // 2
+    x0 = max(0, cx - side // 2)
+    return img.crop((x0, t, x0 + side, t + side))
+
+
+def make_icon(head: Image.Image, size: int = 512) -> Image.Image:
+    bg = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(bg)
+    r = int(size * 0.22)
+    d.rounded_rectangle((0, 0, size - 1, size - 1), radius=r, fill=(255, 228, 238, 255))
+    d.rounded_rectangle((0, 0, size - 1, size - 1), radius=r, outline=(255, 190, 212, 255), width=max(2, size // 128))
+    inner = int(size * 0.94)
+    h = head.resize((inner, inner), Image.LANCZOS)
+    # 头像底部贴齐图标底边，顶部留一点呼吸
+    layer = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    layer.paste(h, ((size - inner) // 2, size - inner + int(size * 0.04)), h)
+    clip = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(clip).rounded_rectangle((0, 0, size - 1, size - 1), radius=r, fill=255)
+    layer.putalpha(Image.composite(layer.getchannel("A"), Image.new("L", (size, size), 0), clip))
+    return Image.alpha_composite(bg, layer)
 
 
 names = [f[:-4] for f in os.listdir(SRC) if f.endswith(".png")]
 for name in sys.argv[1:] or names:
-    src = Image.open(os.path.join(SRC, name + ".png"))
-    cut = remove_bg(src)
-    out_name = RENAME.get(name, name)
+    cut = cut_out(Image.open(os.path.join(SRC, name + ".png")))
     if name == "avatar":
-        a = cut.getchannel("A").point(lambda v: 255 if v > 8 else 0).getbbox()
-        head = cut.crop((a[0], a[1], a[2], a[1] + int((a[3] - a[1]) * 0.66)))
-        head = fit(head, 256, pad=4)
-        square(head, 128).save(os.path.join(DST, "avatar.png"), optimize=True)
-        icon = square(head, 256)
+        head = head_crop(cut)
+        logo = Image.new("RGBA", head.size, (0, 0, 0, 0))
+        logo.paste(head, (0, 0), head)
+        logo.resize((160, 160), Image.LANCZOS).save(os.path.join(DST, "avatar.png"), optimize=True)
+        icon = make_icon(head)
         icon.save(os.path.join(BUILD, "icon.png"))
-        icon.save(os.path.join(BUILD, "icon.ico"), sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+        icon.save(os.path.join(BUILD, "icon.ico"), sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
         print("avatar -> avatar.png, build/icon.png, build/icon.ico")
         continue
     res = fit(cut, MAX)
-    res.save(os.path.join(DST, out_name + ".png"), optimize=True)
-    print(f"{name} -> {out_name}.png {res.size}")
+    res.save(os.path.join(DST, name + ".png"), optimize=True)
+    print(f"{name} -> {name}.png {res.size}")

@@ -10,6 +10,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
+    "data:export": "node scripts/export-data.mjs",
     "dist": "electron-vite build && electron-builder --win --x64"
   },
   "build": {
@@ -19,13 +20,28 @@
       "output": "release"
     },
     "files": [
-      "out/**/*",
-      "build/icon.png"
+      "out/**/*"
     ],
     "extraResources": [
       {
         "from": "skills",
         "to": "skills"
+      },
+      {
+        "from": "default-data",
+        "to": "default-data",
+        "filter": [
+          "*.json.gz",
+          "manifest.json"
+        ]
+      },
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
       }
     ],
     "win": {

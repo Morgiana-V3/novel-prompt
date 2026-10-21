@@ -21,7 +21,7 @@ const src = computed(() => SRC[props.mood])
     <transition name="mascot-swap" mode="out-in">
       <img :key="mood" :src="src" :alt="mood" draggable="false" />
     </transition>
-    <span v-if="mood !== 'avatar'" class="m-shadow"></span>
+    <span v-if="mood === 'idle'" class="m-shadow"></span>
   </div>
 </template>
 
@@ -58,9 +58,7 @@ const src = computed(() => SRC[props.mood])
 }
 
 .m-happy img { animation: m-jump 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
-.m-happy .m-shadow { animation: m-shadow-jump 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
 .m-busy img { animation: m-scribble 0.5s ease-in-out infinite alternate; }
-.m-busy .m-shadow { animation: none; }
 .m-confused img { animation: m-tilt 2.4s ease-in-out infinite; }
 .m-chill img { animation: m-sway 4s ease-in-out infinite; }
 .m-wink img { animation: m-bob 1.6s ease-in-out infinite; }
@@ -85,12 +83,8 @@ const src = computed(() => SRC[props.mood])
   100% { transform: scale(1, 1); }
 }
 @keyframes m-jump {
-  0%, 100% { transform: translateY(0) scale(1.03, 0.97); }
-  45% { transform: translateY(-14%) scale(0.97, 1.03); }
-}
-@keyframes m-shadow-jump {
-  0%, 100% { transform: scaleX(1); opacity: 1; }
-  45% { transform: scaleX(0.6); opacity: 0.4; }
+  0%, 100% { transform: translateY(0) scale(1.02, 0.98); }
+  45% { transform: translateY(-6%) scale(0.98, 1.02); }
 }
 @keyframes m-scribble {
   from { transform: rotate(-1.5deg); }

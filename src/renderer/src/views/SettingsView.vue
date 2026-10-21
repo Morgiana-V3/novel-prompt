@@ -70,7 +70,7 @@ async function translate() {
         <span class="card-icon"><Icon name="tag" /></span>
         <div>
           <h2>Danbooru 数据</h2>
-          <div class="card-desc">tag、别名和社区中文翻译，都保存在本地</div>
+          <div class="card-desc">安装包已内置一份 tag 和中文翻译；点「更新」后会下载到本机用户目录，覆盖内置的数据</div>
         </div>
       </div>
 
@@ -81,7 +81,7 @@ async function translate() {
         <div class="tile"><div class="tile-num">{{ state.db.minCount ?? '—' }}</div><div class="tile-label">收录阈值</div></div>
         <div class="tile">
           <div class="tile-num sm">{{ state.db.fetchedAt ? new Date(state.db.fetchedAt).toLocaleDateString() : '—' }}</div>
-          <div class="tile-label">更新时间</div>
+          <div class="tile-label">{{ state.db.source === 'user' ? '自行更新' : '内置数据' }}</div>
         </div>
       </div>
 

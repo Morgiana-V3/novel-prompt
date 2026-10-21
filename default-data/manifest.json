@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "exportedAt": "2026-10-21T06:07:46.508Z",
+  "fetchedAt": "2026-10-21T04:53:26.853Z",
+  "minCount": 10,
+  "tagCount": 328567,
+  "zhAi": 48738,
+  "zhUser": 0,
+  "files": {
+    "tags.json": {
+      "bytes": 8276221,
+      "gzBytes": 3281785
+    },
+    "aliases.json": {
+      "bytes": 1362736,
+      "gzBytes": 469454
+    },
+    "zh-community.json": {
+      "bytes": 342240,
+      "gzBytes": 141161
+    },
+    "zh-ai.json": {
+      "bytes": 1860238,
+      "gzBytes": 940910
+    },
+    "pinyin-cache.json": {
+      "bytes": 2412899,
+      "gzBytes": 1160804
+    }
+  }
+}

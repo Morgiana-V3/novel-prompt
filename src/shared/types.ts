@@ -88,6 +88,8 @@ export interface DbStatus {
   zhCount: number
   fetchedAt?: string
   minCount?: number
+  /** 当前 tag 数据来自安装包内置（default）还是用户自己下载（user） */
+  source?: 'default' | 'user'
 }
 
 export interface UpdateProgress {

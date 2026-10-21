@@ -39,7 +39,7 @@ function setVersion(v: NaiVersion) {
   <div class="layout">
     <aside class="sidebar">
       <div class="brand">
-        <Mascot :mood="busy ? 'busy' : 'avatar'" :size="44" />
+        <Mascot :mood="busy ? 'busy' : 'avatar'" :size="46" class="brand-avatar" />
         <div>
           <div class="brand-name">Novel<b>Prompt</b></div>
           <div class="brand-sub">tag 小助手</div>

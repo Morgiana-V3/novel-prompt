@@ -1,5 +1,6 @@
-import { app, BrowserWindow, ipcMain, shell, clipboard } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, clipboard, nativeImage } from 'electron'
 import { join } from 'node:path'
+import { existsSync } from 'node:fs'
 import type { AiOptimizeRequest, SearchOptions, Settings } from '../shared/types'
 import { tagStore } from './tagdb/store'
 import { updateTagDatabase } from './tagdb/fetcher'
@@ -12,6 +13,17 @@ import { skillPath } from './paths'
 let win: BrowserWindow | null = null
 let busy: AbortController | null = null
 
+const APP_ID = 'com.holyxie.novelprompt'
+
+function appIcon(): Electron.NativeImage | undefined {
+  const base = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'build')
+  for (const name of process.platform === 'win32' ? ['icon.ico', 'icon.png'] : ['icon.png']) {
+    const p = join(base, name)
+    if (existsSync(p)) return nativeImage.createFromPath(p)
+  }
+  return undefined
+}
+
 function createWindow(): void {
   win = new BrowserWindow({
     width: 1440,
@@ -20,7 +32,7 @@ function createWindow(): void {
     minHeight: 700,
     backgroundColor: '#ffffff',
     title: 'NovelPrompt',
-    icon: join(app.getAppPath(), 'build', 'icon.png'),
+    icon: appIcon(),
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
     titleBarOverlay: { color: '#ffffff', symbolColor: '#6b6c75', height: 40 },
@@ -90,6 +102,8 @@ function registerIpc(): void {
 }
 
 app.whenReady().then(() => {
+  // 让 Windows 任务栏 / Alt+Tab 使用窗口图标，而不是 electron.exe 的默认图标
+  if (process.platform === 'win32') app.setAppUserModelId(APP_ID)
   tagStore.load()
   registerIpc()
   createWindow()

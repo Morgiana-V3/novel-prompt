@@ -65,7 +65,8 @@ input, textarea { font: inherit; color: var(--text); }
   width: 220px; flex-shrink: 0; background: var(--side); border-right: 1px solid var(--line);
   display: flex; flex-direction: column; padding: 8px 10px 14px; gap: 14px;
 }
-.brand { display: flex; align-items: center; gap: 8px; height: 60px; padding: 4px 6px 0; -webkit-app-region: drag; }
+.brand { display: flex; align-items: center; gap: 10px; height: 60px; padding: 4px 6px 0; -webkit-app-region: drag; }
+.brand-avatar { width: 46px; border-radius: 14px; overflow: hidden; background: var(--pink-soft); box-shadow: inset 0 0 0 1px #ffd6e4; }
 .brand-name { font-weight: 700; font-size: 15px; letter-spacing: 0.2px; }
 .brand-name b { color: var(--pink); font-weight: 700; }
 .brand-sub { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
