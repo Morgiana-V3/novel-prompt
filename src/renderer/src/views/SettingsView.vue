@@ -19,9 +19,16 @@ const efforts: { v: ReasoningEffort; label: string }[] = [
   { v: 'max', label: '最高' }
 ]
 
+// 只在首次拿到设置时填充表单；之后侧边栏切换版本等操作也会刷新 state.settings，
+// 若每次都覆盖会把用户尚未保存的输入（如刚填的 API Key）冲掉
+let filled = false
 watch(
   () => state.settings,
-  (s) => s && Object.assign(form, s),
+  (s) => {
+    if (!s || filled) return
+    Object.assign(form, s)
+    filled = true
+  },
   { immediate: true }
 )
 

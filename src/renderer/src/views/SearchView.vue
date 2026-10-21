@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import type { SearchHit, TagCategory } from '@shared/types'
 import { CATEGORY_LABEL } from '@shared/types'
 import { CAT_CLASS, appendTag, copy, state } from '../store'
@@ -33,13 +33,24 @@ function toggle(c: TagCategory) {
   if (i >= 0) cats.value.splice(i, 1)
   else cats.value.push(c)
 }
+
+// 视图用 v-show 常驻，autofocus 只在首次生效；切到搜索页时手动聚焦
+const input = ref<HTMLInputElement>()
+watch(
+  () => state.tab,
+  async (t) => {
+    if (t !== 'search') return
+    await nextTick()
+    input.value?.focus()
+  }
+)
 </script>
 
 <template>
   <div class="view search">
     <div class="search-box">
       <Icon name="search" :size="19" />
-      <input v-model="query" class="search-input" placeholder="搜搜看：双马尾 / twin tails / smw" autofocus />
+      <input ref="input" v-model="query" class="search-input" placeholder="搜搜看：双马尾 / twin tails / smw" autofocus />
       <button v-if="query" class="icon-btn sm clear" @click="query = ''"><Icon name="x" :size="14" /></button>
     </div>
     <div class="cat-filter">
@@ -55,7 +66,7 @@ function toggle(c: TagCategory) {
 
     <div class="scroll search-results">
       <div class="tag-grid wide" v-if="hits.length">
-        <div v-for="(h, i) in hits" :key="h.name" @contextmenu.prevent="copy(h.category === 1 ? 'artist:' + h.display : h.display)">
+        <div v-for="(h, i) in hits" :key="h.name" class="hit-wrap" @contextmenu.prevent="copy(h.category === 1 ? 'artist:' + h.display : h.display)">
           <TagCard :tag="h" :via-alias="h.viaAlias" :index="i" editable @click="appendTag(h.display, h.category)" />
         </div>
       </div>

@@ -13,6 +13,7 @@ export const CAT_CLASS: Record<TagCategory, string> = {
 export const state = reactive({
   tab: 'compare' as 'compare' | 'search' | 'ai' | 'settings',
   prompt: '',
+  negative: '',
   settings: null as Settings | null,
   db: null as DbStatus | null,
   progress: null as UpdateProgress | null,

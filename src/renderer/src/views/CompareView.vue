@@ -39,8 +39,22 @@ const allGood = computed(
 function locate(t: AnalyzedToken) {
   const el = textarea.value
   if (!el) return
-  el.focus()
+  // 先失焦再设选区后聚焦，Chromium 才会把滚动条滚到选区位置
+  el.blur()
   el.setSelectionRange(t.start, t.end)
+  el.focus()
+}
+
+/** 通过 execCommand 写入文本框，保留原生撤销栈，误清空/误替换后可以 Ctrl+Z 恢复 */
+function setPrompt(text: string) {
+  const el = textarea.value
+  if (el && el.offsetParent !== null && text !== state.prompt) {
+    el.focus()
+    el.select()
+    const ok = text ? document.execCommand('insertText', false, text) : document.execCommand('delete')
+    if (ok && el.value === text) return
+  }
+  state.prompt = text
 }
 
 function replacement(t: AnalyzedToken, tag: TagInfo): string {
@@ -53,7 +67,7 @@ function applyReplacements(items: { t: AnalyzedToken; text: string }[]) {
   for (const { t, text } of [...items].sort((a, b) => b.t.start - a.t.start)) {
     p = p.slice(0, t.start) + text + p.slice(t.end)
   }
-  state.prompt = p
+  setPrompt(p)
 }
 
 function replaceWith(t: AnalyzedToken, tag: TagInfo) {
@@ -73,22 +87,52 @@ function cut(p: string, t: AnalyzedToken): string {
 }
 
 function removeToken(t: AnalyzedToken) {
-  state.prompt = cut(state.prompt, t)
+  setPrompt(cut(state.prompt, t))
 }
 
 function removeAllUnknown() {
   let p = state.prompt
   for (const t of [...groups.value.unknown].sort((a, b) => b.start - a.start)) p = cut(p, t)
-  state.prompt = p
-  toast('已移除不存在的 tag')
+  setPrompt(p)
+  toast('已移除不存在的 tag，可 Ctrl+Z 撤销')
 }
 
+function clearPrompt() {
+  if (!state.prompt) return
+  setPrompt('')
+  toast('已清空，可 Ctrl+Z 撤销')
+}
+
+/**
+ * 整理格式：逗号/换行统一为「, 」分隔，压缩多余空白。
+ * 与解析器保持一致：换行也是分隔符（避免把两个 tag 合并成一个），
+ * 引号内文字与 Text: 块原样保留。
+ */
 function formatPrompt() {
-  state.prompt = state.prompt
-    .split(/\s*,\s*/)
-    .map((s) => s.replace(/\s+/g, ' ').trim())
+  const src = state.prompt
+  const parts: string[] = []
+  let buf = ''
+  let inQuote = false
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i]
+    if (!inQuote && /(^|\|)\s*$/.test(buf) && /^text:/i.test(src.slice(i, i + 5))) {
+      buf += src.slice(i)
+      break
+    }
+    if (ch === '"') inQuote = !inQuote
+    if (!inQuote && (ch === ',' || ch === '\n' || ch === '\r')) {
+      parts.push(buf)
+      buf = ''
+      continue
+    }
+    buf += ch
+  }
+  parts.push(buf)
+  const out = parts
+    .map((s) => (s.includes('"') || /text:/i.test(s) ? s.trim() : s.replace(/\s+/g, ' ').trim()))
     .filter(Boolean)
     .join(', ')
+  setPrompt(out)
   toast('已整理格式')
 }
 </script>
@@ -115,7 +159,7 @@ function formatPrompt() {
           <div class="actions">
             <button class="icon-btn" title="整理格式" @click="formatPrompt"><Icon name="align" /></button>
             <button class="icon-btn" title="复制" @click="copy(state.prompt)"><Icon name="copy" /></button>
-            <button class="icon-btn" title="清空" @click="state.prompt = ''"><Icon name="trash" /></button>
+            <button class="icon-btn" title="清空" @click="clearPrompt"><Icon name="trash" /></button>
             <button class="btn accent" @click="state.tab = 'ai'"><Icon name="sparkle" :size="16" />AI 优化</button>
           </div>
         </div>

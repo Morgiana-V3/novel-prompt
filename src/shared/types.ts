@@ -117,6 +117,8 @@ export interface AiOptimizeRequest {
   mode: 'optimize' | 'semantic'
   /** 现有提示词 */
   prompt: string
+  /** 现有负面提示词（可空） */
+  negative: string
   /** 语义描述 / 额外要求 */
   instruction: string
   version: NaiVersion

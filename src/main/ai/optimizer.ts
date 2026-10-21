@@ -113,15 +113,56 @@ function systemPrompt(version: NaiVersion): string {
 - 不需要多角色时 characters 为 []。`
 }
 
-function userPrompt(req: AiOptimizeRequest): string {
-  if (req.mode === 'semantic') {
-    return `请把下面的画面描述转换为 NovelAI 提示词。\n\n画面描述：\n${req.instruction}${req.prompt.trim() ? `\n\n可参考/保留的已有提示词：\n${req.prompt}` : ''}`
+/** 本地预检：列出无效/别名 tag，以及正负面同时出现的 tag，作为 AI 综合评估的依据 */
+function precheck(req: AiOptimizeRequest): string {
+  const pos = analyzePrompt(req.prompt ?? '', req.version).tokens
+  const neg = analyzePrompt(req.negative ?? '', req.version).tokens
+  const lines: string[] = []
+  const issues = (tokens: typeof pos, label: string) => {
+    for (const t of tokens) {
+      if (t.status === 'unknown') lines.push(`- ${label}「${t.raw}」不存在`)
+      else if (t.status === 'alias') lines.push(`- ${label}「${t.raw}」是别名，标准写法 ${t.aliasOf!.display}`)
+      else if (t.warning) lines.push(`- ${label}「${t.raw}」：${t.warning}`)
+    }
   }
-  return `请优化下面的 NovelAI 提示词：修正不存在/拼写错误的 tag，替换别名为标准写法，去除冲突与冗余，按规范顺序重排，必要时补充缺失的关键 tag。\n\n原提示词：\n${req.prompt}${req.instruction.trim() ? `\n\n额外要求：\n${req.instruction}` : ''}`
+  issues(pos, '正向')
+  issues(neg, '负面')
+  const name = (t: (typeof pos)[number]) => (t.tag ?? t.aliasOf)?.name
+  const posNames = new Set(pos.map(name).filter(Boolean))
+  const both = [...new Set(neg.map(name).filter((n) => n && posNames.has(n)))]
+  if (both.length) lines.push(`- 正向与负面同时出现：${both.join(', ')}（概念互相抵消）`)
+  return lines.length ? `\n\n本地预检结果（供参考）：\n${lines.join('\n')}` : ''
+}
+
+function userPrompt(req: AiOptimizeRequest): string {
+  const neg = req.negative?.trim()
+  const extra = req.instruction.trim()
+  if (req.mode === 'semantic') {
+    return [
+      `请把下面的画面描述转换为 NovelAI 提示词（含负面提示词）。`,
+      `画面描述：\n${req.instruction}`,
+      req.prompt.trim() && `可参考/保留的已有提示词：\n${req.prompt}`,
+      neg && `用户已有的负面提示词（在此基础上按画面需要调整）：\n${neg}`
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+  }
+  return [
+    `请综合评估并优化下面这套 NovelAI 提示词（正向 + 负面作为一个整体）：`,
+    `1. 修正不存在/拼写错误的 tag，替换别名为标准写法，去除冗余，按规范顺序重排，必要时补充缺失的关键 tag；`,
+    `2. 检查正负面之间的冲突：同一概念同时出现在正负面、负面误伤了想要的风格（例如漫画/网点风格却在负面里放了 screentone、halftone、multiple views）、负面缺少必要的质量词等；`,
+    neg ? `3. 负面提示词同样要校验 tag 是否存在，并按画面风格增删；` : `3. 用户未提供负面提示词，请按规范给出合适的负面提示词；`,
+    `4. notes 先用一两句话给出整体评估（这套提示词的风格、主要问题），再分条列出正向和负面各做了哪些修改及原因。`,
+    `原正向提示词：\n${req.prompt}`,
+    neg && `原负面提示词：\n${neg}`,
+    extra && `额外要求：\n${extra}`
+  ]
+    .filter(Boolean)
+    .join('\n\n') + precheck(req)
 }
 
 function collectInvalid(result: AiOptimizeResult, version: NaiVersion): string[] {
-  const texts = [result.positive, ...result.characters.map((c) => c.prompt)]
+  const texts = [result.positive, result.negative, ...result.characters.map((c) => c.prompt)]
   const bad = new Set<string>()
   for (const text of texts) {
     for (const t of analyzePrompt(text ?? '', version).tokens) {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { AiOptimizeResult } from '@shared/types'
 import { state, copy, toast } from '../store'
 import Icon from '../components/Icon.vue'
@@ -12,9 +12,44 @@ const steps = ref<string[]>([])
 const result = ref<AiOptimizeResult | null>(null)
 const error = ref('')
 
+watch(mode, () => {
+  if (!running.value) error.value = ''
+})
+
+/** 文本框随内容自动增高，高度不够时由外层栏滚动，避免框内出现小滚动条 */
+function autoSize(el: HTMLTextAreaElement) {
+  el.style.height = 'auto'
+  el.style.height = `${el.scrollHeight}px`
+}
+const vAutosize = {
+  mounted(el: HTMLTextAreaElement) {
+    el.addEventListener('input', () => autoSize(el))
+    autoSize(el)
+  },
+  updated: autoSize
+}
+
+const leftPane = ref<HTMLElement>()
+function resizeAll() {
+  leftPane.value?.querySelectorAll('textarea').forEach((el) => autoSize(el as HTMLTextAreaElement))
+}
+
 onMounted(() => {
   window.api.onAiStep((s) => steps.value.push(s))
+  window.addEventListener('resize', resizeAll)
 })
+
+onBeforeUnmount(() => window.removeEventListener('resize', resizeAll))
+
+// 视图常驻但可能是隐藏状态（v-show），隐藏时量不出内容高度，切回来时重算一次
+watch(
+  () => state.tab,
+  async (t) => {
+    if (t !== 'ai') return
+    await nextTick()
+    resizeAll()
+  }
+)
 
 async function run() {
   if (!state.settings?.apiKey) {
@@ -37,6 +72,7 @@ async function run() {
     result.value = await window.api.optimize({
       mode: mode.value,
       prompt: state.prompt,
+      negative: state.negative,
       instruction: instruction.value,
       version: state.settings.naiVersion
     })
@@ -50,8 +86,9 @@ async function run() {
 function apply() {
   if (!result.value) return
   state.prompt = result.value.positive
+  if (result.value.negative) state.negative = result.value.negative
   state.tab = 'compare'
-  toast('已应用到比对区')
+  toast(result.value.negative ? '已应用正向到比对页，负面已同步到输入框' : '已应用到比对页')
 }
 
 function fullText(r: AiOptimizeResult): string {
@@ -64,16 +101,23 @@ function fullText(r: AiOptimizeResult): string {
 
 <template>
   <div class="view ai">
-    <section class="pane left scroll">
+    <section class="pane left scroll" ref="leftPane">
       <div class="seg block big">
         <button :class="{ on: mode === 'optimize' }" @click="mode = 'optimize'"><Icon name="wand" :size="15" />优化现有提示词</button>
         <button :class="{ on: mode === 'semantic' }" @click="mode = 'semantic'"><Icon name="chat" :size="15" />描述转提示词</button>
       </div>
 
       <div class="field">
-        <label class="field-label">{{ mode === 'optimize' ? '原提示词' : '要保留的提示词（可选）' }}<span class="muted"> · 与比对页同步</span></label>
+        <label class="field-label">{{ mode === 'optimize' ? '正向提示词' : '要保留的提示词（可选）' }}<span class="muted"> · 与比对页同步</span></label>
         <div class="composer short">
-          <textarea v-model="state.prompt" spellcheck="false" placeholder="1girl, silver hair, ..."></textarea>
+          <textarea v-autosize v-model="state.prompt" spellcheck="false" placeholder="1girl, silver hair, ..."></textarea>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label">负面提示词（可选）<span class="muted"> · 留空则由 AI 按规范生成</span></label>
+        <div class="composer short neg">
+          <textarea v-autosize v-model="state.negative" spellcheck="false" placeholder="lowres, worst quality, bad quality, ..."></textarea>
         </div>
       </div>
 
@@ -81,6 +125,7 @@ function fullText(r: AiOptimizeResult): string {
         <label class="field-label">{{ mode === 'optimize' ? '额外要求（可选）' : '画面描述' }}</label>
         <div class="composer short">
           <textarea
+            v-autosize
             v-model="instruction"
             :placeholder="
               mode === 'optimize'
