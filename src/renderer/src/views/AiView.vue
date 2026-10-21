@@ -93,7 +93,10 @@ function apply() {
 
 function fullText(r: AiOptimizeResult): string {
   const parts = [`[Prompt]\n${r.positive}`]
-  r.characters.forEach((c, i) => parts.push(`[Character ${i + 1}${c.position ? ' @ ' + c.position : ''}]\n${c.prompt}`))
+  r.characters.forEach((c, i) => {
+    parts.push(`[Character ${i + 1}${c.position ? ' @ ' + c.position : ''}]\n${c.prompt}`)
+    if (c.negative) parts.push(`[Character ${i + 1} Undesired Content]\n${c.negative}`)
+  })
   if (r.negative) parts.push(`[Undesired Content]\n${r.negative}`)
   return parts.join('\n\n')
 }
@@ -194,6 +197,7 @@ function fullText(r: AiOptimizeResult): string {
             <button class="icon-btn sm ml-auto" title="复制" @click="copy(c.prompt)"><Icon name="copy" :size="15" /></button>
           </div>
           <pre class="result-text">{{ c.prompt }}</pre>
+          <div v-if="c.negative" class="notes"><span class="chip-zh">角色负面：</span>{{ c.negative }}</div>
         </div>
 
         <div class="result-card" v-if="result.negative" style="--d: 140ms">

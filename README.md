@@ -11,14 +11,17 @@
 
 ---
 
-NovelPrompt 是一个 NovelAI 出图用的桌面小工具。它把 Danbooru 的 **30 万个 tag** 和 **5 万多条中文翻译** 打包在本地，所以你粘贴一段提示词进去，它能立刻告诉你：哪些 tag 是真实存在的、哪些拼错了、哪些是别名、哪些根本不是 tag。
+NovelPrompt 是一个 NovelAI 出图用的桌面小工具。它把 Danbooru 的 **33 万个 tag** 和 **5 万多条中文翻译** 打包在本地，所以你粘贴一段提示词进去，它能立刻告诉你：哪些 tag 是真实存在的、哪些拼错了、哪些是别名、哪些根本不是 tag。
 
 内置的数据是离线的，断网也能用。只有 AI 优化需要联网（接 DeepSeek）。
 
 ## 目录
 
 - [功能](#功能)
-- [界面预览](#界面预览)
+  - [提示词比对](#提示词比对)
+  - [Tag 搜索](#tag-搜索)
+  - [AI 优化](#ai-优化)
+  - [V4.5 / V5 双版本](#v45--v5-双版本)
 - [快速开始](#快速开始)
 - [使用指南](#使用指南)
 - [支持的语法](#支持的语法)
@@ -26,6 +29,7 @@ NovelPrompt 是一个 NovelAI 出图用的桌面小工具。它把 Danbooru 的 
 - [常见问题](#常见问题)
 - [开发者](#开发者)
 - [致谢](#致谢)
+- [许可证](#许可证)
 
 ## 功能
 
@@ -38,7 +42,11 @@ NovelPrompt 是一个 NovelAI 出图用的桌面小工具。它把 Danbooru 的 
 - **有效 tag** — 显示中英双语、分类、引用数、权重，双击中文可以改成你习惯的译名
 - **自然语言 / 文字** — V5 允许的英文句子、`Text:` 块会被单独列出，不会误报
 
-点右边任意一条结果，左边会自动选中对应的原文，方便你定位。
+点右边任意一条结果，左边会自动选中对应的原文，方便你定位。整理格式、复制、清空、跳转 AI 优化都在左下角一排。
+
+<p align="center">
+  <img src="docs/screenshots/compare.png" width="900" alt="提示词比对：左侧输入提示词，右侧按不存在的 tag、别名、有效 tag、自然语言分组列出结果" />
+</p>
 
 ### Tag 搜索
 
@@ -47,6 +55,10 @@ NovelPrompt 是一个 NovelAI 出图用的桌面小工具。它把 Danbooru 的 
 - 结果按匹配度 × 引用数排序，引用数高的 tag 效果通常更稳定
 - 单击加入提示词末尾，右键复制，双击中文可编辑翻译
 
+<p align="center">
+  <img src="docs/screenshots/search.png" width="900" alt="Tag 搜索：中文关键词搜出多个候选 tag，带分类、引用数和中文翻译" />
+</p>
+
 ### AI 优化
 
 两种模式：
@@ -54,30 +66,32 @@ NovelPrompt 是一个 NovelAI 出图用的桌面小工具。它把 Danbooru 的 
 - **优化现有提示词** — 修正拼写和别名、删掉冲突和冗余、按规范顺序重排、补上缺失的关键 tag
 - **描述转提示词** — 用中文描述画面，AI 拆成概念后到本地库里挑真实存在的 tag
 
-AI 不能凭空编造 tag：它会调用本地 tag 库检索和校验，输出前再由程序在本地复查一遍，发现不存在的 tag 会打回去让它重改，最多两轮。最后给出正向提示词、角色提示词、负面提示词和逐条修改说明。
+正向提示词、负面提示词、额外要求可以一起填，AI 会把它们当成一套来评估：检查正负面有没有互相抵消（比如画面是黑白漫画风，负面却留着 `screentone`），按画面风格增删负面词，多角色时还能给每个角色单独写负面，防止特征串色。
+
+AI 不能凭空编造 tag：它会调用本地 tag 库检索和校验，输出前再由程序在本地复查一遍（正向、负面、角色提示词全部查），发现不存在的 tag 会打回去让它重改，最多两轮。最后给出正向提示词、角色提示词、负面提示词，以及「整体评估 + 逐条修改说明」。
+
+<p align="center">
+  <img src="docs/screenshots/ai.png" width="900" alt="AI 优化：左侧填正向、负面和额外要求，右侧显示分组的优化结果和修改说明" />
+</p>
 
 ### V4.5 / V5 双版本
 
 侧栏可以切换目标模型，会同时影响两件事：
 
 - 比对时的警告（例如在 V4.5 下用了 V5 专用 tag、或用了 V4.5 不认的引号文字）
-- AI 的编排规则（多角色位置写法、自然语言混写比例、质量词等）
+- AI 的编排规则（多角色位置写法、自然语言混写比例、质量词、各版本专属 tag）
 
-## 界面预览
+数据下载、API Key、思考强度、AI 补译都在「设置 / 数据」页：
 
-| 提示词比对 | Tag 搜索 |
-|---|---|
-| ![提示词比对](docs/screenshots/compare.png) | ![Tag 搜索](docs/screenshots/search.png) |
-
-| AI 优化 | 设置 / 数据 |
-|---|---|
-| ![AI 优化](docs/screenshots/ai.png) | ![设置](docs/screenshots/settings.png) |
+<p align="center">
+  <img src="docs/screenshots/settings.png" width="900" alt="设置页：tag 数据统计、下载更新、DeepSeek 配置和 AI 补译" />
+</p>
 
 ## 快速开始
 
 ### 用安装包（推荐）
 
-1. 到 [Releases](https://github.com/your-name/novel-prompt/releases) 下载 `NovelPrompt-Setup-x.x.x.exe`
+1. 到 [Releases](https://github.com/Morgiana-V3/novel-prompt/releases) 下载 `NovelPrompt-Setup-x.x.x.exe`
 2. 安装后直接打开，**内置数据已经就绪，不需要下载任何东西**
 3. 想用 AI 优化的话，在「设置 / 数据」里填入 DeepSeek API Key
 
@@ -86,7 +100,7 @@ AI 不能凭空编造 tag：它会调用本地 tag 库检索和校验，输出�
 ### 从源码运行
 
 ```bash
-git clone https://github.com/your-name/novel-prompt.git
+git clone https://github.com/Morgiana-V3/novel-prompt.git
 cd novel-prompt
 npm install
 npm run dev
@@ -128,7 +142,7 @@ npm run dist     # 输出 NSIS 安装包和便携版到 release/
 3. 剩下的 **有效 tag** 检查一下权重和警告
 4. 左下角有一排按钮：整理格式（统一逗号空格）、复制、清空、AI 优化
 
-内置的 NAI 专用 tag（`masterpiece`、`high complexity`、`no text` 等）会被识别为有效，不会误报为不存在。
+整理格式、替换、移除、清空都可以用 `Ctrl+Z` 撤销。内置的 NAI 专用 tag（`masterpiece`、`high complexity`、`no text` 等）会被识别为有效，不会误报为不存在。
 
 ### 查一个 tag
 
@@ -141,10 +155,13 @@ npm run dist     # 输出 NSIS 安装包和便携版到 release/
 
 切到「AI 优化」：
 
-- 选「优化现有提示词」，左边会自动带入比对页的提示词，可以在「额外要求」里补充「换成夜景」这类想法
+- 选「优化现有提示词」，左边会自动带入比对页的正向提示词，负面提示词留空则由 AI 按规范生成
 - 或者选「描述转提示词」，直接用中文写画面
+- 「额外要求」里可以补充「换成夜景」这类想法
 - 点「开始」，左边的步骤列表会显示 AI 正在查哪些 tag
 - 结果出来后可以「应用到比对页」继续微调，或直接复制
+
+AI 的编排规则写在 `skills/nai-prompt.md`（设置页可以「编辑 Skill 文档」直接打开）。这份文档就是 AI 的系统提示词，改完立即生效——顺序、权重、负面模板、输出格式都能按自己的习惯调整。
 
 ### 数据更新
 
@@ -164,10 +181,11 @@ Danbooru 每天都在变。想用最新数据：
 | `{tag}` / `{{tag}}` | 加权 ×1.05（可叠加） |
 | `[tag]` | 减权 ÷1.05 |
 | `1.3::tag, tag2::` | 数值权重，可包住多个 tag |
-| `-1::tag::` | 负权重，主动从画面里去掉某概念 |
+| `0.6::tag::` | 0~1 之间为降权 |
+| `-1::tag::` | 负权重，主动从画面里去掉某概念（V4.5 起） |
 | `artist:名字` | 画师 tag，会校验是否真的是画师分类 |
 | `year 2024` | 年份 tag |
-| `|` | 分段，常用于多角色提示词 |
+| `\|` | 分段，常用于多角色提示词 |
 | `source#hug` / `target#hug` / `mutual#...` | 角色间的互动动作 |
 | `Text: ...` | 画面文字块（V4.5 需手写，且放末尾） |
 | `"文字"` | V5 引号文字，会自动识别 |
@@ -199,7 +217,7 @@ Danbooru 每天都在变。想用最新数据：
 会。Danbooru 一直在新增 tag，内置数据是发版时的快照。想要最新的就点「下载 / 更新」，之后每次启动都用你更新过的数据。
 
 **AI 挑出来的 tag 还是不对怎么办？**
-AI 的编排规则写在 `skills/nai-prompt.md`（设置页可以「编辑 Skill 文档」直接打开）。这份文档就是 AI 的系统提示词，改完立即生效，可以按自己的习惯调整顺序、权重、负面词模板。
+改 `skills/nai-prompt.md`。这份文档就是 AI 的系统提示词，编排顺序、权重规则、负面词模板、评估维度都写在里面，保存后下一次调用立即生效。
 
 **能用在 SD / WebUI 上吗？**
 可以。tag 数据来自 Danbooru，和 SD 通用的那套一致，只是权重语法是 NovelAI 的。

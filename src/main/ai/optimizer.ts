@@ -80,7 +80,12 @@ function runTool(name: string, argsJson: string): string {
     return tags
       .slice(0, 80)
       .map((raw) => {
-        const core = raw.replace(/^artist:\s*/i, '').replace(/^\d+(\.\d+)?::|::$/g, '').replace(/[{}[\]]/g, '').trim()
+        const core = raw
+          .trim()
+          .replace(/^artist:\s*/i, '')
+          .replace(/^-?\d+(\.\d+)?::\s*|\s*::$/g, '')
+          .replace(/[{}[\]]/g, '')
+          .trim()
         const { tag, aliasOf } = tagStore.lookup(core)
         if (tag) return `✓ ${raw}`
         if (aliasOf) return `↪ ${raw} → 请改用 ${aliasOf.display}`
@@ -109,7 +114,7 @@ function systemPrompt(version: NaiVersion): string {
 - 目标模型：**${v}**（只使用该版本适用的语法与 tag，文档中标注另一版本专用的内容不要使用）
 - 你可以调用工具 search_tags / validate_tags 查询本地 Danbooru tag 库。除 NAI 专用质量词和自然语言片段外，**所有 tag 必须来自工具返回的结果**。
 - 完成后只输出一个 JSON 对象（不要多余文字）：
-{"positive":"主提示词","negative":"负面提示词","characters":[{"prompt":"角色提示词","position":"位置描述，可空"}],"notes":"中文说明：做了哪些修改、为什么"}
+{"positive":"主提示词","negative":"完整的负面提示词（不能为空）","characters":[{"prompt":"角色提示词","position":"位置描述，可空","negative":"该角色的负面提示词，可空"}],"notes":"按 Skill 第 11 节格式书写的中文说明"}
 - 不需要多角色时 characters 为 []。`
 }
 
@@ -162,7 +167,11 @@ function userPrompt(req: AiOptimizeRequest): string {
 }
 
 function collectInvalid(result: AiOptimizeResult, version: NaiVersion): string[] {
-  const texts = [result.positive, result.negative, ...result.characters.map((c) => c.prompt)]
+  const texts = [
+    result.positive,
+    result.negative,
+    ...result.characters.flatMap((c) => [c.prompt, c.negative ?? ''])
+  ]
   const bad = new Set<string>()
   for (const text of texts) {
     for (const t of analyzePrompt(text ?? '', version).tokens) {
@@ -177,7 +186,11 @@ function normalizeResult(raw: Partial<AiOptimizeResult>): AiOptimizeResult {
     positive: String(raw.positive ?? ''),
     negative: String(raw.negative ?? ''),
     characters: Array.isArray(raw.characters)
-      ? raw.characters.map((c) => ({ prompt: String(c?.prompt ?? ''), position: c?.position ? String(c.position) : undefined }))
+      ? raw.characters.map((c) => ({
+          prompt: String(c?.prompt ?? ''),
+          position: c?.position ? String(c.position) : undefined,
+          negative: c?.negative ? String(c.negative) : undefined
+        }))
       : [],
     notes: String(raw.notes ?? ''),
     invalid: []

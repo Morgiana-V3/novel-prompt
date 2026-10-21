@@ -127,6 +127,8 @@ export interface AiOptimizeRequest {
 export interface AiCharacter {
   prompt: string
   position?: string
+  /** 角色专属负面提示词，用于防止其他角色的特征串过来 */
+  negative?: string
 }
 
 export interface AiOptimizeResult {

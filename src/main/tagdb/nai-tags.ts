@@ -51,7 +51,26 @@ export const NAI_TAGS: NaiTagDef[] = [
   { name: 'visual novel chibi', zh: '视觉小说Q版', versions: V5 },
   { name: 'visual novel sprite', zh: '视觉小说立绘', versions: V5 },
   { name: 'alpha transparency', zh: '半透明（alpha）', versions: V5 },
-  { name: 'has alpha', zh: '使用alpha通道', versions: V5 }
+  { name: 'has alpha', zh: '使用alpha通道', versions: V5 },
+  // NAI 负面预设（Undesired Content）里用到、但 Danbooru 高频库里没有的写法
+  { name: 'screentone', zh: '网点纸', versions: BOTH },
+  { name: 'white haze', zh: '白色雾感', versions: BOTH },
+  { name: 'extra people', zh: '多余的人物', versions: BOTH },
+  { name: 'upscale', zh: '放大痕迹', versions: BOTH },
+  { name: 'distracting watermark', zh: '干扰性水印', versions: BOTH },
+  { name: 'widescreen', zh: '宽银幕/上下黑边', versions: BOTH },
+  { name: 'sequence', zh: '连续画面', versions: BOTH },
+  { name: 'grandfathered content', zh: '历史遗留内容', versions: BOTH },
+  { name: 'blurred foreground', zh: '前景模糊', versions: BOTH },
+  { name: 'simple', zh: '简单化', versions: BOTH },
+  { name: 'flat colors', zh: '平涂配色', versions: BOTH },
+  { name: 'multiple scenes', zh: '多个场景', versions: BOTH },
+  { name: 'ych (character)', zh: 'YCH 委托角色', versions: BOTH },
+  { name: 'text', zh: '文字', versions: BOTH },
+  // 内容分级：V4.5 Curated 的 Add Quality Tags 会自动追加 rating:general
+  { name: 'rating:general', zh: '分级：全年龄', versions: BOTH },
+  { name: 'rating:questionable', zh: '分级：敏感', versions: BOTH },
+  { name: 'rating:explicit', zh: '分级：限制级', versions: BOTH }
 ]
 
 /** year 2020 这类年份 tag */
