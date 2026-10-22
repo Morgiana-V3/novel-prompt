@@ -12,6 +12,8 @@
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
     "data:export": "node scripts/export-data.mjs",
     "mcp:smoke": "electron-vite build && node scripts/mcp-smoke.mjs",
+    "screenshots": "electron-vite build && electron . --screenshots=docs/screenshots",
+    "screenshots:ai": "electron-vite build && electron . --screenshots=docs/screenshots --screenshots-ai",
     "dist": "electron-vite build && electron-builder --win --x64"
   },
   "build": {
@@ -49,6 +51,10 @@
         "to": "mcp-proxy.cjs"
       },
       {
+        "from": "scripts/agent-setup.cjs",
+        "to": "agent-setup.cjs"
+      },
+      {
         "from": "agent-skill",
         "to": "agent-skill"
       }
@@ -62,7 +68,11 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "NovelPrompt-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "NovelPrompt-Portable-${version}.${ext}"
     }
   },
   "dependencies": {

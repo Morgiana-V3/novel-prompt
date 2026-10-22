@@ -25,7 +25,8 @@ import { skillPath, SKILL_FILES, type SkillFile } from './paths'
 import { IMAGE_SCHEME, freeCheck, generateImages, getSubscription, imageDir, imagePath, listImages } from './nai/client'
 import { startMcpServer, readLog } from './mcp/server'
 import { buildTools, MCP_INSTRUCTIONS } from './mcp/tools'
-import { SKILL_TARGETS, bundledSkill, codexConfigPath, installForAgents, installState, isPortable, mcpLaunch } from './mcp/install'
+import { installForAgents, runSetup, setupScript, type SetupOutput } from './mcp/install'
+import { SHOT_DIR, prepareScreenshotProfile, takeScreenshots } from './screenshots'
 
 let win: BrowserWindow | null = null
 let busy: AbortController | null = null
@@ -149,18 +150,21 @@ function registerIpc(): void {
   ipcMain.handle('mcp:info', (): McpInfo => {
     // agent 以 Node 模式运行同一个可执行文件，跑一个转发代理，代理再拉起 `--mcp` 并过滤掉 Electron 写到 stdout 的杂讯。
     // 路径取自当前运行的程序，所以配置跟随用户实际的安装位置。
+    const s = runSetup(['status'])
+    const by = <T,>(f: (i: SetupOutput['items'][number]) => T) =>
+      Object.fromEntries(s.items.map((i) => [i.target, f(i)])) as Record<McpInstallTarget, T>
     return {
-      ...mcpLaunch(),
+      ...s.launch,
       packaged: app.isPackaged,
-      portable: isPortable(),
-      installed: installState(),
-      paths: { codexConfig: codexConfigPath(), codexSkill: SKILL_TARGETS.codexSkill(), claudeSkill: SKILL_TARGETS.claudeSkill() },
-      skillFile: bundledSkill(),
+      portable: s.portable,
+      installed: by((i) => i.state),
+      paths: by((i) => i.path),
+      setupScript: setupScript(),
       log: readLog()
     }
   })
   ipcMain.handle('mcp:install', (_e, targets: McpInstallTarget[]) => installForAgents(targets))
-  ipcMain.handle('mcp:openSkill', () => shell.openPath(bundledSkill()))
+  ipcMain.handle('mcp:openSkill', () => shell.openPath(runSetup(['status']).skillSource))
 
   /* ---------- NovelAI 生图 ---------- */
   let naiRunning = false
@@ -246,6 +250,7 @@ if (MCP_MODE) {
     startMcpServer(buildTools(), { name: 'novel-prompt', version: app.getVersion(), instructions: MCP_INSTRUCTIONS }, () => app.quit())
   })
 } else {
+  if (SHOT_DIR) prepareScreenshotProfile()
   app.whenReady().then(() => {
     // 让 Windows 任务栏 / Alt+Tab 使用窗口图标，而不是 electron.exe 的默认图标
     if (process.platform === 'win32') app.setAppUserModelId(APP_ID)
@@ -253,6 +258,10 @@ if (MCP_MODE) {
     registerIpc()
     registerImageProtocol()
     createWindow()
+    if (SHOT_DIR && win) {
+      const w = win
+      w.webContents.once('did-finish-load', () => void takeScreenshots(w))
+    }
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })

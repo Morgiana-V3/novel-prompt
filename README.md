@@ -86,7 +86,7 @@ AI 不能凭空编造 tag：它会调用本地 tag 库检索和校验，涉及�
 - 点「采用」才写入当前提示词，采用前自动存历史，可以撤销；也可以「采用并比对 / 推测画面 / 生图」一步到下一环节
 
 <p align="center">
-  <img src="docs/screenshots/ai.png" width="900" alt="AI 优化：左侧填写提示词和要求，右侧显示优化结果、改动标注和带依据的修改说明" />
+  <img src="docs/screenshots/ai.png" width="900" alt="AI 优化：左侧是当前提示词（主提示词、角色、负面）和要求，右侧显示优化结果、改动标注和带依据的修改说明" />
 </p>
 
 ### 画面推测
@@ -102,6 +102,10 @@ AI 不能凭空编造 tag：它会调用本地 tag 库检索和校验，涉及�
 
 推测规则写在 `skills/nai-preview.md`，可以随时修改。
 
+<p align="center">
+  <img src="docs/screenshots/preview.png" width="900" alt="画面推测：左侧是当前提示词、生成参数和想要的效果，右侧显示推测结果" />
+</p>
+
 ### 生图预览
 
 填上 NovelAI 的 Persistent API Token 后，直接调用 NovelAI 图像接口出图，验证提示词的真实效果：
@@ -111,6 +115,10 @@ AI 不能凭空编造 tag：它会调用本地 tag 库检索和校验，涉及�
 - **只用免费额度（默认开启）** — 生成前检查 Opus 会员、V5 免费额度、尺寸（总像素 ≤ 1024×1024）和步数（≤ 28），不满足就不提交；每张生成后分别核对订阅和购买的 Anlas，发现扣除立即停止
 - **推测 vs 实际** — 用推测过的那套提示词生成的图，下方会显示推测结果，方便对照准不准
 - **本机图库** — 预览、全屏（`←` `→` 切换）、下载、复制图片、固定种子重画、读回图里的提示词、送去画面推测。只做文生图，不含图生图、局部重绘等编辑功能
+
+<p align="center">
+  <img src="docs/screenshots/generate.png" width="900" alt="生图预览：左侧是提示词和生成参数，右侧是本机图库" />
+</p>
 
 ### Tag 搜索
 
@@ -141,12 +149,34 @@ NAI 是用 Danbooru 的图和标签训练的，所以 AI 给建议时优先引�
 
 Codex、Claude Code、Cursor 等支持 MCP 的 agent 可以直接调用本软件。agent 会在后台以无窗口模式启动本软件，不需要手动打开。
 
-在「设置 / 数据 → Agent 接入」里：
+#### 让 agent 自己装（推荐）
 
-- **一键安装** — 写入 Codex 的 MCP 配置（`~/.codex/config.toml`，写入前备份，只替换 novel-prompt 这一段），并把 Agent Skill 装到 Codex（`~/.codex/skills/`）和 Claude Code（`~/.claude/skills/`）。配置里的路径取自本软件**当前的安装位置**，换了安装目录重新点一次即可
-- **Agent Skill** — `agent-skill/novel-prompt/SKILL.md`，给 agent 看的使用说明：什么时候用、工具参数、推荐工作流、多角色与防串色规则、出图注意事项、交付格式。装好后 agent 在你提到 NovelAI 提示词时会自动读取
-- **手动配置** — 也提供 TOML / JSON 配置可以复制，其他 agent 照着填即可
+[`agent-skill/novel-prompt/SKILL.md`](agent-skill/novel-prompt/SKILL.md) 是专门写给外部 agent 看的文档，包含两部分：
+
+- **安装** — 检测本机是否已安装 → 征得你同意后从 Releases 下载并静默安装 → 运行软件自带的安装脚本接入 Codex / Claude Code（其他 agent 按输出的启动配置填写）→ 重启验证
+- **使用** — 工具清单与参数、核心规则（tag 不能编造、以 Danbooru 数据为依据、不擅自改审美）、三条工作流（描述转提示词 / 检查优化 / 出图验证）、多角色与防串色、交付格式
+
+把下面这段话发给你的 agent 即可：
+
+```text
+请阅读 https://raw.githubusercontent.com/Morgiana-V3/novel-prompt/main/agent-skill/novel-prompt/SKILL.md ，
+按「第一部分：安装」在我的电脑上安装并接入 NovelPrompt，完成后告诉我需要做什么来生效。
+```
+
+安装完成后这份文档也会被装成 agent 的 Skill，之后你提到 NovelAI 提示词时 agent 会自动按里面的规则使用工具。
+
+#### 在软件里装
+
+「设置 / 数据 → Agent 接入」：
+
+- **一键安装** — 写入 Codex（`~/.codex/config.toml`）和 Claude Code（`~/.claude.json`）的 MCP 配置，并把 Agent Skill 装到 `~/.codex/skills/` 和 `~/.claude/skills/`。每项单独显示「未安装 / 已安装 / 需更新」，写入前备份为 `.bak`，只改 novel-prompt 这一项
+- **路径跟随安装位置** — 配置里的路径取自本软件当前的安装位置，换了安装目录会显示「需更新」，重新点一次即可
+- **手动配置** — 也提供 TOML / JSON 配置可以复制，其他 agent 照着填
 - **权限开关与调用记录** — 会花钱的工具默认关闭；返回给 agent 的内容不会包含任何 Token
+
+两种方式用的是同一个安装脚本（安装目录下的 `resources\agent-setup.cjs`），效果完全一样。
+
+#### 工具
 
 | 工具 | 作用 | 默认 |
 |---|---|---|
@@ -158,12 +188,12 @@ Codex、Claude Code、Cursor 等支持 MCP 的 agent 可以直接调用本软件
 | `optimize_prompt` / `preview_prompt` | 内置的 AI 优化 / 画面推测，消耗 DeepSeek 额度 | 需在设置中开启 |
 | `generate_image` | NovelAI 生图，**强制只用免费额度**，每次必须传 `confirm: true` | 需在设置中开启 |
 
-手动配置 Codex 的示例（实际路径以设置页显示的为准）：
+手动配置 Codex 的示例（实际路径以设置页显示的为准，默认安装位置是 `%LOCALAPPDATA%\Programs\NovelPrompt`）：
 
 ```toml
 [mcp_servers.novel-prompt]
-command = 'C:\Program Files\NovelPrompt\NovelPrompt.exe'
-args = ['C:\Program Files\NovelPrompt\resources\mcp-proxy.cjs']
+command = 'C:\Users\你\AppData\Local\Programs\NovelPrompt\NovelPrompt.exe'
+args = ['C:\Users\你\AppData\Local\Programs\NovelPrompt\resources\mcp-proxy.cjs']
 env = { ELECTRON_RUN_AS_NODE = '1' }
 ```
 
@@ -192,7 +222,7 @@ env = { ELECTRON_RUN_AS_NODE = '1' }
 3. 按需在「设置 / 数据」里填：
    - DeepSeek API Key → AI 优化、画面推测
    - NovelAI Persistent API Token → 生图预览
-   - 「Agent 接入 → 全部安装」→ 让 Codex / Claude Code 调用
+   - 「Agent 接入 → 全部安装」→ 让 Codex / Claude Code 调用（也可以[让 agent 自己装](#让-agent-自己装推荐)）
 
 > 环境要求：Windows 10 / 11（x64）。首次启动约需 1 秒加载索引。
 
@@ -313,7 +343,7 @@ Danbooru 每天都在变。想用最新数据：
 看修改说明里每条的依据标签，「审美」类的只是建议。规则不合你的习惯就改 `skills/nai-prompt.md`，保存后下一次调用立即生效。
 
 **agent 里看不到 novel-prompt 的工具？**
-确认「Agent 接入」里三项都是「已安装」，然后完全重启 agent。换过安装目录的话会显示「需更新」，重新点一次安装。便携版不支持 MCP。
+确认「Agent 接入」里对应的项都是「已安装」，然后完全重启 agent。换过安装目录的话会显示「需更新」，重新点一次安装。便携版不支持 MCP。
 
 **能用在 SD / WebUI 上吗？**
 tag 部分可以，数据来自 Danbooru，和 SD 通用的那套一致，只是权重语法是 NovelAI 的。
@@ -344,7 +374,7 @@ src/main/mcp        MCP 服务端（server）、工具定义（tools）、安装
 src/shared          主进程与界面共用的类型、NAI 预设、提示词导入解析（分节文本 / JSON / PNG 元数据）
 src/renderer        Vue3 界面（store.ts 当前提示词与历史，components/ 共用组件，Mascot.vue 猫娘）
 skills/             AI 优化与画面推测的 Skill 文档（DeepSeek 的系统提示词）
-agent-skill/        给外部 agent 的 Skill（Codex / Claude Code 格式）
+agent-skill/        给外部 agent 的 Skill：安装 + 使用（Codex / Claude Code 格式）
 default-data/       随安装包分发的内置数据
 scripts/            数据导出、MCP 代理与冒烟测试、吉祥物生成
 ```
@@ -356,6 +386,7 @@ npm run dev          # 开发模式（主进程改动自动重启）
 npm run build        # 只构建
 npm run typecheck    # 类型检查
 npm run mcp:smoke    # 构建并以 MCP 模式跑一遍初始化、工具列表和几个只读工具
+npm run screenshots  # 重新生成 README 截图（docs/screenshots/）
 npm run dist         # 打包安装包 + 便携版
 npm run data:export  # 把本机数据导出为内置数据 default-data/
 ```
@@ -368,6 +399,12 @@ npm run dist
 ```
 
 导出脚本只认白名单文件（tags / aliases / implications / zh-community / zh-ai / zh-user / pinyin-cache），`settings.json` 不会被导出。
+
+### 截图
+
+`npm run screenshots` 会用一份示例提示词自动打开各页面截图，输出到 `docs/screenshots/`。运行时使用临时用户目录：不读取你的 Token，不改动你的当前提示词和历史。
+
+`npm run screenshots:ai` 会额外读取你设置里的 DeepSeek Key，真实跑一次 AI 优化和画面推测再截图（消耗少量额度），这样这两页截到的是带结果的画面。
 
 ### 吉祥物
 

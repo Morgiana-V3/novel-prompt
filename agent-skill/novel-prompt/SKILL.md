@@ -1,13 +1,120 @@
 ---
 name: novel-prompt
-description: 编写、检查、优化 NovelAI（V4.5 / V5）提示词并出图验证。当用户要写 NovelAI / NAI 提示词、把中文画面描述转成 Danbooru tag、检查 tag 是否存在或写法是否标准、拆分多角色提示词、推测提示词效果、用 NovelAI 生成图片时使用。依赖 novel-prompt MCP 服务（NovelPrompt 桌面软件提供）。
+description: 编写、检查、优化 NovelAI（V4.5 / V5）提示词并出图验证。当用户要写 NovelAI / NAI 提示词、把中文画面描述转成 Danbooru tag、检查 tag 是否存在或写法是否标准、拆分多角色提示词、推测提示词效果、用 NovelAI 生成图片，或要求安装 / 配置 NovelPrompt 时使用。依赖 novel-prompt MCP 服务（NovelPrompt 桌面软件提供），本文档包含安装步骤。
 ---
 
 # NovelPrompt：NovelAI 提示词工作流
 
-本 Skill 配合 `novel-prompt` MCP 服务使用。它提供本地 Danbooru tag 库（约 33 万 tag，含别名、包含关系、中文翻译）、Danbooru 共现统计与 wiki 释义、NovelAI 提示词规范，以及 NovelAI 文生图。
+本文档写给 agent 阅读，分两部分：
 
-如果工具列表里没有 `novel-prompt` 的工具（如 `analyze_prompt`），告诉用户：打开 NovelPrompt →「设置 / 数据 → Agent 接入」复制配置到 agent 的 MCP 配置中，然后重启 agent。
+- **安装** — 当前环境里还没有 `novel-prompt` 的 MCP 工具（如 `analyze_prompt`）时，按这一节把软件装好并接入
+- **使用** — 工具可用后，按这一节的规则和工作流帮用户写提示词、出图
+
+`novel-prompt` MCP 服务由 NovelPrompt 桌面软件提供：本地 Danbooru tag 库（约 33 万 tag，含别名、包含关系、中文翻译）、Danbooru 共现统计与 wiki 释义、NovelAI 提示词规范，以及 NovelAI 文生图。
+
+---
+
+# 第一部分：安装
+
+先确认是否真的需要安装：工具列表里已经有 `prompt_guide`、`analyze_prompt` 等工具，就直接跳到[第二部分](#第二部分使用)。
+
+**仅支持 Windows 10 / 11 x64。** 其他系统告诉用户暂不支持，不要尝试。
+
+以下命令都是 PowerShell。每一步执行后检查输出，失败就停下来把错误告诉用户，不要猜着绕过。
+
+## 1. 找到已安装的 NovelPrompt
+
+```powershell
+$exe = @(
+  "$env:LOCALAPPDATA\Programs\NovelPrompt\NovelPrompt.exe",
+  "$env:ProgramFiles\NovelPrompt\NovelPrompt.exe"
+) + (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
+  Where-Object { $_.DisplayName -like 'NovelPrompt*' -and $_.InstallLocation } |
+  ForEach-Object { Join-Path $_.InstallLocation 'NovelPrompt.exe' }) |
+  Where-Object { Test-Path $_ } | Select-Object -First 1
+$exe
+```
+
+有输出就是已安装，跳到第 3 步。没有输出，进入第 2 步。
+
+## 2. 下载并安装（需要用户同意）
+
+**先征得用户同意**再下载安装（会从 GitHub 下载约 100 MB 的安装包并安装到用户目录）。
+
+```powershell
+$rel = Invoke-RestMethod 'https://api.github.com/repos/Morgiana-V3/novel-prompt/releases/latest' -Headers @{ 'User-Agent' = 'novel-prompt-agent' }
+$asset = $rel.assets | Where-Object { $_.name -like 'NovelPrompt-Setup-*.exe' } | Select-Object -First 1
+$setup = Join-Path $env:TEMP $asset.name
+Invoke-WebRequest $asset.browser_download_url -OutFile $setup
+Start-Process $setup -ArgumentList '/S' -Wait      # 静默安装到 %LOCALAPPDATA%\Programs\NovelPrompt
+$exe = "$env:LOCALAPPDATA\Programs\NovelPrompt\NovelPrompt.exe"
+Test-Path $exe
+```
+
+- 不要使用 `NovelPrompt-Portable-*.exe`（便携版）：它每次运行都解压到临时目录，路径不固定，无法接入 agent。
+- 网络无法访问 GitHub 时，请用户手动从 https://github.com/Morgiana-V3/novel-prompt/releases 下载安装，装好后回到第 1 步。
+
+## 3. 接入 agent
+
+用软件自带的安装脚本写入配置。它以 Node 模式运行 NovelPrompt.exe 本身，不需要另装 Node；路径全部取自实际安装位置；写入前把原配置备份为 `.bak`，只改 `novel-prompt` 这一项。
+
+```powershell
+$env:ELECTRON_RUN_AS_NODE = '1'
+& $exe (Join-Path (Split-Path $exe) 'resources\agent-setup.cjs') install codex | Out-String
+Remove-Item Env:ELECTRON_RUN_AS_NODE
+```
+
+把 `codex` 换成当前 agent 对应的目标：
+
+| 目标 | 写入内容 |
+|---|---|
+| `codex` | `~/.codex/config.toml` 的 `[mcp_servers.novel-prompt]`，以及 `~/.codex/skills/novel-prompt/SKILL.md` |
+| `claude` | `~/.claude.json` 的 `mcpServers.novel-prompt`（用户级），以及 `~/.claude/skills/novel-prompt/SKILL.md` |
+| `all` | 以上全部 |
+
+- `| Out-String` 不能省：NovelPrompt.exe 是窗口程序，不接管道 PowerShell 不会等它结束，也拿不到输出。
+- 输出是一行 JSON：`ok` 为 `true` 即成功；`results` 是每一项的结果；`items` 是各项当前状态（`ok` / `none` / `stale`）。
+- 把 `install codex` 换成 `status` 只查看状态，不写任何文件。
+
+**其他 agent**（Cursor、Cline、Windsurf 等）：运行 `status`，把输出里 `launch` 的 `command` / `args` / `env` 按该 agent 的格式写进它的 MCP 配置，服务名用 `novel-prompt`，传输方式为 stdio。Skill 文件就是输出里 `skillSource` 指向的这份文档，按该 agent 的方式引用即可。
+
+## 4. 生效与验证
+
+1. 告诉用户**完全重启 agent**（MCP 配置和 Skill 只在启动时加载）。
+2. 重启后调用 `prompt_guide`，能返回规范文档即接入成功。
+3. 失败时依次检查：`status` 里各项是否为 `ok`；是否用了便携版；用户是否移动过安装目录（移动后重新执行第 3 步）。
+
+## 5. 可选：告诉用户还可以配置什么
+
+以下设置都在 NovelPrompt 窗口的「设置 / 数据」页，**请用户自己在界面里填写，不要直接编辑 `settings.json`，也不要让用户把 Token 发给你**：
+
+| 设置 | 用途 |
+|---|---|
+| NovelAI Persistent API Token | `nai_subscription`、`generate_image` 需要 |
+| Agent 接入 →「允许生图」 | 开启后才能调用 `generate_image`（默认关闭） |
+| DeepSeek API Key + 「允许调用 DeepSeek」 | `optimize_prompt` / `preview_prompt` 需要；你本身就是大模型，一般不需要 |
+
+不填这些也能使用除生图以外的全部检查和查询工具。
+
+## 从源码运行（开发者）
+
+用户明确要用源码时才走这条路：
+
+```powershell
+git clone https://github.com/Morgiana-V3/novel-prompt.git; cd novel-prompt
+npm install; npm run build
+$env:ELECTRON_RUN_AS_NODE = '1'
+& .\node_modules\electron\dist\electron.exe scripts\agent-setup.cjs install codex | Out-String
+Remove-Item Env:ELECTRON_RUN_AS_NODE
+```
+
+此时 MCP 指向项目目录，改代码后要重新 `npm run build`。
+
+---
+
+# 第二部分：使用
+
+如果工具列表里没有 `novel-prompt` 的工具，回到[第一部分](#第一部分安装)。
 
 ## 核心规则
 

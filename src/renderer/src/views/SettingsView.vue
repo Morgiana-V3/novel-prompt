@@ -70,6 +70,7 @@ const tomlStr = (s: string) => `'${s.replace(/'/g, "''")}'`
 const INSTALL_ITEMS: { key: McpInstallTarget; label: string }[] = [
   { key: 'codexConfig', label: 'Codex MCP 配置' },
   { key: 'codexSkill', label: 'Codex Skill' },
+  { key: 'claudeConfig', label: 'Claude Code MCP 配置' },
   { key: 'claudeSkill', label: 'Claude Code Skill' }
 ]
 const STATE_LABEL = {
@@ -332,13 +333,13 @@ async function translate() {
             </div>
           </div>
           <div class="row">
-            <button class="btn primary small" :disabled="installing" @click="install(['codexConfig', 'codexSkill', 'claudeSkill'])">
+            <button class="btn primary small" :disabled="installing" @click="install(['codexConfig', 'codexSkill', 'claudeConfig', 'claudeSkill'])">
               <Icon name="download" :size="14" />全部安装
             </button>
             <button class="btn ghost small" @click="openAgentSkill"><Icon name="book" :size="14" />查看 Skill</button>
           </div>
           <span class="help">
-            配置里的路径取自本软件当前的安装位置，安装或更换安装目录后点一次即可。写入 config.toml 前会备份为 config.toml.bak，只替换 novel-prompt 这一段。
+            配置里的路径取自本软件当前的安装位置，安装或更换安装目录后点一次即可。写入配置文件前会先备份为 .bak，只改 novel-prompt 这一项。
             Skill 是给 agent 看的使用说明（工作流、工具参数、规则），装好后 agent 会在你提到 NovelAI 提示词时自动读取。
             {{ mcp && !isPackaged ? '当前是开发模式，配置指向本项目，需要先 npm run build。' : '' }}
           </span>
@@ -357,7 +358,7 @@ async function translate() {
           </div>
           <span class="help">
             始终可用：prompt_guide、analyze_prompt、search_tags、validate_tags、related_tags、tag_wiki、nai_subscription、list_images、read_image_prompt。
-            Claude Code 也可以用命令添加：claude mcp add-json novel-prompt '&lt;上面 novel-prompt 里的 JSON&gt;'
+            外部 agent 也可以自己运行安装脚本：{{ mcp?.setupScript }}（用法见 Skill 文档「安装」一节）。
           </span>
         </details>
       </div>

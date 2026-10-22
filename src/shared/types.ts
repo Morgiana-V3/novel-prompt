@@ -131,7 +131,9 @@ export interface McpLogEntry {
   summary: string
 }
 
-export type McpInstallTarget = 'codexConfig' | 'codexSkill' | 'claudeSkill'
+export type McpInstallTarget = 'codexConfig' | 'codexSkill' | 'claudeConfig' | 'claudeSkill'
+/** stale = 已安装但与当前版本 / 安装路径不一致 */
+export type McpInstallState = 'none' | 'ok' | 'stale'
 
 export interface McpInstallResult {
   target: McpInstallTarget
@@ -147,12 +149,12 @@ export interface McpInfo {
   packaged: boolean
   /** 便携版：路径不固定，无法配置给 agent */
   portable: boolean
-  /** 各项在本机的安装状态：stale = 已安装但与当前版本 / 路径不一致 */
-  installed: Record<McpInstallTarget, 'none' | 'ok' | 'stale'>
+  /** 各项在本机的安装状态 */
+  installed: Record<McpInstallTarget, McpInstallState>
   /** 各项会写到的位置 */
   paths: Record<McpInstallTarget, string>
-  /** 项目内 Skill 文件位置 */
-  skillFile: string
+  /** 安装脚本位置（外部 agent 自助安装时运行它） */
+  setupScript: string
   log: McpLogEntry[]
 }
 
