@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import type { DbStatus, Settings, TagCategory, UpdateProgress } from '@shared/types'
+import type { ImportedPrompt } from './prompt-import'
 
 export const CAT_CLASS: Record<TagCategory, string> = {
   0: 'cat-general',
@@ -10,10 +11,24 @@ export const CAT_CLASS: Record<TagCategory, string> = {
   100: 'cat-nai'
 }
 
+/** 输入框里的角色提示词（字段都是字符串，便于 v-model） */
+export interface CharDraft {
+  prompt: string
+  negative: string
+  position: string
+}
+
+export const toDrafts = (list: { prompt: string; negative?: string; position?: string }[]): CharDraft[] =>
+  list.map((c) => ({ prompt: c.prompt ?? '', negative: c.negative ?? '', position: c.position ?? '' }))
+
 export const state = reactive({
-  tab: 'compare' as 'compare' | 'search' | 'ai' | 'settings',
+  tab: 'compare' as 'compare' | 'search' | 'ai' | 'preview' | 'settings',
   prompt: '',
   negative: '',
+  /** AI 优化页的角色提示词 */
+  characters: [] as CharDraft[],
+  /** 其他页面要送到画面推测页的整套提示词，画面推测页读取后清空 */
+  previewDraft: null as ImportedPrompt | null,
   settings: null as Settings | null,
   db: null as DbStatus | null,
   progress: null as UpdateProgress | null,

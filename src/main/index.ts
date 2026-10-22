@@ -1,14 +1,15 @@
 import { app, BrowserWindow, ipcMain, shell, clipboard, nativeImage } from 'electron'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
-import type { AiOptimizeRequest, SearchOptions, Settings } from '../shared/types'
+import type { AiOptimizeRequest, AiPreviewRequest, SearchOptions, Settings } from '../shared/types'
 import { tagStore } from './tagdb/store'
-import { updateTagDatabase } from './tagdb/fetcher'
+import { updateImplications, updateTagDatabase } from './tagdb/fetcher'
 import { analyzePrompt } from './prompt/analyzer'
 import { getSettings, saveSettings } from './settings'
 import { optimizePrompt } from './ai/optimizer'
+import { previewPrompt } from './ai/previewer'
 import { aiTranslate } from './ai/translator'
-import { skillPath } from './paths'
+import { skillPath, SKILL_FILES, type SkillFile } from './paths'
 
 let win: BrowserWindow | null = null
 let busy: AbortController | null = null
@@ -78,6 +79,21 @@ function registerIpc(): void {
       busy = null
     }
   })
+  ipcMain.handle('db:implications', async () => {
+    if (busy) throw new Error('已有任务在运行')
+    busy = new AbortController()
+    try {
+      const n = await updateImplications(tagStore.names(), (p) => send('progress', p), busy.signal)
+      tagStore.loadImplications()
+      send('progress', { stage: 'done', message: `包含关系下载完成，共 ${n.toLocaleString()} 条` })
+      return tagStore.status()
+    } catch (e) {
+      send('progress', { stage: 'error', message: String(e) })
+      throw e
+    } finally {
+      busy = null
+    }
+  })
   ipcMain.handle('task:cancel', () => busy?.abort())
 
   ipcMain.handle('tag:search', (_e, opts: SearchOptions) => tagStore.search(opts))
@@ -97,8 +113,21 @@ function registerIpc(): void {
     }
   })
 
-  ipcMain.handle('skill:open', () => shell.openPath(skillPath()))
+  ipcMain.handle('ai:preview', async (_e, req: AiPreviewRequest) => {
+    const ctrl = new AbortController()
+    busy = busy ?? ctrl
+    try {
+      return await previewPrompt(req, (step) => send('ai:step', step), ctrl.signal)
+    } finally {
+      if (busy === ctrl) busy = null
+    }
+  })
+
+  ipcMain.handle('skill:open', (_e, name?: SkillFile) =>
+    shell.openPath(skillPath(name && SKILL_FILES.includes(name) ? name : 'nai-prompt.md'))
+  )
   ipcMain.handle('clipboard:write', (_e, text: string) => clipboard.writeText(text))
+  ipcMain.handle('clipboard:read', () => clipboard.readText())
 }
 
 app.whenReady().then(() => {

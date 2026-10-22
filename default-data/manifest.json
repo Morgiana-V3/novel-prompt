@@ -26,6 +26,11 @@
     "pinyin-cache.json": {
       "bytes": 2412899,
       "gzBytes": 1160804
+    },
+    "implications.json": {
+      "bytes": 1534023,
+      "gzBytes": 369857
     }
-  }
+  },
+  "implications": 33767
 }

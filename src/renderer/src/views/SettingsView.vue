@@ -57,6 +57,16 @@ async function update() {
   await refreshDb()
 }
 
+async function updateImplications() {
+  state.progress = { stage: 'implications', message: '开始下载包含关系…' }
+  try {
+    await window.api.dbImplications()
+  } catch {
+    /* 错误通过 progress 显示 */
+  }
+  await refreshDb()
+}
+
 async function translate() {
   await save(true)
   if (!form.apiKey) return toast('请先填写 API Key')
@@ -84,6 +94,10 @@ async function translate() {
       <div class="tiles" v-if="state.db">
         <div class="tile"><div class="tile-num">{{ state.db.tagCount.toLocaleString() }}</div><div class="tile-label">Tag</div></div>
         <div class="tile"><div class="tile-num">{{ state.db.aliasCount.toLocaleString() }}</div><div class="tile-label">别名</div></div>
+        <div class="tile">
+          <div :class="['tile-num', { muted: !state.db.implicationCount }]">{{ state.db.implicationCount ? state.db.implicationCount.toLocaleString() : '未下载' }}</div>
+          <div class="tile-label">包含关系</div>
+        </div>
         <div class="tile"><div class="tile-num">{{ state.db.zhCount.toLocaleString() }}</div><div class="tile-label">已有中文</div></div>
         <div class="tile"><div class="tile-num">{{ state.db.minCount ?? '—' }}</div><div class="tile-label">收录阈值</div></div>
         <div class="tile">
@@ -102,8 +116,14 @@ async function translate() {
 
       <div class="row">
         <button class="btn primary" :disabled="running" @click="update"><Icon name="download" :size="16" />下载 / 更新 tag 数据</button>
+        <button class="btn" :disabled="running || !state.db?.loaded" @click="updateImplications" title="只下载包含关系，不重新下载 tag，约 1 分钟">
+          <Icon name="swap" :size="15" />{{ state.db?.implicationCount ? '更新包含关系' : '下载包含关系' }}
+        </button>
         <button class="btn ghost" v-if="running" @click="cancel"><Icon name="stop" :size="15" />取消</button>
       </div>
+      <span class="help">
+        包含关系用于判断冗余（如 white thighhighs 已包含 thighhighs）。AI 优化和画面推测还会联网查 Danbooru 的共现统计（角色默认外观、画师倾向），查过的结果会缓存 30 天，离线时自动降级。
+      </span>
 
       <div class="progress" v-if="state.progress">
         <div :class="['progress-msg', { bad: state.progress.stage === 'error', ok: state.progress.stage === 'done' }]">

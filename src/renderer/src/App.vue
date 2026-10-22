@@ -4,6 +4,7 @@ import { state, refreshDb, saveSettings } from './store'
 import CompareView from './views/CompareView.vue'
 import SearchView from './views/SearchView.vue'
 import AiView from './views/AiView.vue'
+import PreviewView from './views/PreviewView.vue'
 import SettingsView from './views/SettingsView.vue'
 import Icon from './components/Icon.vue'
 import Mascot from './components/Mascot.vue'
@@ -15,6 +16,7 @@ const tabs: { key: Tab; label: string; icon: IconName; desc: string }[] = [
   { key: 'compare', label: '提示词比对', icon: 'compare', desc: '把提示词拆开，找出不存在的 tag' },
   { key: 'search', label: 'Tag 搜索', icon: 'search', desc: '中文、英文、拼音首字母都能搜' },
   { key: 'ai', label: 'AI 优化', icon: 'sparkle', desc: '让 AI 帮你挑 tag、排顺序' },
+  { key: 'preview', label: '画面推测', icon: 'eye', desc: '贴进整套提示词，让 AI 猜猜会画成什么样' },
   { key: 'settings', label: '设置 / 数据', icon: 'sliders', desc: 'Danbooru 数据与 DeepSeek 配置' }
 ]
 const current = computed(() => tabs.find((t) => t.key === state.tab)!)
@@ -95,6 +97,7 @@ function setVersion(v: NaiVersion) {
         <CompareView v-show="state.tab === 'compare'" />
         <SearchView v-show="state.tab === 'search'" />
         <AiView v-show="state.tab === 'ai'" />
+        <PreviewView v-show="state.tab === 'preview'" />
         <SettingsView v-show="state.tab === 'settings'" />
       </div>
     </main>

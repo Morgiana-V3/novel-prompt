@@ -86,6 +86,8 @@ export interface DbStatus {
   tagCount: number
   aliasCount: number
   zhCount: number
+  /** 包含关系条数（0 = 尚未下载） */
+  implicationCount: number
   fetchedAt?: string
   minCount?: number
   /** 当前 tag 数据来自安装包内置（default）还是用户自己下载（user） */
@@ -93,7 +95,7 @@ export interface DbStatus {
 }
 
 export interface UpdateProgress {
-  stage: 'tags' | 'aliases' | 'translations' | 'index' | 'done' | 'error' | 'ai-translate'
+  stage: 'tags' | 'aliases' | 'implications' | 'translations' | 'index' | 'done' | 'error' | 'ai-translate'
   message: string
   current?: number
   total?: number
@@ -119,6 +121,8 @@ export interface AiOptimizeRequest {
   prompt: string
   /** 现有负面提示词（可空） */
   negative: string
+  /** 现有角色提示词（可空） */
+  characters: AiCharacter[]
   /** 语义描述 / 额外要求 */
   instruction: string
   version: NaiVersion
@@ -131,15 +135,138 @@ export interface AiCharacter {
   negative?: string
 }
 
+/**
+ * 建议的依据，按可靠程度从高到低：
+ * - rule  硬规则：tag 存在性、别名、版本、语法、正负面重复、人数/角色数、位置格式
+ * - data  Danbooru 统计：引用数、共现、包含关系、wiki 释义
+ * - doc   官方文档 / 社区经验（Skill 文档）
+ * - taste 审美偏好：只能作为可选建议，不能直接改动提示词
+ */
+export type Basis = 'rule' | 'data' | 'doc' | 'taste'
+
+export type ChangeScope = 'positive' | 'character' | 'negative' | 'optional'
+
+export interface AiChange {
+  scope: ChangeScope
+  text: string
+  basis: Basis
+  /** 具体依据：引用的数据、规则或文档章节 */
+  evidence: string
+}
+
+/** 本次参考了哪些 Danbooru 统计数据 */
+export interface EvidenceInfo {
+  /** 查到共现数据的角色 / 画师 / 作品 tag */
+  related: string[]
+  /** 查到释义的 tag */
+  wiki: string[]
+  /** 因网络问题没拿到的 tag */
+  failed: string[]
+  /** 本地是否有包含关系数据 */
+  implications: boolean
+}
+
 export interface AiOptimizeResult {
   positive: string
   negative: string
   characters: AiCharacter[]
+  /** 整体评估 */
   notes: string
+  /** 逐条修改与建议（带依据） */
+  changes: AiChange[]
   /** 本地校验仍不存在的 tag */
   invalid: string[]
+  evidence: EvidenceInfo
 }
 
 export interface AiProgress {
   step: string
+}
+
+/* ---------- 画面推测 ---------- */
+
+/** NAI 前端自动注入的 UC 预设 */
+export type UcPreset = 'heavy' | 'light' | 'human' | 'none'
+
+export interface PreviewParams {
+  width: number
+  height: number
+  /** NAI 前端「Add Quality Tags」是否开启 */
+  qualityTags: boolean
+  ucPreset: UcPreset
+}
+
+export interface AiPreviewRequest {
+  base: string
+  negative: string
+  characters: AiCharacter[]
+  params: PreviewParams
+  /** 用户想要的效果（可空），填写后对比差距 */
+  expectation: string
+  version: NaiVersion
+}
+
+export type Confidence = 'high' | 'medium' | 'low'
+
+export interface PreviewPoint {
+  text: string
+  /** 产生该效果的关键 tag */
+  tags: string[]
+  confidence: Confidence
+}
+
+export interface PreviewCharacter extends PreviewPoint {
+  name: string
+  position?: string
+}
+
+export interface PreviewEffect {
+  tag: string
+  effect: string
+}
+
+export interface PreviewRisk {
+  level: 'high' | 'medium' | 'low'
+  text: string
+  tags: string[]
+  basis: Basis
+  evidence: string
+}
+
+export interface PreviewSuggestion {
+  text: string
+  basis: Basis
+  evidence: string
+}
+
+export type PreviewIssueKind = 'unknown' | 'alias' | 'weak' | 'weight' | 'conflict' | 'warn' | 'redundant' | 'trait'
+
+/** 本地预检发现的问题（不经过 AI） */
+export interface PreviewIssue {
+  kind: PreviewIssueKind
+  /** 所在位置：主提示词 / 角色 1 / 负面 … */
+  where: string
+  text: string
+  basis: Basis
+}
+
+export interface AiPreviewResult {
+  summary: string
+  confidence: Confidence
+  style: PreviewPoint
+  composition: PreviewPoint
+  scene: PreviewPoint
+  lighting: PreviewPoint
+  characters: PreviewCharacter[]
+  /** 被权重强调的元素 */
+  emphasis: PreviewEffect[]
+  /** 被负面压制的元素 */
+  suppressed: PreviewEffect[]
+  risks: PreviewRisk[]
+  /** 与期望效果的差距（未填写期望时为空） */
+  gap: string
+  suggestions: PreviewSuggestion[]
+  issues: PreviewIssue[]
+  tagCount: number
+  evidence: EvidenceInfo
 }

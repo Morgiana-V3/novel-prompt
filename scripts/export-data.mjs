@@ -12,7 +12,7 @@ import { gzipSync } from 'node:zlib'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SRC = process.env.NP_DATA_DIR ?? join(process.env.APPDATA ?? '', 'novel-prompt', 'data')
 const OUT = join(ROOT, 'default-data')
-const FILES = ['tags.json', 'aliases.json', 'zh-community.json', 'zh-ai.json', 'zh-user.json', 'pinyin-cache.json']
+const FILES = ['tags.json', 'aliases.json', 'implications.json', 'zh-community.json', 'zh-ai.json', 'zh-user.json', 'pinyin-cache.json']
 
 if (!existsSync(join(SRC, 'tags.json'))) {
   console.error(`未找到 ${join(SRC, 'tags.json')}，请先在应用里下载 tag 数据`)
@@ -42,6 +42,7 @@ const manifest = {
   fetchedAt: tags.fetchedAt,
   minCount: tags.minCount,
   tagCount: tags.tags.length,
+  implications: count('implications.json'),
   zhAi: count('zh-ai.json'),
   zhUser: count('zh-user.json'),
   files

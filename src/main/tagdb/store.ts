@@ -67,6 +67,9 @@ class TagStore {
   private zhUserMine: Dict = {}
   private pyMine: Dict<[string, string]> = {}
   private suggestCache = new Map<string, TagInfo[]>()
+  private implications = new Map<string, string[]>()
+  private impliedCache = new Map<string, Set<string>>()
+  private implicationCount = 0
   private meta: { fetchedAt?: string; minCount?: number; source?: DataSource } = {}
   loaded = false
 
@@ -101,8 +104,56 @@ class TagStore {
     this.entries.sort((a, b) => b.info.count - a.info.count)
 
     this.aliases = new Map(this.aliasList)
+    this.loadImplications()
     this.applyTranslations()
     this.loaded = raw.tags.length > 0
+  }
+
+  /** 包含关系独立于 tag 下载：用户层有就用用户层（可单独补下载），否则用内置数据 */
+  loadImplications(): void {
+    const list = readUser<[string, string][]>('implications.json') ?? readDefault<[string, string][]>('implications.json') ?? []
+    this.implications.clear()
+    this.implicationCount = 0
+    for (const [a, c] of list) {
+      if (!this.implications.has(a)) this.implications.set(a, [])
+      this.implications.get(a)!.push(c)
+      this.implicationCount++
+    }
+    this.impliedCache.clear()
+  }
+
+  /** a 所包含的全部 tag（传递闭包），如 white_thighhighs → thighhighs, legwear */
+  implied(name: string): Set<string> {
+    const n = normalizeTag(name)
+    const cached = this.impliedCache.get(n)
+    if (cached) return cached
+    const out = new Set<string>()
+    const stack = [...(this.implications.get(n) ?? [])]
+    while (stack.length) {
+      const c = stack.pop()!
+      if (out.has(c) || c === n) continue
+      out.add(c)
+      stack.push(...(this.implications.get(c) ?? []))
+    }
+    this.impliedCache.set(n, out)
+    return out
+  }
+
+  /** 找出一组 tag 中被其他 tag 包含（因而冗余）的项：返回 [更具体的 tag, 被包含的 tag] */
+  redundantPairs(names: string[]): [string, string][] {
+    const set = new Set(names.map(normalizeTag))
+    const pairs: [string, string][] = []
+    for (const a of set) for (const c of this.implied(a)) if (set.has(c)) pairs.push([a, c])
+    return pairs
+  }
+
+  get hasImplications(): boolean {
+    return this.implicationCount > 0
+  }
+
+  /** 当前 tag 库中所有标准 tag 名（用于单独下载包含关系时过滤） */
+  names(): Set<string> {
+    return new Set(this.byName.keys())
   }
 
   private addEntry(info: TagInfo): void {
@@ -148,6 +199,7 @@ class TagStore {
       tagCount: this.entries.length,
       aliasCount: this.aliases.size,
       zhCount,
+      implicationCount: this.implicationCount,
       fetchedAt: this.meta.fetchedAt,
       minCount: this.meta.minCount,
       source: this.meta.source
