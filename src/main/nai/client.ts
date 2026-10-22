@@ -301,9 +301,10 @@ function anlasChange(before?: NaiSubscription, after?: NaiSubscription): { fixed
 export async function generateImages(
   req: NaiGenRequest,
   onStep: (s: string) => void,
-  isCancelled: () => boolean
+  isCancelled: () => boolean,
+  opts: { freeOnly?: boolean } = {}
 ): Promise<NaiGenResult> {
-  const freeOnly = getSettings().naiFreeOnly
+  const freeOnly = opts.freeOnly ?? getSettings().naiFreeOnly
   const count = Math.max(1, Math.min(8, Math.floor(req.params.count || 1)))
   const images: NaiImage[] = []
   let delta: number | undefined = 0

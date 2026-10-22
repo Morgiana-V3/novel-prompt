@@ -156,22 +156,61 @@ function paramsBlock(req: AiPreviewRequest): string {
   ].join('\n')
 }
 
-function userPrompt(req: AiPreviewRequest, sections: Section[], issues: PreviewIssue[], evidenceBlock: string): string {
+const BASIS_ZH = { rule: '规则', data: '数据', doc: '文档', taste: '审美' }
+
+/** 参数、逐段解析、本地问题、统计数据：推测时交给 AI，MCP 的 analyze_prompt 直接返回给 agent */
+function reportBlocks(req: AiPreviewRequest, sections: Section[], issues: PreviewIssue[], evidenceBlock: string): string[] {
   const blocks = sections.map((s) => {
     const m = /^角色 (\d+)$/.exec(s.label)
     const pos = m ? req.characters[Number(m[1]) - 1]?.position?.trim() : ''
     return sectionBlock(s, pos ? `（位置：${pos}）` : '')
   })
-  const BASIS_ZH = { rule: '规则', data: '数据', doc: '文档', taste: '审美' }
-  const lines = [
-    `请推测下面这套 NovelAI 提示词实际会画出的画面。`,
+  return [
     paramsBlock(req),
     ...blocks,
     issues.length ? `## 本地预检发现的问题（方括号内为依据类型）\n${issues.map((i) => `- [${i.where}|${BASIS_ZH[i.basis]}] ${i.text}`).join('\n')}` : '',
-    evidenceBlock,
+    evidenceBlock
+  ]
+}
+
+function userPrompt(req: AiPreviewRequest, sections: Section[], issues: PreviewIssue[], evidenceBlock: string): string {
+  const lines = [
+    `请推测下面这套 NovelAI 提示词实际会画出的画面。`,
+    ...reportBlocks(req, sections, issues, evidenceBlock),
     req.expectation.trim() ? `## 作者想要的效果\n${req.expectation.trim()}\n请对比推测结果，在 gap 中说明差距，在 suggestions 中给出具体到 tag 的修改建议。` : ''
   ]
   return lines.filter(Boolean).join('\n\n')
+}
+
+interface LocalReview {
+  sections: Section[]
+  issues: PreviewIssue[]
+  tagCount: number
+  ev: Awaited<ReturnType<typeof gatherEvidence>>
+}
+
+async function localReview(req: AiPreviewRequest, onStep: (s: string) => void, signal?: AbortSignal): Promise<LocalReview> {
+  const sections: Section[] = [section('主提示词', req.base, false, req.version)]
+  req.characters.forEach((c, i) => {
+    sections.push(section(`角色 ${i + 1}`, c.prompt ?? '', false, req.version))
+    if (c.negative?.trim()) sections.push(section(`角色 ${i + 1} 负面`, c.negative, true, req.version))
+  })
+  sections.push(section('负面', req.negative, true, req.version))
+
+  const preset = UC_PRESETS[req.version][req.params.ucPreset]
+  const presetTokens = preset ? analyzePrompt(preset, req.version).tokens : []
+  const issues = collectIssues(sections, presetTokens)
+  const tagCount = sections.filter((s) => !s.negative).reduce((n, s) => n + s.tokens.length, 0)
+  const ev = await gatherEvidence(sections, onStep, signal)
+  issues.push(...ev.issues)
+  return { sections, issues, tagCount, ev }
+}
+
+/** 不调用 AI 的完整本地检查报告（文本），供外部 agent 使用 */
+export async function reviewPrompt(req: AiPreviewRequest, signal?: AbortSignal): Promise<string> {
+  const r = await localReview(req, () => {}, signal)
+  const head = `共 ${r.tagCount} 个正向元素，本地发现 ${r.issues.length} 个问题。tag 后方括号内依次为：分类|引用数|中文；×数字为实际权重。`
+  return [head, ...reportBlocks(req, r.sections, r.issues, r.ev.block)].filter(Boolean).join('\n\n')
 }
 
 /* ---------- 结果规整 ---------- */
@@ -229,19 +268,7 @@ export async function previewPrompt(
   signal?: AbortSignal
 ): Promise<AiPreviewResult> {
   onStep('本地解析提示词…')
-  const sections: Section[] = [section('主提示词', req.base, false, req.version)]
-  req.characters.forEach((c, i) => {
-    sections.push(section(`角色 ${i + 1}`, c.prompt ?? '', false, req.version))
-    if (c.negative?.trim()) sections.push(section(`角色 ${i + 1} 负面`, c.negative, true, req.version))
-  })
-  sections.push(section('负面', req.negative, true, req.version))
-
-  const preset = UC_PRESETS[req.version][req.params.ucPreset]
-  const presetTokens = preset ? analyzePrompt(preset, req.version).tokens : []
-  const issues = collectIssues(sections, presetTokens)
-  const tagCount = sections.filter((s) => !s.negative).reduce((n, s) => n + s.tokens.length, 0)
-  const ev = await gatherEvidence(sections, onStep, signal)
-  issues.push(...ev.issues)
+  const { sections, issues, tagCount, ev } = await localReview(req, onStep, signal)
   onStep(`共 ${tagCount} 个正向元素，本地发现 ${issues.length} 个问题`)
 
   const messages: ChatMessage[] = [

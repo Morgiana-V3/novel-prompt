@@ -1,4 +1,4 @@
-import type { AiCharacter } from '@shared/types'
+import type { AiCharacter } from './types'
 
 export interface ImportedPrompt {
   base: string

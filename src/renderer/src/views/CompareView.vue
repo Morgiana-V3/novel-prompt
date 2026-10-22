@@ -1,20 +1,58 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { AnalysisResult, AnalyzedToken, TagInfo } from '@shared/types'
-import { state, copy, toast } from '../store'
+import { state, copy, toast, readField, writeField, fieldLabel, fieldList, sameField, validField, importPrompt, type FieldRef } from '../store'
+import { parsePromptText } from '@shared/prompt-import'
 import TagCard from '../components/TagCard.vue'
 import Icon from '../components/Icon.vue'
 import Mascot from '../components/Mascot.vue'
+import WorkspaceBar from '../components/WorkspaceBar.vue'
 
 const result = ref<AnalysisResult | null>(null)
 const textarea = ref<HTMLTextAreaElement>()
 let timer: ReturnType<typeof setTimeout> | undefined
 
+const BASE_PLACEHOLDER =
+  '把 NovelAI 提示词贴到这里～整套分节文本会自动拆到主提示词、角色和负面\n\n例如：1girl, artist:wlop, {silver hair}, 1.3::red eyes::, school uniform, looking at viewer, very aesthetic, masterpiece, no text'
+
+/** 当前检查的是哪一段：主提示词 / 角色 N / 角色 N 负面 / 负面 */
+const target = ref<FieldRef>({ kind: 'base' })
+/** 角色负面只在有内容或正在检查时显示，避免切换条太长 */
+const sections = computed(() =>
+  fieldList().filter((f) => f.kind !== 'char' || !f.neg || readField(f).trim() || sameField(f, target.value))
+)
+watch(
+  () => state.characters.length,
+  () => {
+    if (!validField(target.value)) target.value = { kind: 'base' }
+  }
+)
+const text = computed({
+  get: () => readField(target.value),
+  set: (v: string) => writeField(target.value, v)
+})
+const isNeg = computed(() => target.value.kind === 'negative' || (target.value.kind === 'char' && !!target.value.neg))
+const count = (f: FieldRef) => readField(f).split(/[,\n]/).filter((x) => x.trim()).length
+
+function select(f: FieldRef) {
+  target.value = f
+  state.focus = f
+}
+
+/** 在主提示词里粘贴整套分节文本时，自动拆到各段 */
+function onPaste(e: ClipboardEvent) {
+  if (target.value.kind !== 'base') return
+  const r = parsePromptText(e.clipboardData?.getData('text/plain') ?? '')
+  if (!r.structured) return
+  e.preventDefault()
+  importPrompt(r, '已自动拆分')
+}
+
 async function analyze() {
-  result.value = await window.api.analyze(state.prompt)
+  result.value = await window.api.analyze(text.value)
 }
 watch(
-  () => [state.prompt, state.settings?.naiVersion, state.db?.tagCount],
+  () => [text.value, state.settings?.naiVersion, state.db?.tagCount],
   () => {
     clearTimeout(timer)
     timer = setTimeout(analyze, 200)
@@ -48,13 +86,13 @@ function locate(t: AnalyzedToken) {
 /** 通过 execCommand 写入文本框，保留原生撤销栈，误清空/误替换后可以 Ctrl+Z 恢复 */
 function setPrompt(text: string) {
   const el = textarea.value
-  if (el && el.offsetParent !== null && text !== state.prompt) {
+  if (el && el.offsetParent !== null && text !== el.value) {
     el.focus()
     el.select()
     const ok = text ? document.execCommand('insertText', false, text) : document.execCommand('delete')
     if (ok && el.value === text) return
   }
-  state.prompt = text
+  writeField(target.value, text)
 }
 
 function replacement(t: AnalyzedToken, tag: TagInfo): string {
@@ -63,7 +101,7 @@ function replacement(t: AnalyzedToken, tag: TagInfo): string {
 }
 
 function applyReplacements(items: { t: AnalyzedToken; text: string }[]) {
-  let p = state.prompt
+  let p = text.value
   for (const { t, text } of [...items].sort((a, b) => b.t.start - a.t.start)) {
     p = p.slice(0, t.start) + text + p.slice(t.end)
   }
@@ -87,18 +125,18 @@ function cut(p: string, t: AnalyzedToken): string {
 }
 
 function removeToken(t: AnalyzedToken) {
-  setPrompt(cut(state.prompt, t))
+  setPrompt(cut(text.value, t))
 }
 
 function removeAllUnknown() {
-  let p = state.prompt
+  let p = text.value
   for (const t of [...groups.value.unknown].sort((a, b) => b.start - a.start)) p = cut(p, t)
   setPrompt(p)
   toast('已移除不存在的 tag，可 Ctrl+Z 撤销')
 }
 
 function clearPrompt() {
-  if (!state.prompt) return
+  if (!text.value) return
   setPrompt('')
   toast('已清空，可 Ctrl+Z 撤销')
 }
@@ -109,7 +147,7 @@ function clearPrompt() {
  * 引号内文字与 Text: 块原样保留。
  */
 function formatPrompt() {
-  const src = state.prompt
+  const src = text.value
   const parts: string[] = []
   let buf = ''
   let inQuote = false
@@ -140,12 +178,25 @@ function formatPrompt() {
 <template>
   <div class="view compare">
     <section class="pane left">
-      <div class="composer">
+      <WorkspaceBar />
+      <div class="section-tabs">
+        <button
+          v-for="f in sections"
+          :key="fieldLabel(f)"
+          :class="['section-tab', { on: sameField(f, target), neg: f.kind === 'negative' || (f.kind === 'char' && f.neg) }]"
+          @click="select(f)"
+        >
+          {{ fieldLabel(f) }}<span class="section-count">{{ count(f) }}</span>
+        </button>
+      </div>
+      <div :class="['composer', { neg: isNeg }]">
         <textarea
           ref="textarea"
-          v-model="state.prompt"
+          v-model="text"
           spellcheck="false"
-          placeholder="把 NovelAI 提示词贴到这里～&#10;&#10;例如：1girl, artist:wlop, {silver hair}, 1.3::red eyes::, school uniform, looking at viewer, very aesthetic, masterpiece, no text"
+          :placeholder="target.kind === 'base' ? BASE_PLACEHOLDER : `${fieldLabel(target)}（可空）`"
+          @focus="state.focus = target"
+          @paste="onPaste"
         ></textarea>
         <div class="composer-bar">
           <div class="stats" v-if="result && result.stats.total">
@@ -158,7 +209,7 @@ function formatPrompt() {
           <span v-else class="muted small">支持 {} [] 1.3:: artist: | source# Text: 等语法</span>
           <div class="actions">
             <button class="icon-btn" title="整理格式" @click="formatPrompt"><Icon name="align" /></button>
-            <button class="icon-btn" title="复制" @click="copy(state.prompt)"><Icon name="copy" /></button>
+            <button class="icon-btn" title="复制" @click="copy(text)"><Icon name="copy" /></button>
             <button class="icon-btn" title="清空" @click="clearPrompt"><Icon name="trash" /></button>
             <button class="btn accent" @click="state.tab = 'ai'"><Icon name="sparkle" :size="16" />AI 优化</button>
           </div>

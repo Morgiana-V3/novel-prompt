@@ -9,6 +9,8 @@ import type {
   NaiGenRequest,
   NaiSubscription,
   NaiVersion,
+  McpInfo,
+  McpInstallTarget,
   SearchOptions,
   Settings
 } from '../shared/types'
@@ -21,6 +23,9 @@ import { previewPrompt } from './ai/previewer'
 import { aiTranslate } from './ai/translator'
 import { skillPath, SKILL_FILES, type SkillFile } from './paths'
 import { IMAGE_SCHEME, freeCheck, generateImages, getSubscription, imageDir, imagePath, listImages } from './nai/client'
+import { startMcpServer, readLog } from './mcp/server'
+import { buildTools, MCP_INSTRUCTIONS } from './mcp/tools'
+import { SKILL_TARGETS, bundledSkill, codexConfigPath, installForAgents, installState, isPortable, mcpLaunch } from './mcp/install'
 
 let win: BrowserWindow | null = null
 let busy: AbortController | null = null
@@ -140,6 +145,23 @@ function registerIpc(): void {
   ipcMain.handle('clipboard:write', (_e, text: string) => clipboard.writeText(text))
   ipcMain.handle('clipboard:read', () => clipboard.readText())
 
+  /* ---------- Agent 接入（MCP） ---------- */
+  ipcMain.handle('mcp:info', (): McpInfo => {
+    // agent 以 Node 模式运行同一个可执行文件，跑一个转发代理，代理再拉起 `--mcp` 并过滤掉 Electron 写到 stdout 的杂讯。
+    // 路径取自当前运行的程序，所以配置跟随用户实际的安装位置。
+    return {
+      ...mcpLaunch(),
+      packaged: app.isPackaged,
+      portable: isPortable(),
+      installed: installState(),
+      paths: { codexConfig: codexConfigPath(), codexSkill: SKILL_TARGETS.codexSkill(), claudeSkill: SKILL_TARGETS.claudeSkill() },
+      skillFile: bundledSkill(),
+      log: readLog()
+    }
+  })
+  ipcMain.handle('mcp:install', (_e, targets: McpInstallTarget[]) => installForAgents(targets))
+  ipcMain.handle('mcp:openSkill', () => shell.openPath(bundledSkill()))
+
   /* ---------- NovelAI 生图 ---------- */
   let naiRunning = false
   let naiCancel = false
@@ -207,18 +229,36 @@ function registerImageProtocol(): void {
 
 protocol.registerSchemesAsPrivileged([{ scheme: IMAGE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }])
 
-app.whenReady().then(() => {
-  // 让 Windows 任务栏 / Alt+Tab 使用窗口图标，而不是 electron.exe 的默认图标
-  if (process.platform === 'win32') app.setAppUserModelId(APP_ID)
-  tagStore.load()
-  registerIpc()
-  registerImageProtocol()
-  createWindow()
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
-})
+/**
+ * MCP 模式（NovelPrompt.exe --mcp）：不开窗口，通过 stdio 给 Codex 等 agent 提供工具。
+ * 与界面共用 tag 库、设置和图库；浏览器会话数据单独存放，避免和正在运行的界面抢锁。
+ */
+const MCP_MODE = process.argv.includes('--mcp')
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
+if (MCP_MODE) {
+  // stdout 只能写协议消息，其他输出全部改到 stderr
+  const toErr = (...a: unknown[]) => process.stderr.write(a.map(String).join(' ') + '\n')
+  console.log = console.info = console.debug = toErr
+  app.disableHardwareAcceleration()
+  app.setPath('sessionData', join(app.getPath('userData'), 'mcp-session'))
+  app.whenReady().then(() => {
+    tagStore.load()
+    startMcpServer(buildTools(), { name: 'novel-prompt', version: app.getVersion(), instructions: MCP_INSTRUCTIONS }, () => app.quit())
+  })
+} else {
+  app.whenReady().then(() => {
+    // 让 Windows 任务栏 / Alt+Tab 使用窗口图标，而不是 electron.exe 的默认图标
+    if (process.platform === 'win32') app.setAppUserModelId(APP_ID)
+    tagStore.load()
+    registerIpc()
+    registerImageProtocol()
+    createWindow()
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
+  })
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit()
+  })
+}

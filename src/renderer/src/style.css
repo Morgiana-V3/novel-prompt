@@ -49,7 +49,7 @@ img { -webkit-user-drag: none; }
 h2 { margin: 0; font-size: 15px; font-weight: 650; }
 h3 { margin: 0; font-size: 13.5px; font-weight: 600; }
 button { font: inherit; color: inherit; cursor: pointer; border: none; background: none; padding: 0; }
-input, textarea { font: inherit; color: var(--text); }
+input, textarea, select { font: inherit; color: var(--text); }
 ::selection { background: #ffd3e2; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #e2e2e8; border-radius: 10px; border: 3px solid transparent; background-clip: padding-box; }
@@ -125,6 +125,12 @@ nav { display: flex; flex-direction: column; gap: 2px; }
 .btn:hover:not(:disabled) { background: var(--hover); transform: translateY(-1px); }
 .btn:active:not(:disabled) { transform: scale(0.94); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/*
+ * 深色底的按钮：Windows 下 Chromium 默认用 ClearType 子像素渲染，白字压在深色底上会出现彩边、笔画发虚，
+ * 而且悬停时的 transform 会让渲染方式来回切换。固定为独立合成层（灰度抗锯齿），
+ * 中文字体（微软雅黑）没有 500 字重，统一用 600 让笔画饱满。
+ */
+.btn.primary, .btn.accent { font-weight: 600; letter-spacing: 0.02em; will-change: transform; backface-visibility: hidden; }
 .btn.primary { background: var(--ink); border-color: var(--ink); color: #fff; }
 .btn.primary:hover:not(:disabled) { background: #000; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.16); }
 .btn.accent { background: var(--pink); border-color: var(--pink); color: #fff; box-shadow: 0 4px 12px rgba(255, 107, 154, 0.3); }
@@ -455,7 +461,16 @@ kbd {
 .gen-params .input.sm { max-width: none; width: 100%; }
 .pair { display: flex; align-items: center; gap: 6px; }
 .pair .input.sm { min-width: 0; }
-select.input { cursor: pointer; padding-right: 6px; }
+select.input {
+  appearance: none; -webkit-appearance: none; font: inherit; font-size: 12.5px; color: var(--text); cursor: pointer;
+  height: 30px; padding: 0 30px 0 12px; border-radius: 10px; background-color: #fff; text-overflow: ellipsis;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239b9ca5' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+  transition: border-color 0.2s, box-shadow 0.25s;
+}
+select.input:hover { border-color: var(--pink-line); }
+select.input:focus { border-color: var(--pink-line); box-shadow: 0 0 0 3px var(--pink-soft); }
+.gen-params .pair .input.sm { height: 30px; border-radius: 10px; }
 .range { width: 100%; accent-color: var(--pink); height: 26px; cursor: pointer; }
 .free-check {
   display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; font-size: 12.5px; line-height: 1.7;
@@ -503,6 +518,96 @@ select.input { cursor: pointer; padding-right: 6px; }
 .lightbox-hint { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); color: rgba(255, 255, 255, 0.6); font-size: 12px; }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* ---------- 当前提示词（各页面共用） ---------- */
+.work-bar {
+  position: relative; display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 10px; border-radius: 16px;
+  background: #fff; border: 1px solid var(--line); flex-shrink: 0;
+}
+.work-bar .group-badge { width: 30px; height: 30px; border-radius: 10px; }
+.work-text { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.45; }
+.work-text b { font-size: 12.5px; font-weight: 600; }
+.work-text span { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.icon-btn.on { background: var(--pink-soft); color: var(--pink); }
+.history-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; left: 0; z-index: 30; background: #fff; border: 1px solid var(--line2);
+  border-radius: 16px; box-shadow: 0 16px 40px rgba(20, 20, 30, 0.14); overflow: hidden;
+}
+.history-head { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.history-head b { font-size: 13px; }
+.history-list { max-height: 320px; overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.history-item {
+  display: flex; flex-direction: column; align-items: stretch; gap: 3px; text-align: left; padding: 8px 10px; border-radius: 10px;
+  transition: background 0.15s;
+}
+.history-item:hover { background: var(--hover); }
+.history-meta { display: flex; align-items: center; gap: 8px; }
+.history-preview { font-family: var(--mono); font-size: 12px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-empty { padding: 16px 14px; line-height: 1.7; }
+.pop-menu-enter-active { animation: fade-up 0.25s var(--bounce); }
+.pop-menu-leave-active { transition: opacity 0.12s; }
+.pop-menu-leave-to { opacity: 0; }
+
+.section-tabs { display: flex; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }
+.section-tab {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px 0 12px; border-radius: 999px; font-size: 12.5px;
+  color: var(--text2); background: #fff; border: 1px solid var(--line2);
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.3s var(--bounce);
+}
+.section-tab:hover { border-color: var(--pink-line); color: var(--text); }
+.section-tab:active { transform: scale(0.94); }
+.section-tab.on { background: var(--pink-soft); border-color: var(--pink); color: var(--pink); font-weight: 600; }
+.section-tab.neg.on { background: var(--bad-soft); border-color: #ffbcbc; color: var(--bad); }
+.section-count { min-width: 20px; height: 18px; padding: 0 6px; border-radius: 999px; background: var(--hover); color: var(--text2); font-size: 11px; display: inline-grid; place-items: center; font-weight: 500; }
+.section-tab.on .section-count { background: #fff; }
+.composer.neg:focus-within { border-color: #ffc9c9; box-shadow: 0 0 0 4px var(--bad-soft), var(--shadow); }
+
+.diff-row { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 16px 12px; margin-top: -4px; }
+.diff-chip { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 7px; font-size: 11.5px; font-family: var(--mono); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-chip.add { background: var(--ok-soft); color: var(--ok); }
+.diff-chip.del { background: var(--bad-soft); color: var(--bad); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--bad) 45%, transparent); }
+.diff-chip.mod { background: var(--alias-soft); color: var(--alias); }
+.link-btn { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; margin-left: 4px; }
+
+.nav-sep { height: 1px; background: var(--line); margin: 8px 10px; }
+
+.add-target { display: inline-flex; align-items: center; gap: 4px; }
+.add-target select.input { height: 24px; font-size: 12px; padding: 0 26px 0 8px; border-radius: 8px; max-width: 140px; background-position: right 8px center; }
+
+.drop-overlay {
+  position: fixed; inset: 0; z-index: 95; display: grid; place-items: center; pointer-events: none;
+  background: rgba(255, 240, 245, 0.72); backdrop-filter: blur(3px);
+}
+.drop-card {
+  display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 28px 40px; border-radius: 22px; background: #fff;
+  border: 2px dashed var(--pink); color: var(--pink); box-shadow: 0 20px 50px rgba(255, 107, 154, 0.2); animation: pop 0.3s var(--bounce);
+}
+.drop-card b { color: var(--text); font-size: 15px; }
+.drop-card span { color: var(--muted); font-size: 12.5px; }
+
+/* ---------- Agent 接入 ---------- */
+.code-box { position: relative; align-self: stretch; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.code-box pre {
+  margin: 0; padding: 12px 44px 12px 14px; font-family: var(--mono); font-size: 12px; line-height: 1.7; white-space: pre-wrap;
+  word-break: break-all; user-select: text; -webkit-user-select: text;
+}
+.code-box .icon-btn { position: absolute; top: 8px; right: 8px; }
+.mcp-log { display: flex; flex-direction: column; gap: 6px; border-top: 1px dashed var(--line); padding-top: 12px; }
+.mcp-log-head { display: flex; align-items: center; }
+.mcp-log-head b { font-size: 13px; }
+.mcp-log .effect-row { padding: 6px 4px; align-items: center; }
+.mcp-log .effect-row .grow { color: var(--text2); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mono { font-family: var(--mono); }
+.install-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 14px; background: #fff; overflow: hidden; }
+.install-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; }
+.install-row + .install-row { border-top: 1px dashed var(--line); }
+.install-row .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.5; }
+.install-row b { font-size: 13px; font-weight: 600; }
+.install-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; -webkit-user-select: text; }
+details.manual { gap: 8px; }
+details.manual summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text2); padding: 2px 0; }
+details.manual summary:hover { color: var(--text); }
+details.manual[open] summary { margin-bottom: 4px; }
 
 /* ---------- 设置 ---------- */
 .settings { padding: 22px 28px 40px; display: flex; flex-direction: column; gap: 16px; overflow: auto; }

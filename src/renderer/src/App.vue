@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
-import { state, refreshDb, saveSettings } from './store'
+import { computed, onMounted, ref } from 'vue'
+import { state, refreshDb, saveSettings, importPrompt, cleanErr, toast, type Tab } from './store'
+import { readPngPrompt } from '@shared/prompt-import'
 import CompareView from './views/CompareView.vue'
 import SearchView from './views/SearchView.vue'
 import AiView from './views/AiView.vue'
@@ -12,14 +13,14 @@ import Mascot from './components/Mascot.vue'
 import type { IconName } from './components/icons'
 import type { NaiVersion } from '@shared/types'
 
-type Tab = typeof state.tab
-const tabs: { key: Tab; label: string; icon: IconName; desc: string }[] = [
-  { key: 'compare', label: '提示词比对', icon: 'compare', desc: '把提示词拆开，找出不存在的 tag' },
-  { key: 'search', label: 'Tag 搜索', icon: 'search', desc: '中文、英文、拼音首字母都能搜' },
-  { key: 'ai', label: 'AI 优化', icon: 'sparkle', desc: '让 AI 帮你挑 tag、排顺序' },
-  { key: 'preview', label: '画面推测', icon: 'eye', desc: '贴进整套提示词，让 AI 猜猜会画成什么样' },
+/** 按工作流排序：写 → 校验 → 优化 → 推测 → 出图；搜索与设置是工具 */
+const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: boolean }[] = [
+  { key: 'compare', label: '提示词比对', icon: 'compare', desc: '逐段检查主提示词、角色和负面里有没有不存在的 tag' },
+  { key: 'ai', label: 'AI 优化', icon: 'sparkle', desc: '让 AI 帮你挑 tag、排顺序，采用后写回当前提示词' },
+  { key: 'preview', label: '画面推测', icon: 'eye', desc: '让 AI 猜猜当前提示词会画成什么样' },
   { key: 'generate', label: '生图预览', icon: 'image', desc: '用 NovelAI 接口直接出图看效果' },
-  { key: 'settings', label: '设置 / 数据', icon: 'sliders', desc: 'Danbooru 数据、DeepSeek 与 NovelAI 配置' }
+  { key: 'search', label: 'Tag 搜索', icon: 'search', desc: '中文、英文、拼音首字母都能搜，单击加到最近编辑的输入框', tool: true },
+  { key: 'settings', label: '设置 / 数据', icon: 'sliders', desc: 'Danbooru 数据、DeepSeek 与 NovelAI 配置', tool: true }
 ]
 const current = computed(() => tabs.find((t) => t.key === state.tab)!)
 const busy = computed(() => !!state.progress && !['done', 'error'].includes(state.progress.stage))
@@ -37,10 +38,36 @@ onMounted(async () => {
 function setVersion(v: NaiVersion) {
   saveSettings({ naiVersion: v })
 }
+
+/* ---------- 把 NovelAI 原图拖进窗口任意位置，读取里面的提示词 ---------- */
+const dragDepth = ref(0)
+const hasFile = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files')
+function onDragEnter(e: DragEvent) {
+  if (hasFile(e)) dragDepth.value++
+}
+function onDragOver(e: DragEvent) {
+  // 必须阻止默认行为，否则 Electron 会直接打开图片
+  if (hasFile(e)) e.preventDefault()
+}
+function onDragLeave(e: DragEvent) {
+  if (hasFile(e)) dragDepth.value = Math.max(0, dragDepth.value - 1)
+}
+async function onDrop(e: DragEvent) {
+  if (!hasFile(e)) return
+  e.preventDefault()
+  dragDepth.value = 0
+  const file = e.dataTransfer?.files?.[0]
+  if (!file) return
+  try {
+    importPrompt(await readPngPrompt(file), '已读取原图')
+  } catch (err) {
+    toast(cleanErr(err))
+  }
+}
 </script>
 
 <template>
-  <div class="layout">
+  <div class="layout" @dragenter="onDragEnter" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop">
     <aside class="sidebar">
       <div class="brand">
         <Mascot :mood="busy ? 'busy' : 'avatar'" :size="46" class="brand-avatar" />
@@ -51,15 +78,13 @@ function setVersion(v: NaiVersion) {
       </div>
 
       <nav>
-        <button
-          v-for="t in tabs"
-          :key="t.key"
-          :class="['nav-item', { active: state.tab === t.key }]"
-          @click="state.tab = t.key"
-        >
-          <Icon :name="t.icon" />
-          <span class="nav-label">{{ t.label }}</span>
-        </button>
+        <template v-for="(t, i) in tabs" :key="t.key">
+          <div v-if="t.tool && !tabs[i - 1]?.tool" class="nav-sep"></div>
+          <button :class="['nav-item', { active: state.tab === t.key }]" @click="state.tab = t.key">
+            <Icon :name="t.icon" />
+            <span class="nav-label">{{ t.label }}</span>
+          </button>
+        </template>
       </nav>
 
       <div class="side-bottom">
@@ -104,6 +129,16 @@ function setVersion(v: NaiVersion) {
         <SettingsView v-show="state.tab === 'settings'" />
       </div>
     </main>
+
+    <transition name="fade">
+      <div class="drop-overlay" v-if="dragDepth > 0">
+        <div class="drop-card">
+          <Icon name="image" :size="30" />
+          <b>松手读取原图里的提示词</b>
+          <span>会替换当前提示词，原来的内容自动存进历史</span>
+        </div>
+      </div>
+    </transition>
 
     <transition name="toast">
       <div class="toast" v-if="state.toast">

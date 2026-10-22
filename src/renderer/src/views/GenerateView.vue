@@ -1,46 +1,44 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import type { NaiFreeCheck, NaiGenParams, NaiGenResult, NaiImage, NaiNoiseSchedule, NaiSampler, NaiSubscription, UcPreset } from '@shared/types'
-import { state, copy, toast, toDrafts, type CharDraft } from '../store'
-import { vAutosize, resizeWithin } from '../autosize'
-import { parsePromptText, readPngPrompt, type ImportedPrompt } from '../prompt-import'
+import type { NaiFreeCheck, NaiGenParams, NaiGenResult, NaiImage, NaiNoiseSchedule, NaiSampler, NaiSubscription } from '@shared/types'
+import { state, copy, toast, importPrompt, workKey, cleanErr } from '../store'
+import { resizeWithin } from '../autosize'
+import { readPngPrompt, type ImportedPrompt } from '@shared/prompt-import'
 import Icon from '../components/Icon.vue'
 import Mascot from '../components/Mascot.vue'
-import CharacterEditor from '../components/CharacterEditor.vue'
+import PromptEditor from '../components/PromptEditor.vue'
+import WorkspaceBar from '../components/WorkspaceBar.vue'
+import SharedParams from '../components/SharedParams.vue'
+
+/** 只属于生图的参数；画幅、质量词、UC 预设与画面推测共用（state.params） */
+type GenOnly = Omit<NaiGenParams, 'width' | 'height' | 'qualityTags' | 'ucPreset'>
 
 const PARAMS_KEY = 'np-gen-params'
-
-const DEFAULT_PARAMS: NaiGenParams = {
-  width: 832,
-  height: 1216,
+const DEFAULT_GEN: GenOnly = {
   steps: 23,
   scale: 5,
   cfgRescale: 0,
   sampler: 'k_euler_ancestral',
   noiseSchedule: 'native',
   seed: null,
-  count: 1,
-  qualityTags: true,
-  ucPreset: 'heavy'
+  count: 1
 }
 
-function loadParams(): NaiGenParams {
+function loadGen(): GenOnly {
   try {
-    return { ...DEFAULT_PARAMS, ...JSON.parse(localStorage.getItem(PARAMS_KEY) ?? '{}'), seed: null }
+    const saved = JSON.parse(localStorage.getItem(PARAMS_KEY) ?? '{}') as Partial<GenOnly>
+    const out = { ...DEFAULT_GEN }
+    for (const k of Object.keys(DEFAULT_GEN) as (keyof GenOnly)[]) if (k in saved) (out as Record<string, unknown>)[k] = saved[k]
+    return { ...out, seed: null }
   } catch {
-    return { ...DEFAULT_PARAMS }
+    return { ...DEFAULT_GEN }
   }
 }
 
-const form = reactive({ base: '', negative: '', characters: [] as CharDraft[] })
-const params = reactive<NaiGenParams>(loadParams())
-watch(params, (p) => localStorage.setItem(PARAMS_KEY, JSON.stringify({ ...p, seed: null })), { deep: true })
+const gen = reactive<GenOnly>(loadGen())
+watch(gen, (p) => localStorage.setItem(PARAMS_KEY, JSON.stringify({ ...p, seed: null })), { deep: true })
+const params = state.params
 
-const SIZES = [
-  { key: 'portrait', label: '竖图', w: 832, h: 1216 },
-  { key: 'landscape', label: '横图', w: 1216, h: 832 },
-  { key: 'square', label: '方图', w: 1024, h: 1024 }
-]
 const SAMPLERS: { v: NaiSampler; label: string }[] = [
   { v: 'k_euler_ancestral', label: 'Euler Ancestral' },
   { v: 'k_euler', label: 'Euler' },
@@ -50,14 +48,6 @@ const SAMPLERS: { v: NaiSampler; label: string }[] = [
   { v: 'k_dpmpp_sde', label: 'DPM++ SDE' }
 ]
 const SCHEDULES: NaiNoiseSchedule[] = ['native', 'karras', 'exponential', 'polyexponential']
-const UC_OPTIONS: { key: UcPreset; label: string }[] = [
-  { key: 'heavy', label: 'Heavy' },
-  { key: 'light', label: 'Light' },
-  { key: 'human', label: '人物' },
-  { key: 'none', label: '无' }
-]
-const sizeKey = computed(() => SIZES.find((s) => s.w === params.width && s.h === params.height)?.key ?? 'custom')
-const pixels = computed(() => params.width * params.height)
 
 const hasToken = computed(() => !!state.settings?.naiToken?.trim())
 const freeOnly = computed(() => state.settings?.naiFreeOnly !== false)
@@ -86,6 +76,14 @@ const anlas = computed(() => {
   return (s.anlasFixed ?? 0) + (s.anlasPurchased ?? 0)
 })
 
+/** 当前图片是用最近一次推测过的那套提示词生成的：可以把推测和实际出图放在一起看 */
+const matchedPreview = computed(() => {
+  const lp = state.lastPreview
+  if (!lp || !current.value) return null
+  return state.imageKeys[current.value.name] === lp.key ? lp.result : null
+})
+const previewIsCurrent = computed(() => !!state.lastPreview && state.lastPreview.key === workKey())
+
 async function refreshSub() {
   if (!hasToken.value) return
   subLoading.value = true
@@ -106,12 +104,12 @@ async function refreshGallery() {
 
 let checkTimer: ReturnType<typeof setTimeout> | undefined
 watch(
-  () => [params.width, params.height, params.steps, version.value, sub.value, freeOnly.value],
+  () => [params.width, params.height, gen.steps, version.value, sub.value, freeOnly.value],
   () => {
     clearTimeout(checkTimer)
     checkTimer = setTimeout(async () => {
       check.value = await window.api.naiFreeCheck(
-        { ...params },
+        { width: params.width, height: params.height, steps: gen.steps } as NaiGenParams,
         version.value,
         sub.value ? { ...sub.value } : undefined
       )
@@ -142,64 +140,18 @@ watch(
     if (hasToken.value && !sub.value && !subLoading.value) refreshSub()
   }
 )
+watch(
+  () => state.characters.length,
+  () => nextTick(resizeAll)
+)
 watch(hasToken, (v) => {
   if (v && state.tab === 'generate') refreshSub()
   if (!v) sub.value = null
 })
 
-/* ---------- 导入 ---------- */
-function applyImport(r: ImportedPrompt, source: string) {
-  form.base = r.base
-  form.negative = r.negative
-  form.characters = toDrafts(r.characters)
-  if (r.width && r.height) {
-    params.width = r.width
-    params.height = r.height
-  }
-  // 元数据里的提示词已经包含质量词和 UC 预设，避免重复追加
-  if (r.fromMetadata) {
-    params.qualityTags = false
-    params.ucPreset = 'none'
-  }
-  const parts = [r.base && '主提示词', r.characters.length && `${r.characters.length} 个角色`, r.negative && '负面'].filter(Boolean)
-  toast(parts.length ? `${source}：${parts.join(' / ')}` : '没有识别到提示词')
-  nextTick(resizeAll)
-}
-
-watch(
-  () => state.generateDraft,
-  (d) => {
-    if (!d) return
-    state.generateDraft = null
-    applyImport(d, '已带入')
-  },
-  { immediate: true }
-)
-
-function onBasePaste(e: ClipboardEvent) {
-  const r = parsePromptText(e.clipboardData?.getData('text/plain') ?? '')
-  if (!r.structured) return
-  e.preventDefault()
-  applyImport(r, '已自动拆分')
-}
-
-function fromOptimize() {
-  if (!state.prompt.trim() && !state.characters.some((c) => c.prompt.trim())) {
-    toast('AI 优化页还是空的')
-    return
-  }
-  form.base = state.prompt
-  form.negative = state.negative
-  form.characters = state.characters.map((c) => ({ ...c }))
-  toast('已带入 AI 优化页的提示词')
-  nextTick(resizeAll)
-}
-
 /* ---------- 生成 ---------- */
-const cleanErr = (e: unknown) => String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, '')
-
 function randomizeSeed() {
-  params.seed = null
+  gen.seed = null
 }
 
 async function run() {
@@ -207,7 +159,7 @@ async function run() {
     error.value = '请先在「设置 / 数据」中填写 NovelAI API Token'
     return
   }
-  if (!form.base.trim() && !form.characters.some((c) => c.prompt.trim())) {
+  if (!state.prompt.trim() && !state.characters.some((c) => c.prompt.trim())) {
     error.value = '请先输入主提示词或角色提示词'
     return
   }
@@ -219,15 +171,18 @@ async function run() {
   cancelling.value = false
   error.value = ''
   steps.value = []
+  const key = workKey()
   try {
+    const seed = gen.seed === null || (gen.seed as unknown) === '' ? null : Number(gen.seed)
     const r = await window.api.naiGenerate({
-      base: form.base,
-      negative: form.negative,
-      characters: form.characters.filter((c) => c.prompt.trim()).map((c) => ({ ...c })),
-      params: { ...params, seed: params.seed === null || (params.seed as unknown) === '' ? null : Number(params.seed) },
+      base: state.prompt,
+      negative: state.negative,
+      characters: state.characters.filter((c) => c.prompt.trim()).map((c) => ({ ...c })),
+      params: { ...gen, ...params, seed },
       version: version.value
     })
     last.value = r
+    for (const img of r.images) state.imageKeys[img.name] = key
     if (r.subscription) sub.value = r.subscription
     if (r.images.length) current.value = r.images[r.images.length - 1]
     if (r.stopped && !r.images.length) error.value = r.stopped
@@ -261,29 +216,31 @@ async function remove(img: NaiImage) {
 }
 function useSeed(img: NaiImage) {
   if (img.seed === undefined) return
-  params.seed = img.seed
-  params.count = 1
+  gen.seed = img.seed
+  gen.count = 1
   toast(`种子已固定为 ${img.seed}`)
 }
 const reveal = (img: NaiImage) => window.api.naiReveal(img.name)
 const openFolder = () => window.api.naiReveal()
+
 async function readMeta(img: NaiImage): Promise<ImportedPrompt | null> {
   try {
     const bytes = await window.api.naiReadImage(img.name)
     return await readPngPrompt(new Blob([new Uint8Array(bytes)], { type: 'image/png' }))
   } catch (e) {
-    toast(e instanceof Error ? cleanErr(e.message) : '读取图片信息失败')
+    toast(cleanErr(e) || '读取图片信息失败')
     return null
   }
 }
+/** 图片里存的是实际发送的提示词（已含质量词和 UC 预设），导入时会自动关掉这两项避免重复 */
 async function loadFromImage(img: NaiImage) {
   const r = await readMeta(img)
-  if (r) applyImport(r, '已从图片读取提示词')
+  if (r) importPrompt(r, '已从图片读回提示词')
 }
-async function toPreview(img: NaiImage) {
+async function previewImage(img: NaiImage) {
   const r = await readMeta(img)
   if (!r) return
-  state.previewDraft = r
+  importPrompt(r, '已从图片读回提示词')
   state.tab = 'preview'
 }
 
@@ -297,6 +254,8 @@ function onKey(e: KeyboardEvent) {
 
 const fmtTime = (t: number) => new Date(t).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 const fmtHours = (s?: number) => (s === undefined ? '' : s >= 3600 ? `${(s / 3600).toFixed(1)} 小时` : `${Math.ceil(s / 60)} 分钟`)
+const RISK_CLS = { high: 'bad', medium: 'alias', low: '' } as const
+const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
 </script>
 
 <template>
@@ -338,35 +297,12 @@ const fmtHours = (s?: number) => (s === undefined ? '' : s >= 3600 ? `${(s / 360
         </div>
       </div>
 
-      <div class="field">
-        <label class="field-label">主提示词<span class="muted"> · 粘贴分节文本会自动拆分</span></label>
-        <div class="composer short">
-          <textarea
-            v-autosize
-            v-model="form.base"
-            spellcheck="false"
-            placeholder="2girls, artist:xxx, outdoors, cherry blossoms, ..."
-            @paste="onBasePaste"
-          ></textarea>
-        </div>
-      </div>
+      <WorkspaceBar />
 
-      <CharacterEditor :list="form.characters" hint="位置填 B3 这类网格或 0.3,0.5 坐标才会生效" />
-
-      <div class="field">
-        <label class="field-label">负面提示词（UC）</label>
-        <div class="composer short neg">
-          <textarea v-autosize v-model="form.negative" spellcheck="false" placeholder="lowres, worst quality, bad quality, ..."></textarea>
-        </div>
-      </div>
+      <PromptEditor char-hint="位置填 B3 这类网格或 0.3,0.5 坐标才会生效" />
 
       <div class="gen-params">
-        <div class="param">
-          <span class="side-label">画幅 · {{ params.width }}×{{ params.height }}</span>
-          <div class="seg block">
-            <button v-for="s in SIZES" :key="s.key" :class="{ on: sizeKey === s.key }" @click="(params.width = s.w), (params.height = s.h)">{{ s.label }}</button>
-          </div>
-        </div>
+        <SharedParams />
         <div class="param">
           <span class="side-label">自定义尺寸（64 的倍数）</span>
           <div class="pair">
@@ -376,53 +312,40 @@ const fmtHours = (s?: number) => (s === undefined ? '' : s >= 3600 ? `${(s / 360
           </div>
         </div>
         <div class="param">
-          <span class="side-label">步数 · {{ params.steps }}</span>
-          <input class="range" type="range" min="1" max="50" v-model.number="params.steps" />
+          <span class="side-label">步数 · {{ gen.steps }}</span>
+          <input class="range" type="range" min="1" max="50" v-model.number="gen.steps" />
         </div>
         <div class="param">
-          <span class="side-label">Prompt Guidance · {{ params.scale }}</span>
-          <input class="range" type="range" min="0" max="10" step="0.1" v-model.number="params.scale" />
+          <span class="side-label">Prompt Guidance · {{ gen.scale }}</span>
+          <input class="range" type="range" min="0" max="10" step="0.1" v-model.number="gen.scale" />
         </div>
         <div class="param">
-          <span class="side-label">Guidance Rescale · {{ params.cfgRescale }}</span>
-          <input class="range" type="range" min="0" max="1" step="0.02" v-model.number="params.cfgRescale" />
+          <span class="side-label">Guidance Rescale · {{ gen.cfgRescale }}</span>
+          <input class="range" type="range" min="0" max="1" step="0.02" v-model.number="gen.cfgRescale" />
         </div>
         <div class="param">
           <span class="side-label">种子（留空随机）</span>
           <div class="pair">
-            <input class="input sm" type="number" min="0" v-model.number="params.seed" placeholder="随机" />
+            <input class="input sm" type="number" min="0" v-model.number="gen.seed" placeholder="随机" />
             <button class="icon-btn sm" title="改回随机" @click="randomizeSeed"><Icon name="x" :size="14" /></button>
           </div>
         </div>
         <div class="param">
           <span class="side-label">采样器</span>
-          <select class="input sm" v-model="params.sampler">
+          <select class="input sm" v-model="gen.sampler">
             <option v-for="s in SAMPLERS" :key="s.v" :value="s.v">{{ s.label }}</option>
           </select>
         </div>
         <div class="param">
           <span class="side-label">噪声调度</span>
-          <select class="input sm" v-model="params.noiseSchedule">
+          <select class="input sm" v-model="gen.noiseSchedule">
             <option v-for="s in SCHEDULES" :key="s" :value="s">{{ s }}</option>
           </select>
         </div>
         <div class="param">
           <span class="side-label">张数（逐张生成）</span>
           <div class="seg block">
-            <button v-for="n in [1, 2, 4]" :key="n" :class="{ on: params.count === n }" @click="params.count = n">{{ n }}</button>
-          </div>
-        </div>
-        <div class="param">
-          <span class="side-label">Add Quality Tags</span>
-          <div class="seg block">
-            <button :class="{ on: params.qualityTags }" @click="params.qualityTags = true">开</button>
-            <button :class="{ on: !params.qualityTags }" @click="params.qualityTags = false">关</button>
-          </div>
-        </div>
-        <div class="param wide">
-          <span class="side-label">UC 预设（由本工具拼进负面）</span>
-          <div class="seg block">
-            <button v-for="u in UC_OPTIONS" :key="u.key" :class="{ on: params.ucPreset === u.key }" @click="params.ucPreset = u.key">{{ u.label }}</button>
+            <button v-for="n in [1, 2, 4]" :key="n" :class="{ on: gen.count === n }" @click="gen.count = n">{{ n }}</button>
           </div>
         </div>
       </div>
@@ -439,12 +362,14 @@ const fmtHours = (s?: number) => (s === undefined ? '' : s >= 3600 ? `${(s / 360
       <div class="row">
         <button class="btn accent big" :disabled="running" @click="run">
           <Icon name="image" :size="17" :class="{ 'spin-slow': running }" />
-          {{ running ? '正在生成' : params.count > 1 ? `生成 ${params.count} 张` : '生成' }}
+          {{ running ? '正在生成' : gen.count > 1 ? `生成 ${gen.count} 张` : '生成' }}
         </button>
         <button v-if="running" class="btn ghost" :disabled="cancelling" @click="cancel"><Icon name="stop" :size="15" />{{ cancelling ? '即将停止' : '停止' }}</button>
         <span class="pill">{{ version === 'v5' ? 'V5 Full' : 'V4.5 Full' }}</span>
         <div class="actions ml-auto">
-          <button class="btn ghost small" title="带入 AI 优化页的正向、角色和负面" @click="fromOptimize"><Icon name="sparkle" :size="14" />从 AI 优化带入</button>
+          <button class="btn ghost small" :title="previewIsCurrent ? '这套提示词已经推测过' : '先让 AI 推测一下会画成什么样'" @click="state.tab = 'preview'">
+            <Icon name="eye" :size="14" />{{ previewIsCurrent ? '查看推测' : '先推测画面' }}
+          </button>
         </div>
       </div>
 
@@ -462,7 +387,7 @@ const fmtHours = (s?: number) => (s === undefined ? '' : s >= 3600 ? `${(s / 360
       </div>
       <div v-else-if="!current && !gallery.length" class="empty">
         <Mascot :mood="hasToken ? 'chill' : 'confused'" :size="230" />
-        <p v-if="hasToken">把 AI 优化好的提示词带过来，点「生成」就能直接看到效果。生成的图会保存在本机图库，可以预览、下载，也能读回图里的提示词。</p>
+        <p v-if="hasToken">生图用的是「当前提示词」，和 AI 优化、画面推测是同一份。点「生成」就能直接看到效果，图会保存在本机图库，可以预览、下载，也能读回图里的提示词。</p>
         <p v-else>要先在「设置 / 数据」里填写 NovelAI 的 Persistent API Token 才能出图哦</p>
         <button v-if="!hasToken" class="btn primary" @click="state.tab = 'settings'"><Icon name="sliders" :size="16" />去设置</button>
       </div>
@@ -488,16 +413,32 @@ const fmtHours = (s?: number) => (s === undefined ? '' : s >= 3600 ? `${(s / 360
             <button v-if="current.seed !== undefined" class="pill seed" title="复制种子" @click="copy(String(current.seed))">种子 {{ current.seed }}</button>
             <div class="actions ml-auto">
               <button class="icon-btn sm" title="固定这个种子" @click="useSeed(current)"><Icon name="paw" :size="15" /></button>
-              <button class="icon-btn sm" title="读回提示词到左侧" @click="loadFromImage(current)"><Icon name="paste" :size="15" /></button>
-              <button class="icon-btn sm" title="画面推测" @click="toPreview(current)"><Icon name="eye" :size="15" /></button>
+              <button class="icon-btn sm" title="读回这张图的提示词，替换当前提示词（可在历史里撤销）" @click="loadFromImage(current)"><Icon name="paste" :size="15" /></button>
+              <button class="icon-btn sm" title="读回这张图的提示词并推测画面" @click="previewImage(current)"><Icon name="eye" :size="15" /></button>
               <button class="icon-btn sm" title="复制图片" @click="copyImage(current)"><Icon name="copy" :size="15" /></button>
               <button class="icon-btn sm" title="在文件夹中显示" @click="reveal(current)"><Icon name="book" :size="15" /></button>
-              <button class="btn small primary" @click="saveAs(current)"><Icon name="download" :size="14" />下载</button>
+              <button class="btn small primary" @click="saveAs(current)"><Icon name="download" :size="14" /></button>
             </div>
           </div>
           <div class="viewer-stage" @click="lightbox = true">
             <img :src="current.url" :key="current.url" alt="生成结果" draggable="false" />
             <div v-if="running" class="viewer-busy"><Icon name="image" :size="16" class="spin-slow" />下一张生成中…</div>
+          </div>
+        </div>
+
+        <div class="result-card" v-if="matchedPreview" style="--d: 60ms">
+          <div class="result-head">
+            <span class="group-badge pink"><Icon name="eye" :size="14" /></span>
+            <h3>推测 vs 实际</h3>
+            <span class="muted small">这张图用的就是推测过的那套提示词，对照看看准不准</span>
+            <button class="btn ghost small ml-auto" @click="state.tab = 'preview'">完整推测</button>
+          </div>
+          <div class="notes">{{ matchedPreview.summary }}</div>
+          <div class="effect-list" v-if="matchedPreview.risks.length">
+            <div class="effect-row" v-for="(r, i) in matchedPreview.risks" :key="i" :style="{ '--i': i }">
+              <span :class="['pill', RISK_CLS[r.level]]">{{ RISK_TEXT[r.level] }}</span>
+              <span class="grow">{{ r.text }}</span>
+            </div>
           </div>
         </div>
 

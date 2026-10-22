@@ -117,6 +117,43 @@ export interface Settings {
   naiToken: string
   /** 只允许不消耗 Anlas 的生成：生成前检查免费条件，生成后核对余额 */
   naiFreeOnly: boolean
+  /** 允许外部 agent（MCP）调用会消耗 DeepSeek 额度的工具 */
+  mcpAllowAi: boolean
+  /** 允许外部 agent（MCP）调用 NovelAI 生图（强制只用免费额度） */
+  mcpAllowGenerate: boolean
+}
+
+export interface McpLogEntry {
+  at: number
+  tool: string
+  ok: boolean
+  ms: number
+  summary: string
+}
+
+export type McpInstallTarget = 'codexConfig' | 'codexSkill' | 'claudeSkill'
+
+export interface McpInstallResult {
+  target: McpInstallTarget
+  ok: boolean
+  path: string
+  error?: string
+}
+
+export interface McpInfo {
+  command: string
+  args: string[]
+  env: Record<string, string>
+  packaged: boolean
+  /** 便携版：路径不固定，无法配置给 agent */
+  portable: boolean
+  /** 各项在本机的安装状态：stale = 已安装但与当前版本 / 路径不一致 */
+  installed: Record<McpInstallTarget, 'none' | 'ok' | 'stale'>
+  /** 各项会写到的位置 */
+  paths: Record<McpInstallTarget, string>
+  /** 项目内 Skill 文件位置 */
+  skillFile: string
+  log: McpLogEntry[]
 }
 
 /* ---------- NovelAI 生图 ---------- */

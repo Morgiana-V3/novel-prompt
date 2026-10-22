@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { reactive, ref, watch, computed } from 'vue'
-import { state, saveSettings, refreshDb, toast } from '../store'
+import { reactive, ref, watch, computed, onMounted } from 'vue'
+import { state, saveSettings, refreshDb, toast, copy } from '../store'
 import Icon from '../components/Icon.vue'
-import type { ReasoningEffort } from '@shared/types'
+import type { McpInfo, McpInstallTarget, ReasoningEffort } from '@shared/types'
 
 const form = reactive({
   apiKey: '',
@@ -12,7 +12,9 @@ const form = reactive({
   minPostCount: 10,
   translateMinCount: 50,
   naiToken: '',
-  naiFreeOnly: true
+  naiFreeOnly: true,
+  mcpAllowAi: false,
+  mcpAllowGenerate: false
 })
 const efforts: { v: ReasoningEffort; label: string }[] = [
   { v: 'off', label: '关闭' },
@@ -45,6 +47,63 @@ const cancel = () => window.api.cancelTask()
 const openSkill = () => window.api.openSkill()
 
 const naiInfo = ref('')
+
+/* ---------- Agent 接入 ---------- */
+const mcp = ref<McpInfo | null>(null)
+const isPackaged = computed(() => !!mcp.value?.packaged)
+async function loadMcp() {
+  mcp.value = await window.api.mcpInfo()
+}
+onMounted(loadMcp)
+watch(
+  () => state.tab,
+  (t) => t === 'settings' && loadMcp()
+)
+async function setMcp(key: 'mcpAllowAi' | 'mcpAllowGenerate', v: boolean) {
+  form[key] = v
+  await saveSettings({ [key]: v })
+  toast(v ? '已开启，agent 下一次调用时生效' : '已关闭')
+}
+// TOML 字面量字符串（单引号）不处理反斜杠转义，适合 Windows 路径
+const tomlStr = (s: string) => `'${s.replace(/'/g, "''")}'`
+
+const INSTALL_ITEMS: { key: McpInstallTarget; label: string }[] = [
+  { key: 'codexConfig', label: 'Codex MCP 配置' },
+  { key: 'codexSkill', label: 'Codex Skill' },
+  { key: 'claudeSkill', label: 'Claude Code Skill' }
+]
+const STATE_LABEL = {
+  none: { text: '未安装', cls: '' },
+  ok: { text: '已安装', cls: 'ok' },
+  stale: { text: '需更新', cls: 'alias' }
+} as const
+const installing = ref(false)
+async function install(targets: McpInstallTarget[]) {
+  installing.value = true
+  try {
+    const r = await window.api.mcpInstall(targets)
+    const bad = r.filter((x) => !x.ok)
+    toast(bad.length ? `有 ${bad.length} 项失败：${bad[0].error}` : '已安装，重启 agent 后生效')
+  } catch (e) {
+    toast(String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, ''))
+  } finally {
+    installing.value = false
+    await loadMcp()
+  }
+}
+const openAgentSkill = () => window.api.mcpOpenSkill()
+const codexConfig = computed(() => {
+  const m = mcp.value
+  if (!m) return ''
+  const env = Object.entries(m.env).map(([k, v]) => `${k} = ${tomlStr(v)}`)
+  return `[mcp_servers.novel-prompt]\ncommand = ${tomlStr(m.command)}\nargs = [${m.args.map(tomlStr).join(', ')}]\nenv = { ${env.join(', ')} }`
+})
+const jsonConfig = computed(() =>
+  mcp.value
+    ? JSON.stringify({ mcpServers: { 'novel-prompt': { command: mcp.value.command, args: mcp.value.args, env: mcp.value.env } } }, null, 2)
+    : ''
+)
+const fmtLogTime = (t: number) => new Date(t).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 async function testNai() {
   await save(true)
   naiInfo.value = '查询中…'
@@ -227,6 +286,95 @@ async function translate() {
         <button class="btn primary" @click="save()"><Icon name="check" :size="16" />保存</button>
         <button class="btn" :disabled="!form.naiToken" @click="testNai"><Icon name="key" :size="15" />保存并测试连接</button>
         <span class="muted small" v-if="naiInfo">{{ naiInfo }}</span>
+      </div>
+    </div>
+
+    <div class="card" style="--d: 120ms">
+      <div class="card-head">
+        <span class="card-icon blue"><Icon name="wand" /></span>
+        <div>
+          <h2>Agent 接入（MCP）</h2>
+          <div class="card-desc">让 Codex、Claude Code、Cursor 等 agent 直接调用本软件的 tag 库、检查和生图。不需要打开本软件，agent 会在后台自动启动它</div>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label>允许调用 DeepSeek</label>
+          <div class="seg">
+            <button :class="{ on: !form.mcpAllowAi }" @click="setMcp('mcpAllowAi', false)">关闭</button>
+            <button :class="{ on: form.mcpAllowAi }" @click="setMcp('mcpAllowAi', true)">开启</button>
+          </div>
+          <span class="help">optimize_prompt / preview_prompt 会消耗你的 DeepSeek 额度。agent 本身就是大模型，一般不需要开</span>
+        </div>
+        <div class="form-field">
+          <label>允许生图</label>
+          <div class="seg">
+            <button :class="{ on: !form.mcpAllowGenerate }" @click="setMcp('mcpAllowGenerate', false)">关闭</button>
+            <button :class="{ on: form.mcpAllowGenerate }" @click="setMcp('mcpAllowGenerate', true)">开启</button>
+          </div>
+          <span class="help">generate_image 强制只用免费额度，且每次调用都要显式传 confirm: true</span>
+        </div>
+        <div class="form-field full" v-if="mcp?.portable">
+          <div class="error-box"><Icon name="warn" :size="16" />便携版每次运行都会解压到临时目录，路径不固定，agent 无法稳定启动它。请改用安装版。</div>
+        </div>
+        <div class="form-field full" v-else>
+          <label>一键安装</label>
+          <div class="install-list">
+            <div class="install-row" v-for="it in INSTALL_ITEMS" :key="it.key">
+              <span :class="['pill', STATE_LABEL[mcp?.installed[it.key] ?? 'none'].cls]"><i></i>{{ STATE_LABEL[mcp?.installed[it.key] ?? 'none'].text }}</span>
+              <div class="grow">
+                <b>{{ it.label }}</b>
+                <span class="muted small mono install-path">{{ mcp?.paths[it.key] }}</span>
+              </div>
+              <button class="btn small" :disabled="installing" @click="install([it.key])">
+                {{ mcp?.installed[it.key] === 'ok' ? '重新安装' : '安装' }}
+              </button>
+            </div>
+          </div>
+          <div class="row">
+            <button class="btn primary small" :disabled="installing" @click="install(['codexConfig', 'codexSkill', 'claudeSkill'])">
+              <Icon name="download" :size="14" />全部安装
+            </button>
+            <button class="btn ghost small" @click="openAgentSkill"><Icon name="book" :size="14" />查看 Skill</button>
+          </div>
+          <span class="help">
+            配置里的路径取自本软件当前的安装位置，安装或更换安装目录后点一次即可。写入 config.toml 前会备份为 config.toml.bak，只替换 novel-prompt 这一段。
+            Skill 是给 agent 看的使用说明（工作流、工具参数、规则），装好后 agent 会在你提到 NovelAI 提示词时自动读取。
+            {{ mcp && !isPackaged ? '当前是开发模式，配置指向本项目，需要先 npm run build。' : '' }}
+          </span>
+        </div>
+        <details class="form-field full manual">
+          <summary>手动配置</summary>
+          <label>Codex（~/.codex/config.toml）</label>
+          <div class="code-box">
+            <pre>{{ codexConfig }}</pre>
+            <button class="icon-btn sm" title="复制" @click="copy(codexConfig)"><Icon name="copy" :size="15" /></button>
+          </div>
+          <label>Claude Code / Cursor 等（mcpServers JSON）</label>
+          <div class="code-box">
+            <pre>{{ jsonConfig }}</pre>
+            <button class="icon-btn sm" title="复制" @click="copy(jsonConfig)"><Icon name="copy" :size="15" /></button>
+          </div>
+          <span class="help">
+            始终可用：prompt_guide、analyze_prompt、search_tags、validate_tags、related_tags、tag_wiki、nai_subscription、list_images、read_image_prompt。
+            Claude Code 也可以用命令添加：claude mcp add-json novel-prompt '&lt;上面 novel-prompt 里的 JSON&gt;'
+          </span>
+        </details>
+      </div>
+      <div class="mcp-log">
+        <div class="mcp-log-head">
+          <b>最近调用</b>
+          <button class="btn ghost small ml-auto" @click="loadMcp"><Icon name="swap" :size="13" />刷新</button>
+        </div>
+        <div v-if="mcp?.log.length" class="effect-list">
+          <div class="effect-row" v-for="(l, i) in mcp.log" :key="l.at + '-' + i">
+            <span :class="['pill', l.ok ? 'ok' : 'bad']">{{ l.ok ? '成功' : '失败' }}</span>
+            <span class="where mono">{{ l.tool }}</span>
+            <span class="grow">{{ l.summary }}</span>
+            <span class="muted small">{{ fmtLogTime(l.at) }} · {{ l.ms }}ms</span>
+          </div>
+        </div>
+        <div v-else class="muted small">还没有 agent 调用过</div>
       </div>
     </div>
 

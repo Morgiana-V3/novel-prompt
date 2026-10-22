@@ -11,6 +11,7 @@
     "preview": "electron-vite preview",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
     "data:export": "node scripts/export-data.mjs",
+    "mcp:smoke": "electron-vite build && node scripts/mcp-smoke.mjs",
     "dist": "electron-vite build && electron-builder --win --x64"
   },
   "build": {
@@ -42,6 +43,14 @@
       {
         "from": "build/icon.png",
         "to": "icon.png"
+      },
+      {
+        "from": "scripts/mcp-proxy.cjs",
+        "to": "mcp-proxy.cjs"
+      },
+      {
+        "from": "agent-skill",
+        "to": "agent-skill"
       }
     ],
     "win": {

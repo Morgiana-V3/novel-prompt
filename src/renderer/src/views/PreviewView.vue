@@ -1,46 +1,24 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import type { AiPreviewResult, Confidence, PreviewIssueKind, PreviewPoint, UcPreset } from '@shared/types'
-import { state, copy, toast, toDrafts, type CharDraft } from '../store'
-import { parsePromptText, readPngPrompt, type ImportedPrompt } from '../prompt-import'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { AiPreviewResult, Confidence, PreviewIssueKind, PreviewPoint } from '@shared/types'
+import { state, copy, toast, workKey, cleanErr } from '../store'
 import { vAutosize, resizeWithin } from '../autosize'
 import Icon from '../components/Icon.vue'
 import Mascot from '../components/Mascot.vue'
-import CharacterEditor from '../components/CharacterEditor.vue'
+import PromptEditor from '../components/PromptEditor.vue'
+import WorkspaceBar from '../components/WorkspaceBar.vue'
+import SharedParams from '../components/SharedParams.vue'
 import BasisPill from '../components/BasisPill.vue'
 import EvidenceNote from '../components/EvidenceNote.vue'
 import type { IconName } from '../components/icons'
 
-const form = reactive({
-  base: '',
-  negative: '',
-  characters: [] as CharDraft[],
-  expectation: '',
-  width: 832,
-  height: 1216,
-  qualityTags: true,
-  ucPreset: 'heavy' as UcPreset
-})
-
-const SIZES = [
-  { key: 'portrait', label: '竖图', w: 832, h: 1216 },
-  { key: 'landscape', label: '横图', w: 1216, h: 832 },
-  { key: 'square', label: '方图', w: 1024, h: 1024 }
-]
-const UC_OPTIONS: { key: UcPreset; label: string }[] = [
-  { key: 'heavy', label: 'Heavy' },
-  { key: 'light', label: 'Light' },
-  { key: 'human', label: '人物' },
-  { key: 'none', label: '无' }
-]
-const sizeKey = computed(() => SIZES.find((s) => s.w === form.width && s.h === form.height)?.key ?? 'custom')
-
+const expectation = ref('')
 const running = ref(false)
 const steps = ref<string[]>([])
-const result = ref<AiPreviewResult | null>(null)
 const error = ref('')
-const dragDepth = ref(0)
-const fileInput = ref<HTMLInputElement>()
+/** 推测结果存在全局，生图页可以拿它和实际出图对照 */
+const result = computed(() => state.lastPreview?.result ?? null)
+const stale = computed(() => !!state.lastPreview && !running.value && state.lastPreview.key !== workKey())
 
 const leftPane = ref<HTMLElement>()
 const resizeAll = () => resizeWithin(leftPane.value)
@@ -61,121 +39,10 @@ watch(
     resizeAll()
   }
 )
-
-/* ---------- 导入 ---------- */
-function applyImport(r: ImportedPrompt, source: string) {
-  form.base = r.base
-  form.negative = r.negative
-  form.characters = toDrafts(r.characters)
-  if (r.width && r.height) {
-    form.width = r.width
-    form.height = r.height
-  }
-  // NAI 元数据里的提示词已经包含自动追加的质量词和 UC 预设，避免重复计算
-  if (r.fromMetadata) {
-    form.qualityTags = false
-    form.ucPreset = 'none'
-  }
-  result.value = null
-  error.value = ''
-  const parts = [r.base && '主提示词', r.characters.length && `${r.characters.length} 个角色`, r.negative && '负面'].filter(Boolean)
-  toast(parts.length ? `${source}：${parts.join(' / ')}` : '没有识别到提示词')
-  nextTick(resizeAll)
-}
-
-/** 粘贴到主提示词时，如果识别到分节标记或元数据 JSON，自动拆分到各个输入框 */
-function onBasePaste(e: ClipboardEvent) {
-  const text = e.clipboardData?.getData('text/plain') ?? ''
-  const r = parsePromptText(text)
-  if (!r.structured) return
-  e.preventDefault()
-  applyImport(r, '已自动拆分')
-}
-
-async function pasteClipboard() {
-  const text = await window.api.readClipboard()
-  if (!text.trim()) {
-    toast('剪贴板里没有文字')
-    return
-  }
-  applyImport(parsePromptText(text), '已导入')
-}
-
-async function loadImage(file: File) {
-  try {
-    applyImport(await readPngPrompt(file), '已读取原图')
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-  }
-}
-
-function onFilePicked(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (file) loadImage(file)
-  input.value = ''
-}
-
-function onDragEnter(e: DragEvent) {
-  if (e.dataTransfer?.types.includes('Files')) dragDepth.value++
-}
-function onDragOver(e: DragEvent) {
-  // 文件必须阻止默认行为，否则 Electron 会直接打开图片
-  if (e.dataTransfer?.types.includes('Files')) e.preventDefault()
-}
-function onDragLeave(e: DragEvent) {
-  if (e.dataTransfer?.types.includes('Files')) dragDepth.value = Math.max(0, dragDepth.value - 1)
-}
-function onDrop(e: DragEvent) {
-  dragDepth.value = 0
-  const file = e.dataTransfer?.files?.[0]
-  if (file) {
-    e.preventDefault()
-    loadImage(file)
-    return
-  }
-  const r = parsePromptText(e.dataTransfer?.getData('text/plain') ?? '')
-  if (r.structured) {
-    e.preventDefault()
-    applyImport(r, '已自动拆分')
-  }
-}
-
-/** 其他页面送来的整套提示词（如 AI 优化的结果） */
 watch(
-  () => state.previewDraft,
-  (d) => {
-    if (!d) return
-    state.previewDraft = null
-    form.expectation = ''
-    applyImport(d, '已带入')
-  },
-  { immediate: true }
+  () => state.characters.length,
+  () => nextTick(resizeAll)
 )
-
-function fromCompare() {
-  if (!state.prompt.trim() && !state.negative.trim()) {
-    toast('比对页还是空的')
-    return
-  }
-  form.base = state.prompt
-  form.negative = state.negative
-  toast('已带入比对页的提示词')
-  nextTick(resizeAll)
-}
-
-function clearAll() {
-  Object.assign(form, { base: '', negative: '', characters: [], expectation: '' })
-  result.value = null
-  error.value = ''
-  steps.value = []
-  nextTick(resizeAll)
-}
-
-function setSize(w: number, h: number) {
-  form.width = w
-  form.height = h
-}
 
 function openSkill() {
   window.api.openSkill('nai-preview.md')
@@ -187,25 +54,26 @@ async function run() {
     error.value = '请先在「设置 / 数据」中填写 DeepSeek API Key'
     return
   }
-  if (!form.base.trim() && !form.characters.some((c) => c.prompt.trim())) {
+  if (!state.prompt.trim() && !state.characters.some((c) => c.prompt.trim())) {
     error.value = '请先输入主提示词或角色提示词'
     return
   }
   running.value = true
   error.value = ''
   steps.value = []
-  result.value = null
+  const key = workKey()
   try {
-    result.value = await window.api.preview({
-      base: form.base,
-      negative: form.negative,
-      characters: form.characters.map((c) => ({ prompt: c.prompt, negative: c.negative, position: c.position })),
-      params: { width: form.width, height: form.height, qualityTags: form.qualityTags, ucPreset: form.ucPreset },
-      expectation: form.expectation,
+    const r = await window.api.preview({
+      base: state.prompt,
+      negative: state.negative,
+      characters: state.characters.filter((c) => c.prompt.trim()).map((c) => ({ ...c })),
+      params: { ...state.params },
+      expectation: expectation.value,
       version: state.settings.naiVersion
     })
+    state.lastPreview = { key, result: r }
   } catch (e) {
-    error.value = String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, '')
+    error.value = cleanErr(e)
   } finally {
     running.value = false
   }
@@ -312,91 +180,29 @@ function resultText(r: AiPreviewResult): string {
 }
 
 function toGenerate() {
-  state.generateDraft = {
-    base: form.base,
-    negative: form.negative,
-    characters: form.characters.map((c) => ({ ...c })),
-    width: form.width,
-    height: form.height,
-    structured: true
-  }
   state.tab = 'generate'
 }
 
 function toOptimize() {
-  state.prompt = form.base
-  state.negative = form.negative
-  state.characters = form.characters.map((c) => ({ ...c }))
   state.tab = 'ai'
-  toast(form.characters.length ? `已带入主提示词、${form.characters.length} 个角色和负面` : '已带入 AI 优化页')
 }
 </script>
 
 <template>
-  <div class="view preview" @dragenter="onDragEnter" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop">
+  <div class="view preview">
     <section class="pane left scroll" ref="leftPane">
-      <div :class="['import-zone', { over: dragDepth > 0 }]">
-        <span class="group-badge pink"><Icon :name="dragDepth > 0 ? 'image' : 'paste'" :size="17" /></span>
-        <div class="import-text">
-          <b>{{ dragDepth > 0 ? '松手读取原图里的提示词' : '导入整套提示词' }}</b>
-          <span>支持 [Prompt] / [Character 1] 分节文本、NAI 元数据 JSON，也可以把 NovelAI 原图拖进来</span>
-        </div>
-        <div class="actions">
-          <button class="btn small primary" @click="pasteClipboard"><Icon name="paste" :size="14" />粘贴</button>
-          <button class="btn small" @click="fileInput?.click()"><Icon name="image" :size="14" />原图</button>
-        </div>
-        <input ref="fileInput" type="file" accept="image/png" hidden @change="onFilePicked" />
-      </div>
+      <WorkspaceBar />
 
-      <div class="field">
-        <label class="field-label">主提示词<span class="muted"> · 粘贴分节文本会自动拆分</span></label>
-        <div class="composer short">
-          <textarea
-            v-autosize
-            v-model="form.base"
-            data-src="pos"
-            spellcheck="false"
-            placeholder="2girls, artist:xxx, outdoors, cherry blossoms, ..."
-            @paste="onBasePaste"
-          ></textarea>
-        </div>
-      </div>
-
-      <CharacterEditor :list="form.characters" />
-
-      <div class="field">
-        <label class="field-label">负面提示词（UC）<span class="muted"> · 用来判断哪些东西被压掉了</span></label>
-        <div class="composer short neg">
-          <textarea v-autosize v-model="form.negative" data-src="neg" spellcheck="false" placeholder="lowres, worst quality, bad quality, ..."></textarea>
-        </div>
-      </div>
+      <PromptEditor neg-hint="用来判断哪些东西被压掉了" />
 
       <div class="params">
-        <div class="param">
-          <span class="side-label">画幅<template v-if="sizeKey === 'custom'"> · {{ form.width }}×{{ form.height }}</template></span>
-          <div class="seg block">
-            <button v-for="s in SIZES" :key="s.key" :class="{ on: sizeKey === s.key }" @click="setSize(s.w, s.h)">{{ s.label }}</button>
-          </div>
-        </div>
-        <div class="param">
-          <span class="side-label">Add Quality Tags</span>
-          <div class="seg block">
-            <button :class="{ on: form.qualityTags }" @click="form.qualityTags = true">开</button>
-            <button :class="{ on: !form.qualityTags }" @click="form.qualityTags = false">关</button>
-          </div>
-        </div>
-        <div class="param">
-          <span class="side-label">UC 预设</span>
-          <div class="seg block">
-            <button v-for="u in UC_OPTIONS" :key="u.key" :class="{ on: form.ucPreset === u.key }" @click="form.ucPreset = u.key">{{ u.label }}</button>
-          </div>
-        </div>
+        <SharedParams />
       </div>
 
       <div class="field">
         <label class="field-label">想要的效果（可选）<span class="muted"> · 填了会对比差距并给出修改建议</span></label>
         <div class="composer short mini">
-          <textarea v-autosize v-model="form.expectation" placeholder="例如：两个女孩在樱花树下并肩坐着，左边的银发女孩在笑，整体是柔和的水彩风"></textarea>
+          <textarea v-autosize v-model="expectation" placeholder="例如：两个女孩在樱花树下并肩坐着，左边的银发女孩在笑，整体是柔和的水彩风"></textarea>
         </div>
       </div>
 
@@ -407,9 +213,7 @@ function toOptimize() {
         </button>
         <span class="pill">目标 {{ state.settings?.naiVersion.toUpperCase() }}</span>
         <div class="actions ml-auto">
-          <button class="btn ghost small" title="带入比对页的正向和负面" @click="fromCompare"><Icon name="compare" :size="14" />从比对页带入</button>
           <button class="icon-btn" title="编辑推测规则（Skill 文档）" @click="openSkill"><Icon name="book" /></button>
-          <button class="icon-btn" title="清空" @click="clearAll"><Icon name="trash" /></button>
         </div>
       </div>
 
@@ -421,7 +225,7 @@ function toOptimize() {
     </section>
 
     <section class="pane right scroll">
-      <div v-if="running && !result" class="empty">
+      <div v-if="running" class="empty">
         <Mascot mood="busy" :size="240" />
         <p>正在脑内作画<span class="dots"><i></i><i></i><i></i></span></p>
       </div>
@@ -432,10 +236,14 @@ function toOptimize() {
       <div v-else-if="!result" class="empty">
         <Mascot mood="chill" :size="230" />
         <p>
-          把整套提示词贴进来（主提示词、角色、负面可以一起贴），或者直接把 NovelAI 原图拖进来。我会先查一遍每个 tag，再猜猜它会画成什么样、哪里可能和你想的不一样。
+          推测用的是「当前提示词」，和其他页面共用。可以在上方粘贴整套提示词，或者把 NovelAI 原图拖进窗口。我会先查一遍每个 tag，再猜猜它会画成什么样、哪里可能和你想的不一样。
         </p>
       </div>
       <template v-else>
+        <div class="evidence-note warn" v-if="stale">
+          <Icon name="warn" :size="14" />
+          <div class="evidence-text">当前提示词或参数在推测之后改过了，下面的结果可能已经过期。<button class="link-btn" @click="run">重新推测</button></div>
+        </div>
         <div :class="['cheer', { warn: hasHighRisk }]">
           <Mascot :mood="hasHighRisk ? 'confused' : 'wink'" :size="76" />
           <div>

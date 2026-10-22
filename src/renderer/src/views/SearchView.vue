@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import type { SearchHit, TagCategory } from '@shared/types'
 import { CATEGORY_LABEL } from '@shared/types'
-import { CAT_CLASS, appendTag, copy, state } from '../store'
+import { CAT_CLASS, appendTag, copy, state, fieldList, fieldLabel, sameField } from '../store'
 import TagCard from '../components/TagCard.vue'
 import Icon from '../components/Icon.vue'
 import Mascot from '../components/Mascot.vue'
+
+/** tag 加到哪里：默认是最近编辑过的输入框 */
+const fields = computed(() => fieldList())
+const targetIndex = computed(() => Math.max(0, fields.value.findIndex((f) => sameField(f, state.focus))))
+function setTarget(i: string) {
+  const f = fields.value[Number(i)]
+  if (f) state.focus = f
+}
 
 const query = ref('')
 const cats = ref<TagCategory[]>([])
@@ -58,7 +66,12 @@ watch(
         <span class="cat-dot"></span>{{ CATEGORY_LABEL[c] }}
       </button>
       <span class="hint ml-auto">
-        <span><kbd>单击</kbd>加入提示词</span>
+        <span class="add-target">
+          <kbd>单击</kbd>加入
+          <select class="input sm" :value="targetIndex" @change="setTarget(($event.target as HTMLSelectElement).value)">
+            <option v-for="(f, i) in fields" :key="i" :value="i">{{ fieldLabel(f) }}</option>
+          </select>
+        </span>
         <span><kbd>右键</kbd>复制</span>
         <span><kbd>双击中文</kbd>编辑翻译</span>
       </span>

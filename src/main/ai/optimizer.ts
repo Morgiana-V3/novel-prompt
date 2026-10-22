@@ -154,6 +154,13 @@ async function runTool(name: string, argsJson: string, log: ToolLog, signal?: Ab
   return `未知工具 ${name}`
 }
 
+/** 对外（MCP）复用本地 tag 工具：search_tags / validate_tags / related_tags / tag_wiki */
+export function tagTool(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<string> {
+  return runTool(name, JSON.stringify(args), { related: new Set(), wiki: new Set(), failed: new Set() }, signal)
+}
+
+export const TAG_TOOL_DEFS = TOOLS
+
 function loadSkill(): string {
   try {
     return readFileSync(skillPath(), 'utf8')
