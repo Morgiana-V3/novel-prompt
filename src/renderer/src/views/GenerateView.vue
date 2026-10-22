@@ -269,9 +269,10 @@ const reveal = (img: NaiImage) => window.api.naiReveal(img.name)
 const openFolder = () => window.api.naiReveal()
 async function readMeta(img: NaiImage): Promise<ImportedPrompt | null> {
   try {
-    return await readPngPrompt(await (await fetch(img.url)).blob())
+    const bytes = await window.api.naiReadImage(img.name)
+    return await readPngPrompt(new Blob([new Uint8Array(bytes)], { type: 'image/png' }))
   } catch (e) {
-    toast(e instanceof Error ? e.message : '读取图片信息失败')
+    toast(e instanceof Error ? cleanErr(e.message) : '读取图片信息失败')
     return null
   }
 }

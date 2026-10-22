@@ -37,6 +37,15 @@
 }
 * { box-sizing: border-box; }
 html, body, #app { margin: 0; height: 100%; overflow: hidden; }
+/* 桌面应用：界面元素（按钮、标签、卡片、标题）默认不可划选，只有内容区域可以选中复制 */
+body { user-select: none; -webkit-user-select: none; cursor: default; }
+input, textarea, [contenteditable='true'], .selectable,
+.result-text, .notes, .error-box, .effect-row .grow, .evidence, .nl-item > span:not(.badge), .tl-item, .warn-line {
+  user-select: text; -webkit-user-select: text;
+}
+/* 可选中的区域里嵌套的按钮、标签仍然不参与划选 */
+.effect-row .grow button, .notes .chip-zh, .row-tags { user-select: none; -webkit-user-select: none; }
+img { -webkit-user-drag: none; }
 h2 { margin: 0; font-size: 15px; font-weight: 650; }
 h3 { margin: 0; font-size: 13.5px; font-weight: 600; }
 button { font: inherit; color: inherit; cursor: pointer; border: none; background: none; padding: 0; }

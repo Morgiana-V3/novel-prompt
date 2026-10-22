@@ -162,6 +162,12 @@ function registerIpc(): void {
     naiCancel = true
   })
   ipcMain.handle('nai:list', () => listImages())
+  // 读回图片原始字节（用于解析图里的提示词）。不走 fetch(np-img://)，避免跨源被拦
+  ipcMain.handle('nai:readImage', (_e, name: string) => {
+    const src = imagePath(name)
+    if (!src) throw new Error('图片不存在或已被删除')
+    return new Uint8Array(readFileSync(src))
+  })
   ipcMain.handle('nai:saveAs', async (_e, name: string) => {
     const src = imagePath(name)
     if (!src || !win) return false

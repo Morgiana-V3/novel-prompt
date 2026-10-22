@@ -47,6 +47,7 @@ const api = {
   naiGenerate: (req: NaiGenRequest): Promise<NaiGenResult> => ipcRenderer.invoke('nai:generate', req),
   naiCancel: (): Promise<void> => ipcRenderer.invoke('nai:cancel'),
   naiList: (): Promise<NaiImage[]> => ipcRenderer.invoke('nai:list'),
+  naiReadImage: (name: string): Promise<Uint8Array> => ipcRenderer.invoke('nai:readImage', name),
   naiSaveAs: (name: string): Promise<boolean> => ipcRenderer.invoke('nai:saveAs', name),
   naiCopyImage: (name: string): Promise<boolean> => ipcRenderer.invoke('nai:copyImage', name),
   naiReveal: (name?: string): Promise<void> => ipcRenderer.invoke('nai:reveal', name),
