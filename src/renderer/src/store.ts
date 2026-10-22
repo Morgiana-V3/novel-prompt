@@ -22,13 +22,15 @@ export const toDrafts = (list: { prompt: string; negative?: string; position?: s
   list.map((c) => ({ prompt: c.prompt ?? '', negative: c.negative ?? '', position: c.position ?? '' }))
 
 export const state = reactive({
-  tab: 'compare' as 'compare' | 'search' | 'ai' | 'preview' | 'settings',
+  tab: 'compare' as 'compare' | 'search' | 'ai' | 'preview' | 'generate' | 'settings',
   prompt: '',
   negative: '',
   /** AI 优化页的角色提示词 */
   characters: [] as CharDraft[],
   /** 其他页面要送到画面推测页的整套提示词，画面推测页读取后清空 */
   previewDraft: null as ImportedPrompt | null,
+  /** 其他页面要送到生图页的整套提示词，生图页读取后清空 */
+  generateDraft: null as ImportedPrompt | null,
   settings: null as Settings | null,
   db: null as DbStatus | null,
   progress: null as UpdateProgress | null,

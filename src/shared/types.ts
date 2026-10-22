@@ -113,6 +113,91 @@ export interface Settings {
   naiVersion: NaiVersion
   /** AI 补译时只翻译引用数 >= 此值的 tag */
   translateMinCount: number
+  /** NovelAI Persistent API Token（pst-...） */
+  naiToken: string
+  /** 只允许不消耗 Anlas 的生成：生成前检查免费条件，生成后核对余额 */
+  naiFreeOnly: boolean
+}
+
+/* ---------- NovelAI 生图 ---------- */
+
+export interface NaiSubscription {
+  active?: boolean
+  tier?: number
+  /** 订阅附带的 Anlas */
+  anlasFixed?: number
+  /** 购买的 Anlas */
+  anlasPurchased?: number
+  /** V5 免费额度剩余百分比 */
+  usagePercent?: number
+  usageNegative?: boolean
+  /** 免费额度恢复相关的秒数 */
+  usageNextSeconds?: number
+}
+
+export type NaiSampler =
+  | 'k_euler_ancestral'
+  | 'k_euler'
+  | 'k_dpmpp_2s_ancestral'
+  | 'k_dpmpp_2m_sde'
+  | 'k_dpmpp_2m'
+  | 'k_dpmpp_sde'
+
+export type NaiNoiseSchedule = 'native' | 'karras' | 'exponential' | 'polyexponential'
+
+export interface NaiGenParams {
+  width: number
+  height: number
+  steps: number
+  /** Prompt Guidance */
+  scale: number
+  cfgRescale: number
+  sampler: NaiSampler
+  noiseSchedule: NaiNoiseSchedule
+  /** 空 = 随机 */
+  seed: number | null
+  /** 连续生成张数（每次请求 1 张） */
+  count: number
+  /** 由本工具把质量词拼进主提示词（不交给服务端处理） */
+  qualityTags: boolean
+  /** 由本工具把 UC 预设拼进负面（不交给服务端处理） */
+  ucPreset: UcPreset
+}
+
+export interface NaiGenRequest {
+  base: string
+  negative: string
+  characters: AiCharacter[]
+  params: NaiGenParams
+  version: NaiVersion
+}
+
+export interface NaiImage {
+  /** 文件名（位于本地图库目录） */
+  name: string
+  /** 渲染进程可直接使用的地址 */
+  url: string
+  seed?: number
+  width?: number
+  height?: number
+  createdAt: number
+}
+
+export interface NaiGenResult {
+  images: NaiImage[]
+  /** 本次生成前后的 Anlas 变化（负数 = 扣除），查询失败时为 undefined */
+  anlasDelta?: number
+  /** 中途停止的原因（扣费、额度不足、请求失败等） */
+  stopped?: string
+  subscription?: NaiSubscription
+}
+
+export interface NaiFreeCheck {
+  ok: boolean
+  /** 不满足免费条件的原因 */
+  reasons: string[]
+  /** 不阻止生成的提醒 */
+  notes: string[]
 }
 
 export interface AiOptimizeRequest {

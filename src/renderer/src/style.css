@@ -435,6 +435,66 @@ kbd {
 .evidence-text { min-width: 0; overflow-wrap: anywhere; }
 .evidence-tags { font-family: var(--mono); font-weight: 500; }
 
+/* ---------- 生图预览 ---------- */
+.generate { display: flex; }
+.import-zone.quota { border-style: solid; border-width: 1px; }
+.import-zone.quota.warn { border-color: #f8e7c4; }
+.quota-sep { color: var(--muted); margin: 0 6px; font-weight: 400; }
+.gen-params { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px 14px; }
+.gen-params .param.wide { grid-column: span 2; }
+.gen-params .seg button { padding: 4px 8px; }
+.gen-params .input.sm { max-width: none; width: 100%; }
+.pair { display: flex; align-items: center; gap: 6px; }
+.pair .input.sm { min-width: 0; }
+select.input { cursor: pointer; padding-right: 6px; }
+.range { width: 100%; accent-color: var(--pink); height: 26px; cursor: pointer; }
+.free-check {
+  display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; font-size: 12.5px; line-height: 1.7;
+  animation: fade-up 0.3s var(--bounce) backwards;
+}
+.free-check .icon { margin-top: 3px; }
+.free-check b { font-weight: 600; }
+.free-check.ok { background: var(--ok-soft); color: var(--ok); }
+.free-check.warn { background: var(--alias-soft); color: var(--alias); }
+.free-check.bad { background: var(--bad-soft); color: var(--bad); }
+.free-check .muted { color: color-mix(in srgb, currentColor 70%, #fff); }
+
+.viewer { animation-delay: 0ms; }
+.pill.seed { cursor: pointer; font-family: var(--mono); transition: background 0.15s, color 0.15s; }
+.pill.seed:hover { background: var(--pink-soft); color: var(--pink); }
+.viewer-stage {
+  position: relative; display: grid; place-items: center; padding: 14px; cursor: zoom-in; min-height: 240px;
+  background: repeating-conic-gradient(#f6f6f8 0% 25%, #fff 0% 50%) 50% / 20px 20px;
+}
+.viewer-stage img {
+  max-width: 100%; max-height: calc(100vh - 260px); object-fit: contain; border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(20, 20, 30, 0.12); animation: pop 0.4s var(--bounce);
+}
+.viewer-busy {
+  position: absolute; top: 22px; left: 22px; display: flex; align-items: center; gap: 6px; padding: 4px 12px 4px 10px;
+  border-radius: 999px; background: rgba(32, 33, 37, 0.78); color: #fff; font-size: 12px;
+}
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
+.thumb {
+  position: relative; aspect-ratio: 1; border-radius: 12px; overflow: hidden; cursor: pointer; background: var(--panel);
+  border: 2px solid transparent; transition: transform 0.3s var(--bounce), border-color 0.2s, box-shadow 0.2s;
+  animation: pop 0.36s var(--bounce) backwards; animation-delay: calc(var(--i, 0) * 18ms);
+}
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb:hover { transform: translateY(-2px); box-shadow: 0 8px 18px rgba(20, 20, 30, 0.12); }
+.thumb.on { border-color: var(--pink); box-shadow: 0 0 0 3px var(--pink-soft); }
+.thumb-actions { position: absolute; right: 4px; bottom: 4px; display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; }
+.thumb:hover .thumb-actions { opacity: 1; }
+.thumb-actions .icon-btn { background: rgba(255, 255, 255, 0.92); color: var(--text); box-shadow: var(--shadow-sm); }
+.lightbox {
+  position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 32px;
+  background: rgba(16, 16, 20, 0.82); cursor: zoom-out; backdrop-filter: blur(4px);
+}
+.lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; animation: pop 0.3s var(--bounce); }
+.lightbox-hint { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); color: rgba(255, 255, 255, 0.6); font-size: 12px; }
+.fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
 /* ---------- 设置 ---------- */
 .settings { padding: 22px 28px 40px; display: flex; flex-direction: column; gap: 16px; overflow: auto; }
 .settings > .card { width: 100%; max-width: 900px; flex-shrink: 0; }

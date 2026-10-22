@@ -135,6 +135,13 @@ function toPreview() {
   state.tab = 'preview'
 }
 
+function toGenerate() {
+  const r = result.value
+  if (!r) return
+  state.generateDraft = { base: r.positive, negative: r.negative, characters: r.characters, structured: true }
+  state.tab = 'generate'
+}
+
 function fullText(r: AiOptimizeResult): string {
   const parts = [`[Prompt]\n${r.positive}`]
   r.characters.forEach((c, i) => {
@@ -302,7 +309,8 @@ function fullText(r: AiOptimizeResult): string {
         <div class="row">
           <button class="btn" @click="copy(fullText(result))"><Icon name="copy" :size="15" />复制全部（含角色和负面）</button>
           <button class="btn" @click="keepEditing"><Icon name="edit" :size="15" />填回左侧继续改</button>
-          <button class="btn accent" @click="toPreview"><Icon name="eye" :size="15" />推测画面</button>
+          <button class="btn" @click="toPreview"><Icon name="eye" :size="15" />推测画面</button>
+          <button class="btn accent" @click="toGenerate"><Icon name="image" :size="15" />去生图</button>
         </div>
       </template>
     </section>

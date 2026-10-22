@@ -13,7 +13,9 @@ const DEFAULTS: Settings = {
   reasoningEffort: 'low',
   minPostCount: 10,
   naiVersion: 'v4.5',
-  translateMinCount: 50
+  translateMinCount: 50,
+  naiToken: '',
+  naiFreeOnly: true
 }
 
 let cache: Settings | null = null

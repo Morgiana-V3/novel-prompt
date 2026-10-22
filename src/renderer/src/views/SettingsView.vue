@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, watch, computed } from 'vue'
+import { reactive, ref, watch, computed } from 'vue'
 import { state, saveSettings, refreshDb, toast } from '../store'
 import Icon from '../components/Icon.vue'
 import type { ReasoningEffort } from '@shared/types'
@@ -10,7 +10,9 @@ const form = reactive({
   model: '',
   reasoningEffort: 'low' as ReasoningEffort,
   minPostCount: 10,
-  translateMinCount: 50
+  translateMinCount: 50,
+  naiToken: '',
+  naiFreeOnly: true
 })
 const efforts: { v: ReasoningEffort; label: string }[] = [
   { v: 'off', label: '关闭' },
@@ -26,7 +28,8 @@ watch(
   () => state.settings,
   (s) => {
     if (!s || filled) return
-    Object.assign(form, s)
+    const { naiVersion: _v, ...rest } = s
+    Object.assign(form, rest)
     filled = true
   },
   { immediate: true }
@@ -40,6 +43,25 @@ const percent = computed(() => {
 
 const cancel = () => window.api.cancelTask()
 const openSkill = () => window.api.openSkill()
+
+const naiInfo = ref('')
+async function testNai() {
+  await save(true)
+  naiInfo.value = '查询中…'
+  try {
+    const s = await window.api.naiSubscription()
+    const anlas = s.anlasFixed !== undefined || s.anlasPurchased !== undefined ? (s.anlasFixed ?? 0) + (s.anlasPurchased ?? 0) : undefined
+    naiInfo.value = [
+      s.active ? (s.tier === 3 ? 'Opus 会员' : `会员等级 ${s.tier ?? '未知'}`) : '没有有效订阅',
+      anlas !== undefined && `Anlas ${anlas.toLocaleString()}`,
+      s.usagePercent !== undefined && `V5 免费额度约 ${s.usagePercent}%`
+    ]
+      .filter(Boolean)
+      .join(' · ')
+  } catch (e) {
+    naiInfo.value = String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, '')
+  }
+}
 
 async function save(silent = false) {
   await saveSettings({ ...form, minPostCount: Number(form.minPostCount), translateMinCount: Number(form.translateMinCount) })
@@ -173,6 +195,38 @@ async function translate() {
       <div class="row">
         <button class="btn primary" @click="save()"><Icon name="check" :size="16" />保存</button>
         <button class="btn" @click="openSkill"><Icon name="book" :size="16" />编辑 Skill 文档</button>
+      </div>
+    </div>
+
+    <div class="card" style="--d: 105ms">
+      <div class="card-head">
+        <span class="card-icon"><Icon name="image" /></span>
+        <div>
+          <h2>NovelAI</h2>
+          <div class="card-desc">用于「生图预览」，直接调用 NovelAI 图像接口出图</div>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field full">
+          <label>Persistent API Token</label>
+          <input class="input" type="password" v-model="form.naiToken" placeholder="pst-..." autocomplete="off" />
+          <span class="help">在 NovelAI 网页「设置 → Account → Get Persistent API Token」获取。只保存在本机，只用于请求头</span>
+        </div>
+        <div class="form-field full">
+          <label>只用免费额度</label>
+          <div class="seg">
+            <button :class="{ on: form.naiFreeOnly }" @click="form.naiFreeOnly = true">开启（推荐）</button>
+            <button :class="{ on: !form.naiFreeOnly }" @click="form.naiFreeOnly = false">允许消耗 Anlas</button>
+          </div>
+          <span class="help">
+            开启后：生成前检查 Opus 会员、免费额度、尺寸（≤ 1024×1024 像素）和步数（≤ 28），不满足就不提交；每张生成后核对 Anlas，发现扣除立即停止。这是调用端的检查，不是服务端保证
+          </span>
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn primary" @click="save()"><Icon name="check" :size="16" />保存</button>
+        <button class="btn" :disabled="!form.naiToken" @click="testNai"><Icon name="key" :size="15" />保存并测试连接</button>
+        <span class="muted small" v-if="naiInfo">{{ naiInfo }}</span>
       </div>
     </div>
 

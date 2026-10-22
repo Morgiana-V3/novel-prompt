@@ -1,7 +1,17 @@
-import { app, BrowserWindow, ipcMain, shell, clipboard, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, clipboard, ClipboardItem, nativeImage, dialog, protocol, net } from 'electron'
 import { join } from 'node:path'
-import { existsSync } from 'node:fs'
-import type { AiOptimizeRequest, AiPreviewRequest, SearchOptions, Settings } from '../shared/types'
+import { existsSync, copyFileSync, readFileSync } from 'node:fs'
+import { pathToFileURL } from 'node:url'
+import type {
+  AiOptimizeRequest,
+  AiPreviewRequest,
+  NaiGenParams,
+  NaiGenRequest,
+  NaiSubscription,
+  NaiVersion,
+  SearchOptions,
+  Settings
+} from '../shared/types'
 import { tagStore } from './tagdb/store'
 import { updateImplications, updateTagDatabase } from './tagdb/fetcher'
 import { analyzePrompt } from './prompt/analyzer'
@@ -10,6 +20,7 @@ import { optimizePrompt } from './ai/optimizer'
 import { previewPrompt } from './ai/previewer'
 import { aiTranslate } from './ai/translator'
 import { skillPath, SKILL_FILES, type SkillFile } from './paths'
+import { IMAGE_SCHEME, freeCheck, generateImages, getSubscription, imageDir, imagePath, listImages } from './nai/client'
 
 let win: BrowserWindow | null = null
 let busy: AbortController | null = null
@@ -128,13 +139,74 @@ function registerIpc(): void {
   )
   ipcMain.handle('clipboard:write', (_e, text: string) => clipboard.writeText(text))
   ipcMain.handle('clipboard:read', () => clipboard.readText())
+
+  /* ---------- NovelAI 生图 ---------- */
+  let naiRunning = false
+  let naiCancel = false
+  ipcMain.handle('nai:subscription', () => getSubscription())
+  ipcMain.handle('nai:freeCheck', (_e, params: NaiGenParams, version: NaiVersion, sub?: NaiSubscription) =>
+    freeCheck(params, version, sub)
+  )
+  ipcMain.handle('nai:generate', async (_e, req: NaiGenRequest) => {
+    if (naiRunning) throw new Error('上一批还在生成中')
+    naiRunning = true
+    naiCancel = false
+    try {
+      return await generateImages(req, (s) => send('nai:step', s), () => naiCancel)
+    } finally {
+      naiRunning = false
+    }
+  })
+  // 只在两张之间停止，不中断正在进行的请求（中断后服务端可能仍会生成并扣费）
+  ipcMain.handle('nai:cancel', () => {
+    naiCancel = true
+  })
+  ipcMain.handle('nai:list', () => listImages())
+  ipcMain.handle('nai:saveAs', async (_e, name: string) => {
+    const src = imagePath(name)
+    if (!src || !win) return false
+    const r = await dialog.showSaveDialog(win, { defaultPath: name, filters: [{ name: 'PNG 图片', extensions: ['png'] }] })
+    if (r.canceled || !r.filePath) return false
+    copyFileSync(src, r.filePath)
+    return true
+  })
+  ipcMain.handle('nai:copyImage', async (_e, name: string) => {
+    const src = imagePath(name)
+    if (!src) return false
+    const blob = new Blob([readFileSync(src)], { type: 'image/png' })
+    await clipboard.write([new ClipboardItem({ 'image/png': blob })])
+    return true
+  })
+  ipcMain.handle('nai:reveal', (_e, name?: string) => {
+    const src = name ? imagePath(name) : null
+    if (src) shell.showItemInFolder(src)
+    else shell.openPath(imageDir())
+  })
+  ipcMain.handle('nai:delete', async (_e, name: string) => {
+    const src = imagePath(name)
+    if (src) await shell.trashItem(src)
+    return !!src
+  })
 }
+
+/** 图库图片通过自定义协议给渲染进程使用，只能访问图库目录内的 png */
+function registerImageProtocol(): void {
+  protocol.handle(IMAGE_SCHEME, (req) => {
+    const name = decodeURIComponent(new URL(req.url).pathname.replace(/^\/+/, ''))
+    const p = imagePath(name)
+    if (!p) return new Response('Not found', { status: 404 })
+    return net.fetch(pathToFileURL(p).toString())
+  })
+}
+
+protocol.registerSchemesAsPrivileged([{ scheme: IMAGE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }])
 
 app.whenReady().then(() => {
   // 让 Windows 任务栏 / Alt+Tab 使用窗口图标，而不是 electron.exe 的默认图标
   if (process.platform === 'win32') app.setAppUserModelId(APP_ID)
   tagStore.load()
   registerIpc()
+  registerImageProtocol()
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

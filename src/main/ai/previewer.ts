@@ -14,6 +14,7 @@ import type {
   UcPreset
 } from '../../shared/types'
 import { CATEGORY_LABEL } from '../../shared/types'
+import { QUALITY_TAGS, UC_LABEL, UC_PRESETS } from '../../shared/nai-presets'
 import { skillPath, type SkillFile } from '../paths'
 import { analyzePrompt } from '../prompt/analyzer'
 import { chat, extractJson, type ChatMessage } from './deepseek'
@@ -25,32 +26,6 @@ const WEAK_COUNT = 50
 const HEAVY_WEIGHT = 1.6
 const MAX_RETRY = 1
 
-/** NAI 前端 Add Quality Tags 自动追加的内容（Full 模型） */
-const QUALITY_TAGS: Record<NaiVersion, string> = {
-  'v4.5': 'location, very aesthetic, masterpiece, no text',
-  v5: 'very aesthetic, masterpiece, no text'
-}
-
-const UC_HEAVY =
-  'lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page'
-
-const UC_PRESETS: Record<NaiVersion, Record<UcPreset, string>> = {
-  'v4.5': {
-    heavy: UC_HEAVY,
-    light:
-      'lowres, artistic error, scan artifacts, worst quality, bad quality, jpeg artifacts, multiple views, very displeasing, too many watermarks, negative space, blank page',
-    human: `${UC_HEAVY}, @_@, mismatched pupils, glowing eyes, bad anatomy`,
-    none: ''
-  },
-  v5: {
-    heavy: UC_HEAVY,
-    light: 'lowres, bad hands, bad anatomy, artistic error, sepia, white haze, worst quality, very displeasing, jpeg artifacts',
-    human: `${UC_HEAVY}, @_@, mismatched pupils, glowing eyes, bad anatomy`,
-    none: ''
-  }
-}
-
-const UC_LABEL: Record<UcPreset, string> = { heavy: 'Heavy', light: 'Light', human: 'Human Focus', none: '无' }
 
 function loadSkill(name: SkillFile, fallback: string): string {
   try {

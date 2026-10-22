@@ -311,6 +311,18 @@ function resultText(r: AiPreviewResult): string {
   return parts.join('\n\n')
 }
 
+function toGenerate() {
+  state.generateDraft = {
+    base: form.base,
+    negative: form.negative,
+    characters: form.characters.map((c) => ({ ...c })),
+    width: form.width,
+    height: form.height,
+    structured: true
+  }
+  state.tab = 'generate'
+}
+
 function toOptimize() {
   state.prompt = form.base
   state.negative = form.negative
@@ -568,6 +580,7 @@ function toOptimize() {
         <div class="row">
           <button class="btn" @click="copy(resultText(result))"><Icon name="copy" :size="15" />复制推测结果</button>
           <button class="btn" @click="toOptimize"><Icon name="sparkle" :size="15" />送去 AI 优化</button>
+          <button class="btn accent" @click="toGenerate"><Icon name="image" :size="15" />去生图验证</button>
         </div>
       </template>
     </section>
