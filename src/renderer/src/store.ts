@@ -1,5 +1,5 @@
 import { reactive, watch } from 'vue'
-import type { AiPreviewResult, DbStatus, Settings, TagCategory, UcPreset, UpdateInfo, UpdateProgress } from '@shared/types'
+import type { AiPreviewResult, DbStatus, Settings, SkillConfigItem, TagCategory, UcPreset, UpdateInfo, UpdateProgress } from '@shared/types'
 import type { ImportedPrompt } from '@shared/prompt-import'
 
 export const CAT_CLASS: Record<TagCategory, string> = {
@@ -82,6 +82,12 @@ export const state = reactive({
   imageKeys: {} as Record<string, string>,
 
   settings: null as Settings | null,
+  /** 全部 Skill，按优先级排列，含启用状态 */
+  skills: [] as SkillConfigItem[],
+  /** 侧栏的 Skill 启用浮层是否打开 */
+  skillPanel: false,
+  /** 切到设置页后滚动到的区块 id */
+  settingsAnchor: '',
   db: null as DbStatus | null,
   progress: null as UpdateProgress | null,
   /** 版本检查结果（发现新版时侧栏提示） */
@@ -129,7 +135,21 @@ export function fmtCount(n: number): string {
 }
 
 export const cleanErr = (e: unknown): string =>
-  String(e instanceof Error ? e.message : e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, '')
+  String(e instanceof Error ? e.message : e).replace(/^(Error: )?(Error invoking remote method '[^']+': )?(Error: )?/, '')
+
+/* ---------- Skill ---------- */
+
+/** 重新读取 Skill 列表（启用状态与优先级）；MCP 可能在后台改过，打开相关界面时调用 */
+export async function loadSkills(): Promise<SkillConfigItem[]> {
+  state.skills = await window.api.skillsList()
+  return state.skills
+}
+
+/** 保存启用与优先级（传入完整列表，顺序即优先级） */
+export async function saveSkillConfig(list: SkillConfigItem[]): Promise<void> {
+  state.skills = list
+  state.skills = await window.api.skillsSetConfig(list.map((s) => ({ id: s.id, enabled: s.enabled })))
+}
 
 /* ---------- 输入框读写 ---------- */
 

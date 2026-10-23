@@ -3,7 +3,20 @@ import { join } from 'node:path'
 import type { AiCharacter, NaiGenParams, NaiNoiseSchedule, NaiSampler, NaiVersion, UcPreset } from '../../shared/types'
 import { readPngPrompt } from '../../shared/prompt-import'
 import { getSettings } from '../settings'
-import { skillPath } from '../paths'
+import {
+  MODEL_LABEL,
+  SCOPE_LABEL,
+  composeSkills,
+  coreText,
+  createSkill,
+  deleteSkill,
+  duplicateSkill,
+  getConfig,
+  getSkill,
+  importSkillFile,
+  setConfig,
+  updateSkill
+} from '../skills'
 import { tagTool, TAG_TOOL_DEFS, optimizePrompt } from '../ai/optimizer'
 import { previewPrompt, reviewPrompt } from '../ai/previewer'
 import { freeCheck, generateImages, getSubscription, imageDir, imagePath, listImages, FREE_MAX_PIXELS, FREE_MAX_STEPS } from '../nai/client'
@@ -91,15 +104,164 @@ function aiGate(): string | null {
   return null
 }
 
+/* ---------- Skill 管理 ---------- */
+
+const SKILL_FIELDS = {
+  name: { type: 'string', description: 'Skill 名称' },
+  description: { type: 'string', description: '一句话说明这份 Skill 管什么（会出现在给 AI 的 Skill 清单里）' },
+  scope: { type: 'string', enum: ['optimize', 'preview', 'all'], description: '作用于哪个功能：optimize = AI 优化 / 描述转提示词（也是 prompt_guide 的内容），preview = 画面推测，all = 两者' },
+  model: { type: 'string', enum: ['all', 'v4.5', 'v5'], description: '适用模型，默认 all；正文里也可以用【V4.5】/【V5】标注版本专用的内容' },
+  content: { type: 'string', description: 'Skill 正文（Markdown，不含 frontmatter）' }
+}
+
+const skillLine = (s: ReturnType<typeof getConfig>[number], i: number) => ({
+  priority: i + 1,
+  id: s.id,
+  name: s.name,
+  enabled: s.enabled,
+  builtin: s.builtin,
+  scope: `${s.scope}（${SCOPE_LABEL[s.scope]}）`,
+  model: `${s.model}（${MODEL_LABEL[s.model]}）`,
+  description: s.description,
+  chars: s.chars
+})
+
+const skillList = () => json(getConfig().map(skillLine))
+
+function skillTools(): McpTool[] {
+  const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+  return [
+    {
+      name: 'list_skills',
+      title: 'Skill 列表',
+      description: '列出全部 Skill（内置 + 用户），按优先级排列（priority 1 最高），含启用状态、作用范围、适用模型、字数。软件内置 AI 与 prompt_guide 只使用 enabled 为 true 且范围、模型匹配的 Skill。',
+      inputSchema: { type: 'object', properties: {} },
+      annotations: READ_ONLY,
+      run: async () => skillList()
+    },
+    {
+      name: 'get_skill',
+      title: '读取 Skill',
+      description: '读取一份 Skill 的元信息和正文。id 来自 list_skills；传 core 读取固定的「Skill 使用总则」。',
+      inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+      annotations: READ_ONLY,
+      run: async (a) => {
+        if (str(a.id) === 'core') return coreText()
+        const s = getSkill(str(a.id))
+        if (!s) throw new Error(`找不到 Skill：${str(a.id)}`)
+        return json(s)
+      }
+    },
+    {
+      name: 'create_skill',
+      title: '新建 / 导入 Skill',
+      description:
+        '新建一份用户 Skill。三种来源任选其一：直接传 name + content；传 path 导入本机 .md 文件（frontmatter 里的 name / description / scope / model 会被读取）；传 duplicate_from 复制一份已有 Skill（含内置）。新建与导入默认启用并放在最高优先级，复制默认不启用、放在原 Skill 上方；可用 enabled / priority 覆盖。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ...SKILL_FIELDS,
+          path: { type: 'string', description: '要导入的 .md 文件绝对路径' },
+          duplicate_from: { type: 'string', description: '要复制的 Skill id' },
+          enabled: { type: 'boolean' },
+          priority: { type: 'integer', description: '放到第几位（1 = 最高）' }
+        }
+      },
+      annotations: WRITE,
+      run: async (a) => {
+        let doc
+        if (str(a.duplicate_from)) {
+          doc = duplicateSkill(str(a.duplicate_from))
+          const patch = { name: str(a.name) || undefined, description: str(a.description) || undefined, content: str(a.content) || undefined }
+          if (patch.name || patch.description || patch.content || a.scope || a.model)
+            doc = updateSkill(doc.id, { ...patch, scope: a.scope as never, model: a.model as never })
+        } else if (str(a.path)) {
+          doc = importSkillFile(str(a.path))
+        } else {
+          doc = createSkill({ name: str(a.name), description: str(a.description), scope: a.scope as never, model: a.model as never, content: str(a.content) })
+        }
+        if (typeof a.enabled === 'boolean' || a.priority !== undefined) {
+          const list = getConfig().filter((c) => c.id !== doc.id)
+          const self = getConfig().find((c) => c.id === doc.id)!
+          const at = a.priority === undefined ? getConfig().findIndex((c) => c.id === doc.id) : Math.round(num(a.priority, 1, 1, 999)) - 1
+          list.splice(Math.max(0, Math.min(at, list.length)), 0, { ...self, enabled: typeof a.enabled === 'boolean' ? a.enabled : self.enabled })
+          setConfig(list)
+        }
+        return `已创建 Skill「${doc.name}」（id: ${doc.id}）。\n\n当前列表：\n${skillList()}`
+      }
+    },
+    {
+      name: 'update_skill',
+      title: '修改 Skill',
+      description: '修改一份用户 Skill 的名称、说明、作用范围、适用模型或正文（只传要改的字段）。内置 Skill 不能修改，可以先用 create_skill 的 duplicate_from 复制。',
+      inputSchema: { type: 'object', properties: { id: { type: 'string' }, ...SKILL_FIELDS }, required: ['id'] },
+      annotations: { ...WRITE, idempotentHint: true },
+      run: async (a) => {
+        const doc = updateSkill(str(a.id), {
+          name: typeof a.name === 'string' ? a.name : undefined,
+          description: typeof a.description === 'string' ? a.description : undefined,
+          scope: a.scope as never,
+          model: a.model as never,
+          content: typeof a.content === 'string' ? a.content : undefined
+        })
+        return `已更新 Skill「${doc.name}」（${doc.chars} 字）。`
+      }
+    },
+    {
+      name: 'delete_skill',
+      title: '删除 Skill',
+      description: '删除一份用户 Skill（文件一并删除，不可恢复）。内置 Skill 不能删除，只能在 set_skill_config 里关闭。',
+      inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+      annotations: { ...WRITE, destructiveHint: true, idempotentHint: true },
+      run: async (a) => {
+        const s = getSkill(str(a.id))
+        deleteSkill(str(a.id))
+        return `已删除 Skill「${s?.name ?? str(a.id)}」。\n\n当前列表：\n${skillList()}`
+      }
+    },
+    {
+      name: 'set_skill_config',
+      title: '启用与优先级',
+      description:
+        '设置 Skill 的启用状态与优先级。传入全部 Skill 时，数组顺序即新的优先级（第 1 个最高）；只传其中几份时，只修改它们的启用状态，顺序不变。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          skills: {
+            type: 'array',
+            items: { type: 'object', properties: { id: { type: 'string' }, enabled: { type: 'boolean' } }, required: ['id', 'enabled'] }
+          }
+        },
+        required: ['skills']
+      },
+      annotations: { ...WRITE, idempotentHint: true },
+      run: async (a) => {
+        const list = (Array.isArray(a.skills) ? (a.skills as Record<string, unknown>[]) : []).map((x) => ({ id: str(x?.id), enabled: x?.enabled === true }))
+        const current = getConfig()
+        const known = new Set(current.map((c) => c.id))
+        const unknown = list.map((x) => x.id).filter((id) => !known.has(id))
+        if (unknown.length) throw new Error(`找不到这些 Skill：${unknown.join(', ')}（用 list_skills 查看 id）`)
+        const full = known.size === new Set(list.map((x) => x.id)).size
+        if (full) setConfig(list)
+        else {
+          const patch = new Map(list.map((x) => [x.id, x.enabled]))
+          setConfig(current.map((c) => ({ id: c.id, enabled: patch.get(c.id) ?? c.enabled })))
+        }
+        return `已保存。\n\n当前列表：\n${skillList()}`
+      }
+    }
+  ]
+}
+
 /* ---------- 工具 ---------- */
 
 /**
  * 给外部 agent 的入口说明。本软件不再往 agent 目录安装 Skill：
- * 提示词规范只有一份（skills/nai-prompt.md，用户可在软件里修改），agent 通过 prompt_guide 读取。
+ * 提示词规范由用户在软件里启用的 Skill 组合而成（按优先级），agent 通过 prompt_guide 读取。
  */
-export const MCP_INSTRUCTIONS = `NovelPrompt：NovelAI（V4.5 / V5）提示词工具。提供本地 Danbooru tag 库（约 33 万 tag，含别名、包含关系和中文）、Danbooru 共现统计与释义、本软件维护的 NovelAI 提示词规范，以及 NovelAI 文生图。
+export const MCP_INSTRUCTIONS = `NovelPrompt：NovelAI（V4.5 / V5）提示词工具。提供本地 Danbooru tag 库（约 33 万 tag，含别名、包含关系和中文）、Danbooru 共现统计与释义、用户在软件里启用的 NovelAI 提示词 Skill，以及 NovelAI 文生图。
 
-写、查、改 NovelAI 提示词之前，先调用一次 prompt_guide：它返回本软件维护的提示词规范和工具使用说明（用户可以在软件里修改，以它为准，不要用其他来源的 NovelAI 规则替代）。
+写、查、改 NovelAI 提示词之前，先调用一次 prompt_guide：它返回工具使用说明，以及用户当前启用的 Skill（按优先级排列，以它为准，不要用其他来源的 NovelAI 规则替代）。Skill 可以用 list_skills / get_skill / create_skill / update_skill / delete_skill / set_skill_config 管理。
 
 核心规则：
 1. tag 不编造：除 NAI 专用质量词和英文自然语言短句外，tag 必须来自 search_tags / validate_tags 的结果。
@@ -110,7 +272,7 @@ optimize_prompt / preview_prompt 会调用软件内置的 DeepSeek 并消耗用�
 
 const AGENT_GUIDE = `# NovelPrompt 使用说明（给外部 agent）
 
-本工具返回两部分：先是这份使用说明，然后是「NovelAI 提示词编排 Skill」。Skill 是本软件维护的提示词规范，也是软件内置 AI 的系统提示词：其中要求输出 JSON、填写 assessment / changes 字段的部分只针对内置 AI，你交付给用户时按本说明的格式；其余规则（语法、编排、多角色、负面、依据）同样适用于你。
+本工具返回两部分：先是这份使用说明，然后是「Skill 使用总则」和用户在软件里为 AI 优化功能启用的 Skill（按优先级排列）。Skill 也是软件内置 AI 的系统提示词：其中要求输出 JSON、填写 assessment / changes 字段的部分只针对内置 AI，你交付给用户时按本说明的格式；其余规则（语法、编排、角色提示词、负面、依据）同样适用于你，多份 Skill 冲突时按总则的优先级处理。本说明里的语法与格式要求优先于 Skill。
 
 ## 工作流
 1. 理解范围：区分用户已确定的内容、允许调整的部分和你想新增的建议。检查现有提示词时只修本次的问题。
@@ -147,6 +309,12 @@ lowres, worst quality, bad quality, ...
 - 角色 position 只支持 A1~E5 网格或 "0.3,0.5" 坐标，其他写法会被忽略。
 - read_image_prompt 读出的是实际发送的内容（已含质量词和 UC 预设）；角色位置正好在网格中心时返回网格，否则返回原坐标。
 - search_tags / validate_tags / related_tags / tag_wiki 单次上限分别为 20 / 80 / 6 / 8 项，超出部分不处理，返回末尾会列出未处理项。
+- 画面文字写成 \`Text: 文字\`，放在所在提示词的最末尾；source# / target# / mutual# 只写在角色提示词里；英文短句句内不用逗号。
+
+## Skill 管理
+- list_skills 查看全部 Skill（启用状态、优先级、作用范围、适用模型）；get_skill 读取正文。
+- 内置 Skill（id 以 builtin: 开头）只读，只能启用 / 关闭 / 调整优先级，或用 duplicate_from 复制成用户 Skill 再改。
+- 按用户的要求增删改 Skill、调整启用与优先级；改完告诉用户改了什么。
 
 ## 内置 AI 结果的复核
 optimize_prompt / preview_prompt 调用内置 DeepSeek，消耗用户额度；用了也要复核结果：
@@ -170,17 +338,12 @@ export function buildTools(): McpTool[] {
       name: 'prompt_guide',
       title: '提示词规范',
       description:
-        '返回本软件维护的 NovelAI 提示词规范（用户可在软件里修改）和工具使用说明：工作流、交付格式、语法与权重、编排、画师、多角色与位置、NAI 专用 tag、UC 预设与正负面冲突、评判依据。写提示词前先读一遍。',
-      inputSchema: { type: 'object', properties: {} },
+        '返回工具使用说明（工作流、交付格式、参数要点），以及用户在软件里启用的 NovelAI 提示词 Skill（按优先级排列，附优先级取舍总则）。写提示词前先读一遍。',
+      inputSchema: { type: 'object', properties: { version: PROMPT_PROPS.version } },
       annotations: READ_ONLY,
-      run: async () => {
-        try {
-          return AGENT_GUIDE + readFileSync(skillPath('nai-prompt.md'), 'utf8')
-        } catch {
-          return AGENT_GUIDE + '（没有找到提示词规范文档）'
-        }
-      }
+      run: async (a) => AGENT_GUIDE + composeSkills('optimize', version(a.version)).text
     },
+    ...skillTools(),
     {
       name: 'analyze_prompt',
       title: '检查整套提示词',

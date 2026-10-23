@@ -42,7 +42,11 @@ export const ICONS = {
     '<path d="M3.5 18.5l5.2-7.2c.4-.6 1.3-.6 1.7 0l2.6 3.6"/><path d="M10.8 18.5l4.5-6c.4-.6 1.3-.6 1.7 0l3.5 6"/><path d="M3.5 18.5h17"/><circle cx="16.5" cy="6.8" r="1.8"/>',
   paw: '<circle cx="6.8" cy="10.2" r="1.7"/><circle cx="10.2" cy="6.6" r="1.7"/><circle cx="14.4" cy="6.6" r="1.7"/><circle cx="17.8" cy="10.2" r="1.7"/><path d="M12.3 11.6c-3 0-5.4 3-5.4 5.2 0 1.6 1.3 2.3 2.7 2.3 1.1 0 1.8-.5 2.7-.5s1.6.5 2.7.5c1.4 0 2.7-.7 2.7-2.3 0-2.2-2.4-5.2-5.4-5.2z"/>',
   reset: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/>',
-  chevron: '<path d="M9 6l6 6-6 6"/>'
+  chevron: '<path d="M9 6l6 6-6 6"/>',
+  grip: '<circle cx="9" cy="6.5" r=".9"/><circle cx="15" cy="6.5" r=".9"/><circle cx="9" cy="12" r=".9"/><circle cx="15" cy="12" r=".9"/><circle cx="9" cy="17.5" r=".9"/><circle cx="15" cy="17.5" r=".9"/>',
+  upload: '<path d="M12 15.5V5M7.6 9.2L12 4.8l4.4 4.4"/><path d="M5 19.5h14"/>',
+  folder: '<path d="M3.8 7.2A1.7 1.7 0 0 1 5.5 5.5h3.9l2 2.2h7.1a1.7 1.7 0 0 1 1.7 1.7v8.4a1.7 1.7 0 0 1-1.7 1.7h-13a1.7 1.7 0 0 1-1.7-1.7z"/>',
+  layers: '<path d="M12 4l8 4.2-8 4.2-8-4.2z"/><path d="M4 12.2l8 4.2 8-4.2"/><path d="M4 16l8 4.2 8-4.2"/>'
 } as const
 
 export type IconName = keyof typeof ICONS

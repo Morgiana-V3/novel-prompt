@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import type {
   AiPreviewRequest,
   AiPreviewResult,
@@ -15,7 +14,7 @@ import type {
 } from '../../shared/types'
 import { CATEGORY_LABEL } from '../../shared/types'
 import { MAX_CHARACTERS, QUALITY_TAGS, TEXT_MAX_CHARS, UC_LABEL, UC_PRESETS, isGridPosition, parsePosition } from '../../shared/nai-presets'
-import { skillPath, type SkillFile } from '../paths'
+import { composeSkills } from '../skills'
 import { analyzePrompt } from '../prompt/analyzer'
 import { chat, extractJson, type ChatMessage } from './deepseek'
 import { gatherEvidence } from './evidence'
@@ -26,36 +25,17 @@ const WEAK_COUNT = 50
 const HEAVY_WEIGHT = 1.6
 const MAX_RETRY = 1
 
-
-function loadSkill(name: SkillFile, fallback: string): string {
-  try {
-    return readFileSync(skillPath(name), 'utf8')
-  } catch {
-    return fallback
-  }
-}
-
-/** 从优化 Skill 中截取第 1~8 节作为参考知识，截取失败时使用全文 */
-function referenceKnowledge(): string {
-  const doc = loadSkill('nai-prompt.md', '')
-  const start = doc.search(/^## 1\./m)
-  const end = doc.search(/^## 9\./m)
-  return start >= 0 && end > start ? doc.slice(start, end).trim() : doc
-}
-
 function systemPrompt(version: NaiVersion): string {
   const v = version === 'v5' ? 'NAI Diffusion V5' : 'NAI Diffusion V4.5'
-  return `${loadSkill('nai-preview.md', '你是 NovelAI 提示词解读专家，根据提示词推测成图效果。')}
+  return `${composeSkills('preview', version).text}
 
 ---
-# 参考知识（摘自提示词编排规范，仅用于理解提示词）
-${referenceKnowledge()}
-
----
-# 当前任务环境
+# 程序约定（优先于所有 Skill）
+- 你的任务是根据提示词推测成图效果（不是优化提示词）。用户消息里的「本地解析」是程序对每个 tag 的真实查询结果，以它为准。
 - 目标模型：**${v}**
-- 只输出一个 JSON 对象（不要多余文字），confidence 取值 high / medium / low，risks.level 取值 high / medium / low，basis 取值 rule / data / doc / taste（含义见上文「依据」一节）：
+- 只输出一个 JSON 对象（不要多余文字），confidence 取值 high / medium / low，risks.level 取值 high / medium / low，basis 取值 rule（可被程序校验的硬规则）/ data（统计数据）/ doc（依据启用的 Skill 或官方文档，evidence 写出 Skill 名称）/ taste（审美判断）：
 {"summary":"整体画面描述","confidence":"整体置信度","style":{"text":"画风与上色","tags":["关键 tag"],"confidence":"medium"},"composition":{"text":"构图、镜头、景别","tags":[],"confidence":"medium"},"scene":{"text":"背景与场景","tags":[],"confidence":"medium"},"lighting":{"text":"光影与色调","tags":[],"confidence":"medium"},"characters":[{"name":"角色称呼，如 角色 1 / 主角","position":"在画面中的位置，可空","text":"外貌、服装、表情、动作","tags":[],"confidence":"high"}],"emphasis":[{"tag":"被强调的 tag","effect":"会带来的效果"}],"suppressed":[{"tag":"负面中的 tag","effect":"被压制或推开的效果"}],"risks":[{"level":"medium","text":"风险说明","tags":["相关 tag"],"basis":"data","evidence":"依据"}],"gap":"与想要效果的差距，未提供期望则为空字符串","suggestions":[{"text":"具体修改建议","basis":"rule","evidence":"依据"}]}
+- 全部用简体中文输出；tag 原样引用英文。
 - 没有角色提示词但画面里有人物时，characters 仍按画面里的人物逐个描述。`
 }
 
@@ -225,7 +205,7 @@ function structureIssues(req: AiPreviewRequest, sections: Section[]): PreviewIss
 
   for (const t of main?.tokens ?? [])
     if (t.kind === 'action')
-      out.push({ kind: 'warn', where: '主提示词', basis: 'doc', text: `${t.prefix}${t.core} 写在主提示词里：source# / target# / mutual# 只在角色提示词中使用（第 5 节【官方】）` })
+      out.push({ kind: 'warn', where: '主提示词', basis: 'doc', text: `${t.prefix}${t.core} 写在主提示词里：source# / target# / mutual# 只在角色提示词中使用（NovelAI 官方语法）` })
 
   const roles = new Map<string, { source: number[]; target: number[]; mutual: number[] }>()
   sections.forEach((s) => {

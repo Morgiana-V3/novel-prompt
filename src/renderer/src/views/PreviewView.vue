@@ -45,7 +45,7 @@ watch(
 )
 
 function openSkill() {
-  window.api.openSkill('nai-preview.md')
+  state.skillPanel = true
 }
 
 /* ---------- 推测 ---------- */
@@ -213,7 +213,7 @@ function toOptimize() {
         </button>
         <span class="pill">目标 {{ state.settings?.naiVersion.toUpperCase() }}</span>
         <div class="actions ml-auto">
-          <button class="icon-btn" title="编辑推测规则（Skill 文档）" @click="openSkill"><Icon name="book" /></button>
+          <button class="icon-btn" title="选择推测使用的 Skill" @click="openSkill"><Icon name="layers" /></button>
         </div>
       </div>
 

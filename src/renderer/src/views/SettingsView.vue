@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { reactive, ref, watch, computed, onMounted } from 'vue'
+import { reactive, ref, watch, computed, onMounted, nextTick } from 'vue'
 import { state, saveSettings, refreshDb, toast, copy, checkUpdate } from '../store'
 import Icon from '../components/Icon.vue'
+import SkillManager from '../components/SkillManager.vue'
 import type { McpInfo, ReasoningEffort } from '@shared/types'
 
 const form = reactive({
@@ -44,7 +45,19 @@ const percent = computed(() => {
 })
 
 const cancel = () => window.api.cancelTask()
-const openSkill = () => window.api.openSkill()
+
+/* 从侧栏「管理 Skill」跳转过来时滚动到对应区块 */
+watch(
+  () => [state.tab, state.settingsAnchor] as const,
+  ([tab, anchor]) => {
+    if (tab !== 'settings' || !anchor) return
+    nextTick(() => {
+      document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      state.settingsAnchor = ''
+    })
+  },
+  { immediate: true }
+)
 
 const naiInfo = ref('')
 
@@ -266,9 +279,10 @@ async function translate() {
       </div>
       <div class="row">
         <button class="btn primary" @click="save()"><Icon name="check" :size="16" />保存</button>
-        <button class="btn" @click="openSkill"><Icon name="book" :size="16" />编辑 Skill 文档</button>
       </div>
     </div>
+
+    <SkillManager />
 
     <div class="card" style="--d: 105ms">
       <div class="card-head">
@@ -356,14 +370,14 @@ async function translate() {
           </div>
           <span class="help">
             服务名 novel-prompt，传输方式 stdio。其他 agent 按各自格式填写同样的 command / args / env 即可，改完需完全重启 agent。
-            始终可用：prompt_guide、analyze_prompt、search_tags、validate_tags、related_tags、tag_wiki、nai_subscription、list_images、read_image_prompt。
+            始终可用：prompt_guide、analyze_prompt、search_tags、validate_tags、related_tags、tag_wiki、nai_subscription、list_images、read_image_prompt，以及 Skill 管理（list_skills、get_skill、create_skill、update_skill、delete_skill、set_skill_config）。
           </span>
         </details>
         <div class="form-field full">
           <div class="row">
-            <button class="btn ghost small" @click="openSkill"><Icon name="book" :size="14" />编辑提示词规范</button>
+            <button class="btn ghost small" @click="state.skillPanel = true"><Icon name="layers" :size="14" />Skill 启用与优先级</button>
           </div>
-          <span class="help">agent 通过 MCP 工具 prompt_guide 读取本软件的提示词规范（就是「编辑提示词规范」打开的那份），改完保存，agent 下一次读取即生效。</span>
+          <span class="help">agent 通过 prompt_guide 读取的规范，就是侧栏「Skill」里为 AI 优化启用的 Skill（按优先级），改完下一次读取即生效。agent 也可以用 Skill 管理工具直接增删改 Skill。</span>
         </div>
       </div>
       <div class="mcp-log">

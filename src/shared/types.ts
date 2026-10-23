@@ -121,6 +121,53 @@ export interface Settings {
   mcpAllowAi: boolean
   /** 允许外部 agent（MCP）调用 NovelAI 生图（强制只用免费额度） */
   mcpAllowGenerate: boolean
+  /** 启用的 Skill 与优先级（数组顺序 = 优先级，靠前的优先）；未设置时用默认组合 */
+  skills?: SkillEntry[]
+  /** 旧版「可直接修改的内置 Skill」是否已迁移为用户 Skill */
+  skillsMigrated?: boolean
+}
+
+/* ---------- Skill ---------- */
+
+/** 作用范围：optimize = AI 优化 / 描述转提示词（含 MCP prompt_guide），preview = 画面推测 */
+export type SkillScope = 'optimize' | 'preview' | 'all'
+/** 适用模型 */
+export type SkillModel = 'all' | 'v4.5' | 'v5'
+
+export interface SkillEntry {
+  id: string
+  enabled: boolean
+}
+
+export interface SkillMeta {
+  /** 内置为 builtin:xxx，用户 Skill 为文件名（不含 .md） */
+  id: string
+  name: string
+  description: string
+  scope: SkillScope
+  model: SkillModel
+  builtin: boolean
+  /** 正文字数 */
+  chars: number
+  updatedAt: number
+}
+
+export interface SkillDoc extends SkillMeta {
+  /** 正文（不含 frontmatter） */
+  content: string
+}
+
+/** 启用状态与优先级，按优先级排列；包含全部 Skill */
+export interface SkillConfigItem extends SkillMeta {
+  enabled: boolean
+}
+
+export interface SkillInput {
+  name: string
+  description?: string
+  scope?: SkillScope
+  model?: SkillModel
+  content: string
 }
 
 export interface McpLogEntry {

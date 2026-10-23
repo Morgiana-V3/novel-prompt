@@ -10,6 +10,7 @@ import GenerateView from './views/GenerateView.vue'
 import SettingsView from './views/SettingsView.vue'
 import Icon from './components/Icon.vue'
 import Mascot from './components/Mascot.vue'
+import SkillPicker from './components/SkillPicker.vue'
 import type { IconName } from './components/icons'
 import type { NaiVersion } from '@shared/types'
 
@@ -102,6 +103,7 @@ async function onDrop(e: DragEvent) {
             <button class="btn ghost small" @click="dismissUpdate">忽略</button>
           </div>
         </div>
+        <SkillPicker v-if="state.settings" />
         <div v-if="state.settings">
           <div class="side-label">目标模型</div>
           <div class="seg block">

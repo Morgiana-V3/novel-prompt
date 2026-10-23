@@ -12,7 +12,9 @@ import type {
   NaiVersion,
   McpInfo,
   SearchOptions,
-  Settings
+  Settings,
+  SkillEntry,
+  SkillInput
 } from '../shared/types'
 import { tagStore } from './tagdb/store'
 import { updateImplications, updateTagDatabase, Cancelled } from './tagdb/fetcher'
@@ -21,7 +23,19 @@ import { getSettings, saveSettings } from './settings'
 import { optimizePrompt } from './ai/optimizer'
 import { previewPrompt } from './ai/previewer'
 import { aiTranslate } from './ai/translator'
-import { skillPath, SKILL_FILES, type SkillFile } from './paths'
+import { userSkillDir } from './paths'
+import {
+  coreText,
+  createSkill,
+  deleteSkill,
+  duplicateSkill,
+  getConfig,
+  getSkill,
+  importSkillFile,
+  setConfig,
+  skillFilePath,
+  updateSkill
+} from './skills'
 import { IMAGE_SCHEME, freeCheck, generateImages, getSubscription, imageDir, imagePath, listImages } from './nai/client'
 import { startMcpServer, readLog } from './mcp/server'
 import { buildTools, MCP_INSTRUCTIONS } from './mcp/tools'
@@ -130,7 +144,11 @@ function registerIpc(): void {
   ipcMain.handle('prompt:analyze', (_e, text: string) => analyzePrompt(text, getSettings().naiVersion))
 
   ipcMain.handle('settings:get', () => getSettings())
-  ipcMain.handle('settings:save', (_e, patch: Partial<Settings>) => saveSettings(patch))
+  // Skill 配置只走 skills:* 接口，避免界面里旧的设置副本把它覆盖
+  ipcMain.handle('settings:save', (_e, patch: Partial<Settings>) => {
+    const { skills: _s, skillsMigrated: _m, ...rest } = patch
+    return saveSettings(rest)
+  })
 
   ipcMain.handle('ai:optimize', async (_e, req: AiOptimizeRequest) => {
     const ctrl = new AbortController()
@@ -159,9 +177,38 @@ function registerIpc(): void {
     }
   })
 
-  ipcMain.handle('skill:open', (_e, name?: SkillFile) =>
-    shell.openPath(skillPath(name && SKILL_FILES.includes(name) ? name : 'nai-prompt.md'))
-  )
+  /* ---------- Skill ---------- */
+  ipcMain.handle('skills:list', () => getConfig())
+  ipcMain.handle('skills:get', (_e, id: string) => getSkill(id))
+  ipcMain.handle('skills:core', () => coreText())
+  ipcMain.handle('skills:setConfig', (_e, entries: SkillEntry[]) => setConfig(entries))
+  ipcMain.handle('skills:create', (_e, input: SkillInput) => createSkill(input))
+  ipcMain.handle('skills:update', (_e, id: string, patch: Partial<SkillInput>) => updateSkill(id, patch))
+  ipcMain.handle('skills:delete', (_e, id: string) => deleteSkill(id))
+  ipcMain.handle('skills:duplicate', (_e, id: string) => duplicateSkill(id))
+  ipcMain.handle('skills:import', async () => {
+    const r = await dialog.showOpenDialog(win!, {
+      title: '导入 Skill',
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+      properties: ['openFile', 'multiSelections']
+    })
+    if (r.canceled) return { imported: [], errors: [] }
+    const imported: string[] = []
+    const errors: string[] = []
+    for (const p of r.filePaths) {
+      try {
+        imported.push(importSkillFile(p).name)
+      } catch (e) {
+        errors.push(`${p}：${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+    return { imported, errors }
+  })
+  ipcMain.handle('skills:reveal', (_e, id?: string) => {
+    const p = id ? skillFilePath(id) : null
+    if (p) shell.showItemInFolder(p)
+    else shell.openPath(userSkillDir())
+  })
   ipcMain.handle('clipboard:write', (_e, text: string) => clipboard.writeText(text))
   ipcMain.handle('clipboard:read', () => clipboard.readText())
 
