@@ -416,6 +416,7 @@ kbd {
 .char-head { display: flex; align-items: center; gap: 8px; }
 .char-head h3 { white-space: nowrap; }
 .input.sm { height: 28px; padding: 0 10px; font-size: 12.5px; border-radius: 8px; flex: 1; min-width: 0; max-width: 220px; }
+.input.sm.pos-bad { border-color: var(--alias); background: var(--alias-soft); }
 .char-block .composer { box-shadow: none; border-radius: 14px; }
 .char-block .composer:focus-within { box-shadow: 0 0 0 3px var(--pink-soft); }
 .composer.mini textarea { min-height: 72px; padding: 10px 14px; }

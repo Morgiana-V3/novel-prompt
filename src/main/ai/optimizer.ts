@@ -193,15 +193,15 @@ function systemPrompt(version: NaiVersion): string {
   const v = version === 'v5' ? 'NAI Diffusion V5' : 'NAI Diffusion V4.5'
   const pos =
     version === 'v5'
-      ? '最多 22 个角色；position 只填归一化坐标「x,y」（0~1，原点左上，如 0.3,0.5）或 5×5 网格 A1~E5，不要写自然语言（程序解析不了，生图时会被忽略）；需要描述位置时写进提示词的英文短句里'
-      : '最多 6 个角色；position 只填 5×5 网格坐标 A1~E5（列 A~E 左→右，行 1~5 上→下，C3 为中心）'
+      ? '最多 22 条；position 只填归一化坐标「x,y」（0~1，原点左上，如 0.3,0.5）或 5×5 网格 A1~E5，不要写自然语言（程序解析不了，生图时会被忽略）'
+      : '最多 6 条；position 只填 5×5 网格坐标 A1~E5（列 A~E 左→右，行 1~5 上→下，C3 为中心）'
   return `${loadSkill()}
 
 ---
 # 当前任务环境
 - 目标模型：**${v}**（只使用该版本适用的语法与 tag，文档中标注另一版本专用的内容不要使用）
 - 工具：search_tags / validate_tags 查询本地 tag 库；related_tags / tag_wiki 联网查询 Danbooru 共现统计与释义（见 Skill 第 9 节，按需使用，不必每个 tag 都查）。除 NAI 专用质量词和自然语言片段外，**所有 tag 必须来自工具返回的结果**。
-- 角色提示词：${pos}。
+- 角色提示词（characters）：${pos}。它是带位置的区域提示词（Skill 第 5 节）：每个人物、同一人物的每次出现、漫画每一格里的每个人物都可以各占一条；互动用 source# / target# / mutual# 配对；某个人物或格子的文字写在该条末尾的 Text: 块。
 - 完成后只输出一个 JSON 对象（不要多余文字）：
 {"positive":"主提示词","negative":"完整的负面提示词（不能为空）","characters":[{"prompt":"角色提示词","position":"位置","negative":"该角色的负面提示词，可空"}],"assessment":"整体评估，一两句话","changes":[{"scope":"positive","text":"twin tails → twintails","basis":"rule","evidence":"validate_tags：别名"}]}
 - scope 取 positive / character / negative / optional；basis 取 rule / data / doc / taste（含义见 Skill 第 9 节）。**basis 为 taste 的内容只能放在 scope=optional，不能直接改进提示词。**
@@ -280,19 +280,21 @@ function userPrompt(req: AiOptimizeRequest, rules: string[], dataIssues: string[
     .join('\n\n')
 
   if (req.mode === 'semantic') {
+    const v5 = req.version === 'v5'
     return [
       `请把下面的画面描述转换为一整套 NovelAI 提示词：主提示词、角色提示词（含位置和角色负面）、负面提示词。`,
       `拆分要求：`,
-      `1. 先数清画面里**需要区分外貌**的人物有几个。只有 1 个时默认全部写进主提示词，characters 为 []（描述里明确要求人物位置时，可以用 1 个角色提示词来设位置）；≥2 个时每人一个角色提示词。`,
-      `2. 主提示词只写人数（如 2girls / 1girl, 1boy）、画风画师、构图镜头、背景场景、光影氛围、质量词等共享内容，**不要写任何属于某个角色的外貌服装**，否则会串色。`,
-      `3. 角色提示词按「性别（girl/boy/other，不加数字）→ 角色名 → 外貌 → 服装 → 表情 → 动作」排列；按描述里的空间关系给出位置（写法见当前任务环境），没有交代时按出场顺序从左到右排布。`,
-      `4. 描述里出现**具体角色**时，先用 related_tags 查该角色的默认外观：与默认一致的特征不必重复，与默认不同的特征要明确写出（必要时加权，并在负面排除默认特征）。`,
-      `5. 意思相近、拿不准的候选 tag，用 tag_wiki 读释义后再挑；用户指定画师时，可用 related_tags 了解其倾向并在 changes 中提示。`,
-      `6. 人物之间有互动时，用 source# / target# / mutual# 写在对应角色里，必要时再补一句简短英文强化。`,
-      `7. 两个角色有容易混淆的特征（发色、瞳色、眼镜、兽耳、服装颜色等）时，在对方的角色负面里排除，防止串色；没有风险就留空。`,
-      `8. 负面提示词按画面风格给出完整版本，并避开与正向冲突的 tag。`,
-      `9. 描述里的每个具体要求（年龄与身份、数量、左右、双手、持物对象、谁对谁做什么、画面文字原文）都要落进实际的提示词：tag 表达不了的用一句英文短句补充（句内不用逗号，以句号结尾），例如成年人写 an adult woman / an adult man；不要因为没有对应 tag 就降为 optional，也不要用 mature female 这类会改变外貌的 tag 代替年龄要求。画面文字逐字符照抄（含空格与标点），写成主提示词末尾的 Text: 块。`,
-      `10. changes 逐条说明关键的取舍：拆出了几个角色、位置依据、选某个 tag 而不是近义词的原因、加了哪些防串色负面；用户没提到、属于审美偏好的补充（画师、额外风格）只能放 optional。`,
+      `1. **先列单元表**（Skill 第 5.1 节）：把画面拆成需要独立描述的区域单元——每个人物；同一人物在不同格子 / 不同位置的每一次出现；漫画每一格里的每个人物；需要定位的关键非人物主体。记下每个单元在哪、外貌、做什么、和谁互动、说什么。单元表不用输出，但 characters 必须按它逐条写。`,
+      `2. 单元数 ≥2 时，每个单元一条角色提示词（上限 ${MAX_CHARACTERS[req.version]} 条，超出时优先保留有互动、有对白的单元）。**不要因为只有两个不同的人物就只写两条**：漫画里同一人物出现在 4 个格子，就写 4 条，外貌服装照抄、动作表情按该格写。只有 1 个人物、单一画面、没有位置要求时，才全部写进主提示词，characters 为 []。`,
+      `3. 主提示词只写共享内容：人数 tag（按不同人物计，如 2girls / 1girl, 1boy）、画风画师、版式（comic / 4koma / multiple views 等）、整体构图、全画面共享的背景与光影、质量词。**属于某个人物、某个格子的外貌、服装、表情、动作、局部场景、对白都不要写进主提示词**，也不要在主提示词里用长句逐格描述漫画内容。`,
+      `4. 角色提示词按「性别（girl/boy/other，不加数字）→ 角色名 → 外貌 → 服装 → 表情 → 动作 / 互动前缀 → 该单元特有的场景道具 → Text: 对白」排列。position 按描述里的空间关系或分格位置给出（写法见当前任务环境；分格参考坐标见 Skill 第 5.4 节）；同一格里的两个单元左右错开；没有交代时按出场顺序从上到下、从左到右排布，characters 的顺序与位置一致。`,
+      `5. **人物之间的任何有方向的动作或关系**（拥抱、亲吻、牵手、摸头、对视、递东西、推、拉、背、抱起……）**必须**先用 search_tags 找到对应的动作 tag，再写成互动前缀：主动方 source#动作、被动方 target#动作、对等双方都写 mutual#动作，分别写在两条角色提示词里。不要只在主提示词里用一句英文描述互动；确实没有对应 tag 时，才在主动方的角色提示词里补一句英文短句。`,
+      `6. 画面文字逐字符照抄：某个人物说的话、某一格里的文字，写在**该人物 / 该格角色提示词的末尾** Text: 块，并加 speech bubble 等 tag；只有全画面共用的标题、招牌才写在主提示词末尾。不要把所有对白都合并到主提示词的一个 Text: 块里。`,
+      `7. 描述里出现**具体角色**时，先用 related_tags 查该角色的默认外观：与默认一致的特征不必重复，与默认不同的特征要明确写出（必要时加权，并在负面排除默认特征）。意思相近、拿不准的候选 tag，用 tag_wiki 读释义后再挑。`,
+      `8. 不同人物有容易混淆的特征（发色、瞳色、眼镜、兽耳、服装颜色等）时，在对方的角色负面里排除，防止串色；同一人物的多次出现之间不用互相排除。`,
+      `9. 提示词以 tag 为主：外貌、服装、表情、动作、构图、背景、光影都用 tag 表达，不要改写成句子。tag 和互动前缀都表达不了的要求（左右手、持物对象、年龄身份）才补英文短句（句内不用逗号，以句号结尾），写在所属的那条提示词里，每条${v5 ? '一般不超过 2~3 句' : '一般不超过 1~2 句'}；年龄要求不要用 mature female 这类会改变外貌的 tag 代替。`,
+      `10. 负面提示词按画面风格给出完整版本，并避开与正向冲突的 tag（漫画、黑白风格要去掉 multiple views、screentone、halftone、comic 等）。`,
+      `11. changes 逐条说明关键的取舍：拆出了哪些单元、各自位置依据、用了哪些互动前缀、对白放在哪条、选某个 tag 而不是近义词的原因、加了哪些防串色负面；用户没提到、属于审美偏好的补充（画师、额外风格）只能放 optional。`,
       `画面描述：\n${req.instruction}`,
       req.prompt.trim() && `可参考/保留的已有主提示词：\n${req.prompt}`,
       charactersBlock(req, '可参考/保留的已有角色提示词：'),
@@ -305,13 +307,13 @@ function userPrompt(req: AiOptimizeRequest, rules: string[], dataIssues: string[
   const hasChars = (req.characters ?? []).some((c) => c.prompt?.trim())
   return [
     `请综合评估并优化下面这套 NovelAI 提示词（正向${hasChars ? ' + 角色' : ''} + 负面作为一个整体）：`,
-    `0. 先列出用户明确写出的内容（角色、画师、服装、持物与动作对象、数量与左右等限定、画面文字、负面里刻意排除的元素），它们必须保留在结果里；确需删除或改写的，在 changes 里写明原文和理由。Text: 块里的文字必须逐字符保留（包括空格和标点），本地解析器会把 Text: 之后的全部内容当作画面文字，不要为了通过校验改动它；`,
+    `0. 先列出用户明确写出的内容（角色、画师、服装、持物与动作对象、数量与左右等限定、画面文字、负面里刻意排除的元素），它们必须保留在结果里；确需删除或改写的，在 changes 里写明原文和理由。Text: 块里的文字必须逐字符保留（包括空格和标点），可以把某个人物的对白移到该人物的角色提示词末尾，但文字本身不能改；`,
     `1. 修正不存在/拼写错误的 tag，替换别名为标准写法，去除同一段正向里的包含冗余，顺序混乱时按规范整理，必要时补充缺失的关键 tag；`,
     `2. 检查正负面之间的冲突：同一概念同时出现在正负面、负面误伤了想要的风格（例如漫画/网点风格却在负面里放了 screentone、halftone、multiple views）、负面缺少必要的质量词等；`,
     neg ? `3. 负面提示词同样要校验 tag 是否存在，并按画面风格增删；` : `3. 用户未提供负面提示词，请按规范给出合适的负面提示词；`,
     hasChars
-      ? `4. 角色提示词：检查主提示词与角色之间的分工（角色特征不要留在主提示词里）、人数 tag 与角色数是否一致、位置是否合理、互动语法、角色负面是否足以防串色；保留每个角色原有的身份和顺序。`
-      : `4. 如果正向里其实描述了多个需要区分外貌的人物，按 Skill 第 5 节拆成角色提示词。`,
+      ? `4. 角色提示词：检查主提示词与角色之间的分工（属于某个人物 / 格子的外貌、动作、对白不要留在主提示词里）、人数 tag 是否与不同人物数一致、位置是否合理、角色负面是否足以防串色；人物之间有方向的动作必须用 source# / target# / mutual# 成对写在双方的角色提示词里（主提示词里描述互动的句子改成互动前缀）；保留每个角色原有的身份和顺序。`
+      : `4. 如果正向里其实描述了多个人物、漫画的多个格子、同一人物的多次出现，或人物之间的互动，按 Skill 第 5 节拆成角色提示词（每个单元一条，互动用 source# / target# / mutual# 配对，对白移到说话者那条末尾的 Text: 块）。`,
     `5. 下方的统计数据是客观依据：角色写了与默认外观不同的特征时，判断是否刻意（刻意则加权并在负面排除默认特征，否则提醒）；画师倾向与用户想要的风格冲突时在 changes 中说明。`,
     `6. assessment 用一两句话给出整体评估；changes 逐条列出修改，每条都写明 basis 与 evidence。审美层面的建议（换画师、加风格）只放 optional，不要直接改。`,
     `原正向提示词：\n${req.prompt}`,
@@ -335,13 +337,69 @@ function collectInvalid(result: AiOptimizeResult, version: NaiVersion): string[]
   return [...bad]
 }
 
-/** 结构检查：超出上限、位置写法，以及「审美类修改被直接改进了提示词」 */
-function structureIssues(result: AiOptimizeResult, version: NaiVersion): string[] {
+const LAYOUT_TAGS = new Set(['comic', '4koma', 'multiple_views', 'split_screen', 'multiple_panels', 'manga'])
+const tagName = (t: Tok) => (t.tag ?? t.aliasOf)?.name
+
+/** 角色提示词的用法：互动前缀的位置与配对、漫画分格、对白归属 */
+function regionIssues(req: AiOptimizeRequest, result: AiOptimizeResult): string[] {
+  const v = req.version
+  const out: string[] = []
+  const chars = result.characters.filter((c) => c.prompt.trim())
+  const main = analyzePrompt(result.positive, v).tokens
+  const charTokens = chars.map((c) => analyzePrompt(c.prompt, v).tokens)
+
+  const misplaced = main.filter((t) => t.kind === 'action').map((t) => `${t.prefix}${t.core}`)
+  if (misplaced.length)
+    out.push(`主提示词里出现了互动前缀 ${misplaced.join(', ')}：source# / target# / mutual# 只能写在角色提示词里，请移到主动方 / 被动方各自的角色提示词`)
+
+  const roles = new Map<string, Record<'source#' | 'target#' | 'mutual#', number[]>>()
+  charTokens.forEach((toks, i) => {
+    for (const t of toks) {
+      if (t.kind !== 'action' || !t.prefix) continue
+      const key = norm(t.core)
+      const r = roles.get(key) ?? { 'source#': [], 'target#': [], 'mutual#': [] }
+      r[t.prefix as 'source#']?.push(i + 1)
+      roles.set(key, r)
+    }
+  })
+  for (const [act, r] of roles) {
+    if (r['source#'].length && !r['target#'].length)
+      out.push(`角色 ${r['source#'].join('、')} 写了 source#${act}，但没有角色写 target#${act}：请在被动方的角色提示词里补上（对等互动改用 mutual# 双方都写）`)
+    if (r['target#'].length && !r['source#'].length)
+      out.push(`角色 ${r['target#'].join('、')} 写了 target#${act}，但没有角色写 source#${act}：请在主动方的角色提示词里补上`)
+    if (r['mutual#'].length === 1) out.push(`mutual#${act} 只写在角色 ${r['mutual#'][0]} 里，对等互动需要双方都写`)
+  }
+
+  // 下面是「该用角色提示词却没用」的提示，只在描述转提示词时要求修正；优化模式尊重用户原有结构
+  if (req.mode !== 'semantic') return out
+  const layout = main.some((t) => LAYOUT_TAGS.has(tagName(t) ?? ''))
+  if (layout && chars.length < 2)
+    out.push('主提示词是漫画 / 分格版式，但角色提示词不足 2 条：请按 Skill 第 5.1 节把每一格里的每个人物各写一条角色提示词（同一人物多次出现也各写一条），position 放在对应格子里，每格的动作和对白写进该条')
+  const mainText = textBlockOf(result.positive)
+  if (chars.length >= 2 && mainText && textSegments(mainText).length >= 2)
+    out.push('多段文字都堆在主提示词的 Text: 块里：属于某个人物或某一格的对白，请移到对应角色提示词末尾的 Text: 块（文字逐字符保留），主提示词只留全画面共用的文字')
+  const hasAction = charTokens.some((toks) => toks.some((t) => t.kind === 'action'))
+  const sentences = main.filter((t) => t.status === 'natural').map((t) => t.raw)
+  if (chars.length >= 2 && !hasAction && sentences.length)
+    out.push(
+      `有 ${chars.length} 条角色提示词却没有任何互动前缀，而主提示词里有句子：${sentences.map((s) => `「${s}」`).join('、')}。如果其中描述的是人物之间的动作或关系，请用 search_tags 找到动作 tag，改成 source# / target# / mutual# 成对写进双方的角色提示词，并从主提示词删掉该句；如果与人物互动无关可保持不变`
+    )
+  return out
+}
+
+/** 结构检查：单角色、超出上限、位置写法、角色提示词用法，以及「审美类修改被直接改进了提示词」 */
+function structureIssues(req: AiOptimizeRequest, result: AiOptimizeResult): string[] {
+  const version = req.version
   const chars = result.characters.filter((c) => c.prompt.trim())
   const out: string[] = []
+  // 单角色只在需要指定位置时才用角色提示词；用户原本就写成单角色的保留其结构
+  const hadSingle = (req.characters ?? []).filter((c) => c.prompt?.trim()).length === 1
+  if (chars.length === 1 && !chars[0].position?.trim() && !hadSingle)
+    out.push('只有 1 个角色且没有指定位置时不要使用角色提示词，请把它合并进主提示词，characters 返回 []')
   const limit = MAX_CHARACTERS[version]
   if (chars.length > limit) out.push(`角色数 ${chars.length} 超过当前模型上限 ${limit}`)
   out.push(...positionProblems(chars, version))
+  out.push(...regionIssues(req, result))
   const taste = result.changes.filter((c) => c.basis === 'taste' && c.scope !== 'optional')
   if (taste.length)
     out.push(
@@ -350,17 +408,31 @@ function structureIssues(result: AiOptimizeResult, version: NaiVersion): string[
   return out
 }
 
+/** Text: 块按空行拆成独立的文字段 */
+const textSegments = (text: string) =>
+  text
+    .split(/\r?\n\s*\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+
+/** 主提示词与所有角色提示词里的文字段 */
+const allTextSegments = (prompts: (string | undefined)[]) =>
+  prompts.flatMap((p) => {
+    const t = textBlockOf(p ?? '')
+    return t === null ? [] : textSegments(t)
+  })
+
 /**
- * 必须逐字保留的内容：原提示词里的 Text: 块。
+ * 必须逐字保留的内容：原提示词（主提示词与角色提示词）里的 Text: 块。
+ * 文字段可以在主提示词和角色提示词之间移动、按空行拆分，但每一段的内容必须原样存在。
  * 与 dropped 不同，即使 changes 里写了理由也不放行（画面文字的空格、标点都是用户要的结果）。
  */
 function fidelityIssues(req: AiOptimizeRequest, result: AiOptimizeResult): string[] {
   if (req.mode !== 'optimize') return []
-  const before = textBlockOf(req.prompt ?? '')
-  if (before === null) return []
-  const after = textBlockOf(result.positive)
-  if (after === before) return []
-  return [after === null ? `Text: 块「${before}」不见了` : `Text: 块被改写：原文「${before}」→ 结果「${after}」`]
+  const before = allTextSegments([req.prompt, ...(req.characters ?? []).map((c) => c.prompt)])
+  if (!before.length) return []
+  const after = new Set(allTextSegments([result.positive, ...result.characters.map((c) => c.prompt)]))
+  return before.filter((s) => !after.has(s)).map((s) => `画面文字「${s}」不见了或被改写`)
 }
 
 /* ---------- 保真核对：原有内容被删掉却没有说明 ---------- */
@@ -398,6 +470,8 @@ function droppedItems(req: AiOptimizeRequest, result: AiOptimizeResult): string[
   for (const [before, after] of groups) {
     const kept = new Set(after.map(keyOf))
     for (const t of before) {
+      // 画面文字由 fidelityIssues 逐段核对（允许移动、拆分）
+      if (t.kind === 'text') continue
       const k = keyOf(t)
       if (!kept.has(k) && !out.has(k) && !mentioned(t)) out.set(k, t.raw)
     }
@@ -506,7 +580,7 @@ export async function optimizePrompt(
     }
 
     const invalid = collectInvalid(result, req.version)
-    const structure = structureIssues(result, req.version)
+    const structure = structureIssues(req, result)
     const dropped = droppedItems(req, result)
     const fidelity = fidelityIssues(req, result)
     result.invalid = invalid
@@ -530,7 +604,7 @@ export async function optimizePrompt(
         dropped.length &&
           `以下原有内容在结果里不见了，changes 里也没有说明：\n${dropped.map((s) => `- 「${s}」`).join('\n')}\n用户写的内容要保留；确需删除或改写的（如冲突、冗余、换成标准 tag），在 changes 的 text 里写明原文和理由。`,
         fidelity.length &&
-          `画面文字必须逐字符保留（包括空格和标点），即使有理由也不能改：\n${fidelity.map((s) => `- ${s}`).join('\n')}\n请把主提示词末尾的 Text: 块恢复为原文。本地解析器会把 Text: 之后的全部内容当作画面文字，不需要为它调整写法。`,
+          `画面文字必须逐字符保留（包括空格和标点），即使有理由也不能改：\n${fidelity.map((s) => `- ${s}`).join('\n')}\n请恢复原文（可以放在主提示词或说话者角色提示词末尾的 Text: 块里，但文字本身不能改）。本地解析器会把 Text: 之后的全部内容当作画面文字，不需要为它调整写法。`,
         '请修正后重新输出完整 JSON。'
       ]
         .filter(Boolean)

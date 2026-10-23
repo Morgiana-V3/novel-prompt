@@ -46,11 +46,16 @@ function sizeNotes(a: Record<string, unknown>): string[] {
 
 const CHARACTERS_SCHEMA = {
   type: 'array',
-  description: '角色提示词。画面里有 ≥2 个需要区分外貌的人物时使用；单人默认留空、全部写进 base（需要指定人物位置时可以只放 1 个角色）',
+  description:
+    '角色提示词（带位置的区域提示词）。每个人物、同一人物的每次出现（漫画多格）、漫画每一格里的每个人物各一条；单人单画面且不需要定位时留空、全部写进 base',
   items: {
     type: 'object',
     properties: {
-      prompt: { type: 'string', description: '角色提示词：girl/boy/other（不加数字）→ 角色名 → 外貌 → 服装 → 表情 → 动作' },
+      prompt: {
+        type: 'string',
+        description:
+          '角色提示词：girl/boy/other（不加数字）→ 角色名 → 外貌 → 服装 → 表情 → 动作；人物互动用 source#动作 / target#动作 / mutual#动作 成对写在双方；该人物 / 该格的对白写在末尾 Text: 块'
+      },
       negative: { type: 'string', description: '角色负面，只放与其他角色相区分的特征，防止串色' },
       position: {
         type: 'string',

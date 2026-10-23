@@ -332,7 +332,7 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
 
       <WorkspaceBar />
 
-      <PromptEditor char-hint="位置填 B3 这类网格或 0.3,0.5 坐标才会生效" />
+      <PromptEditor char-hint="点「编辑位置」可在画布上拖动角色" />
 
       <div class="field-head gen-params-head">
         <label class="field-label">生成参数</label>

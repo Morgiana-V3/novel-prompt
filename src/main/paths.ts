@@ -22,8 +22,8 @@ export type SkillFile = (typeof SKILL_FILES)[number]
  * 用来判断用户目录里的旧副本是不是「没改过的旧默认版」：是就直接升级，否则保留用户的修改。
  */
 const KNOWN_DEFAULTS: Record<SkillFile, string[]> = {
-  'nai-prompt.md': ['21f8661e8a634288', 'a08684a449026b80', 'bc996c88eb5cd654'],
-  'nai-preview.md': ['60de9340e6b762c0']
+  'nai-prompt.md': ['21f8661e8a634288', 'a08684a449026b80', 'bc996c88eb5cd654', 'bb5958b1e8e40872', '8974f19147708d36'],
+  'nai-preview.md': ['60de9340e6b762c0', '5ec7316b05f7cffd']
 }
 /** 记录每份 skill 最近一次同步到的内置版本指纹 */
 const STATE_FILE = '.bundled.json'

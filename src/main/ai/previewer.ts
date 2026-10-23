@@ -158,20 +158,19 @@ function collectIssues(sections: Section[], presetTokens: AnalyzedToken[]): Prev
 
 const TEXT_SUPPRESS = new Set(['text', 'english_text', 'chinese_text', 'japanese_text', 'speech_bubble', 'no_text'])
 
-/** 画面文字相关：Text: 块与质量词 / 负面的冲突、位置、版本与长度 */
+/** 画面文字相关：Text: 块（主提示词或角色提示词末尾）与质量词 / 负面的冲突、版本与长度 */
 function textIssues(req: AiPreviewRequest, sections: Section[], presetTokens: AnalyzedToken[]): PreviewIssue[] {
   const out: PreviewIssue[] = []
   const main = sections[0]
-  for (const s of sections.slice(1)) {
-    if (!s.negative && s.tokens.some((t) => t.status === 'text' && t.prefix))
-      out.push({ kind: 'warn', where: s.label, basis: 'doc', text: 'Text: 块应写在主提示词最末尾（第 7 节【官方】），写在角色提示词里可能不会作为画面文字' })
-  }
-  const text = main?.tokens.find((t) => t.status === 'text' && t.prefix)
-  if (!text) return out
+  // 属于某个人物 / 格子的文字写在对应角色提示词末尾是推荐写法，这里只收集各处的 Text: 块
+  const texts = sections
+    .filter((s) => !s.negative)
+    .flatMap((s) => s.tokens.filter((t) => t.status === 'text' && t.prefix).map((t) => [s.label, t] as const))
+  if (!texts.length) return out
   const display = (t: AnalyzedToken) => (t.tag ?? t.aliasOf)!.display
   if (req.params.qualityTags)
     out.push({ kind: 'warn', where: '主提示词', basis: 'doc', text: `有 Text: 块，但开启了 Add Quality Tags，会隐式追加 no text，可能压制画面文字；短文字建议关闭` })
-  for (const t of main.tokens) if (t.weight > 0 && nameOf(t) === 'no_text') out.push({ kind: 'conflict', where: '主提示词', basis: 'rule', text: '主提示词里的 no text 与 Text: 块冲突' })
+  for (const t of main?.tokens ?? []) if (t.weight > 0 && nameOf(t) === 'no_text') out.push({ kind: 'conflict', where: '主提示词', basis: 'rule', text: '主提示词里的 no text 与 Text: 块冲突' })
   const negs: [string, AnalyzedToken[]][] = [...sections.filter((s) => s.negative).map((s) => [s.label, s.tokens] as [string, AnalyzedToken[]]), ['UC 预设', presetTokens]]
   // 正向里也写了的词已经按正负冲突报过
   const posNames = new Set(sections.filter((s) => !s.negative).flatMap((s) => s.tokens.filter((t) => t.weight > 0).map(nameOf)))
@@ -183,13 +182,15 @@ function textIssues(req: AiPreviewRequest, sections: Section[], presetTokens: An
           .map(display)
       )
     ]
-    if (hit.length) out.push({ kind: 'conflict', where, basis: 'rule', text: `${where}里的 ${hit.join(', ')} 会压制画面文字，与主提示词的 Text: 块冲突` })
+    if (hit.length) out.push({ kind: 'conflict', where, basis: 'rule', text: `${where}里的 ${hit.join(', ')} 会压制画面文字，与 Text: 块冲突` })
   }
-  if (req.version === 'v4.5' && /[^\x00-\x7f]/.test(text.core))
-    out.push({ kind: 'warn', where: '主提示词', basis: 'doc', text: 'V4.5 的 Text: 只支持英文，这里含有非 ASCII 字符' })
   const limit = TEXT_MAX_CHARS[req.version]
-  if (text.core.length > limit)
-    out.push({ kind: 'warn', where: '主提示词', basis: 'doc', text: `画面文字 ${text.core.length} 字符，超过 ${req.version === 'v5' ? 'V5 Full' : 'V4.5'} 约 ${limit} 字符的上限` })
+  for (const [where, text] of texts) {
+    if (req.version === 'v4.5' && /[^\x00-\x7f]/.test(text.core))
+      out.push({ kind: 'warn', where, basis: 'doc', text: 'V4.5 的 Text: 只支持英文，这里含有非 ASCII 字符' })
+    if (text.core.length > limit)
+      out.push({ kind: 'warn', where, basis: 'doc', text: `画面文字 ${text.core.length} 字符，超过 ${req.version === 'v5' ? 'V5 Full' : 'V4.5'} 约 ${limit} 字符的上限` })
+  }
   return out
 }
 
