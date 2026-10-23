@@ -96,7 +96,7 @@
 ## 4. 正向内部的冲突与冗余
 
 检查并修正（"同一主体、同一时刻"才算冲突；不同角色、不同画格的差异不算）：
-- **互斥**：同一角色 `short hair` × `long hair`、`smile` × `crying`（除非用户就是要"笑着哭"）、`solo` × `2girls`、`from above` × `from below`、`day` × `night`、`full body` × `portrait`
+- **互斥**【经验】：同一角色 `short hair` × `long hair`、`smile` × `crying`（除非用户就是要"笑着哭"）、`solo` × `2girls`、`from above` × `from below`、`day` × `night`、`full body` × `portrait`（这些是常见经验判断，不是官方规定；写 evidence 时不要标成【官方】）
 - **需要留意但不一定冲突**：`monochrome` / `greyscale` 与明确的发色瞳色。黑白画面里颜色 tag 仍可能影响明暗和辨识度，或用于 `spot color`，按用户意图决定，不要直接删掉
 - **人数不匹配**：写了 `1girl` 却描述两个角色的服装 → 改成多角色写法（第 5 节）或修正人数
 - **包含冗余**（只在**同一段正向**里判断）：`thighhighs` 和 `white thighhighs` 同时出现时保留后者；冗余只是浪费长度，不影响正确性

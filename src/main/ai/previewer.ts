@@ -14,7 +14,7 @@ import type {
   UcPreset
 } from '../../shared/types'
 import { CATEGORY_LABEL } from '../../shared/types'
-import { QUALITY_TAGS, UC_LABEL, UC_PRESETS, isGridPosition, parsePosition } from '../../shared/nai-presets'
+import { MAX_CHARACTERS, QUALITY_TAGS, TEXT_MAX_CHARS, UC_LABEL, UC_PRESETS, isGridPosition, parsePosition } from '../../shared/nai-presets'
 import { skillPath, type SkillFile } from '../paths'
 import { analyzePrompt } from '../prompt/analyzer'
 import { chat, extractJson, type ChatMessage } from './deepseek'
@@ -115,7 +115,7 @@ function collectIssues(sections: Section[], presetTokens: AnalyzedToken[]): Prev
     }
   }
 
-  // 正负面冲突：正向（主 + 角色，忽略负权重）与全局负面 + UC 预设；角色正向与自身的角色负面
+  // 正负面冲突：只看实际生效的词（权重 > 0）。负面里 0::tag:: 不起作用、负数权重另有提示，都不算排除
   const positiveNames = (list: Section[]) => {
     const map = new Map<string, string>()
     for (const s of list) for (const t of s.tokens) if (t.weight > 0 && nameOf(t)) map.set(nameOf(t)!, s.label)
@@ -123,24 +123,133 @@ function collectIssues(sections: Section[], presetTokens: AnalyzedToken[]): Prev
   }
   const pos = positiveNames(sections.filter((s) => !s.negative))
   const globalNeg = sections.find((s) => s.label === '负面')
-  const report = (tokens: AnalyzedToken[], where: string, against: Map<string, string>) => {
-    const seen = new Set<string>()
+  const report = (tokens: AnalyzedToken[], where: string, against: Map<string, string>, seen = new Set<string>()) => {
     for (const t of tokens) {
       const n = nameOf(t)
-      if (!n || seen.has(n) || !against.has(n)) continue
+      if (!n || t.weight <= 0 || seen.has(n) || !against.has(n)) continue
       seen.add(n)
       issues.push({ kind: 'conflict', where, basis: 'rule', text: `${(t.tag ?? t.aliasOf)!.display} 同时出现在${against.get(n)}和${where}，会互相抵消` })
     }
+    return seen
   }
   if (globalNeg) report(globalNeg.tokens, '负面', pos)
   report(presetTokens, 'UC 预设', pos)
+  const basePos = positiveNames(sections.filter((s) => s.label === '主提示词'))
   for (const s of sections) {
     const m = /^角色 (\d+) 负面$/.exec(s.label)
     if (!m) continue
     const own = sections.find((x) => x.label === `角色 ${m[1]}`)
-    if (own) report(s.tokens, s.label, positiveNames([own]))
+    const seen = own ? report(s.tokens, s.label, positiveNames([own])) : new Set<string>()
+    // 主提示词作用于整幅画面，与某个角色的负面同词时归属不清，提示核对而不是直接判冲突
+    for (const t of s.tokens) {
+      const n = nameOf(t)
+      if (!n || t.weight <= 0 || seen.has(n) || !basePos.has(n)) continue
+      seen.add(n)
+      issues.push({
+        kind: 'warn',
+        where: s.label,
+        basis: 'rule',
+        text: `${(t.tag ?? t.aliasOf)!.display} 写在主提示词（作用于整幅画面），又出现在${s.label}：请确认归属——属于其他角色就移到对应角色提示词，属于全局就从${s.label}删除`
+      })
+    }
   }
   return issues
+}
+
+const TEXT_SUPPRESS = new Set(['text', 'english_text', 'chinese_text', 'japanese_text', 'speech_bubble', 'no_text'])
+
+/** 画面文字相关：Text: 块与质量词 / 负面的冲突、位置、版本与长度 */
+function textIssues(req: AiPreviewRequest, sections: Section[], presetTokens: AnalyzedToken[]): PreviewIssue[] {
+  const out: PreviewIssue[] = []
+  const main = sections[0]
+  for (const s of sections.slice(1)) {
+    if (!s.negative && s.tokens.some((t) => t.status === 'text' && t.prefix))
+      out.push({ kind: 'warn', where: s.label, basis: 'doc', text: 'Text: 块应写在主提示词最末尾（第 7 节【官方】），写在角色提示词里可能不会作为画面文字' })
+  }
+  const text = main?.tokens.find((t) => t.status === 'text' && t.prefix)
+  if (!text) return out
+  const display = (t: AnalyzedToken) => (t.tag ?? t.aliasOf)!.display
+  if (req.params.qualityTags)
+    out.push({ kind: 'warn', where: '主提示词', basis: 'doc', text: `有 Text: 块，但开启了 Add Quality Tags，会隐式追加 no text，可能压制画面文字；短文字建议关闭` })
+  for (const t of main.tokens) if (t.weight > 0 && nameOf(t) === 'no_text') out.push({ kind: 'conflict', where: '主提示词', basis: 'rule', text: '主提示词里的 no text 与 Text: 块冲突' })
+  const negs: [string, AnalyzedToken[]][] = [...sections.filter((s) => s.negative).map((s) => [s.label, s.tokens] as [string, AnalyzedToken[]]), ['UC 预设', presetTokens]]
+  // 正向里也写了的词已经按正负冲突报过
+  const posNames = new Set(sections.filter((s) => !s.negative).flatMap((s) => s.tokens.filter((t) => t.weight > 0).map(nameOf)))
+  for (const [where, tokens] of negs) {
+    const hit = [
+      ...new Set(
+        tokens
+          .filter((t) => t.weight > 0 && nameOf(t) && nameOf(t) !== 'no_text' && TEXT_SUPPRESS.has(nameOf(t)!) && !posNames.has(nameOf(t)))
+          .map(display)
+      )
+    ]
+    if (hit.length) out.push({ kind: 'conflict', where, basis: 'rule', text: `${where}里的 ${hit.join(', ')} 会压制画面文字，与主提示词的 Text: 块冲突` })
+  }
+  if (req.version === 'v4.5' && /[^\x00-\x7f]/.test(text.core))
+    out.push({ kind: 'warn', where: '主提示词', basis: 'doc', text: 'V4.5 的 Text: 只支持英文，这里含有非 ASCII 字符' })
+  const limit = TEXT_MAX_CHARS[req.version]
+  if (text.core.length > limit)
+    out.push({ kind: 'warn', where: '主提示词', basis: 'doc', text: `画面文字 ${text.core.length} 字符，超过 ${req.version === 'v5' ? 'V5 Full' : 'V4.5'} 约 ${limit} 字符的上限` })
+  return out
+}
+
+const COUNT_RE = /^(\d+)(\+)?(girl|boy|other)s?$/
+
+/** 结构：角色数上限、人数 tag 与角色数、互动前缀位置与配对、画幅 */
+function structureIssues(req: AiPreviewRequest, sections: Section[]): PreviewIssue[] {
+  const out: PreviewIssue[] = []
+  const chars = req.characters.filter((c) => c.prompt?.trim())
+  const limit = MAX_CHARACTERS[req.version]
+  if (chars.length > limit)
+    out.push({ kind: 'warn', where: '角色', basis: 'doc', text: `角色提示词有 ${chars.length} 个，超过 ${req.version === 'v5' ? 'V5' : 'V4.5'} 的上限 ${limit} 个` })
+
+  const main = sections[0]
+  let heads = 0
+  let plus = false
+  for (const t of main?.tokens ?? []) {
+    const m = COUNT_RE.exec(nameOf(t) ?? '')
+    if (!m || t.weight <= 0) continue
+    heads += Number(m[1])
+    if (m[2]) plus = true
+  }
+  if (chars.length && heads && (plus ? chars.length < heads : chars.length !== heads))
+    out.push({
+      kind: 'warn',
+      where: '主提示词',
+      basis: 'doc',
+      text: `人数 tag 合计 ${heads}${plus ? '+' : ''} 人，角色提示词有 ${chars.length} 个：通常每个需要区分外貌的人物对应一个角色提示词，请确认人数与各角色用途（同一人物多次出现、多格漫画等情况可忽略）`
+    })
+  else if (chars.length >= 2 && !heads)
+    out.push({ kind: 'warn', where: '主提示词', basis: 'doc', text: `有 ${chars.length} 个角色提示词，但主提示词没有人数 tag（如 2girls / 1girl, 1boy）` })
+
+  for (const t of main?.tokens ?? [])
+    if (t.kind === 'action')
+      out.push({ kind: 'warn', where: '主提示词', basis: 'doc', text: `${t.prefix}${t.core} 写在主提示词里：source# / target# / mutual# 只在角色提示词中使用（第 5 节【官方】）` })
+
+  const roles = new Map<string, { source: number[]; target: number[]; mutual: number[] }>()
+  sections.forEach((s) => {
+    const m = /^角色 (\d+)$/.exec(s.label)
+    if (!m) return
+    for (const t of s.tokens) {
+      if (t.kind !== 'action') continue
+      const key = t.core.trim().toLowerCase()
+      const r = roles.get(key) ?? { source: [], target: [], mutual: [] }
+      r[t.prefix!.replace('#', '') as 'source' | 'target' | 'mutual'].push(Number(m[1]))
+      roles.set(key, r)
+    }
+  })
+  for (const [act, r] of roles) {
+    if (r.source.length && !r.target.length)
+      out.push({ kind: 'warn', where: `角色 ${r.source.join('、')}`, basis: 'doc', text: `写了 source#${act}，但没有角色写 target#${act}，被动方不明确` })
+    if (r.target.length && !r.source.length)
+      out.push({ kind: 'warn', where: `角色 ${r.target.join('、')}`, basis: 'doc', text: `写了 target#${act}，但没有角色写 source#${act}，主动方不明确` })
+    if (r.mutual.length === 1)
+      out.push({ kind: 'warn', where: `角色 ${r.mutual[0]}`, basis: 'doc', text: `mutual#${act} 只写在一个角色里，对等互动需要双方都写` })
+  }
+
+  for (const [label, v] of [['宽', req.params.width], ['高', req.params.height]] as const)
+    if (v % 64) out.push({ kind: 'warn', where: '生成参数', basis: 'rule', text: `${label} ${v} 不是 64 的倍数，本软件生图时会取整为 ${Math.round(v / 64) * 64}` })
+  return out
 }
 
 /** 位置写法：解析不了的在生图时会被忽略 */
@@ -215,6 +324,7 @@ async function localReview(req: AiPreviewRequest, onStep: (s: string) => void, s
   const preset = UC_PRESETS[req.version][req.params.ucPreset]
   const presetTokens = preset ? analyzePrompt(preset, req.version).tokens : []
   const issues = collectIssues(sections, presetTokens)
+  issues.push(...textIssues(req, sections, presetTokens), ...structureIssues(req, sections))
   issues.push(...positionIssues(req.characters, req.version))
   const tagCount = sections.filter((s) => !s.negative).reduce((n, s) => n + s.tokens.length, 0)
   const ev = await gatherEvidence(sections, onStep, signal)

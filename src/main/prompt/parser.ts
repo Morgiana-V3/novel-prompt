@@ -1,11 +1,13 @@
 import type { PromptToken } from '../../shared/types'
+import { findTextBlock } from '../../shared/nai-presets'
 
 /**
  * NovelAI V4.5 / V5 提示词解析
  * - 分隔：逗号、换行、| （| 视为分段，常用于多角色）
- * - 权重：{tag} ×1.05、[tag] ÷1.05、数值权重 1.5::tag:: / -1::tag::（可包含多个 tag）
+ * - 权重：{tag} ×1.05、[tag] ÷1.05、数值权重 1.5::tag:: / -1::tag::（可包含多个 tag）；
+ *   不带数字的 :: 结束该段，同时闭合前面所有未闭合的 { [
  * - 前缀：artist:xxx，动作 tag：source#/target#/mutual#
- * - 文字：Text: 块（到结尾）、"引号内文字"（V5 自动转 Text 块）
+ * - 文字：Text: 块（到结尾，可跟在逗号、换行或句末标点之后）、"引号内文字"（V5 自动转 Text 块）
  */
 const BRACE_W = 1.05
 const NUM_WEIGHT_RE = /^(-?\d+(?:\.\d+)?)::/
@@ -25,6 +27,7 @@ export function parsePrompt(input: string): PromptToken[] {
   let section = 0
   let inQuote = false
   let buf = null as Buf | null
+  const textAt = findTextBlock(input)
 
   const curWeight = () => stack.reduce((acc, s) => acc * s.w, 1)
 
@@ -55,8 +58,8 @@ export function parsePrompt(input: string): PromptToken[] {
       continue
     }
 
-    // Text: 块，到结尾都视为文字
-    if ((!buf || !buf.text.trim()) && /^text:/i.test(input.slice(i, i + 5))) {
+    // Text: 块，到结尾都视为文字（其中的逗号、括号、权重符号都是要画的字）
+    if (i === textAt) {
       flush()
       const rest = input.slice(i)
       tokens.push({
@@ -98,15 +101,12 @@ export function parsePrompt(input: string): PromptToken[] {
         continue
       }
     }
-    // 数值权重结尾
+    // 结束符 ::：结束数值权重段，同时闭合前面所有未闭合的 { [
     if (ch === ':' && input[i + 1] === ':') {
-      const idx = findLast(stack, 'num')
-      if (idx >= 0) {
-        flush()
-        stack.splice(idx, 1)
-        i++
-        continue
-      }
+      flush()
+      stack.length = 0
+      i++
+      continue
     }
 
     if (ch === '\\' && /[()[\]{}]/.test(input[i + 1] ?? '')) {

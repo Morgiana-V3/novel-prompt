@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import type { AnalysisResult, AnalyzedToken, TagInfo } from '@shared/types'
 import { state, copy, toast, readField, writeField, fieldLabel, fieldList, sameField, validField, importPrompt, type FieldRef } from '../store'
 import { parsePromptText } from '@shared/prompt-import'
+import { findTextBlock } from '@shared/nai-presets'
 import TagCard from '../components/TagCard.vue'
 import Icon from '../components/Icon.vue'
 import Mascot from '../components/Mascot.vue'
@@ -148,12 +149,13 @@ function clearPrompt() {
  */
 function formatPrompt() {
   const src = text.value
+  const textAt = findTextBlock(src)
   const parts: string[] = []
   let buf = ''
   let inQuote = false
   for (let i = 0; i < src.length; i++) {
     const ch = src[i]
-    if (!inQuote && /(^|\|)\s*$/.test(buf) && /^text:/i.test(src.slice(i, i + 5))) {
+    if (i === textAt) {
       buf += src.slice(i)
       break
     }

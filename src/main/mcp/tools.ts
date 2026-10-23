@@ -28,6 +28,20 @@ function characters(v: unknown): AiCharacter[] {
 }
 const json = (v: unknown) => JSON.stringify(v, null, 2)
 
+/** 宽高的原始输入被改动（无效、越界、非整数）时，说明实际使用的值 */
+function sizeNotes(a: Record<string, unknown>): string[] {
+  const out: string[] = []
+  for (const [key, d] of [['width', 832], ['height', 1216]] as const) {
+    const raw = a[key]
+    if (raw === undefined || raw === null || raw === '') continue
+    const used = num(raw, d, 64, 4096)
+    const n = typeof raw === 'number' ? raw : Number(raw)
+    if (!Number.isFinite(n)) out.push(`${key}=${JSON.stringify(raw)} 不是有效数字，按默认值 ${d} 检查`)
+    else if (used !== n) out.push(`${key}=${n} 超出 64~4096，按 ${used} 检查（原参数无效，不能直接用于生图）`)
+  }
+  return out
+}
+
 /* ---------- 公共 schema ---------- */
 
 const CHARACTERS_SCHEMA = {
@@ -126,15 +140,20 @@ lowres, worst quality, bad quality, ...
 ## 工具参数要点
 - analyze_prompt / generate_image 的 version 只有 v4.5 / v5（Full 模型）；quality_tags 为布尔值（Standard 档）；uc_preset 为 heavy / light / human / none。Curated、Effort 等官网选项本工具没有提供，不要假称已设置。省略的参数会用软件默认值，说明结论时注明。
 - 角色 position 只支持 A1~E5 网格或 "0.3,0.5" 坐标，其他写法会被忽略。
-- read_image_prompt 读出的是实际发送的内容（已含质量词和 UC 预设）。
+- read_image_prompt 读出的是实际发送的内容（已含质量词和 UC 预设）；角色位置正好在网格中心时返回网格，否则返回原坐标。
+- search_tags / validate_tags / related_tags / tag_wiki 单次上限分别为 20 / 80 / 6 / 8 项，超出部分不处理，返回末尾会列出未处理项。
+
+## 内置 AI 结果的复核
+optimize_prompt / preview_prompt 调用内置 DeepSeek，消耗用户额度；用了也要复核结果：
+- dropped：optimize 模式下被删掉且没有说明的原有内容；semantic 模式没有原提示词可比，为 null，需要你对照描述逐项核对。
+- fidelity：必须逐字保留却被改写的画面文字（Text: 块），不为空时把原文恢复后再交付。
+- invalid 为空只代表 tag 都存在，不代表语义要求都保住了。
 
 ## 生图（用户明确要求时）
 1. 先 nai_subscription 确认免费额度可用（Opus 会员、总像素 ≤ 1024×1024、步数 ≤ 28、V5 还要看免费额度）。
 2. generate_image 必须传 confirm: true。这是接口要求，不能代替用户授权。需要对比改词效果时固定 seed。
 3. 返回 stopped 不为空时（额度不足、检测到扣费、未开启生图权限）停止并如实告知，不要换参数绕过。
 4. 能看图时打开图片对照检查。文本审查完成、拿到图片、画面符合要求是三件事，分别说明。
-
-optimize_prompt / preview_prompt 调用内置 DeepSeek，消耗用户额度；用了也要复核结果，尤其是 optimize_prompt 返回的 dropped（被删掉且没有说明的原有内容）。
 
 ---
 
@@ -164,8 +183,8 @@ export function buildTools(): McpTool[] {
         '不调用 AI 的完整本地检查：逐段（主提示词 / 每个角色 / 角色负面 / 负面）解析每个 tag 的存在性、别名、分类、引用数、中文、实际权重；列出正负面冲突（含 UC 预设）、包含关系冗余、权重过高、版本不适用；并联网查询其中角色、画师、作品 tag 的 Danbooru 统计（角色默认外观、画师倾向），指出与角色设定冲突的写法。',
       inputSchema: { type: 'object', properties: { ...PROMPT_PROPS, ...PARAM_PROPS }, required: ['base'] },
       annotations: { readOnlyHint: true, openWorldHint: true },
-      run: (a, signal) =>
-        reviewPrompt(
+      run: async (a, signal) => {
+        const report = await reviewPrompt(
           {
             base: str(a.base),
             negative: str(a.negative),
@@ -181,6 +200,9 @@ export function buildTools(): McpTool[] {
           },
           signal
         )
+        const notes = sizeNotes(a)
+        return notes.length ? `## 参数调整\n${notes.map((n) => `- ${n}`).join('\n')}\n\n${report}` : report
+      }
     },
     ...(['search_tags', 'validate_tags', 'related_tags', 'tag_wiki'] as const).map(
       (name): McpTool => ({
@@ -195,7 +217,7 @@ export function buildTools(): McpTool[] {
       name: 'optimize_prompt',
       title: 'AI 优化（DeepSeek）',
       description:
-        '调用 NovelPrompt 内置的 DeepSeek 流程优化提示词（会自动检索、校验 tag 并本地复查），或把中文画面描述转成整套提示词（mode=semantic，instruction 写描述）。返回 JSON：positive / negative / characters / assessment / changes（每条带依据）/ invalid。消耗用户的 DeepSeek 额度。',
+        '调用 NovelPrompt 内置的 DeepSeek 流程优化提示词（会自动检索、校验 tag 并本地复查），或把中文画面描述转成整套提示词（mode=semantic，instruction 写描述）。返回 JSON：positive / negative / characters / assessment / changes（每条带依据）/ invalid / dropped / fidelity。消耗用户的 DeepSeek 额度。',
       inputSchema: {
         type: 'object',
         properties: {
@@ -219,6 +241,7 @@ export function buildTools(): McpTool[] {
           () => {},
           signal
         )
+        const semantic = a.mode === 'semantic'
         return json({
           positive: r.positive,
           negative: r.negative,
@@ -226,7 +249,11 @@ export function buildTools(): McpTool[] {
           assessment: r.notes,
           changes: r.changes,
           invalid: r.invalid,
-          dropped: r.dropped
+          dropped: r.dropped,
+          fidelity: r.fidelity,
+          ...(semantic
+            ? { note: '语义转换没有原提示词可比对，dropped 为 null 不代表无遗漏；请对照描述逐项核对年龄、数量、左右、归属、画面文字等要求是否写进了实际提示词' }
+            : {})
         })
       }
     },
@@ -241,26 +268,27 @@ export function buildTools(): McpTool[] {
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
       gate: aiGate,
-      run: async (a, signal) =>
-        json(
-          await previewPrompt(
-            {
-              base: str(a.base),
-              negative: str(a.negative),
-              characters: characters(a.characters),
-              params: {
-                width: num(a.width, 832, 64, 4096),
-                height: num(a.height, 1216, 64, 4096),
-                qualityTags: bool(a.quality_tags, true),
-                ucPreset: ucPreset(a.uc_preset)
-              },
-              expectation: str(a.expectation),
-              version: version(a.version)
+      run: async (a, signal) => {
+        const notes = sizeNotes(a)
+        const r = await previewPrompt(
+          {
+            base: str(a.base),
+            negative: str(a.negative),
+            characters: characters(a.characters),
+            params: {
+              width: num(a.width, 832, 64, 4096),
+              height: num(a.height, 1216, 64, 4096),
+              qualityTags: bool(a.quality_tags, true),
+              ucPreset: ucPreset(a.uc_preset)
             },
-            () => {},
-            signal
-          )
+            expectation: str(a.expectation),
+            version: version(a.version)
+          },
+          () => {},
+          signal
         )
+        return json(notes.length ? { paramNotes: notes, ...r } : r)
+      }
     },
     {
       name: 'nai_subscription',
@@ -333,7 +361,7 @@ export function buildTools(): McpTool[] {
       name: 'list_images',
       title: '本机图库',
       description: '列出 NovelPrompt 本机图库中最近生成的图片（文件路径、种子、尺寸、时间），新的在前。',
-      inputSchema: { type: 'object', properties: { limit: { type: 'integer', description: '默认 20，最多 100' } } },
+      inputSchema: { type: 'object', properties: { limit: { type: 'integer', description: '默认 20；小于 1 按 1，大于 100 按 100' } } },
       annotations: READ_ONLY,
       run: async (a) =>
         json(

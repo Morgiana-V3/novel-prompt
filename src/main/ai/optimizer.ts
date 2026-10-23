@@ -10,7 +10,7 @@ import type {
   NaiVersion
 } from '../../shared/types'
 import { CATEGORY_LABEL } from '../../shared/types'
-import { isGridPosition, parsePosition } from '../../shared/nai-presets'
+import { MAX_CHARACTERS, isGridPosition, parsePosition, textBlockOf } from '../../shared/nai-presets'
 import { skillPath } from '../paths'
 import { tagStore } from '../tagdb/store'
 import { analyzePrompt } from '../prompt/analyzer'
@@ -98,9 +98,20 @@ const cleanTag = (raw: string) =>
   raw
     .trim()
     .replace(/^artist:\s*/i, '')
+    .replace(/^(source|target|mutual)#\s*/i, '')
     .replace(/^-?\d+(\.\d+)?::\s*|\s*::$/g, '')
     .replace(/[{}[\]]/g, '')
     .trim()
+
+/** 批量输入超过单次上限时截断，并在结果里写明未处理的项 */
+function capped(items: string[], max: number): { items: string[]; note: string } {
+  if (items.length <= max) return { items, note: '' }
+  const rest = items.slice(max)
+  return {
+    items: items.slice(0, max),
+    note: `\n\n（⚠ 共传入 ${items.length} 项，超过单次上限 ${max}，只处理了前 ${max} 项；未处理：${rest.join(', ')}。请分批再查）`
+  }
+}
 
 /** 工具调用中查过的统计数据，汇总到结果里展示 */
 interface ToolLog {
@@ -116,41 +127,49 @@ async function runTool(name: string, argsJson: string, log: ToolLog, signal?: Ab
   } catch {
     return '参数不是合法 JSON'
   }
-  const list = (k: string) => ((args[k] as string[]) ?? []).filter((x) => typeof x === 'string')
+  const list = (k: string) => (Array.isArray(args[k]) ? (args[k] as unknown[]) : []).filter((x): x is string => typeof x === 'string')
+  const input = list(name === 'search_tags' ? 'queries' : 'tags')
+  if (!input.length) return `（没有传入要查询的内容：${name === 'search_tags' ? 'queries' : 'tags'} 为空）`
   if (name === 'search_tags') {
     const cats = CAT_MAP[(args.category as string) ?? 'any'] as never
-    return list('queries')
-      .slice(0, 20)
-      .map((q) => {
-        const hits = tagStore.search({ query: q, categories: cats, limit: 8 })
-        return `## ${q}\n${hits.length ? hits.map((h) => '- ' + fmtTag(h) + (h.viaAlias ? ` (别名 ${h.viaAlias})` : '')).join('\n') : '- (无结果，换个说法或用英文再试)'}`
-      })
-      .join('\n')
+    const { items, note } = capped(input, 20)
+    return (
+      items
+        .map((q) => {
+          const hits = q.trim() ? tagStore.search({ query: q, categories: cats, limit: 8 }) : []
+          return `## ${q}\n${hits.length ? hits.map((h) => '- ' + fmtTag(h) + (h.viaAlias ? ` (别名 ${h.viaAlias})` : '')).join('\n') : '- (无结果，换个说法或用英文再试)'}`
+        })
+        .join('\n') + note
+    )
   }
   if (name === 'validate_tags') {
-    return list('tags')
-      .slice(0, 80)
-      .map((raw) => {
-        const core = cleanTag(raw)
-        const { tag, aliasOf } = tagStore.lookup(core)
-        if (tag) return `✓ ${raw}`
-        if (aliasOf) return `↪ ${raw} → 请改用 ${aliasOf.display}`
-        const sug = tagStore.suggest(core, 4)
-        return `✗ ${raw} 不存在${sug.length ? '，候选：' + sug.map((s) => s.display).join(' / ') : ''}`
-      })
-      .join('\n')
+    const { items, note } = capped(input, 80)
+    return (
+      items
+        .map((raw) => {
+          const core = cleanTag(raw)
+          const { tag, aliasOf } = tagStore.lookup(core)
+          if (tag) return `✓ ${raw}`
+          if (aliasOf) return `↪ ${raw} → 请改用 ${aliasOf.display}`
+          const sug = tagStore.suggest(core, 4)
+          return `✗ ${raw} 不存在${sug.length ? '，候选：' + sug.map((s) => s.display).join(' / ') : ''}`
+        })
+        .join('\n') + note
+    )
   }
   if (name === 'related_tags') {
-    const r = await relatedTags(list('tags').slice(0, 6).map(cleanTag), signal)
+    const { items, note } = capped(input, 6)
+    const r = await relatedTags(items.map(cleanTag), signal)
     for (const [n, v] of r.results) if (v && !r.failed.includes(n)) log.related.add(v.display)
     r.failed.forEach((f) => log.failed.add(f.replace(/_/g, ' ')))
-    return formatRelatedTool(r)
+    return formatRelatedTool(r) + note
   }
   if (name === 'tag_wiki') {
-    const r = await tagWiki(list('tags').slice(0, 8).map(cleanTag), signal)
+    const { items, note } = capped(input, 8)
+    const r = await tagWiki(items.map(cleanTag), signal)
     for (const [n, v] of r.results) if (v) log.wiki.add(n.replace(/_/g, ' '))
     r.failed.forEach((f) => log.failed.add(f.replace(/_/g, ' ')))
-    return formatWikiTool(r)
+    return formatWikiTool(r) + note
   }
   return `未知工具 ${name}`
 }
@@ -217,13 +236,13 @@ function precheck(req: AiOptimizeRequest, sections: EvSection[]): string[] {
     }
   }
   type Tok = EvSection['tokens'][number]
-  const name = (t: Tok) => (t.tag ?? t.aliasOf)?.name
+  const name = (t: Tok) => (t.weight > 0 ? (t.tag ?? t.aliasOf)?.name : undefined)
   const posNames = new Set(sections.filter((s) => !s.negative).flatMap((s) => s.tokens.map(name)).filter(Boolean))
   const negTokens = sections.find((s) => s.label === '负面')!.tokens
   const both = [...new Set(negTokens.map(name).filter((n) => n && posNames.has(n)))]
   if (both.length) lines.push(`- 正向（含角色）与负面同时出现：${both.join(', ')}（概念互相抵消）`)
   const chars = (req.characters ?? []).filter((c) => c.prompt?.trim())
-  const limit = req.version === 'v5' ? 22 : 6
+  const limit = MAX_CHARACTERS[req.version]
   if (chars.length > limit) lines.push(`- 角色数 ${chars.length} 超过当前模型上限 ${limit}`)
   lines.push(...positionProblems(chars, req.version).map((s) => `- ${s}`))
   return lines
@@ -272,7 +291,7 @@ function userPrompt(req: AiOptimizeRequest, rules: string[], dataIssues: string[
       `6. 人物之间有互动时，用 source# / target# / mutual# 写在对应角色里，必要时再补一句简短英文强化。`,
       `7. 两个角色有容易混淆的特征（发色、瞳色、眼镜、兽耳、服装颜色等）时，在对方的角色负面里排除，防止串色；没有风险就留空。`,
       `8. 负面提示词按画面风格给出完整版本，并避开与正向冲突的 tag。`,
-      `9. 描述里的每个具体要求（数量、左右、双手、持物对象、谁对谁做什么、画面文字原文）都要落进提示词：tag 表达不了的用一句英文短句补充（句内不用逗号，以句号结尾）。`,
+      `9. 描述里的每个具体要求（年龄与身份、数量、左右、双手、持物对象、谁对谁做什么、画面文字原文）都要落进实际的提示词：tag 表达不了的用一句英文短句补充（句内不用逗号，以句号结尾），例如成年人写 an adult woman / an adult man；不要因为没有对应 tag 就降为 optional，也不要用 mature female 这类会改变外貌的 tag 代替年龄要求。画面文字逐字符照抄（含空格与标点），写成主提示词末尾的 Text: 块。`,
       `10. changes 逐条说明关键的取舍：拆出了几个角色、位置依据、选某个 tag 而不是近义词的原因、加了哪些防串色负面；用户没提到、属于审美偏好的补充（画师、额外风格）只能放 optional。`,
       `画面描述：\n${req.instruction}`,
       req.prompt.trim() && `可参考/保留的已有主提示词：\n${req.prompt}`,
@@ -286,7 +305,7 @@ function userPrompt(req: AiOptimizeRequest, rules: string[], dataIssues: string[
   const hasChars = (req.characters ?? []).some((c) => c.prompt?.trim())
   return [
     `请综合评估并优化下面这套 NovelAI 提示词（正向${hasChars ? ' + 角色' : ''} + 负面作为一个整体）：`,
-    `0. 先列出用户明确写出的内容（角色、画师、服装、持物与动作对象、数量与左右等限定、画面文字、负面里刻意排除的元素），它们必须保留在结果里；确需删除或改写的，在 changes 里写明原文和理由；`,
+    `0. 先列出用户明确写出的内容（角色、画师、服装、持物与动作对象、数量与左右等限定、画面文字、负面里刻意排除的元素），它们必须保留在结果里；确需删除或改写的，在 changes 里写明原文和理由。Text: 块里的文字必须逐字符保留（包括空格和标点），本地解析器会把 Text: 之后的全部内容当作画面文字，不要为了通过校验改动它；`,
     `1. 修正不存在/拼写错误的 tag，替换别名为标准写法，去除同一段正向里的包含冗余，顺序混乱时按规范整理，必要时补充缺失的关键 tag；`,
     `2. 检查正负面之间的冲突：同一概念同时出现在正负面、负面误伤了想要的风格（例如漫画/网点风格却在负面里放了 screentone、halftone、multiple views）、负面缺少必要的质量词等；`,
     neg ? `3. 负面提示词同样要校验 tag 是否存在，并按画面风格增删；` : `3. 用户未提供负面提示词，请按规范给出合适的负面提示词；`,
@@ -320,7 +339,7 @@ function collectInvalid(result: AiOptimizeResult, version: NaiVersion): string[]
 function structureIssues(result: AiOptimizeResult, version: NaiVersion): string[] {
   const chars = result.characters.filter((c) => c.prompt.trim())
   const out: string[] = []
-  const limit = version === 'v5' ? 22 : 6
+  const limit = MAX_CHARACTERS[version]
   if (chars.length > limit) out.push(`角色数 ${chars.length} 超过当前模型上限 ${limit}`)
   out.push(...positionProblems(chars, version))
   const taste = result.changes.filter((c) => c.basis === 'taste' && c.scope !== 'optional')
@@ -329,6 +348,19 @@ function structureIssues(result: AiOptimizeResult, version: NaiVersion): string[
       `以下修改的依据是审美偏好，不应直接改动用户的提示词：${taste.map((c) => `「${c.text}」`).join('、')}。请把对应改动从提示词中撤回，改为 scope=optional 的建议`
     )
   return out
+}
+
+/**
+ * 必须逐字保留的内容：原提示词里的 Text: 块。
+ * 与 dropped 不同，即使 changes 里写了理由也不放行（画面文字的空格、标点都是用户要的结果）。
+ */
+function fidelityIssues(req: AiOptimizeRequest, result: AiOptimizeResult): string[] {
+  if (req.mode !== 'optimize') return []
+  const before = textBlockOf(req.prompt ?? '')
+  if (before === null) return []
+  const after = textBlockOf(result.positive)
+  if (after === before) return []
+  return [after === null ? `Text: 块「${before}」不见了` : `Text: 块被改写：原文「${before}」→ 结果「${after}」`]
 }
 
 /* ---------- 保真核对：原有内容被删掉却没有说明 ---------- */
@@ -407,6 +439,7 @@ function normalizeResult(raw: Record<string, unknown>, evidence: EvidenceInfo): 
     changes: normalizeChanges(raw.changes),
     invalid: [],
     dropped: [],
+    fidelity: [],
     evidence
   }
 }
@@ -475,14 +508,17 @@ export async function optimizePrompt(
     const invalid = collectInvalid(result, req.version)
     const structure = structureIssues(result, req.version)
     const dropped = droppedItems(req, result)
+    const fidelity = fidelityIssues(req, result)
     result.invalid = invalid
-    result.dropped = dropped
-    if ((!invalid.length && !structure.length && !dropped.length) || fixRound >= MAX_FIX_ROUNDS) break
+    result.dropped = req.mode === 'optimize' ? dropped : null
+    result.fidelity = fidelity
+    if ((!invalid.length && !structure.length && !dropped.length && !fidelity.length) || fixRound >= MAX_FIX_ROUNDS) break
     fixRound++
     const found = [
       invalid.length && `${invalid.length} 个无效 tag`,
       structure.length && `${structure.length} 处结构问题`,
-      dropped.length && `${dropped.length} 处原有内容被删且未说明`
+      dropped.length && `${dropped.length} 处原有内容被删且未说明`,
+      fidelity.length && '画面文字被改写'
     ].filter(Boolean)
     onStep(`本地校验发现 ${found.join('、')}，要求 AI 修正（第 ${fixRound} 轮）`)
     const validated = invalid.length ? await runTool('validate_tags', JSON.stringify({ tags: invalid }), log, signal) : ''
@@ -493,6 +529,8 @@ export async function optimizePrompt(
         structure.length && `结构问题：\n${structure.map((s) => '- ' + s).join('\n')}`,
         dropped.length &&
           `以下原有内容在结果里不见了，changes 里也没有说明：\n${dropped.map((s) => `- 「${s}」`).join('\n')}\n用户写的内容要保留；确需删除或改写的（如冲突、冗余、换成标准 tag），在 changes 的 text 里写明原文和理由。`,
+        fidelity.length &&
+          `画面文字必须逐字符保留（包括空格和标点），即使有理由也不能改：\n${fidelity.map((s) => `- ${s}`).join('\n')}\n请把主提示词末尾的 Text: 块恢复为原文。本地解析器会把 Text: 之后的全部内容当作画面文字，不需要为它调整写法。`,
         '请修正后重新输出完整 JSON。'
       ]
         .filter(Boolean)

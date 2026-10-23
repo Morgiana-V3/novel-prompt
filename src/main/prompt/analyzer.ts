@@ -9,6 +9,15 @@ function isNatural(core: string): boolean {
   return words.length >= 4 || SENTENCE_PUNCT.test(core) || /[\u3040-\u30ff\u4e00-\u9fff]/.test(core)
 }
 
+const FULLWIDTH_SEP = /[，、；]/
+
+/** 「text. Text: …」这类写法里句号只是结束符，词本身仍是 tag */
+function lookupCore(core: string) {
+  const r = tagStore.lookup(core)
+  if (r.tag || r.aliasOf || !/[.。]$/.test(core) || core.split(/\s+/).length >= 4) return r
+  return tagStore.lookup(core.replace(/[.。]+$/, ''))
+}
+
 function analyzeToken(t: PromptToken, version: NaiVersion): AnalyzedToken {
   if (t.kind === 'text') {
     const warning =
@@ -17,7 +26,7 @@ function analyzeToken(t: PromptToken, version: NaiVersion): AnalyzedToken {
   }
   if (t.kind === 'natural') return { ...t, status: 'natural' }
 
-  const { tag, aliasOf } = tagStore.lookup(t.core)
+  const { tag, aliasOf } = lookupCore(t.core)
   if (tag) {
     const res: AnalyzedToken = { ...t, status: 'valid', tag }
     if (t.prefix === 'artist:' && tag.category !== 1) res.warning = '该 tag 不是画师 tag，去掉 artist: 前缀'
@@ -28,7 +37,9 @@ function analyzeToken(t: PromptToken, version: NaiVersion): AnalyzedToken {
   if (aliasOf) return { ...t, status: 'alias', aliasOf }
 
   if (t.kind === 'tag' && isNatural(t.core)) return { ...t, status: 'natural' }
-  return { ...t, status: 'unknown', suggestions: tagStore.suggest(t.core) }
+  const res: AnalyzedToken = { ...t, status: 'unknown', suggestions: tagStore.suggest(t.core) }
+  if (FULLWIDTH_SEP.test(t.core)) res.warning = '含全角逗号 / 顿号：提示词只按半角逗号「,」分隔 tag，这里会被当成一整个词'
+  return res
 }
 
 export function analyzePrompt(input: string, version: NaiVersion): AnalysisResult {

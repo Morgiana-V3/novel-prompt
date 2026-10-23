@@ -170,8 +170,8 @@ export function formatRelatedTool(lookup: Lookup<Related>): string {
       out.push(`## ${disp(name)}\n（网络不可用，未获取到数据）`)
       continue
     }
-    if (!r) {
-      out.push(`## ${disp(name)}\n（Danbooru 上没有这个 tag 的数据）`)
+    if (!r || (r.postCount === 0 && !r.items.length)) {
+      out.push(`## ${disp(name)}\n（Danbooru 上没有这个 tag 的数据${tagStore.get(name) ? '' : '，本地库也没有收录，可能是不存在的 tag'}）`)
       continue
     }
     const cat = CATEGORY_LABEL[r.category as 0] ?? r.category
@@ -189,7 +189,7 @@ export function formatWikiTool(lookup: Lookup<Wiki>): string {
   const out: string[] = []
   for (const [name, w] of lookup.results) {
     if (lookup.failed.includes(name)) out.push(`## ${disp(name)}\n（网络不可用，未获取到释义）`)
-    else if (!w) out.push(`## ${disp(name)}\n（没有 wiki 释义）`)
+    else if (!w) out.push(`## ${disp(name)}\n（没有 wiki 释义${tagStore.get(name) ? '' : '，本地库也没有收录，可能是不存在的 tag'}）`)
     else out.push(`## ${disp(name)}\n${w.text}${w.otherNames.length ? `\n其他名称：${w.otherNames.join(', ')}` : ''}`)
   }
   return out.join('\n') || '（没有可查询的 tag）'

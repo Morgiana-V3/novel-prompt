@@ -300,8 +300,10 @@ export interface AiOptimizeResult {
   changes: AiChange[]
   /** 本地校验仍不存在的 tag */
   invalid: string[]
-  /** 原提示词里有、结果里被删掉且 changes 没有说明的内容 */
-  dropped: string[]
+  /** 原提示词里有、结果里被删掉且 changes 没有说明的内容（semantic 模式没有原提示词可比，为 null） */
+  dropped: string[] | null
+  /** 必须逐字保留却被改写的内容（画面文字），无论 changes 是否说明 */
+  fidelity: string[]
   evidence: EvidenceInfo
 }
 

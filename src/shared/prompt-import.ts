@@ -112,11 +112,21 @@ interface NaiMeta {
 const s = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
 const n = (v: unknown) => (typeof v === 'number' && v > 0 ? Math.round(v) : undefined)
 
-/** NAI 角色中心点（0~1）→ 5×5 网格，如 0.3,0.5 → B3 */
-function gridOf(c?: { x?: number; y?: number }): string {
+/**
+ * NAI 角色中心点（0~1）→ 位置写法。正好落在 5×5 网格中心（如 0.3,0.5）时写成网格 B3，
+ * 否则保留原坐标「0.231,0.467」，避免有损转换。
+ */
+function positionOf(c?: { x?: number; y?: number }): string {
   if (typeof c?.x !== 'number' || typeof c?.y !== 'number') return ''
-  const idx = (v: number) => Math.min(4, Math.max(0, Math.floor(v * 5)))
-  return `${'ABCDE'[idx(c.x)]}${idx(c.y) + 1}`
+  const cell = (v: number) => {
+    const i = Math.round(v * 5 - 0.5)
+    return i >= 0 && i <= 4 && Math.abs((i + 0.5) / 5 - v) < 1e-6 ? i : -1
+  }
+  const cx = cell(c.x)
+  const cy = cell(c.y)
+  if (cx >= 0 && cy >= 0) return `${'ABCDE'[cx]}${cy + 1}`
+  const fmt = (v: number) => String(Number(Math.min(1, Math.max(0, v)).toFixed(4)))
+  return `${fmt(c.x)},${fmt(c.y)}`
 }
 
 function fromMetadata(raw: unknown): ImportedPrompt | null {
@@ -135,7 +145,7 @@ function fromMetadata(raw: unknown): ImportedPrompt | null {
     characters: (cap?.char_captions ?? []).map((c, i) => ({
       prompt: s(c.char_caption),
       negative: s(ncap?.char_captions?.[i]?.char_caption),
-      position: useCoords ? gridOf(c.centers?.[0]) : ''
+      position: useCoords ? positionOf(c.centers?.[0]) : ''
     })),
     width: n(p.width),
     height: n(p.height),
@@ -212,16 +222,18 @@ async function readPngText(buf: Uint8Array): Promise<Record<string, string>> {
 /** 从 NovelAI 生成的原图中读取提示词 */
 export async function readPngPrompt(file: Blob): Promise<ImportedPrompt> {
   const texts = await readPngText(new Uint8Array(await file.arrayBuffer()))
+  let badComment = false
   if (texts.Comment) {
     try {
       const r = fromMetadata(JSON.parse(texts.Comment))
       if (r) return r
     } catch {
-      /* Comment 不是 JSON */
+      badComment = true
     }
   }
   if (texts.Description) return { base: texts.Description.trim(), negative: '', characters: [], fromMetadata: true, structured: true }
   // SD WebUI 格式：参数行（Steps: ...）不属于提示词
   if (texts.parameters) return parsePromptText(texts.parameters.replace(/\n\s*Steps:[\s\S]*$/, ''))
+  if (badComment) throw new Error('图片里有 Comment 元数据，但内容不是合法的 JSON（可能已损坏），读不出提示词')
   throw new Error('图片里没有找到提示词信息（可能经过压缩、转存或去除了元数据）')
 }
