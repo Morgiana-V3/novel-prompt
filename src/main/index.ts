@@ -332,7 +332,12 @@ if (MCP_MODE) {
     createWindow()
     if (SHOT_DIR && win) {
       const w = win
-      w.webContents.once('did-finish-load', () => void takeScreenshots(w))
+      w.webContents.once('did-finish-load', () =>
+        takeScreenshots(w).catch((e) => {
+          console.error('[screenshots] 失败：', e)
+          app.quit()
+        })
+      )
     }
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()

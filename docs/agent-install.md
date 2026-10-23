@@ -82,7 +82,7 @@ Claude Code（`~/.claude.json` 的 `mcpServers`）、Cursor 等 JSON 格式：
 ## 4. 生效与验证
 
 1. 告诉用户**完全重启 agent**（MCP 配置只在启动时加载）。
-2. 重启后调用 `prompt_guide`，能返回使用说明和提示词规范即接入成功。之后写 NovelAI 提示词时按它执行。
+2. 重启后调用 `prompt_guide`，能返回使用说明和用户启用的提示词 Skill 即接入成功。之后写 NovelAI 提示词时按它执行；用户要求调整规则时，用 Skill 管理工具（`list_skills` / `create_skill` / `update_skill` / `set_skill_config` 等）修改。
 3. 失败时依次检查：配置里的路径是否存在；是否用了便携版；用户是否移动过安装目录（移动后重新执行第 3 步）。
 
 ## 5. 可选：告诉用户还可以配置什么

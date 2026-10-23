@@ -21,13 +21,15 @@ const isV5 = computed(() => state.settings?.naiVersion === 'v5')
 const chars = computed(() => state.characters)
 const selected = ref(Math.min(props.start ?? 0, Math.max(0, state.characters.length - 1)))
 
-/* ---------- 画布尺寸：按当前画幅等比缩放 ---------- */
+/* ---------- 画布尺寸：按当前画幅等比缩放，并保证整个弹窗能放进窗口 ---------- */
 const MAX_W = 520
-const MAX_H = 520
+const viewH = ref(window.innerHeight)
+const onResize = () => (viewH.value = window.innerHeight)
 const box = computed(() => {
   const w = state.params.width || 832
   const h = state.params.height || 1216
-  const s = Math.min(MAX_W / w, MAX_H / h)
+  const maxH = Math.max(260, Math.min(520, viewH.value - 230))
+  const s = Math.min(MAX_W / w, maxH / h)
   return { w: Math.round(w * s), h: Math.round(h * s) }
 })
 
@@ -193,8 +195,12 @@ watch(
 onMounted(() => {
   pushHistory('编辑角色位置之前')
   window.addEventListener('keydown', onKey)
+  window.addEventListener('resize', onResize)
 })
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKey)
+  window.removeEventListener('resize', onResize)
+})
 </script>
 
 <template>
