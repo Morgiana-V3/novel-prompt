@@ -1,6 +1,6 @@
 {
   "name": "novel-prompt",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "NovelAI 提示词比对 / 搜索 / AI 优化桌面工具",
   "main": "./out/main/index.js",
   "author": "holyxie",
