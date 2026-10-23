@@ -50,10 +50,12 @@ function positiveNames(s: EvSection): string[] {
   return s.tokens.filter((t) => t.weight > 0 && tagOf(t)).map((t) => tagOf(t)!.name)
 }
 
+/** 包含关系冗余只在正向里判断：负面里宽泛的词代表更大的排除范围，不是冗余 */
 function redundancyIssues(sections: EvSection[]): { issues: PreviewIssue[]; lines: string[] } {
   const issues: PreviewIssue[] = []
   const lines: string[] = []
   for (const s of sections) {
+    if (s.negative) continue
     for (const [a, c] of tagStore.redundantPairs(positiveNames(s))) {
       const text = `${disp(a)} 已包含 ${disp(c)}，${disp(c)} 可以删除`
       issues.push({ kind: 'redundant', where: s.label, text, basis: 'data' })
@@ -152,7 +154,7 @@ export async function gatherEvidence(
     parts.push(`（以下 tag 联网获取统计数据失败：${info.failed.join(', ')}。相关判断只能依靠经验，basis 不能标为 data，置信度应降低）`)
 
   const block = parts.length
-    ? `## Danbooru 统计数据（NAI 的训练数据来源；引用这里的内容时 basis 标为 data）\n${parts.join('\n\n')}`
+    ? `## Danbooru 统计数据（NAI 动漫模型使用的标签体系，可作为常见程度与默认外观的参考；引用这里的内容时 basis 标为 data）\n${parts.join('\n\n')}`
     : ''
   if (info.related.length) onStep(`已获取 ${info.related.length} 个 tag 的统计数据`)
   else if (info.failed.length) onStep('Danbooru 统计数据获取失败，将仅依据规则和经验判断')

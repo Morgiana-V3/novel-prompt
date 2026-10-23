@@ -11,7 +11,7 @@ import type {
   NaiSubscription,
   NaiVersion
 } from '../../shared/types'
-import { UC_PRESETS, joinPrompt, withQualityTags } from '../../shared/nai-presets'
+import { UC_PRESETS, joinPrompt, parsePosition, withQualityTags } from '../../shared/nai-presets'
 import { getSettings } from '../settings'
 import { isPng, pngSize, readZip } from './zip'
 
@@ -161,19 +161,9 @@ export function freeCheck(params: Pick<NaiGenParams, 'width' | 'height' | 'steps
 
 /* ---------- 请求体 ---------- */
 
-/** 角色位置 → 归一化坐标：支持 V4.5 网格（B3）和「0.3,0.5」两种写法 */
-function centerOf(position?: string): { x: number; y: number } | null {
-  const p = position?.trim() ?? ''
-  const grid = /^([A-E])\s*([1-5])$/i.exec(p)
-  if (grid) return { x: ('ABCDE'.indexOf(grid[1].toUpperCase()) + 0.5) / 5, y: (Number(grid[2]) - 0.5) / 5 }
-  const xy = /^(0?\.\d+|[01](?:\.0+)?)\s*[,，\s]\s*(0?\.\d+|[01](?:\.0+)?)$/.exec(p)
-  if (xy) return { x: Number(xy[1]), y: Number(xy[2]) }
-  return null
-}
-
 function characterCaptions(chars: AiCharacter[]) {
   const list = chars.filter((c) => c.prompt?.trim())
-  const parsed = list.map((c) => centerOf(c.position))
+  const parsed = list.map((c) => parsePosition(c.position))
   const useCoords = parsed.some(Boolean)
   // 有任意角色指定了位置就启用坐标，没写位置的角色按顺序从左到右均匀排开
   const centers = parsed.map((c, i) => c ?? { x: Math.round(((i + 1) / (list.length + 1)) * 10) / 10, y: 0.5 })
@@ -267,7 +257,8 @@ export function listImages(limit = 120): NaiImage[] {
           return undefined
         }
       })()
-      const seed = /-(\d+)(?:-\d+)?\.png$/i.exec(name)?.[1]
+      // 文件名格式：日期-时分秒-种子[-序号].png（见 saveImage），种子在时间之后
+      const seed = /^\d{8}-\d{6}-(\d+)(?:-\d+)?\.png$/i.exec(name)?.[1]
       return { name, url: urlOf(name), seed: seed ? Number(seed) : undefined, width: size?.width, height: size?.height, createdAt: at }
     })
 }

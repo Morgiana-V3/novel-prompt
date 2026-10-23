@@ -131,17 +131,6 @@ export interface McpLogEntry {
   summary: string
 }
 
-export type McpInstallTarget = 'codexConfig' | 'codexSkill' | 'claudeConfig' | 'claudeSkill'
-/** stale = 已安装但与当前版本 / 安装路径不一致 */
-export type McpInstallState = 'none' | 'ok' | 'stale'
-
-export interface McpInstallResult {
-  target: McpInstallTarget
-  ok: boolean
-  path: string
-  error?: string
-}
-
 export interface McpInfo {
   command: string
   args: string[]
@@ -149,12 +138,6 @@ export interface McpInfo {
   packaged: boolean
   /** 便携版：路径不固定，无法配置给 agent */
   portable: boolean
-  /** 各项在本机的安装状态 */
-  installed: Record<McpInstallTarget, McpInstallState>
-  /** 各项会写到的位置 */
-  paths: Record<McpInstallTarget, string>
-  /** 安装脚本位置（外部 agent 自助安装时运行它） */
-  setupScript: string
   log: McpLogEntry[]
 }
 
@@ -261,9 +244,9 @@ export interface AiCharacter {
 
 /**
  * 建议的依据，按可靠程度从高到低：
- * - rule  硬规则：tag 存在性、别名、版本、语法、正负面重复、人数/角色数、位置格式
+ * - rule  硬规则：tag 存在性、别名、版本、语法、正负面重复、人数/角色数、位置写法
  * - data  Danbooru 统计：引用数、共现、包含关系、wiki 释义
- * - doc   官方文档 / 社区经验（Skill 文档）
+ * - doc   Skill 文档：官方文档或经验（evidence 中注明【官方】/【经验】）
  * - taste 审美偏好：只能作为可选建议，不能直接改动提示词
  */
 export type Basis = 'rule' | 'data' | 'doc' | 'taste'
@@ -300,6 +283,8 @@ export interface AiOptimizeResult {
   changes: AiChange[]
   /** 本地校验仍不存在的 tag */
   invalid: string[]
+  /** 原提示词里有、结果里被删掉且 changes 没有说明的内容 */
+  dropped: string[]
   evidence: EvidenceInfo
 }
 

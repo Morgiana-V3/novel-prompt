@@ -20,7 +20,7 @@ export const UC_PRESETS: Record<NaiVersion, Record<UcPreset, string>> = {
   },
   v5: {
     heavy: UC_HEAVY,
-    light: 'lowres, bad hands, bad anatomy, artistic error, sepia, white haze, worst quality, very displeasing, jpeg artifacts',
+    light: 'lowres, bad hands, bad anatomy, artistic error, sepia, white haze, worst quality, very displeasing, jpeg artifacts, 0::ai-generated::',
     human: `${UC_HEAVY}, @_@, mismatched pupils, glowing eyes, bad anatomy`,
     none: ''
   }
@@ -34,6 +34,23 @@ export function joinPrompt(a: string, b: string): string {
   const y = b.trim().replace(/^[\s,]+/, '')
   return x && y ? `${x}, ${y}` : x || y
 }
+
+/**
+ * 角色位置 → 归一化中心点（原点左上）。支持两种写法：
+ * - 5×5 网格 A1~E5（列 A→E 左到右，行 1→5 上到下）
+ * - 坐标 "0.3,0.5"
+ * 其他写法返回 null，生图时会被忽略。
+ */
+export function parsePosition(position?: string): { x: number; y: number } | null {
+  const p = position?.trim() ?? ''
+  const grid = /^([A-E])\s*([1-5])$/i.exec(p)
+  if (grid) return { x: ('ABCDE'.indexOf(grid[1].toUpperCase()) + 0.5) / 5, y: (Number(grid[2]) - 0.5) / 5 }
+  const xy = /^(0?\.\d+|[01](?:\.0+)?)\s*[,，\s]\s*(0?\.\d+|[01](?:\.0+)?)$/.exec(p)
+  if (xy) return { x: Number(xy[1]), y: Number(xy[2]) }
+  return null
+}
+
+export const isGridPosition = (position?: string) => /^[A-E][1-5]$/i.test(position?.trim() ?? '')
 
 /**
  * 把 Add Quality Tags 追加到主提示词：NAI 要求 Text: 块在最末尾，

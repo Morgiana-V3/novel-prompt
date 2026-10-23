@@ -14,7 +14,7 @@ import type {
   UcPreset
 } from '../../shared/types'
 import { CATEGORY_LABEL } from '../../shared/types'
-import { QUALITY_TAGS, UC_LABEL, UC_PRESETS } from '../../shared/nai-presets'
+import { QUALITY_TAGS, UC_LABEL, UC_PRESETS, isGridPosition, parsePosition } from '../../shared/nai-presets'
 import { skillPath, type SkillFile } from '../paths'
 import { analyzePrompt } from '../prompt/analyzer'
 import { chat, extractJson, type ChatMessage } from './deepseek'
@@ -111,7 +111,7 @@ function collectIssues(sections: Section[], presetTokens: AnalyzedToken[]): Prev
         add('weak', s.label, `${t.tag!.display} 只有 ${t.tag!.count} 张图，效果可能很弱`, 'data')
       if (t.warning) add('warn', s.label, `${raw}：${t.warning}`)
       if (s.negative && t.weight < 0) add('weight', s.label, `${raw} 在负面里用了负权重（双重否定，结果难以预测）`)
-      else if (t.weight > HEAVY_WEIGHT) add('weight', s.label, `${raw} 权重 ×${fmtW(t.weight)}，过高可能导致过饱和或画崩`, 'doc')
+      else if (t.weight > HEAVY_WEIGHT) add('weight', s.label, `${raw} 权重 ×${fmtW(t.weight)}，偏强，可能挤压其他元素（经验值，官方没有规定上限）`, 'doc')
     }
   }
 
@@ -141,6 +141,21 @@ function collectIssues(sections: Section[], presetTokens: AnalyzedToken[]): Prev
     if (own) report(s.tokens, s.label, positiveNames([own]))
   }
   return issues
+}
+
+/** 位置写法：解析不了的在生图时会被忽略 */
+function positionIssues(chars: AiPreviewRequest['characters'], version: NaiVersion): PreviewIssue[] {
+  const out: PreviewIssue[] = []
+  chars.forEach((c, i) => {
+    const p = c.position?.trim()
+    if (!p || !c.prompt?.trim()) return
+    const where = `角色 ${i + 1}`
+    if (!parsePosition(p))
+      out.push({ kind: 'warn', where, basis: 'rule', text: `位置「${p}」无法解析，生图时会被忽略并自动排布；请写成 A1~E5 网格或 0.3,0.5 坐标` })
+    else if (version === 'v4.5' && !isGridPosition(p))
+      out.push({ kind: 'warn', where, basis: 'doc', text: `位置「${p}」是坐标写法；V4.5 官方只支持 5×5 网格，建议改成 A1~E5` })
+  })
+  return out
 }
 
 function paramsBlock(req: AiPreviewRequest): string {
@@ -200,6 +215,7 @@ async function localReview(req: AiPreviewRequest, onStep: (s: string) => void, s
   const preset = UC_PRESETS[req.version][req.params.ucPreset]
   const presetTokens = preset ? analyzePrompt(preset, req.version).tokens : []
   const issues = collectIssues(sections, presetTokens)
+  issues.push(...positionIssues(req.characters, req.version))
   const tagCount = sections.filter((s) => !s.negative).reduce((n, s) => n + s.tokens.length, 0)
   const ev = await gatherEvidence(sections, onStep, signal)
   issues.push(...ev.issues)

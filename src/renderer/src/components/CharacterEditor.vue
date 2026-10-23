@@ -35,7 +35,7 @@ function remove(i: number) {
       <div class="char-head">
         <span class="group-badge nl"><Icon name="user" :size="14" /></span>
         <h3>角色 {{ i + 1 }}</h3>
-        <input class="input sm" v-model="c.position" spellcheck="false" :placeholder="isV5 ? '位置，如 画面左侧 / 0.3,0.5' : '位置，如 B3（可空）'" />
+        <input class="input sm" v-model="c.position" spellcheck="false" :placeholder="isV5 ? '位置，如 0.3,0.5 或 B3（可空）' : '位置，如 B3（可空）'" />
         <button class="icon-btn sm ml-auto" title="删除角色" @click="remove(i)"><Icon name="trash" :size="15" /></button>
       </div>
       <div class="composer short mini">

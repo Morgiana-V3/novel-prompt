@@ -269,6 +269,14 @@ const fullText = (r: AiOptimizeResult) => sectionText({ base: r.positive, negati
           <div class="notes">{{ result.invalid.join(', ') }}</div>
         </div>
 
+        <div class="result-card warn-card" v-if="result.dropped?.length" style="--d: 220ms">
+          <div class="result-head">
+            <span class="group-badge alias"><Icon name="warn" :size="14" /></span>
+            <h3>原有内容被删掉了，AI 没有说明理由</h3>
+          </div>
+          <div class="notes">{{ result.dropped.join(', ') }}</div>
+        </div>
+
         <div class="result-card" style="--d: 240ms">
           <div class="result-head">
             <span class="group-badge ok"><Icon name="book" :size="14" /></span>

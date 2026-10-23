@@ -49,14 +49,6 @@
       {
         "from": "scripts/mcp-proxy.cjs",
         "to": "mcp-proxy.cjs"
-      },
-      {
-        "from": "scripts/agent-setup.cjs",
-        "to": "agent-setup.cjs"
-      },
-      {
-        "from": "agent-skill",
-        "to": "agent-skill"
       }
     ],
     "win": {

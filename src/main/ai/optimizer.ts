@@ -10,6 +10,7 @@ import type {
   NaiVersion
 } from '../../shared/types'
 import { CATEGORY_LABEL } from '../../shared/types'
+import { isGridPosition, parsePosition } from '../../shared/nai-presets'
 import { skillPath } from '../paths'
 import { tagStore } from '../tagdb/store'
 import { analyzePrompt } from '../prompt/analyzer'
@@ -173,7 +174,7 @@ function systemPrompt(version: NaiVersion): string {
   const v = version === 'v5' ? 'NAI Diffusion V5' : 'NAI Diffusion V4.5'
   const pos =
     version === 'v5'
-      ? '最多 22 个角色；position 用简短中文描述画面位置（如“画面左侧，占 1/3”）'
+      ? '最多 22 个角色；position 只填归一化坐标「x,y」（0~1，原点左上，如 0.3,0.5）或 5×5 网格 A1~E5，不要写自然语言（程序解析不了，生图时会被忽略）；需要描述位置时写进提示词的英文短句里'
       : '最多 6 个角色；position 只填 5×5 网格坐标 A1~E5（列 A~E 左→右，行 1~5 上→下，C3 为中心）'
   return `${loadSkill()}
 
@@ -185,7 +186,8 @@ function systemPrompt(version: NaiVersion): string {
 - 完成后只输出一个 JSON 对象（不要多余文字）：
 {"positive":"主提示词","negative":"完整的负面提示词（不能为空）","characters":[{"prompt":"角色提示词","position":"位置","negative":"该角色的负面提示词，可空"}],"assessment":"整体评估，一两句话","changes":[{"scope":"positive","text":"twin tails → twintails","basis":"rule","evidence":"validate_tags：别名"}]}
 - scope 取 positive / character / negative / optional；basis 取 rule / data / doc / taste（含义见 Skill 第 9 节）。**basis 为 taste 的内容只能放在 scope=optional，不能直接改进提示词。**
-- 不需要多角色时 characters 为 []。`
+- 删除或改写了用户原有的内容时，changes 的 text 里要写出原文。
+- 不需要角色提示词时 characters 为 []。`
 }
 
 const charLabel = (i: number, c: AiCharacter) => `角色 ${i + 1}${c.position?.trim() ? `（位置 ${c.position.trim()}）` : ''}`
@@ -221,10 +223,22 @@ function precheck(req: AiOptimizeRequest, sections: EvSection[]): string[] {
   const both = [...new Set(negTokens.map(name).filter((n) => n && posNames.has(n)))]
   if (both.length) lines.push(`- 正向（含角色）与负面同时出现：${both.join(', ')}（概念互相抵消）`)
   const chars = (req.characters ?? []).filter((c) => c.prompt?.trim())
-  if (chars.length === 1) lines.push('- 只有 1 个角色提示词：按规范应合并进主提示词，characters 返回 []')
   const limit = req.version === 'v5' ? 22 : 6
   if (chars.length > limit) lines.push(`- 角色数 ${chars.length} 超过当前模型上限 ${limit}`)
+  lines.push(...positionProblems(chars, req.version).map((s) => `- ${s}`))
   return lines
+}
+
+/** 位置写法检查：程序只能解析网格和坐标，V4.5 只用网格 */
+function positionProblems(chars: AiCharacter[], version: NaiVersion): string[] {
+  const out: string[] = []
+  chars.forEach((c, i) => {
+    const p = c.position?.trim()
+    if (!p) return
+    if (version === 'v4.5' && !isGridPosition(p)) out.push(`角色 ${i + 1} 的 position「${p}」不是 V4.5 网格坐标，请改成 A1~E5 之一`)
+    else if (!parsePosition(p)) out.push(`角色 ${i + 1} 的 position「${p}」无法解析（生图时会被忽略），请改成「x,y」坐标（如 0.3,0.5）或 A1~E5 网格`)
+  })
+  return out
 }
 
 function charactersBlock(req: AiOptimizeRequest, title: string): string {
@@ -250,15 +264,16 @@ function userPrompt(req: AiOptimizeRequest, rules: string[], dataIssues: string[
     return [
       `请把下面的画面描述转换为一整套 NovelAI 提示词：主提示词、角色提示词（含位置和角色负面）、负面提示词。`,
       `拆分要求：`,
-      `1. 先数清画面里**需要区分外貌**的人物有几个。只有 1 个时全部写进主提示词，characters 为 []；≥2 个时每人一个角色提示词。`,
+      `1. 先数清画面里**需要区分外貌**的人物有几个。只有 1 个时默认全部写进主提示词，characters 为 []（描述里明确要求人物位置时，可以用 1 个角色提示词来设位置）；≥2 个时每人一个角色提示词。`,
       `2. 主提示词只写人数（如 2girls / 1girl, 1boy）、画风画师、构图镜头、背景场景、光影氛围、质量词等共享内容，**不要写任何属于某个角色的外貌服装**，否则会串色。`,
-      `3. 角色提示词按「性别（girl/boy/other，不加数字）→ 角色名 → 外貌 → 服装 → 表情 → 动作」排列；按描述里的空间关系给出位置，没有交代时按出场顺序从左到右排布。`,
+      `3. 角色提示词按「性别（girl/boy/other，不加数字）→ 角色名 → 外貌 → 服装 → 表情 → 动作」排列；按描述里的空间关系给出位置（写法见当前任务环境），没有交代时按出场顺序从左到右排布。`,
       `4. 描述里出现**具体角色**时，先用 related_tags 查该角色的默认外观：与默认一致的特征不必重复，与默认不同的特征要明确写出（必要时加权，并在负面排除默认特征）。`,
       `5. 意思相近、拿不准的候选 tag，用 tag_wiki 读释义后再挑；用户指定画师时，可用 related_tags 了解其倾向并在 changes 中提示。`,
       `6. 人物之间有互动时，用 source# / target# / mutual# 写在对应角色里，必要时再补一句简短英文强化。`,
       `7. 两个角色有容易混淆的特征（发色、瞳色、眼镜、兽耳、服装颜色等）时，在对方的角色负面里排除，防止串色；没有风险就留空。`,
       `8. 负面提示词按画面风格给出完整版本，并避开与正向冲突的 tag。`,
-      `9. changes 逐条说明关键的取舍：拆出了几个角色、位置依据、选某个 tag 而不是近义词的原因、加了哪些防串色负面；用户没提到、属于审美偏好的补充（画师、额外风格）只能放 optional。`,
+      `9. 描述里的每个具体要求（数量、左右、双手、持物对象、谁对谁做什么、画面文字原文）都要落进提示词：tag 表达不了的用一句英文短句补充（句内不用逗号，以句号结尾）。`,
+      `10. changes 逐条说明关键的取舍：拆出了几个角色、位置依据、选某个 tag 而不是近义词的原因、加了哪些防串色负面；用户没提到、属于审美偏好的补充（画师、额外风格）只能放 optional。`,
       `画面描述：\n${req.instruction}`,
       req.prompt.trim() && `可参考/保留的已有主提示词：\n${req.prompt}`,
       charactersBlock(req, '可参考/保留的已有角色提示词：'),
@@ -271,7 +286,8 @@ function userPrompt(req: AiOptimizeRequest, rules: string[], dataIssues: string[
   const hasChars = (req.characters ?? []).some((c) => c.prompt?.trim())
   return [
     `请综合评估并优化下面这套 NovelAI 提示词（正向${hasChars ? ' + 角色' : ''} + 负面作为一个整体）：`,
-    `1. 修正不存在/拼写错误的 tag，替换别名为标准写法，按包含关系去除冗余，按规范顺序重排，必要时补充缺失的关键 tag；`,
+    `0. 先列出用户明确写出的内容（角色、画师、服装、持物与动作对象、数量与左右等限定、画面文字、负面里刻意排除的元素），它们必须保留在结果里；确需删除或改写的，在 changes 里写明原文和理由；`,
+    `1. 修正不存在/拼写错误的 tag，替换别名为标准写法，去除同一段正向里的包含冗余，顺序混乱时按规范整理，必要时补充缺失的关键 tag；`,
     `2. 检查正负面之间的冲突：同一概念同时出现在正负面、负面误伤了想要的风格（例如漫画/网点风格却在负面里放了 screentone、halftone、multiple views）、负面缺少必要的质量词等；`,
     neg ? `3. 负面提示词同样要校验 tag 是否存在，并按画面风格增删；` : `3. 用户未提供负面提示词，请按规范给出合适的负面提示词；`,
     hasChars
@@ -300,25 +316,61 @@ function collectInvalid(result: AiOptimizeResult, version: NaiVersion): string[]
   return [...bad]
 }
 
-/** 结构检查：单角色、超出上限、V4.5 位置格式，以及「审美类修改被直接改进了提示词」 */
+/** 结构检查：超出上限、位置写法，以及「审美类修改被直接改进了提示词」 */
 function structureIssues(result: AiOptimizeResult, version: NaiVersion): string[] {
   const chars = result.characters.filter((c) => c.prompt.trim())
   const out: string[] = []
-  if (chars.length === 1) out.push('只有 1 个角色时不要使用角色提示词，请把它合并进主提示词，characters 返回 []')
   const limit = version === 'v5' ? 22 : 6
   if (chars.length > limit) out.push(`角色数 ${chars.length} 超过当前模型上限 ${limit}`)
-  if (version === 'v4.5' && chars.length > 1) {
-    chars.forEach((c, i) => {
-      if (c.position && !/^[A-E][1-5]$/i.test(c.position.trim()))
-        out.push(`角色 ${i + 1} 的 position「${c.position}」不是 V4.5 网格坐标，请改成 A1~E5 之一`)
-    })
-  }
+  out.push(...positionProblems(chars, version))
   const taste = result.changes.filter((c) => c.basis === 'taste' && c.scope !== 'optional')
   if (taste.length)
     out.push(
       `以下修改的依据是审美偏好，不应直接改动用户的提示词：${taste.map((c) => `「${c.text}」`).join('、')}。请把对应改动从提示词中撤回，改为 scope=optional 的建议`
     )
   return out
+}
+
+/* ---------- 保真核对：原有内容被删掉却没有说明 ---------- */
+
+type Tok = ReturnType<typeof analyzePrompt>['tokens'][number]
+const norm = (s: string) => s.toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ').trim()
+/** 同一概念的比较键：tag 用标准名（别名、权重变化不算删除），其余用规整后的原文 */
+const keyOf = (t: Tok) => {
+  const tag = t.tag ?? t.aliasOf
+  return tag ? `${t.prefix ?? ''}${tag.name}` : norm(`${t.prefix ?? ''}${t.core}`)
+}
+const tokensOf = (texts: (string | undefined)[], version: NaiVersion) =>
+  texts.flatMap((x) => (x?.trim() ? analyzePrompt(x, version).tokens : []))
+
+/**
+ * 找出原提示词里有、结果里没有、changes 也没提到的内容。
+ * 正向（主提示词 + 角色）合在一起比较：内容在主提示词和角色之间移动不算删除；负面同理。
+ */
+function droppedItems(req: AiOptimizeRequest, result: AiOptimizeResult): string[] {
+  if (req.mode !== 'optimize') return []
+  const v = req.version
+  const chars = req.characters ?? []
+  const groups: [Tok[], Tok[]][] = [
+    [tokensOf([req.prompt, ...chars.map((c) => c.prompt)], v), tokensOf([result.positive, ...result.characters.map((c) => c.prompt)], v)],
+    [tokensOf([req.negative, ...chars.map((c) => c.negative)], v), tokensOf([result.negative, ...result.characters.map((c) => c.negative)], v)]
+  ]
+  const said = norm(result.changes.map((c) => `${c.text} ${c.evidence}`).join('\n'))
+  const mentioned = (t: Tok) => {
+    const core = norm(t.core)
+    const head = core.split(' ').slice(0, 3).join(' ')
+    const tag = t.tag ?? t.aliasOf
+    return said.includes(core) || (core.split(' ').length > 3 && said.includes(head)) || (!!tag && said.includes(norm(tag.display)))
+  }
+  const out = new Map<string, string>()
+  for (const [before, after] of groups) {
+    const kept = new Set(after.map(keyOf))
+    for (const t of before) {
+      const k = keyOf(t)
+      if (!kept.has(k) && !out.has(k) && !mentioned(t)) out.set(k, t.raw)
+    }
+  }
+  return [...out.values()]
 }
 
 const BASES: Basis[] = ['rule', 'data', 'doc', 'taste']
@@ -354,6 +406,7 @@ function normalizeResult(raw: Record<string, unknown>, evidence: EvidenceInfo): 
     notes: String(raw.assessment ?? raw.notes ?? '').trim(),
     changes: normalizeChanges(raw.changes),
     invalid: [],
+    dropped: [],
     evidence
   }
 }
@@ -421,10 +474,16 @@ export async function optimizePrompt(
 
     const invalid = collectInvalid(result, req.version)
     const structure = structureIssues(result, req.version)
+    const dropped = droppedItems(req, result)
     result.invalid = invalid
-    if ((!invalid.length && !structure.length) || fixRound >= MAX_FIX_ROUNDS) break
+    result.dropped = dropped
+    if ((!invalid.length && !structure.length && !dropped.length) || fixRound >= MAX_FIX_ROUNDS) break
     fixRound++
-    const found = [invalid.length && `${invalid.length} 个无效 tag`, structure.length && `${structure.length} 处结构问题`].filter(Boolean)
+    const found = [
+      invalid.length && `${invalid.length} 个无效 tag`,
+      structure.length && `${structure.length} 处结构问题`,
+      dropped.length && `${dropped.length} 处原有内容被删且未说明`
+    ].filter(Boolean)
     onStep(`本地校验发现 ${found.join('、')}，要求 AI 修正（第 ${fixRound} 轮）`)
     const validated = invalid.length ? await runTool('validate_tags', JSON.stringify({ tags: invalid }), log, signal) : ''
     messages.push({
@@ -432,6 +491,8 @@ export async function optimizePrompt(
       content: [
         validated && `以下 tag 在 Danbooru 中不存在或不是标准写法：\n${validated}`,
         structure.length && `结构问题：\n${structure.map((s) => '- ' + s).join('\n')}`,
+        dropped.length &&
+          `以下原有内容在结果里不见了，changes 里也没有说明：\n${dropped.map((s) => `- 「${s}」`).join('\n')}\n用户写的内容要保留；确需删除或改写的（如冲突、冗余、换成标准 tag），在 changes 的 text 里写明原文和理由。`,
         '请修正后重新输出完整 JSON。'
       ]
         .filter(Boolean)

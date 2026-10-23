@@ -133,14 +133,16 @@ AI 不能凭空编造 tag：它会调用本地 tag 库检索和校验，涉及�
 
 ### 评判依据
 
-NAI 是用 Danbooru 的图和标签训练的，所以 AI 给建议时优先引用 Danbooru 的统计数据，而不是凭感觉。每条修改和建议都会标上依据：
+NAI 的动漫模型使用 Danbooru 体系的标签，所以 AI 给建议时优先引用 Danbooru 的统计数据作参考，而不是凭感觉。每条修改和建议都会标上依据：
 
 | 标签 | 依据 | 例子 |
 |---|---|---|
-| 规则 | tag 不存在、别名、版本、语法、正负面重复、人数与角色数 | `twin tails` → `twintails` |
+| 规则 | tag 不存在、别名、版本、语法、正负面重复、人数与角色数、位置写法 | `twin tails` → `twintails` |
 | 数据 | 引用数、**包含关系**、**共现统计**、wiki 释义 | `white thighhighs` 已包含 `thighhighs`；初音未来的图里 51% 是 `aqua hair`，写 `red hair` 会互相拉扯 |
-| 文档 | Skill 文档里的官方 / 社区经验 | 漫画风的负面不该有 `screentone` |
+| 文档 | 规范里的官方说明或经验做法，依据里注明【官方】/【经验】 | 【经验】漫画风的负面不该有 `screentone` |
 | 审美 | AI 的审美判断 | 只作为可选建议，**不会直接改动你的提示词** |
+
+优化结果还会和原提示词对照：原有内容被删掉、而修改说明里没有交代的，会打回让 AI 恢复或说明理由，仍未说明的单独列出来提醒你。
 
 - **包含关系**内置在安装包里，离线可用，用来发现冗余
 - **共现统计**（角色默认外观、画师倾向）和 **wiki 释义**联网查询 Danbooru，结果缓存 30 天。没网时自动降级，并在结果里提示哪些判断只凭经验
@@ -149,38 +151,34 @@ NAI 是用 Danbooru 的图和标签训练的，所以 AI 给建议时优先引�
 
 Codex、Claude Code、Cursor 等支持 MCP 的 agent 可以直接调用本软件。agent 会在后台以无窗口模式启动本软件，不需要手动打开。
 
+**提示词规范只有一份**：agent 通过 `prompt_guide` 读取的，就是软件内置 AI 优化用的 `skills/nai-prompt.md`（前面附一段工具使用说明和交付格式）。你在软件里改了这份规范，agent 下一次读取就按新规则执行。
+
 #### 让 agent 自己装（推荐）
 
-[`agent-skill/novel-prompt/SKILL.md`](agent-skill/novel-prompt/SKILL.md) 是专门写给外部 agent 看的文档，包含两部分：
-
-- **安装** — 检测本机是否已安装 → 征得你同意后从 Releases 下载并静默安装 → 运行软件自带的安装脚本接入 Codex / Claude Code（其他 agent 按输出的启动配置填写）→ 重启验证
-- **使用** — 工具清单与参数、核心规则（tag 不能编造、以 Danbooru 数据为依据、不擅自改审美）、三条工作流（描述转提示词 / 检查优化 / 出图验证）、多角色与防串色、交付格式
+[`docs/agent-install.md`](docs/agent-install.md) 是写给外部 agent 的安装说明：检测本机是否已安装 → 征得你同意后从 Releases 下载并静默安装 → 把 MCP 写进 agent 自己的配置 → 重启验证。
 
 把下面这段话发给你的 agent 即可：
 
 ```text
-请阅读 https://raw.githubusercontent.com/Morgiana-V3/novel-prompt/main/agent-skill/novel-prompt/SKILL.md ，
-按「第一部分：安装」在我的电脑上安装并接入 NovelPrompt，完成后告诉我需要做什么来生效。
+请阅读 https://raw.githubusercontent.com/Morgiana-V3/novel-prompt/main/docs/agent-install.md ，
+按说明在我的电脑上安装并接入 NovelPrompt，完成后告诉我需要做什么来生效。
 ```
 
-安装完成后这份文档也会被装成 agent 的 Skill，之后你提到 NovelAI 提示词时 agent 会自动按里面的规则使用工具。
-
-#### 在软件里装
+#### 已经装好软件时
 
 「设置 / 数据 → Agent 接入」：
 
-- **一键安装** — 写入 Codex（`~/.codex/config.toml`）和 Claude Code（`~/.claude.json`）的 MCP 配置，并把 Agent Skill 装到 `~/.codex/skills/` 和 `~/.claude/skills/`。每项单独显示「未安装 / 已安装 / 需更新」，写入前备份为 `.bak`，只改 novel-prompt 这一项
-- **路径跟随安装位置** — 配置里的路径取自本软件当前的安装位置，换了安装目录会显示「需更新」，重新点一次即可
-- **手动配置** — 也提供 TOML / JSON 配置可以复制，其他 agent 照着填
+- **Agent 自动配置** — 一段带好当前安装路径的话，复制发给 agent，它会自己写进它的 MCP 配置
+- **手动配置** — TOML / JSON 配置可以复制，照着填进 agent 的配置文件
 - **权限开关与调用记录** — 会花钱的工具默认关闭；返回给 agent 的内容不会包含任何 Token
 
-两种方式用的是同一个安装脚本（安装目录下的 `resources\agent-setup.cjs`），效果完全一样。
+配置里的路径取自本软件当前的安装位置，换了安装目录后需要重新配置。
 
 #### 工具
 
 | 工具 | 作用 | 默认 |
 |---|---|---|
-| `prompt_guide` | 返回提示词编排规范（`skills/nai-prompt.md`） | 可用 |
+| `prompt_guide` | 返回工具使用说明 + 提示词编排规范（`skills/nai-prompt.md`） | 可用 |
 | `analyze_prompt` | 整套提示词的本地检查：逐 tag 存在性 / 别名 / 引用数 / 实际权重，冲突、冗余、角色默认外观冲突，附角色和画师的统计数据 | 可用 |
 | `search_tags` / `validate_tags` | 本地 tag 库搜索与校验 | 可用 |
 | `related_tags` / `tag_wiki` | Danbooru 共现统计与释义（联网） | 可用 |
@@ -276,10 +274,12 @@ npm run dist     # 输出 NSIS 安装包和便携版到 release/
 
 ### 改 AI 的规则
 
-- `skills/nai-prompt.md` — AI 优化的系统提示词：顺序、权重、负面模板、评判依据、输出格式（AI 优化页的书本按钮打开）
+- `skills/nai-prompt.md` — 提示词规范：AI 优化的系统提示词，也是 agent 通过 `prompt_guide` 读到的规范（AI 优化页的书本按钮、设置页「编辑 Skill 文档」打开）
 - `skills/nai-preview.md` — 画面推测的规则（画面推测页的书本按钮打开）
 
-改完保存，下一次调用立即生效。安装版第一次运行会把这两份复制到用户目录，之后改的是用户目录里的那份。
+改完保存，下一次调用立即生效。安装版第一次运行会把这两份复制到用户目录，之后改的是用户目录里的那份。升级软件时，没改过的副本会自动更新到新版；改过的保留你的版本，新版默认规范另存为同目录下的 `*.default.md`，方便对照合并。
+
+规范里标【官方】的是 NovelAI 官方文档写明的内容，标【经验】的是社区经验或本软件的默认做法，可以按需要调整。
 
 ### 数据更新
 
@@ -373,8 +373,8 @@ src/main/nai        NovelAI 图像接口、免费额度检查、图库、ZIP 解
 src/main/mcp        MCP 服务端（server）、工具定义（tools）、安装到 Codex / Claude Code（install）
 src/shared          主进程与界面共用的类型、NAI 预设、提示词导入解析（分节文本 / JSON / PNG 元数据）
 src/renderer        Vue3 界面（store.ts 当前提示词与历史，components/ 共用组件，Mascot.vue 猫娘）
-skills/             AI 优化与画面推测的 Skill 文档（DeepSeek 的系统提示词）
-agent-skill/        给外部 agent 的 Skill：安装 + 使用（Codex / Claude Code 格式）
+skills/             提示词规范（AI 优化的系统提示词，也是 MCP prompt_guide 的内容）与画面推测规则
+docs/               README 截图、agent 自助安装说明（agent-install.md）
 default-data/       随安装包分发的内置数据
 scripts/            数据导出、MCP 代理与冒烟测试、吉祥物生成
 ```

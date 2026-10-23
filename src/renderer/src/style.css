@@ -598,12 +598,6 @@ select.input:focus { border-color: var(--pink-line); box-shadow: 0 0 0 3px var(-
 .mcp-log .effect-row { padding: 6px 4px; align-items: center; }
 .mcp-log .effect-row .grow { color: var(--text2); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mono { font-family: var(--mono); }
-.install-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 14px; background: #fff; overflow: hidden; }
-.install-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; }
-.install-row + .install-row { border-top: 1px dashed var(--line); }
-.install-row .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.5; }
-.install-row b { font-size: 13px; font-weight: 600; }
-.install-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; -webkit-user-select: text; }
 details.manual { gap: 8px; }
 details.manual summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text2); padding: 2px 0; }
 details.manual summary:hover { color: var(--text); }

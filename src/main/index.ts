@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, shell, clipboard, ClipboardItem, nativeImage, dialog, protocol, net } from 'electron'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import { existsSync, copyFileSync, readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import type {
@@ -10,7 +11,6 @@ import type {
   NaiSubscription,
   NaiVersion,
   McpInfo,
-  McpInstallTarget,
   SearchOptions,
   Settings
 } from '../shared/types'
@@ -25,7 +25,6 @@ import { skillPath, SKILL_FILES, type SkillFile } from './paths'
 import { IMAGE_SCHEME, freeCheck, generateImages, getSubscription, imageDir, imagePath, listImages } from './nai/client'
 import { startMcpServer, readLog } from './mcp/server'
 import { buildTools, MCP_INSTRUCTIONS } from './mcp/tools'
-import { installForAgents, runSetup, setupScript, type SetupOutput } from './mcp/install'
 import { SHOT_DIR, prepareScreenshotProfile, takeScreenshots } from './screenshots'
 
 let win: BrowserWindow | null = null
@@ -150,21 +149,20 @@ function registerIpc(): void {
   ipcMain.handle('mcp:info', (): McpInfo => {
     // agent 以 Node 模式运行同一个可执行文件，跑一个转发代理，代理再拉起 `--mcp` 并过滤掉 Electron 写到 stdout 的杂讯。
     // 路径取自当前运行的程序，所以配置跟随用户实际的安装位置。
-    const s = runSetup(['status'])
-    const by = <T,>(f: (i: SetupOutput['items'][number]) => T) =>
-      Object.fromEntries(s.items.map((i) => [i.target, f(i)])) as Record<McpInstallTarget, T>
+    const root = app.getAppPath()
+    const proxy = app.isPackaged ? join(process.resourcesPath, 'mcp-proxy.cjs') : join(root, 'scripts', 'mcp-proxy.cjs')
+    // 便携版每次运行都解压到临时目录，路径会变
+    const portable =
+      !!process.env.PORTABLE_EXECUTABLE_FILE || resolve(process.execPath).toLowerCase().startsWith(resolve(tmpdir()).toLowerCase())
     return {
-      ...s.launch,
+      command: process.execPath,
+      args: app.isPackaged ? [proxy] : [proxy, root],
+      env: { ELECTRON_RUN_AS_NODE: '1' },
       packaged: app.isPackaged,
-      portable: s.portable,
-      installed: by((i) => i.state),
-      paths: by((i) => i.path),
-      setupScript: setupScript(),
+      portable,
       log: readLog()
     }
   })
-  ipcMain.handle('mcp:install', (_e, targets: McpInstallTarget[]) => installForAgents(targets))
-  ipcMain.handle('mcp:openSkill', () => shell.openPath(runSetup(['status']).skillSource))
 
   /* ---------- NovelAI 生图 ---------- */
   let naiRunning = false

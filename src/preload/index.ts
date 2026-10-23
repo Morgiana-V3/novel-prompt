@@ -7,8 +7,6 @@ import type {
   AnalysisResult,
   DbStatus,
   McpInfo,
-  McpInstallResult,
-  McpInstallTarget,
   NaiFreeCheck,
   NaiGenParams,
   NaiGenRequest,
@@ -57,8 +55,6 @@ const api = {
   naiDelete: (name: string): Promise<boolean> => ipcRenderer.invoke('nai:delete', name),
   onNaiStep: (cb: (s: string) => void) => on('nai:step', cb),
   mcpInfo: (): Promise<McpInfo> => ipcRenderer.invoke('mcp:info'),
-  mcpInstall: (targets: McpInstallTarget[]): Promise<McpInstallResult[]> => ipcRenderer.invoke('mcp:install', targets),
-  mcpOpenSkill: (): Promise<string> => ipcRenderer.invoke('mcp:openSkill'),
   onProgress: (cb: (p: UpdateProgress) => void) => on('progress', cb),
   onAiStep: (cb: (s: string) => void) => on('ai:step', cb)
 }

@@ -2,7 +2,7 @@
 import { reactive, ref, watch, computed, onMounted } from 'vue'
 import { state, saveSettings, refreshDb, toast, copy } from '../store'
 import Icon from '../components/Icon.vue'
-import type { McpInfo, McpInstallTarget, ReasoningEffort } from '@shared/types'
+import type { McpInfo, ReasoningEffort } from '@shared/types'
 
 const form = reactive({
   apiKey: '',
@@ -67,41 +67,29 @@ async function setMcp(key: 'mcpAllowAi' | 'mcpAllowGenerate', v: boolean) {
 // TOML 字面量字符串（单引号）不处理反斜杠转义，适合 Windows 路径
 const tomlStr = (s: string) => `'${s.replace(/'/g, "''")}'`
 
-const INSTALL_ITEMS: { key: McpInstallTarget; label: string }[] = [
-  { key: 'codexConfig', label: 'Codex MCP 配置' },
-  { key: 'codexSkill', label: 'Codex Skill' },
-  { key: 'claudeConfig', label: 'Claude Code MCP 配置' },
-  { key: 'claudeSkill', label: 'Claude Code Skill' }
-]
-const STATE_LABEL = {
-  none: { text: '未安装', cls: '' },
-  ok: { text: '已安装', cls: 'ok' },
-  stale: { text: '需更新', cls: 'alias' }
-} as const
-const installing = ref(false)
-async function install(targets: McpInstallTarget[]) {
-  installing.value = true
-  try {
-    const r = await window.api.mcpInstall(targets)
-    const bad = r.filter((x) => !x.ok)
-    toast(bad.length ? `有 ${bad.length} 项失败：${bad[0].error}` : '已安装，重启 agent 后生效')
-  } catch (e) {
-    toast(String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, ''))
-  } finally {
-    installing.value = false
-    await loadMcp()
-  }
-}
-const openAgentSkill = () => window.api.mcpOpenSkill()
 const codexConfig = computed(() => {
   const m = mcp.value
   if (!m) return ''
   const env = Object.entries(m.env).map(([k, v]) => `${k} = ${tomlStr(v)}`)
   return `[mcp_servers.novel-prompt]\ncommand = ${tomlStr(m.command)}\nargs = [${m.args.map(tomlStr).join(', ')}]\nenv = { ${env.join(', ')} }`
 })
+const launchJson = computed(() =>
+  mcp.value ? JSON.stringify({ command: mcp.value.command, args: mcp.value.args, env: mcp.value.env }, null, 2) : ''
+)
 const jsonConfig = computed(() =>
   mcp.value
     ? JSON.stringify({ mcpServers: { 'novel-prompt': { command: mcp.value.command, args: mcp.value.args, env: mcp.value.env } } }, null, 2)
+    : ''
+)
+const agentPrompt = computed(() =>
+  mcp.value
+    ? [
+        '帮我把 NovelPrompt 完整配置成你的 MCP 服务：',
+        '- 服务名 novel-prompt，传输方式 stdio，启动参数如下（路径原样使用）：',
+        launchJson.value,
+        '- 写进你自己的 MCP 配置文件（用户级），改之前先把原文件备份为 .bak，只新增或覆盖 novel-prompt 这一项，其他配置不要动。',
+        '- 配置完告诉我需要完全重启你；重启后调用 prompt_guide，能返回使用说明即接入成功，之后写 NovelAI 提示词时按它执行。'
+      ].join('\n')
     : ''
 )
 const fmtLogTime = (t: number) => new Date(t).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -318,33 +306,19 @@ async function translate() {
         <div class="form-field full" v-if="mcp?.portable">
           <div class="error-box"><Icon name="warn" :size="16" />便携版每次运行都会解压到临时目录，路径不固定，agent 无法稳定启动它。请改用安装版。</div>
         </div>
-        <div class="form-field full" v-else>
-          <label>一键安装</label>
-          <div class="install-list">
-            <div class="install-row" v-for="it in INSTALL_ITEMS" :key="it.key">
-              <span :class="['pill', STATE_LABEL[mcp?.installed[it.key] ?? 'none'].cls]"><i></i>{{ STATE_LABEL[mcp?.installed[it.key] ?? 'none'].text }}</span>
-              <div class="grow">
-                <b>{{ it.label }}</b>
-                <span class="muted small mono install-path">{{ mcp?.paths[it.key] }}</span>
-              </div>
-              <button class="btn small" :disabled="installing" @click="install([it.key])">
-                {{ mcp?.installed[it.key] === 'ok' ? '重新安装' : '安装' }}
-              </button>
-            </div>
-          </div>
-          <div class="row">
-            <button class="btn primary small" :disabled="installing" @click="install(['codexConfig', 'codexSkill', 'claudeConfig', 'claudeSkill'])">
-              <Icon name="download" :size="14" />全部安装
-            </button>
-            <button class="btn ghost small" @click="openAgentSkill"><Icon name="book" :size="14" />查看 Skill</button>
+        <details class="form-field full manual" v-if="!mcp?.portable">
+          <summary>Agent 自动配置</summary>
+          <span class="help">把下面这段话发给你正在用的 agent（Codex、Claude Code、Cursor 等），它会自己把 MCP 写进它的配置：</span>
+          <div class="code-box">
+            <pre>{{ agentPrompt }}</pre>
+            <button class="icon-btn sm" title="复制" @click="copy(agentPrompt)"><Icon name="copy" :size="15" /></button>
           </div>
           <span class="help">
-            配置里的路径取自本软件当前的安装位置，安装或更换安装目录后点一次即可。写入配置文件前会先备份为 .bak，只改 novel-prompt 这一项。
-            Skill 是给 agent 看的使用说明（工作流、工具参数、规则），装好后 agent 会在你提到 NovelAI 提示词时自动读取。
+            配置里的路径取自本软件当前的安装位置，更换安装目录后需要重新配置。
             {{ mcp && !isPackaged ? '当前是开发模式，配置指向本项目，需要先 npm run build。' : '' }}
           </span>
-        </div>
-        <details class="form-field full manual">
+        </details>
+        <details class="form-field full manual" v-if="!mcp?.portable">
           <summary>手动配置</summary>
           <label>Codex（~/.codex/config.toml）</label>
           <div class="code-box">
@@ -357,10 +331,16 @@ async function translate() {
             <button class="icon-btn sm" title="复制" @click="copy(jsonConfig)"><Icon name="copy" :size="15" /></button>
           </div>
           <span class="help">
+            服务名 novel-prompt，传输方式 stdio。其他 agent 按各自格式填写同样的 command / args / env 即可，改完需完全重启 agent。
             始终可用：prompt_guide、analyze_prompt、search_tags、validate_tags、related_tags、tag_wiki、nai_subscription、list_images、read_image_prompt。
-            外部 agent 也可以自己运行安装脚本：{{ mcp?.setupScript }}（用法见 Skill 文档「安装」一节）。
           </span>
         </details>
+        <div class="form-field full">
+          <div class="row">
+            <button class="btn ghost small" @click="openSkill"><Icon name="book" :size="14" />编辑提示词规范</button>
+          </div>
+          <span class="help">agent 通过 MCP 工具 prompt_guide 读取本软件的提示词规范（就是「编辑提示词规范」打开的那份），改完保存，agent 下一次读取即生效。</span>
+        </div>
       </div>
       <div class="mcp-log">
         <div class="mcp-log-head">
