@@ -15,7 +15,7 @@ import type {
   Settings
 } from '../shared/types'
 import { tagStore } from './tagdb/store'
-import { updateImplications, updateTagDatabase } from './tagdb/fetcher'
+import { updateImplications, updateTagDatabase, Cancelled } from './tagdb/fetcher'
 import { analyzePrompt } from './prompt/analyzer'
 import { getSettings, saveSettings } from './settings'
 import { optimizePrompt } from './ai/optimizer'
@@ -25,6 +25,7 @@ import { skillPath, SKILL_FILES, type SkillFile } from './paths'
 import { IMAGE_SCHEME, freeCheck, generateImages, getSubscription, imageDir, imagePath, listImages } from './nai/client'
 import { startMcpServer, readLog } from './mcp/server'
 import { buildTools, MCP_INSTRUCTIONS } from './mcp/tools'
+import { checkUpdate, UPDATE_REPO } from './update'
 import { SHOT_DIR, prepareScreenshotProfile, takeScreenshots } from './screenshots'
 
 let win: BrowserWindow | null = null
@@ -70,12 +71,16 @@ function registerIpc(): void {
     if (busy) throw new Error('已有任务在运行')
     busy = new AbortController()
     try {
-      await updateTagDatabase(getSettings().minPostCount, (p) => send('progress', p))
+      await updateTagDatabase(getSettings().minPostCount, (p) => send('progress', p), busy.signal)
       send('progress', { stage: 'index', message: '正在构建索引…' })
       tagStore.load()
       send('progress', { stage: 'done', message: '数据更新完成' })
       return tagStore.status()
     } catch (e) {
+      if (e instanceof Cancelled) {
+        send('progress', { stage: 'done', message: '已取消，原有数据继续使用' })
+        return tagStore.status()
+      }
       send('progress', { stage: 'error', message: String(e) })
       throw e
     } finally {
@@ -89,6 +94,10 @@ function registerIpc(): void {
       await aiTranslate(getSettings().translateMinCount, (p) => send('progress', p), busy.signal)
       return tagStore.status()
     } catch (e) {
+      if (e instanceof Cancelled) {
+        send('progress', { stage: 'done', message: '已取消' })
+        return tagStore.status()
+      }
       send('progress', { stage: 'error', message: String(e) })
       throw e
     } finally {
@@ -104,6 +113,10 @@ function registerIpc(): void {
       send('progress', { stage: 'done', message: `包含关系下载完成，共 ${n.toLocaleString()} 条` })
       return tagStore.status()
     } catch (e) {
+      if (e instanceof Cancelled) {
+        send('progress', { stage: 'done', message: '已取消' })
+        return tagStore.status()
+      }
       send('progress', { stage: 'error', message: String(e) })
       throw e
     } finally {
@@ -124,6 +137,10 @@ function registerIpc(): void {
     busy = busy ?? ctrl
     try {
       return await optimizePrompt(req, (step) => send('ai:step', step), ctrl.signal)
+    } catch (e) {
+      // 用户主动取消时 fetch 抛的是 AbortError，对界面来说就是「已取消」
+      if (ctrl.signal.aborted) throw new Error('已取消')
+      throw e
     } finally {
       if (busy === ctrl) busy = null
     }
@@ -134,6 +151,9 @@ function registerIpc(): void {
     busy = busy ?? ctrl
     try {
       return await previewPrompt(req, (step) => send('ai:step', step), ctrl.signal)
+    } catch (e) {
+      if (ctrl.signal.aborted) throw new Error('已取消')
+      throw e
     } finally {
       if (busy === ctrl) busy = null
     }
@@ -163,6 +183,13 @@ function registerIpc(): void {
       log: readLog()
     }
   })
+
+  /* ---------- 版本检查 ---------- */
+  ipcMain.handle('update:check', (_e, force?: boolean) => checkUpdate(!!force))
+  // 只允许打开本仓库的 release 页，避免渲染进程被注入后借 shell 打开任意地址
+  ipcMain.handle('update:open', (_e, url: string) =>
+    shell.openExternal(/^https:\/\/github\.com\/Morgiana-V3\/novel-prompt\/?/.test(url) ? url : `https://github.com/${UPDATE_REPO}/releases/latest`)
+  )
 
   /* ---------- NovelAI 生图 ---------- */
   let naiRunning = false

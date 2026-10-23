@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { state, refreshDb, saveSettings, importPrompt, cleanErr, toast, type Tab } from './store'
+import { state, refreshDb, saveSettings, importPrompt, cleanErr, toast, checkUpdate, dismissUpdate, type Tab } from './store'
 import { readPngPrompt } from '@shared/prompt-import'
 import CompareView from './views/CompareView.vue'
 import SearchView from './views/SearchView.vue'
@@ -33,7 +33,11 @@ onMounted(async () => {
     if (p.stage === 'done' || p.stage === 'error') refreshDb()
   })
   if (!state.db?.loaded) state.tab = 'settings'
+  // 启动 3 秒后再查，不拖慢启动；有 24 小时缓存，失败静默
+  setTimeout(() => void checkUpdate(), 3000)
 })
+
+const openUpdate = () => window.api.openUpdatePage(state.update?.url ?? '')
 
 function setVersion(v: NaiVersion) {
   saveSettings({ naiVersion: v })
@@ -88,6 +92,16 @@ async function onDrop(e: DragEvent) {
       </nav>
 
       <div class="side-bottom">
+        <div v-if="state.update?.newer && !state.updateDismissed" class="update-card">
+          <div class="update-head">
+            <Icon name="download" :size="14" />
+            <b>发现新版本 {{ state.update.latest }}</b>
+          </div>
+          <div class="update-actions">
+            <button class="btn accent small" @click="openUpdate">去下载</button>
+            <button class="btn ghost small" @click="dismissUpdate">忽略</button>
+          </div>
+        </div>
         <div v-if="state.settings">
           <div class="side-label">目标模型</div>
           <div class="seg block">

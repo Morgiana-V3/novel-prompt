@@ -1,5 +1,5 @@
 import { net } from 'electron'
-import { writeFileSync } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
 import type { UpdateProgress } from '../../shared/types'
 import { dataFile } from '../paths'
 
@@ -13,15 +13,28 @@ type Progress = (p: UpdateProgress) => void
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-async function getText(url: string, retries = 5): Promise<string> {
+/** 取消时抛这个，界面显示「已取消」而不是报错 */
+export class Cancelled extends Error {
+  constructor() {
+    super('已取消')
+  }
+}
+
+function checkSignal(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new Cancelled()
+}
+
+async function getText(url: string, retries = 5, signal?: AbortSignal): Promise<string> {
   let lastErr: unknown
   for (let i = 0; i < retries; i++) {
+    checkSignal(signal)
     try {
-      const res = await net.fetch(url, { headers: { 'User-Agent': UA } })
+      const res = await net.fetch(url, { headers: { 'User-Agent': UA }, signal })
       if (res.status === 429 || res.status >= 500) throw new Error(`HTTP ${res.status}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
       return await res.text()
     } catch (e) {
+      if (signal?.aborted) throw new Cancelled()
       lastErr = e
       await sleep(1000 * 2 ** i)
     }
@@ -32,10 +45,11 @@ async function getText(url: string, retries = 5): Promise<string> {
 /** [name, category, count] */
 export type RawTag = [string, number, number]
 
-async function fetchTags(minCount: number, onProgress: Progress): Promise<RawTag[]> {
+async function fetchTags(minCount: number, onProgress: Progress, signal?: AbortSignal): Promise<RawTag[]> {
   const out: RawTag[] = []
   let cursor = 999_999_999
   for (;;) {
+    checkSignal(signal)
     const qs = new URLSearchParams({
       limit: '1000',
       page: `b${cursor}`,
@@ -43,7 +57,7 @@ async function fetchTags(minCount: number, onProgress: Progress): Promise<RawTag
       'search[is_deprecated]': 'false',
       only: 'id,name,category,post_count'
     })
-    const list = JSON.parse(await getText(`${DANBOORU}/tags.json?${qs}`)) as {
+    const list = JSON.parse(await getText(`${DANBOORU}/tags.json?${qs}`, 5, signal)) as {
       id: number
       name: string
       category: number
@@ -58,18 +72,19 @@ async function fetchTags(minCount: number, onProgress: Progress): Promise<RawTag
   return out
 }
 
-async function fetchAliases(valid: Set<string>, onProgress: Progress): Promise<[string, string][]> {
+async function fetchAliases(valid: Set<string>, onProgress: Progress, signal?: AbortSignal): Promise<[string, string][]> {
   const out: [string, string][] = []
   let cursor = 999_999_999
   let scanned = 0
   for (;;) {
+    checkSignal(signal)
     const qs = new URLSearchParams({
       limit: '1000',
       page: `b${cursor}`,
       'search[status]': 'active',
       only: 'id,antecedent_name,consequent_name'
     })
-    const list = JSON.parse(await getText(`${DANBOORU}/tag_aliases.json?${qs}`)) as {
+    const list = JSON.parse(await getText(`${DANBOORU}/tag_aliases.json?${qs}`, 5, signal)) as {
       id: number
       antecedent_name: string
       consequent_name: string
@@ -100,13 +115,15 @@ function parseCsv(text: string, into: Record<string, string>): void {
   }
 }
 
-async function fetchCommunityZh(onProgress: Progress): Promise<Record<string, string>> {
+async function fetchCommunityZh(onProgress: Progress, signal?: AbortSignal): Promise<Record<string, string>> {
   const out: Record<string, string> = {}
   for (const url of COMMUNITY_ZH_URLS) {
+    checkSignal(signal)
     onProgress({ stage: 'translations', message: `下载社区中文翻译：${url.split('/').pop()}` })
     try {
-      parseCsv(await getText(url), out)
+      parseCsv(await getText(url, 5, signal), out)
     } catch (e) {
+      if (e instanceof Cancelled) throw e
       onProgress({ stage: 'translations', message: `翻译源下载失败（已跳过）：${String(e)}` })
     }
   }
@@ -122,14 +139,14 @@ async function fetchImplications(valid: Set<string>, onProgress: Progress, signa
   let cursor = 999_999_999
   let scanned = 0
   for (;;) {
-    if (signal?.aborted) throw new Error('已取消')
+    checkSignal(signal)
     const qs = new URLSearchParams({
       limit: '1000',
       page: `b${cursor}`,
       'search[status]': 'active',
       only: 'id,antecedent_name,consequent_name'
     })
-    const list = JSON.parse(await getText(`${DANBOORU}/tag_implications.json?${qs}`)) as {
+    const list = JSON.parse(await getText(`${DANBOORU}/tag_implications.json?${qs}`, 5, signal)) as {
       id: number
       antecedent_name: string
       consequent_name: string
@@ -149,23 +166,27 @@ async function fetchImplications(valid: Set<string>, onProgress: Progress, signa
 /** 只下载包含关系（不重新下载 tag），用于内置数据缺少该文件时补齐 */
 export async function updateImplications(valid: Set<string>, onProgress: Progress, signal?: AbortSignal): Promise<number> {
   const list = await fetchImplications(valid, onProgress, signal)
-  writeFileSync(dataFile('implications.json'), JSON.stringify(list), 'utf8')
+  checkSignal(signal)
+  await writeFile(dataFile('implications.json'), JSON.stringify(list), 'utf8')
   return list.length
 }
 
-export async function updateTagDatabase(minCount: number, onProgress: Progress): Promise<void> {
-  const tags = await fetchTags(minCount, onProgress)
+export async function updateTagDatabase(minCount: number, onProgress: Progress, signal?: AbortSignal): Promise<void> {
+  const tags = await fetchTags(minCount, onProgress, signal)
   const valid = new Set(tags.map((t) => t[0]))
-  const aliases = await fetchAliases(valid, onProgress)
-  const implications = await fetchImplications(valid, onProgress)
-  const zh = await fetchCommunityZh(onProgress)
+  const aliases = await fetchAliases(valid, onProgress, signal)
+  const implications = await fetchImplications(valid, onProgress, signal)
+  const zh = await fetchCommunityZh(onProgress, signal)
+  checkSignal(signal)
 
-  writeFileSync(
+  // 异步写，避免几十 MB 的 JSON 阻塞主线程把窗口卡住。
+  // tags.json 最后写：它的 fetchedAt 是切换数据层的依据，其余文件先落盘，切过去时才是完整的。
+  await writeFile(dataFile('aliases.json'), JSON.stringify(aliases), 'utf8')
+  await writeFile(dataFile('implications.json'), JSON.stringify(implications), 'utf8')
+  await writeFile(dataFile('zh-community.json'), JSON.stringify(zh), 'utf8')
+  await writeFile(
     dataFile('tags.json'),
     JSON.stringify({ fetchedAt: new Date().toISOString(), minCount, tags }),
     'utf8'
   )
-  writeFileSync(dataFile('aliases.json'), JSON.stringify(aliases), 'utf8')
-  writeFileSync(dataFile('implications.json'), JSON.stringify(implications), 'utf8')
-  writeFileSync(dataFile('zh-community.json'), JSON.stringify(zh), 'utf8')
 }

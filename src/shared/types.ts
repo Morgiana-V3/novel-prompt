@@ -141,6 +141,23 @@ export interface McpInfo {
   log: McpLogEntry[]
 }
 
+export interface UpdateInfo {
+  /** 当前安装的版本 */
+  current: string
+  /** 最新版本号（检查失败时为空） */
+  latest: string
+  /** latest 是否比 current 新 */
+  newer: boolean
+  /** release 页面地址 */
+  url: string
+  /** release 正文（截断后） */
+  notes?: string
+  /** 上次成功检查的时间戳，0 = 从未检查成功过 */
+  checkedAt: number
+  /** 本次检查失败的原因（静默展示，不影响使用） */
+  error?: string
+}
+
 /* ---------- NovelAI 生图 ---------- */
 
 export interface NaiSubscription {

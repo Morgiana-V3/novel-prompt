@@ -102,6 +102,22 @@ nav { display: flex; flex-direction: column; gap: 2px; }
 .db-row { display: flex; justify-content: space-between; color: var(--text2); }
 .db-row b { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
 .db-card .btn { margin-top: 4px; justify-content: center; }
+.update-card {
+  background: linear-gradient(180deg, var(--pink-soft), #fff); border: 1px solid var(--pink-line); border-radius: 14px;
+  padding: 10px 12px; font-size: 12px; display: flex; flex-direction: column; gap: 8px;
+  animation: fade-up 0.42s var(--bounce) backwards;
+}
+.update-head { display: flex; align-items: center; gap: 6px; color: var(--text); }
+.update-head .icon { color: var(--pink); }
+.update-head b { font-weight: 600; }
+.update-actions { display: flex; gap: 6px; }
+.update-actions .btn { flex: 1; justify-content: center; }
+.update-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.release-notes {
+  margin: 10px 0 0; padding: 12px 14px; max-height: 220px; overflow: auto; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 12px; font-size: 12px; line-height: 1.7;
+  white-space: pre-wrap; word-break: break-word; color: var(--text2); user-select: text; -webkit-user-select: text;
+}
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: pulse-ok 2.2s infinite; }
 .status-dot.off { background: var(--pink); animation-name: pulse-pink; }
 

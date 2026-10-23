@@ -17,6 +17,7 @@ import type {
   SearchHit,
   SearchOptions,
   Settings,
+  UpdateInfo,
   UpdateProgress
 } from '../shared/types'
 
@@ -55,6 +56,8 @@ const api = {
   naiDelete: (name: string): Promise<boolean> => ipcRenderer.invoke('nai:delete', name),
   onNaiStep: (cb: (s: string) => void) => on('nai:step', cb),
   mcpInfo: (): Promise<McpInfo> => ipcRenderer.invoke('mcp:info'),
+  checkUpdate: (force?: boolean): Promise<UpdateInfo> => ipcRenderer.invoke('update:check', force),
+  openUpdatePage: (url: string): Promise<void> => ipcRenderer.invoke('update:open', url),
   onProgress: (cb: (p: UpdateProgress) => void) => on('progress', cb),
   onAiStep: (cb: (s: string) => void) => on('ai:step', cb)
 }

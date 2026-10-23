@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { reactive, ref, watch, computed, onMounted } from 'vue'
-import { state, saveSettings, refreshDb, toast, copy } from '../store'
+import { state, saveSettings, refreshDb, toast, copy, checkUpdate } from '../store'
 import Icon from '../components/Icon.vue'
 import type { McpInfo, ReasoningEffort } from '@shared/types'
 
@@ -92,6 +92,30 @@ const agentPrompt = computed(() =>
       ].join('\n')
     : ''
 )
+/* ---------- 版本与更新 ---------- */
+const checking = ref(false)
+const versionText = computed(() => {
+  const u = state.update
+  if (!u) return '当前版本'
+  return u.newer ? `有新版本 ${u.latest}` : `已是最新 v${u.current}`
+})
+const updateSub = computed(() => {
+  const u = state.update
+  if (!u) return ''
+  if (u.error && !u.latest) return `检查失败：${u.error}`
+  const at = u.checkedAt ? new Date(u.checkedAt).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
+  const parts = [`当前 v${u.current}`, at && `检查于 ${at}`]
+  if (u.error) parts.push('本次检查失败，显示的是上次结果')
+  return parts.filter(Boolean).join(' · ')
+})
+async function runCheck() {
+  checking.value = true
+  await checkUpdate(true)
+  checking.value = false
+  toast(state.update?.error ? '检查失败，可能是网络问题' : state.update?.newer ? `发现新版本 ${state.update.latest}` : '已是最新版本')
+}
+const openUpdatePage = () => window.api.openUpdatePage(state.update?.url ?? '')
+
 const fmtLogTime = (t: number) => new Date(t).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 async function testNai() {
   await save(true)
@@ -376,6 +400,31 @@ async function translate() {
       </div>
       <div class="row">
         <button class="btn primary" :disabled="running" @click="translate"><Icon name="sparkle" :size="16" />开始 AI 翻译</button>
+      </div>
+    </div>
+
+    <div class="card" style="--d: 160ms">
+      <div class="card-head">
+        <span class="card-icon"><Icon name="download" /></span>
+        <div>
+          <h2>版本与更新</h2>
+          <div class="card-desc">启动时自动检查一次 GitHub 上的最新版本（有 24 小时缓存）。只做提示，不会自动下载或安装</div>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-field full">
+          <div class="update-line">
+            <span class="pill" :class="state.update?.newer ? 'alias' : 'ok'"><i></i>{{ versionText }}</span>
+            <span class="muted small grow">{{ updateSub }}</span>
+            <button class="btn small" :disabled="checking" @click="runCheck">
+              <Icon name="swap" :size="13" />{{ checking ? '检查中' : '检查更新' }}
+            </button>
+            <button class="btn accent small" v-if="state.update?.newer" @click="openUpdatePage">
+              <Icon name="download" :size="13" />去下载
+            </button>
+          </div>
+          <pre v-if="state.update?.newer && state.update.notes" class="release-notes">{{ state.update.notes }}</pre>
+        </div>
       </div>
     </div>
   </div>

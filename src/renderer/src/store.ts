@@ -1,5 +1,5 @@
 import { reactive, watch } from 'vue'
-import type { AiPreviewResult, DbStatus, Settings, TagCategory, UcPreset, UpdateProgress } from '@shared/types'
+import type { AiPreviewResult, DbStatus, Settings, TagCategory, UcPreset, UpdateInfo, UpdateProgress } from '@shared/types'
 import type { ImportedPrompt } from '@shared/prompt-import'
 
 export const CAT_CLASS: Record<TagCategory, string> = {
@@ -84,6 +84,10 @@ export const state = reactive({
   settings: null as Settings | null,
   db: null as DbStatus | null,
   progress: null as UpdateProgress | null,
+  /** 版本检查结果（发现新版时侧栏提示） */
+  update: null as UpdateInfo | null,
+  /** 用户关掉了这次的更新提示 */
+  updateDismissed: false,
   toast: ''
 })
 
@@ -293,4 +297,24 @@ export async function refreshDb(): Promise<void> {
 
 export async function saveSettings(patch: Partial<Settings>): Promise<void> {
   state.settings = await window.api.saveSettings(patch)
+}
+
+/* ---------- 版本检查 ---------- */
+
+/**
+ * 启动后异步查一次（有 24 小时缓存，不会每次都请求）。失败静默，不打扰用户。
+ * force = 用户手动点「检查更新」。
+ */
+export async function checkUpdate(force = false): Promise<void> {
+  try {
+    state.update = await window.api.checkUpdate(force)
+    // 新版本号变了就重新允许提示（用户之前关掉的是旧的那次提示）
+    if (force) state.updateDismissed = false
+  } catch {
+    /* 忽略：检查更新失败不影响任何功能 */
+  }
+}
+
+export function dismissUpdate(): void {
+  state.updateDismissed = true
 }
