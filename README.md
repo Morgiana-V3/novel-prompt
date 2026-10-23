@@ -408,13 +408,14 @@ npm run dist
 
 ### 吉祥物
 
-立绘是用 NovelAI 生成的，同一个 seed 保证七个表情是同一个角色。需要重新生成时：
+立绘是用 NovelAI 生成的，同一个 seed 保证各个表情是同一个角色（每个页面的空状态、进行中、出错、完成各用一张，尽量不重复）。需要重新生成时：
 
 ```bash
-$env:NAI_KEY="pst-..."       # 你自己的 NovelAI Token，不要提交
+$env:NAI_KEY="pst-..."       # 你自己的 NovelAI Token，不要提交；不设置时自动读取应用设置里保存的 Token
 $env:NAI_SEED="777"
-python scripts/gen-mascot.py         # 生成到 assets-src/mascot/
-python scripts/process-mascot.py     # 抠底、裁边、输出到 src/renderer/src/assets/mascot/
+$env:NAI_STEPS="40"          # 可选，超过 28 步会消耗 Anlas，线条更细致
+python scripts/gen-mascot.py [名称...]     # 生成到 assets-src/mascot/，不带名称则全部重新生成
+python scripts/process-mascot.py [名称...] # 抠底、裁边、输出到 src/renderer/src/assets/mascot/
 ```
 
 依赖 Python 3 和 Pillow。`process-mascot.py` 会顺带生成 `build/icon.ico`（应用图标）。

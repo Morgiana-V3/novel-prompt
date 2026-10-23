@@ -4,7 +4,7 @@ import { vAutosize } from '../autosize'
 import { parsePromptText } from '@shared/prompt-import'
 import CharacterEditor from './CharacterEditor.vue'
 
-/** 当前提示词编辑器：主提示词 + 角色 + 负面，所有页面编辑的是同一份内容 */
+/** 当前提示词编辑器：按 NovelAI 面板顺序排列 主提示词 → 负面（UC）→ 角色，所有页面编辑的是同一份内容 */
 withDefaults(
   defineProps<{
     baseLabel?: string
@@ -47,8 +47,6 @@ function onPaste(e: ClipboardEvent) {
     </div>
   </div>
 
-  <CharacterEditor :label="charLabel" :hint="charHint" />
-
   <div class="field">
     <label class="field-label">负面提示词（UC）<span class="muted" v-if="negHint"> · {{ negHint }}</span></label>
     <div class="composer short neg">
@@ -62,4 +60,6 @@ function onPaste(e: ClipboardEvent) {
       ></textarea>
     </div>
   </div>
+
+  <CharacterEditor :label="charLabel" :hint="charHint" />
 </template>

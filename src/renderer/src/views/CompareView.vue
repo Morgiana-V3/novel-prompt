@@ -221,12 +221,12 @@ function formatPrompt() {
 
     <section class="pane right scroll">
       <div v-if="!state.db?.loaded" class="empty">
-        <Mascot mood="confused" :size="220" />
+        <Mascot mood="sleep" :size="220" />
         <p>还没有 tag 数据哦，先去下载 Danbooru 的 tag 库吧</p>
         <button class="btn primary" @click="state.tab = 'settings'"><Icon name="download" :size="16" />去下载</button>
       </div>
       <div v-else-if="!result?.tokens.length" class="empty">
-        <Mascot mood="idle" :size="220" />
+        <Mascot mood="check" :size="220" />
         <p>在左边输入提示词，我会帮你一个个检查～</p>
       </div>
       <div v-else-if="allGood" class="cheer">

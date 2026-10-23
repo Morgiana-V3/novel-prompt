@@ -3,7 +3,11 @@ import { computed } from 'vue'
 import type { UcPreset } from '@shared/types'
 import { state } from '../store'
 
-/** 推测与生图共用的参数（作为若干个 .param 直接放进父级网格） */
+/** 推测与生图共用的参数（作为若干个 .param 直接放进父级网格）；only 用来只渲染其中几项 */
+type Part = 'size' | 'quality' | 'uc'
+const props = defineProps<{ only?: Part[] }>()
+const show = (k: Part) => !props.only || props.only.includes(k)
+
 const SIZES = [
   { key: 'portrait', label: '竖图', w: 832, h: 1216 },
   { key: 'landscape', label: '横图', w: 1216, h: 832 },
@@ -25,20 +29,20 @@ function setSize(w: number, h: number) {
 </script>
 
 <template>
-  <div class="param">
+  <div class="param" v-if="show('size')">
     <span class="side-label">画幅 · {{ p.width }}×{{ p.height }}</span>
     <div class="seg block">
       <button v-for="s in SIZES" :key="s.key" :class="{ on: sizeKey === s.key }" @click="setSize(s.w, s.h)">{{ s.label }}</button>
     </div>
   </div>
-  <div class="param">
+  <div class="param" v-if="show('quality')">
     <span class="side-label">Add Quality Tags</span>
     <div class="seg block">
       <button :class="{ on: p.qualityTags }" @click="p.qualityTags = true">开</button>
       <button :class="{ on: !p.qualityTags }" @click="p.qualityTags = false">关</button>
     </div>
   </div>
-  <div class="param wide">
+  <div class="param wide" v-if="show('uc')">
     <span class="side-label">UC 预设</span>
     <div class="seg block">
       <button v-for="u in UC_OPTIONS" :key="u.key" :class="{ on: p.ucPreset === u.key }" @click="p.ucPreset = u.key">{{ u.label }}</button>

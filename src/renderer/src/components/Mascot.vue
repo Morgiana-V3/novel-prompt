@@ -7,10 +7,23 @@ import confused from '../assets/mascot/confused.png'
 import chill from '../assets/mascot/chill.png'
 import wink from '../assets/mascot/wink.png'
 import avatar from '../assets/mascot/avatar.png'
+import reading from '../assets/mascot/reading.png'
+import think from '../assets/mascot/think.png'
+import paint from '../assets/mascot/paint.png'
+import oops from '../assets/mascot/oops.png'
+import sleep from '../assets/mascot/sleep.png'
+import search from '../assets/mascot/search.png'
+import shrug from '../assets/mascot/shrug.png'
+import point from '../assets/mascot/point.png'
+import key from '../assets/mascot/key.png'
+import thumbs from '../assets/mascot/thumbs.png'
+import ok from '../assets/mascot/ok.png'
+import check from '../assets/mascot/check.png'
+import crystal from '../assets/mascot/crystal.png'
 
-export type MascotMood = 'idle' | 'happy' | 'busy' | 'confused' | 'chill' | 'wink' | 'avatar'
+const SRC = { idle, happy, busy, confused, chill, wink, avatar, reading, think, paint, oops, sleep, search, shrug, point, key, thumbs, ok, check, crystal }
 
-const SRC: Record<MascotMood, string> = { idle, happy, busy, confused, chill, wink, avatar }
+export type MascotMood = keyof typeof SRC
 
 const props = withDefaults(defineProps<{ mood?: MascotMood; size?: number }>(), { mood: 'idle', size: 120 })
 const src = computed(() => SRC[props.mood])
@@ -63,6 +76,13 @@ const src = computed(() => SRC[props.mood])
 .m-chill img { animation: m-sway 4s ease-in-out infinite; }
 .m-wink img { animation: m-bob 1.6s ease-in-out infinite; }
 .m-avatar img { animation: m-nod 3s ease-in-out infinite; transform-origin: 50% 80%; filter: none; }
+.m-paint img { animation: m-scribble 0.6s ease-in-out infinite alternate; }
+.m-reading img, .m-sleep img { animation: m-breathe 4.6s ease-in-out infinite; }
+.m-think img, .m-shrug img { animation: m-tilt 3s ease-in-out infinite; }
+.m-oops img { animation: m-shake 0.5s ease-in-out infinite; }
+.m-search img, .m-crystal img { animation: m-sway 3.6s ease-in-out infinite; }
+.m-point img, .m-key img, .m-ok img, .m-check img { animation: m-bob 1.8s ease-in-out infinite; }
+.m-thumbs img { animation: m-jump 1.2s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
 
 .mascot-swap-enter-active { animation: m-pop-in 0.42s cubic-bezier(0.34, 1.56, 0.64, 1); }
 .mascot-swap-leave-active { animation: m-pop-in 0.16s ease-in reverse; }
@@ -108,6 +128,11 @@ const src = computed(() => SRC[props.mood])
   25% { transform: rotate(-6deg); }
   50% { transform: rotate(0); }
   75% { transform: rotate(5deg); }
+}
+@keyframes m-shake {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  25% { transform: translateX(-2px) rotate(-1.5deg); }
+  75% { transform: translateX(2px) rotate(1.5deg); }
 }
 @keyframes m-pop-in {
   from { opacity: 0; transform: scale(0.6) translateY(10px); }

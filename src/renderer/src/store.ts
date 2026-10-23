@@ -47,7 +47,7 @@ export type Tab = 'compare' | 'ai' | 'preview' | 'generate' | 'search' | 'settin
 const STORE_KEY = 'np-workspace-v1'
 const MAX_HISTORY = 30
 
-const DEFAULT_PARAMS: WorkParams = { width: 832, height: 1216, qualityTags: true, ucPreset: 'heavy' }
+export const DEFAULT_PARAMS: Readonly<WorkParams> = { width: 832, height: 1216, qualityTags: true, ucPreset: 'heavy' }
 
 interface Persisted {
   prompt?: string

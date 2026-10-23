@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import type { NaiFreeCheck, NaiGenParams, NaiGenResult, NaiImage, NaiNoiseSchedule, NaiSampler, NaiSubscription } from '@shared/types'
-import { state, copy, toast, importPrompt, workKey, cleanErr } from '../store'
+import { state, copy, toast, importPrompt, workKey, cleanErr, DEFAULT_PARAMS } from '../store'
 import { resizeWithin } from '../autosize'
 import { readPngPrompt, type ImportedPrompt } from '@shared/prompt-import'
 import Icon from '../components/Icon.vue'
@@ -48,6 +48,39 @@ const SAMPLERS: { v: NaiSampler; label: string }[] = [
   { v: 'k_dpmpp_sde', label: 'DPM++ SDE' }
 ]
 const SCHEDULES: NaiNoiseSchedule[] = ['native', 'karras', 'exponential', 'polyexponential']
+
+/** 种子留空即默认，不参与比较 */
+const GEN_KEYS = ['steps', 'scale', 'cfgRescale', 'sampler', 'noiseSchedule', 'count'] as const
+const isDefault = computed(
+  () =>
+    GEN_KEYS.every((k) => gen[k] === DEFAULT_GEN[k]) &&
+    (gen.seed === null || (gen.seed as unknown) === '') &&
+    (Object.keys(DEFAULT_PARAMS) as (keyof typeof DEFAULT_PARAMS)[]).every((k) => params[k] === DEFAULT_PARAMS[k])
+)
+function resetDefaults() {
+  Object.assign(gen, DEFAULT_GEN)
+  Object.assign(params, DEFAULT_PARAMS)
+  toast('已恢复默认参数')
+}
+
+/** 高级设置（默认收起）：不常改的参数，收起时在标题上显示当前值 */
+const advancedSummary = computed(() =>
+  [
+    SAMPLERS.find((s) => s.v === gen.sampler)?.label ?? gen.sampler,
+    gen.noiseSchedule,
+    `Rescale ${gen.cfgRescale}`,
+    params.qualityTags ? '质量词开' : '质量词关',
+    `UC ${params.ucPreset}`
+  ].join(' · ')
+)
+const advancedChanged = computed(
+  () =>
+    gen.sampler !== DEFAULT_GEN.sampler ||
+    gen.noiseSchedule !== DEFAULT_GEN.noiseSchedule ||
+    gen.cfgRescale !== DEFAULT_GEN.cfgRescale ||
+    params.qualityTags !== DEFAULT_PARAMS.qualityTags ||
+    params.ucPreset !== DEFAULT_PARAMS.ucPreset
+)
 
 const hasToken = computed(() => !!state.settings?.naiToken?.trim())
 const freeOnly = computed(() => state.settings?.naiFreeOnly !== false)
@@ -301,14 +334,18 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
 
       <PromptEditor char-hint="位置填 B3 这类网格或 0.3,0.5 坐标才会生效" />
 
+      <div class="field-head gen-params-head">
+        <label class="field-label">生成参数</label>
+        <button class="btn ghost small ml-auto" :disabled="isDefault" title="步数、Guidance、采样器、画幅等全部恢复默认" @click="resetDefaults">
+          <Icon name="reset" :size="14" />恢复默认
+        </button>
+      </div>
       <div class="gen-params">
-        <SharedParams />
+        <SharedParams :only="['size']" />
         <div class="param">
-          <span class="side-label">自定义尺寸（64 的倍数）</span>
-          <div class="pair">
-            <input class="input sm" type="number" min="64" step="64" v-model.number="params.width" />
-            <span class="muted">×</span>
-            <input class="input sm" type="number" min="64" step="64" v-model.number="params.height" />
+          <span class="side-label">张数（逐张生成）</span>
+          <div class="seg block">
+            <button v-for="n in [1, 2, 4]" :key="n" :class="{ on: gen.count === n }" @click="gen.count = n">{{ n }}</button>
           </div>
         </div>
         <div class="param">
@@ -320,35 +357,49 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
           <input class="range" type="range" min="0" max="10" step="0.1" v-model.number="gen.scale" />
         </div>
         <div class="param">
-          <span class="side-label">Guidance Rescale · {{ gen.cfgRescale }}</span>
-          <input class="range" type="range" min="0" max="1" step="0.02" v-model.number="gen.cfgRescale" />
-        </div>
-        <div class="param">
           <span class="side-label">种子（留空随机）</span>
           <div class="pair">
             <input class="input sm" type="number" min="0" v-model.number="gen.seed" placeholder="随机" />
             <button class="icon-btn sm" title="改回随机" @click="randomizeSeed"><Icon name="x" :size="14" /></button>
           </div>
         </div>
-        <div class="param">
-          <span class="side-label">采样器</span>
-          <select class="input sm" v-model="gen.sampler">
-            <option v-for="s in SAMPLERS" :key="s.v" :value="s.v">{{ s.label }}</option>
-          </select>
-        </div>
-        <div class="param">
-          <span class="side-label">噪声调度</span>
-          <select class="input sm" v-model="gen.noiseSchedule">
-            <option v-for="s in SCHEDULES" :key="s" :value="s">{{ s }}</option>
-          </select>
-        </div>
-        <div class="param">
-          <span class="side-label">张数（逐张生成）</span>
-          <div class="seg block">
-            <button v-for="n in [1, 2, 4]" :key="n" :class="{ on: gen.count === n }" @click="gen.count = n">{{ n }}</button>
-          </div>
-        </div>
       </div>
+
+      <details class="gen-advanced">
+        <summary>
+          <Icon name="chevron" :size="14" class="gen-advanced-arrow" />
+          <span class="gen-advanced-title">高级设置</span>
+          <span v-if="advancedChanged" class="gen-advanced-dot" title="有参数改过默认值"></span>
+          <span class="muted gen-advanced-sum">{{ advancedSummary }}</span>
+        </summary>
+        <div class="gen-params">
+          <div class="param">
+            <span class="side-label">自定义尺寸（64 的倍数）</span>
+            <div class="pair">
+              <input class="input sm" type="number" min="64" step="64" v-model.number="params.width" />
+              <span class="muted">×</span>
+              <input class="input sm" type="number" min="64" step="64" v-model.number="params.height" />
+            </div>
+          </div>
+          <div class="param">
+            <span class="side-label">Guidance Rescale · {{ gen.cfgRescale }}</span>
+            <input class="range" type="range" min="0" max="1" step="0.02" v-model.number="gen.cfgRescale" />
+          </div>
+          <div class="param">
+            <span class="side-label">采样器</span>
+            <select class="input sm" v-model="gen.sampler">
+              <option v-for="s in SAMPLERS" :key="s.v" :value="s.v">{{ s.label }}</option>
+            </select>
+          </div>
+          <div class="param">
+            <span class="side-label">噪声调度</span>
+            <select class="input sm" v-model="gen.noiseSchedule">
+              <option v-for="s in SCHEDULES" :key="s" :value="s">{{ s }}</option>
+            </select>
+          </div>
+          <SharedParams :only="['quality', 'uc']" />
+        </div>
+      </details>
 
       <div v-if="hasToken && check" :class="['free-check', check.ok ? 'ok' : freeOnly ? 'bad' : 'warn']">
         <Icon :name="check.ok ? 'check' : 'warn'" :size="15" :stroke="check.ok ? 2.2 : 1.8" />
@@ -382,11 +433,11 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
 
     <section class="pane right scroll">
       <div v-if="running && !current" class="empty">
-        <Mascot mood="busy" :size="240" />
+        <Mascot mood="paint" :size="240" />
         <p>NovelAI 正在画<span class="dots"><i></i><i></i><i></i></span></p>
       </div>
       <div v-else-if="!current && !gallery.length" class="empty">
-        <Mascot :mood="hasToken ? 'chill' : 'confused'" :size="230" />
+        <Mascot :mood="hasToken ? 'idle' : 'key'" :size="230" />
         <p v-if="hasToken">生图用的是「当前提示词」，和 AI 优化、画面推测是同一份。点「生成」就能直接看到效果，图会保存在本机图库，可以预览、下载，也能读回图里的提示词。</p>
         <p v-else>要先在「设置 / 数据」里填写 NovelAI 的 Persistent API Token 才能出图哦</p>
         <button v-if="!hasToken" class="btn primary" @click="state.tab = 'settings'"><Icon name="sliders" :size="16" />去设置</button>
@@ -394,7 +445,7 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
 
       <template v-else>
         <div v-if="last && (last.stopped || last.anlasDelta)" :class="['cheer', { warn: last.stopped || (last.anlasDelta ?? 0) < 0 }]">
-          <Mascot :mood="last.stopped ? 'confused' : 'wink'" :size="64" />
+          <Mascot :mood="last.stopped ? 'oops' : 'thumbs'" :size="64" />
           <div>
             <b>{{ last.stopped ?? '生成完成' }}</b>
             <div class="muted small">

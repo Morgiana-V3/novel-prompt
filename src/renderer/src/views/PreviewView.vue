@@ -226,7 +226,7 @@ function toOptimize() {
 
     <section class="pane right scroll">
       <div v-if="running" class="empty">
-        <Mascot mood="busy" :size="240" />
+        <Mascot mood="think" :size="240" />
         <p>正在脑内作画<span class="dots"><i></i><i></i><i></i></span></p>
       </div>
       <div v-else-if="error && !result" class="empty">
@@ -234,7 +234,7 @@ function toOptimize() {
         <p>出了点问题，看看左边的报错信息吧</p>
       </div>
       <div v-else-if="!result" class="empty">
-        <Mascot mood="chill" :size="230" />
+        <Mascot mood="crystal" :size="230" />
         <p>
           推测用的是「当前提示词」，和其他页面共用。可以在上方粘贴整套提示词，或者把 NovelAI 原图拖进窗口。我会先查一遍每个 tag，再猜猜它会画成什么样、哪里可能和你想的不一样。
         </p>
@@ -245,7 +245,7 @@ function toOptimize() {
           <div class="evidence-text">当前提示词或参数在推测之后改过了，下面的结果可能已经过期。<button class="link-btn" @click="run">重新推测</button></div>
         </div>
         <div :class="['cheer', { warn: hasHighRisk }]">
-          <Mascot :mood="hasHighRisk ? 'confused' : 'wink'" :size="76" />
+          <Mascot :mood="hasHighRisk ? 'confused' : 'ok'" :size="76" />
           <div>
             <b>{{ hasHighRisk ? '大概会画成这样，不过有几处要小心' : '大概会画成这样～' }}</b>
             <div class="muted small">

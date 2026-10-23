@@ -197,11 +197,11 @@ const fullText = (r: AiOptimizeResult) => sectionText({ base: r.positive, negati
 
     <section class="pane right scroll">
       <div v-if="running && !result" class="empty">
-        <Mascot mood="busy" :size="240" />
+        <Mascot mood="reading" :size="240" />
         <p>正在翻 tag 库挑词<span class="dots"><i></i><i></i><i></i></span></p>
       </div>
       <div v-else-if="error && !result" class="empty">
-        <Mascot mood="confused" :size="230" />
+        <Mascot mood="oops" :size="230" />
         <p>出了点问题，看看左边的报错信息吧</p>
       </div>
       <div v-else-if="!result" class="empty">

@@ -84,11 +84,11 @@ watch(
         </div>
       </div>
       <div v-else-if="query" class="empty">
-        <Mascot mood="confused" :size="220" />
+        <Mascot mood="shrug" :size="220" />
         <p>没找到「{{ query }}」，换个说法试试？</p>
       </div>
       <div v-else class="empty">
-        <Mascot :mood="state.db?.loaded ? 'idle' : 'chill'" :size="220" />
+        <Mascot :mood="state.db?.loaded ? 'search' : 'point'" :size="220" />
         <p>{{ state.db?.loaded ? '想找什么 tag？试试这些：' : '还没有 tag 数据，先去设置页下载吧' }}</p>
         <div class="suggest center" v-if="state.db?.loaded">
           <button v-for="e in examples" :key="e" class="chip" @click="query = e">{{ e }}</button>
