@@ -22,6 +22,7 @@ export interface ToolDef {
 }
 
 interface ChatOptions {
+  provider?: { apiKey: string; baseUrl: string; model: string }
   tools?: ToolDef[]
   json?: boolean
   temperature?: number
@@ -32,8 +33,12 @@ interface ChatOptions {
 
 const isDeepSeek = (baseUrl: string, model: string) => /deepseek/i.test(baseUrl) || /^deepseek/i.test(model)
 
-export async function chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<ChatMessage> {
-  const { apiKey, baseUrl, model, reasoningEffort } = getSettings()
+export type ChatPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
+export type ChatInputMessage = Omit<ChatMessage, 'content'> & { content: string | null | ChatPart[] }
+
+export async function chat(messages: ChatInputMessage[], opts: ChatOptions = {}): Promise<ChatMessage> {
+  const { reasoningEffort } = getSettings()
+  const { apiKey, baseUrl, model } = opts.provider ?? getSettings()
   if (!apiKey) throw new Error('请先在设置中填写 DeepSeek API Key')
   const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`
   const thinkingOn = opts.thinking !== false && reasoningEffort !== 'off'

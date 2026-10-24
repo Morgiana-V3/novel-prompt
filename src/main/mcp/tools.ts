@@ -21,6 +21,7 @@ import { tagTool, TAG_TOOL_DEFS, optimizePrompt } from '../ai/optimizer'
 import { previewPrompt, reviewPrompt } from '../ai/previewer'
 import { freeCheck, generateImages, getSubscription, imageDir, imagePath, listImages, FREE_MAX_PIXELS, FREE_MAX_STEPS } from '../nai/client'
 import type { McpTool } from './server'
+import { inpaintTools } from './inpaint-tools'
 
 /* ---------- 参数解析 ---------- */
 
@@ -109,7 +110,7 @@ function aiGate(): string | null {
 const SKILL_FIELDS = {
   name: { type: 'string', description: 'Skill 名称' },
   description: { type: 'string', description: '一句话说明这份 Skill 管什么（会出现在给 AI 的 Skill 清单里）' },
-  scope: { type: 'string', enum: ['optimize', 'preview', 'all'], description: '作用于哪个功能：optimize = AI 优化 / 描述转提示词（也是 prompt_guide 的内容），preview = 画面推测，all = 两者' },
+  scope: { type: 'string', enum: ['optimize', 'preview', 'inpaint', 'all'], description: '作用于哪个功能：optimize = AI 优化 / 描述转提示词（也是 prompt_guide 的内容），preview = 画面推测，inpaint = 局部重绘，all = 全部功能' },
   model: { type: 'string', enum: ['all', 'v4.5', 'v5'], description: '适用模型，默认 all；正文里也可以用【V4.5】/【V5】标注版本专用的内容' },
   content: { type: 'string', description: 'Skill 正文（Markdown，不含 frontmatter）' }
 }
@@ -267,8 +268,9 @@ export const MCP_INSTRUCTIONS = `NovelPrompt：NovelAI（V4.5 / V5）提示词�
 1. tag 不编造：除 NAI 专用质量词和英文自然语言短句外，tag 必须来自 search_tags / validate_tags 的结果。
 2. 用户写明的内容（角色、画师、服装、持物与动作对象、数量与左右、画面文字、负面刻意排除项）必须保留；新增画师、饰物、风格等只作为可选建议。
 3. 写好后用 analyze_prompt 复查，逐条处理报告（修正，或说明保留理由）；不为了清零警告删掉用户要的内容。
-4. generate_image 只在用户明确要求生图时调用，必须传 confirm: true；返回 stopped 时停止并如实告知。
-optimize_prompt / preview_prompt 会调用软件内置的 DeepSeek 并消耗用户额度，一般你自己推理即可。`
+4. generate_image / inpaint_image 只在用户明确要求生图或重绘时调用，必须传 confirm: true；返回 stopped 时停止并如实告知。
+5. 局部重绘先读 inpaint_guide（inpaint 范围的 Skill），用 prepare_inpaint 准备并查看选区；plan_inpaint 只分析图片和批注，inpaint_image 才实际生成。不要把计划当成已生成结果。
+optimize_prompt / preview_prompt / plan_inpaint 会调用软件内置的 AI 并消耗用户额度，一般你自己推理即可。`
 
 const AGENT_GUIDE = `# NovelPrompt 使用说明（给外部 agent）
 
@@ -334,6 +336,7 @@ optimize_prompt / preview_prompt 调用内置 DeepSeek，消耗用户额度；�
 
 export function buildTools(): McpTool[] {
   return [
+    ...inpaintTools(),
     {
       name: 'prompt_guide',
       title: '提示词规范',

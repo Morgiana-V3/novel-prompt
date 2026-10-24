@@ -7,7 +7,7 @@ import SkillEditor from './SkillEditor.vue'
 
 /** 设置页：Skill 的导入、新建、编辑、复制、删除。启用与优先级在侧栏浮层里设置 */
 
-const SCOPE: Record<string, string> = { optimize: 'AI 优化', preview: '画面推测', all: '全部功能' }
+const SCOPE: Record<string, string> = { optimize: 'AI 优化', preview: '画面推测', inpaint: '局部重绘', all: '全部功能' }
 const MODEL: Record<string, string> = { all: '通用', 'v4.5': 'V4.5', v5: 'V5' }
 
 const list = computed(() => state.skills)
@@ -161,7 +161,7 @@ const openPicker = () => (state.skillPanel = true)
     </div>
 
     <div class="help">
-      只支持 .md 文件。文件开头可以用 frontmatter 写 name / description / scope（optimize、preview、all）/ model（all、v4.5、v5），导入时会自动读取。也可以直接把 .md 放进 Skill 文件夹，放进去的默认不启用。
+      只支持 .md 文件。文件开头可以用 frontmatter 写 name / description / scope（optimize、preview、inpaint、all）/ model（all、v4.5、v5），导入时会自动读取。也可以直接把 .md 放进 Skill 文件夹，放进去的默认不启用。
     </div>
 
     <SkillEditor

@@ -104,6 +104,8 @@ export interface UpdateProgress {
 export type ReasoningEffort = 'off' | 'low' | 'high' | 'max'
 
 export interface Settings {
+  /** Legacy profile data; inpainting now uses the shared AI configuration. */
+  inpaintVision?: { apiKey: string; baseUrl: string; model: string }
   apiKey: string
   baseUrl: string
   model: string
@@ -129,8 +131,8 @@ export interface Settings {
 
 /* ---------- Skill ---------- */
 
-/** 作用范围：optimize = AI 优化 / 描述转提示词（含 MCP prompt_guide），preview = 画面推测 */
-export type SkillScope = 'optimize' | 'preview' | 'all'
+/** 作用范围：optimize = AI 优化 / 描述转提示词，preview = 画面推测，inpaint = 局部重绘批注优化 */
+export type SkillScope = 'optimize' | 'preview' | 'inpaint' | 'all'
 /** 适用模型 */
 export type SkillModel = 'all' | 'v4.5' | 'v5'
 
@@ -256,6 +258,15 @@ export interface NaiGenRequest {
   characters: AiCharacter[]
   params: NaiGenParams
   version: NaiVersion
+}
+
+/** 局部重绘使用图库原图的尺寸，遮罩为同尺寸 PNG（白色重绘，黑色保留）。 */
+export interface NaiInpaintRequest extends NaiGenRequest {
+  inpaint: {
+    imageName: string
+    mask: string
+    strength: number
+  }
 }
 
 export interface NaiImage {
@@ -445,3 +456,32 @@ export interface AiPreviewResult {
   tagCount: number
   evidence: EvidenceInfo
 }
+
+/* ---------- AI 局部重绘协作 ---------- */
+export interface InpaintDraft { base: string; negative: string; characters: AiCharacter[] }
+export interface InpaintRegionInput {
+  id: string
+  /** Stable display label; responses must still match the full id. */
+  label?: string
+  instruction: string
+  /** null = 自动识别；数字为从 0 开始的角色索引 */
+  target: number | null
+  mask: string
+}
+export interface AiInpaintRequest {
+  imageName: string
+  width: number
+  height: number
+  version: NaiVersion
+  draft: InpaintDraft
+  regions: InpaintRegionInput[]
+}
+export interface InpaintChange {
+  field: 'base' | 'negative' | 'character' | 'characterNegative'
+  characterIndex?: number
+  before: string
+  after: string
+  reason: string
+}
+export interface InpaintPlan { id: string; summary: string; warning: string; changes: InpaintChange[] }
+export interface AiInpaintResult { plans: InpaintPlan[]; mode: 'vision'; skills: string[] }

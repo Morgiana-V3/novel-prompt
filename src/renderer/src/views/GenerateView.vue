@@ -10,6 +10,9 @@ import PromptEditor from '../components/PromptEditor.vue'
 import WorkspaceBar from '../components/WorkspaceBar.vue'
 import SharedParams from '../components/SharedParams.vue'
 import PositionEditor from '../components/PositionEditor.vue'
+import InpaintEditor from '../components/InpaintEditor.vue'
+import ImageViewer from '../components/ImageViewer.vue'
+import ThemeSelect from '../components/ThemeSelect.vue'
 
 /** 只属于生图的参数；画幅、质量词、UC 预设与画面推测共用（state.params） */
 type GenOnly = Omit<NaiGenParams, 'width' | 'height' | 'qualityTags' | 'ucPreset'>
@@ -104,6 +107,15 @@ const current = computed({
 })
 const lightbox = ref(false)
 const posEditing = ref(false)
+const inpaintSource = ref<NaiImage | null>(null)
+const inpaintBusy = ref(false)
+
+async function onInpaintGenerated(response: NaiGenResult) {
+  last.value = response
+  if (response.subscription) sub.value = response.subscription
+  if (response.images.length) current.value = response.images[response.images.length - 1]
+  try { await refreshGallery() } catch (e) { toast(`结果已保存，图库刷新失败：${cleanErr(e)}`) }
+}
 
 const leftPane = ref<HTMLElement>()
 const resizeAll = () => resizeWithin(leftPane.value)
@@ -161,12 +173,10 @@ onMounted(() => {
     if (running.value) steps.value.push(s)
   })
   window.addEventListener('resize', resizeAll)
-  window.addEventListener('keydown', onKey)
   refreshGallery()
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', resizeAll)
-  window.removeEventListener('keydown', onKey)
 })
 
 watch(
@@ -193,6 +203,7 @@ function randomizeSeed() {
 }
 
 async function run() {
+  if (inpaintBusy.value) return
   if (!hasToken.value) {
     error.value = '请先在「设置 / 数据」中填写 NovelAI API Token'
     return
@@ -282,12 +293,10 @@ async function previewImage(img: NaiImage) {
   state.tab = 'preview'
 }
 
-function onKey(e: KeyboardEvent) {
-  if (!lightbox.value) return
-  if (e.key === 'Escape') lightbox.value = false
-  const i = gallery.value.findIndex((g) => g.name === current.value?.name)
-  if (e.key === 'ArrowRight' && i >= 0 && i < gallery.value.length - 1) current.value = gallery.value[i + 1]
-  if (e.key === 'ArrowLeft' && i > 0) current.value = gallery.value[i - 1]
+const galleryIndex = computed(() => gallery.value.findIndex(g => g.name === current.value?.name))
+function changeImage(delta: number) {
+  const next = gallery.value[galleryIndex.value + delta]
+  if (next) current.value = next
 }
 
 const fmtTime = (t: number) => new Date(t).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -392,15 +401,11 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
           </div>
           <div class="param">
             <span class="side-label">采样器</span>
-            <select class="input sm" v-model="gen.sampler">
-              <option v-for="s in SAMPLERS" :key="s.v" :value="s.v">{{ s.label }}</option>
-            </select>
+            <ThemeSelect class="sm" v-model="gen.sampler" :options="SAMPLERS.map(s => ({ value: s.v, label: s.label }))" aria-label="采样器" />
           </div>
           <div class="param">
             <span class="side-label">噪声调度</span>
-            <select class="input sm" v-model="gen.noiseSchedule">
-              <option v-for="s in SCHEDULES" :key="s" :value="s">{{ s }}</option>
-            </select>
+            <ThemeSelect class="sm" v-model="gen.noiseSchedule" :options="SCHEDULES.map(s => ({ value: s, label: s }))" aria-label="噪声调度" />
           </div>
           <SharedParams :only="['quality', 'uc']" />
         </div>
@@ -416,7 +421,7 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
       </div>
 
       <div class="row">
-        <button class="btn accent big" :disabled="running" @click="run">
+        <button class="btn accent big" :disabled="running || inpaintBusy" @click="run">
           <Icon name="image" :size="17" :class="{ 'spin-slow': running }" />
           {{ running ? '正在生成' : gen.count > 1 ? `生成 ${gen.count} 张` : '生成' }}
         </button>
@@ -481,6 +486,9 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
             <div v-if="running" class="viewer-busy"><Icon name="image" :size="16" class="spin-slow" />下一张生成中…</div>
           </div>
           <div class="row" style="padding: 10px 12px">
+            <button class="btn small accent" :disabled="running || inpaintBusy" @click="inpaintSource = current">
+              <Icon name="edit" :size="14" />局部重绘
+            </button>
             <button class="btn ghost small" :disabled="!state.characters.length" :title="state.characters.length ? '以当前图片为底图，调整角色提示词的位置' : '先添加角色提示词，再对照图片定位'" @click="state.positionReference.visible = true; posEditing = true">
               <Icon name="frame" :size="14" />对照图片定位
             </button>
@@ -530,12 +538,10 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
       </template>
     </section>
 
-    <transition name="fade">
-      <div class="lightbox" v-if="lightbox && current" @click="lightbox = false">
-        <img :src="current.url" alt="" draggable="false" />
-        <span class="lightbox-hint">Esc 关闭 · ← → 切换</span>
-      </div>
-    </transition>
+    <ImageViewer v-if="lightbox && current" :image="current" :can-previous="galleryIndex > 0" :can-next="galleryIndex >= 0 && galleryIndex < gallery.length - 1"
+      @close="lightbox = false" @previous="changeImage(-1)" @next="changeImage(1)" />
     <PositionEditor v-if="posEditing" @close="posEditing = false" />
+    <InpaintEditor v-if="inpaintSource" :image="inpaintSource" :params="{ ...gen, ...params }"
+      @close="inpaintSource = null" @busy="inpaintBusy = $event" @generated="onInpaintGenerated" />
   </div>
 </template>

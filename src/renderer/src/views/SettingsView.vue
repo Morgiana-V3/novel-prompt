@@ -31,7 +31,7 @@ watch(
   () => state.settings,
   (s) => {
     if (!s || filled) return
-    const { naiVersion: _v, ...rest } = s
+    const { naiVersion: _v, inpaintVision: _legacyVision, ...rest } = s
     Object.assign(form, rest)
     filled = true
   },
@@ -250,7 +250,7 @@ async function translate() {
         <span class="card-icon blue"><Icon name="key" /></span>
         <div>
           <h2>DeepSeek</h2>
-          <div class="card-desc">用于 AI 优化和翻译，任何 OpenAI 兼容接口都能用</div>
+          <div class="card-desc">用于 AI 优化、翻译和局部重绘分析，支持 OpenAI 兼容接口</div>
         </div>
       </div>
       <div class="form-grid">
@@ -265,7 +265,7 @@ async function translate() {
         <div class="form-field">
           <label>模型</label>
           <input class="input" v-model="form.model" />
-          <span class="help">默认 deepseek-flash（DeepSeek-V4.1-Flash，支持工具调用）</span>
+          <span class="help">默认 deepseek-flash，支持工具调用与图片理解；局部重绘直接复用此模型，无需额外配置。其他模型使用「图片 + 批注」时需支持图片输入。</span>
         </div>
         <div class="form-field full">
           <label>思考模式</label>

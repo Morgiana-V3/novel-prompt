@@ -30,6 +30,7 @@ const form = reactive({
   model: (props.doc?.model ?? 'all') as SkillModel,
   content: props.doc?.content ?? TEMPLATE
 })
+const opened = ref(true)
 const initial = JSON.stringify(form)
 const dirty = computed(() => !props.readonly && JSON.stringify(form) !== initial)
 const saving = ref(false)
@@ -38,6 +39,7 @@ const error = ref('')
 const scopes: { v: SkillScope; label: string }[] = [
   { v: 'optimize', label: 'AI 优化' },
   { v: 'preview', label: '画面推测' },
+  { v: 'inpaint', label: '局部重绘' },
   { v: 'all', label: '全部' }
 ]
 const models: { v: SkillModel; label: string }[] = [
@@ -47,6 +49,7 @@ const models: { v: SkillModel; label: string }[] = [
 ]
 
 async function save() {
+  if (!opened.value || saving.value) return
   if (!form.name.trim()) return (error.value = '请填写名称')
   if (!form.content.trim()) return (error.value = '正文不能为空')
   saving.value = true
@@ -57,7 +60,7 @@ async function save() {
     await loadSkills()
     toast(props.doc ? '已保存，下一次调用 AI 时生效' : '已创建并启用（最高优先级）')
     emit('saved', doc)
-    emit('close')
+    opened.value = false
   } catch (e) {
     error.value = cleanErr(e)
   } finally {
@@ -66,11 +69,13 @@ async function save() {
 }
 
 function close() {
+  if (!opened.value || saving.value) return
   if (dirty.value && !confirm('有未保存的修改，确定关闭吗？')) return
-  emit('close')
+  opened.value = false
 }
 
 function onKey(e: KeyboardEvent) {
+  if (!opened.value) return
   if (e.key === 'Escape') close()
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && !props.readonly) {
     e.preventDefault()
@@ -83,8 +88,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <template>
   <Teleport to="body">
-    <div class="sk-mask" @pointerdown.self="close">
-      <div class="sk-dialog">
+    <Transition name="modal" appear @after-leave="emit('close')">
+    <div v-if="opened" class="sk-mask" @pointerdown.self="close">
+      <div class="sk-dialog modal-panel">
         <div class="sk-head">
           <span class="group-badge pink"><Icon :name="readonly ? 'eye' : 'edit'" :size="14" /></span>
           <h3>{{ title ?? (readonly ? '查看 Skill' : doc ? '编辑 Skill' : '新建 Skill') }}</h3>
@@ -126,7 +132,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <div class="sk-foot">
           <template v-if="readonly">
             <button v-if="doc && doc.id !== 'core'" class="btn small" @click="emit('duplicate', doc.id)"><Icon name="copy" :size="14" />复制为我的 Skill</button>
-            <button class="btn primary small" @click="emit('close')">关闭</button>
+            <button class="btn primary small" @click="close">关闭</button>
           </template>
           <template v-else>
             <span class="muted small">Ctrl+S 保存</span>
@@ -136,19 +142,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </div>
       </div>
     </div>
+    </Transition>
   </Teleport>
 </template>
 
 <style scoped>
 .sk-mask {
-  position: fixed; inset: 0; z-index: 85; display: grid; place-items: center; padding: 28px;
-  background: rgba(16, 16, 20, 0.42); backdrop-filter: blur(3px); animation: fade-in 0.18s;
+  position: fixed; inset: 0; z-index: 85; display: grid; place-items: center; padding: calc(var(--titlebar-safe-height) + 28px) 28px 28px;
+  background: rgba(16, 16, 20, 0.42); backdrop-filter: blur(3px);
 }
-@keyframes fade-in { from { opacity: 0; } }
 .sk-dialog {
   width: min(980px, 100%); height: min(860px, 100%); display: flex; flex-direction: column; background: #fff;
   border: 1px solid var(--line2); border-radius: 18px; box-shadow: 0 24px 60px rgba(20, 20, 30, 0.22); overflow: hidden;
-  animation: pop 0.28s var(--bounce);
+
 }
 .sk-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .sk-head h3 { margin: 0; font-size: 14px; }

@@ -12,6 +12,8 @@ import Icon from './Icon.vue'
  */
 const props = defineProps<{ start?: number }>()
 const emit = defineEmits<{ close: [] }>()
+const opened = ref(true)
+const close = () => { opened.value = false }
 
 const COLORS = ['#ff6b9a', '#3b82f6', '#1f9d68', '#c97f00', '#7c3aed', '#e5484d', '#0891b2', '#db2777']
 const COLS = 'ABCDE'
@@ -152,8 +154,9 @@ function onCanvasUp(e: PointerEvent) {
 
 /* ---------- 键盘：方向键微调选中角色 ---------- */
 function onKey(e: KeyboardEvent) {
+  if (!opened.value) return
   if (e.key === 'Escape') {
-    emit('close')
+    close()
     return
   }
   const target = e.target as HTMLElement | null
@@ -206,7 +209,7 @@ const hasConvertible = computed(() => dots.value.some((d) => d.set && !isV5.valu
 watch(
   () => state.characters.length,
   (n) => {
-    if (!n) emit('close')
+    if (!n) close()
     else if (selected.value >= n) selected.value = n - 1
   }
 )
@@ -224,14 +227,15 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body">
-    <div class="pos-mask" @pointerdown.self="emit('close')">
-      <div class="pos-dialog">
+    <Transition name="modal" appear @after-leave="emit('close')">
+    <div v-if="opened" class="pos-mask" @pointerdown.self="close()">
+      <div class="pos-dialog modal-panel">
         <div class="pos-head">
           <span class="group-badge pink"><Icon name="frame" :size="14" /></span>
           <h3>角色位置</h3>
           <span class="pill">{{ isV5 ? 'V5 · 自由坐标' : 'V4.5 · 5×5 网格' }}</span>
           <span class="pill">{{ state.params.width }}×{{ state.params.height }}</span>
-          <button class="icon-btn sm ml-auto" title="关闭（Esc）" @click="emit('close')"><Icon name="x" :size="15" /></button>
+          <button class="icon-btn sm ml-auto" title="关闭（Esc）" @click="close()"><Icon name="x" :size="15" /></button>
         </div>
 
         <div class="pos-body">
@@ -350,23 +354,23 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="pos-foot">
-          <button class="btn primary small" @click="emit('close')"><Icon name="check" :size="14" />完成</button>
+          <button class="btn primary small" @click="close()"><Icon name="check" :size="14" />完成</button>
         </div>
       </div>
     </div>
+    </Transition>
   </Teleport>
 </template>
 
 <style scoped>
 .pos-mask {
-  position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 24px;
-  background: rgba(16, 16, 20, 0.42); backdrop-filter: blur(3px); animation: fade-in 0.18s;
+  position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: calc(var(--titlebar-safe-height) + 24px) 24px 24px;
+  background: rgba(16, 16, 20, 0.42); backdrop-filter: blur(3px);
 }
-@keyframes fade-in { from { opacity: 0; } }
 .pos-dialog {
   display: flex; flex-direction: column; max-width: 100%; max-height: 100%; background: #fff;
   border: 1px solid var(--line2); border-radius: 18px; box-shadow: 0 24px 60px rgba(20, 20, 30, 0.22); overflow: hidden;
-  animation: pop 0.28s var(--bounce);
+
 }
 .pos-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .pos-head h3 { margin: 0; font-size: 14px; }

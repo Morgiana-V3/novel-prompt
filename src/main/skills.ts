@@ -21,7 +21,7 @@ import { getSettings, saveSettings } from './settings'
  * 启用状态与优先级存在 settings.skills（数组顺序 = 优先级）。
  */
 
-export type SkillFeature = 'optimize' | 'preview'
+export type SkillFeature = 'optimize' | 'preview' | 'inpaint'
 
 interface Builtin {
   id: string
@@ -33,8 +33,11 @@ interface Builtin {
 
 export const BUILTIN_PROMPT = 'builtin:prompt'
 export const BUILTIN_PREVIEW = 'builtin:preview'
+export const BUILTIN_INPAINT = 'builtin:inpaint'
 
 const BUILTINS: Builtin[] = [
+  { id: BUILTIN_INPAINT, file: 'nai-inpaint.md', name: '内置 · 局部重绘优化',
+    description: '将选区批注转换为最小提示词修改；保留身份和无关特征，识别冲突，输出逐区域修改依据', scope: 'inpaint' },
   {
     id: BUILTIN_PROMPT,
     file: 'nai-prompt.md',
@@ -53,9 +56,9 @@ const BUILTINS: Builtin[] = [
 
 const DEFAULT_CONFIG: SkillEntry[] = BUILTINS.map((b) => ({ id: b.id, enabled: true }))
 
-const SCOPES: SkillScope[] = ['optimize', 'preview', 'all']
+const SCOPES: SkillScope[] = ['optimize', 'preview', 'inpaint', 'all']
 const MODELS: SkillModel[] = ['all', 'v4.5', 'v5']
-export const SCOPE_LABEL: Record<SkillScope, string> = { optimize: 'AI 优化', preview: '画面推测', all: '全部功能' }
+export const SCOPE_LABEL: Record<SkillScope, string> = { optimize: 'AI 优化', preview: '画面推测', inpaint: '局部重绘', all: '全部功能' }
 export const MODEL_LABEL: Record<SkillModel, string> = { all: '通用', 'v4.5': 'V4.5', v5: 'V5' }
 
 /* ---------- frontmatter ---------- */
@@ -116,7 +119,7 @@ function readBundled(file: BundledSkill): string {
 }
 
 function builtinDoc(b: Builtin): SkillDoc {
-  const content = readBundled(b.file)
+  const content = parseFrontmatter(readBundled(b.file)).body
   let updatedAt = 0
   try {
     updatedAt = statSync(bundledSkillPath(b.file)).mtimeMs
@@ -332,7 +335,7 @@ function referenceKnowledge(): string {
   return start >= 0 && end > start ? doc.slice(start, end).trim() : doc
 }
 
-const FEATURE_LABEL: Record<SkillFeature, string> = { optimize: 'AI 优化 / 描述转提示词', preview: '画面推测' }
+const FEATURE_LABEL: Record<SkillFeature, string> = { optimize: 'AI 优化 / 描述转提示词', preview: '画面推测', inpaint: '局部重绘优化' }
 
 /**
  * 组装「总则 + 启用的 Skill 清单 + 按优先级排列的正文」。

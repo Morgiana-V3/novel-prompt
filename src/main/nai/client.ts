@@ -1,5 +1,5 @@
 import { app, net } from 'electron'
-import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync, openSync, readSync, closeSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync, openSync, readSync, closeSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type {
   AiCharacter,
@@ -8,16 +8,18 @@ import type {
   NaiGenRequest,
   NaiGenResult,
   NaiImage,
+  NaiInpaintRequest,
   NaiSubscription,
   NaiVersion
 } from '../../shared/types'
 import { UC_PRESETS, joinPrompt, parsePosition, withQualityTags } from '../../shared/nai-presets'
 import { getSettings } from '../settings'
 import { isPng, pngSize, readZip } from './zip'
+import { prepareInpaint, compositeInpaint, type PreparedInpaint } from './inpaint'
 
 /**
  * NovelAI 图像接口（https://image.novelai.net）。
- * 只做普通文生图：每次请求 1 张，多张时串行请求。
+ * 文生图与局部重绘：每次请求 1 张，多张时串行请求。
  * Token 只放在请求头，任何错误信息里都不会带出 Token。
  */
 
@@ -216,6 +218,27 @@ export function buildBody(req: NaiGenRequest, seed: number): Record<string, unkn
   }
 }
 
+export function buildInpaintBody(req: NaiInpaintRequest, seed: number, prepared: PreparedInpaint): Record<string, unknown> {
+  const body = buildBody(req, seed)
+  const parameters = body.parameters as Record<string, unknown>
+  body.action = 'infill'
+  body.model = `${MODEL_ID[req.version]}-inpainting`
+  Object.assign(parameters, {
+    params_version: 4,
+    image: prepared.imageBase64,
+    mask: prepared.maskBase64,
+    add_original_image: false, // 完整分辨率的选区在本地合成，确保选区外不变
+    extra_noise_seed: (seed + 4_294_967_295) >>> 0
+  })
+  if (req.inpaint.strength < 1) parameters.img2img = { strength: req.inpaint.strength, color_correct: true }
+  if (req.version === 'v5' || req.params.noiseSchedule === 'native') parameters.noise_schedule = 'karras'
+  if (req.params.sampler === 'k_euler_ancestral') {
+    parameters.deliberate_euler_ancestral_bug = false
+    parameters.prefer_brownian = true
+  }
+  return body
+}
+
 /* ---------- 图库 ---------- */
 
 function stamp(d = new Date()): string {
@@ -267,10 +290,10 @@ export function listImages(limit = 120): NaiImage[] {
 
 const randomSeed = () => Math.floor(Math.random() * 4_294_967_295)
 
-async function generateOne(req: NaiGenRequest, seed: number, signal?: AbortSignal): Promise<Buffer> {
+async function generateOne(req: NaiGenRequest | NaiInpaintRequest, seed: number, signal?: AbortSignal, prepared?: PreparedInpaint): Promise<Buffer> {
   const res = await request(
     '/ai/generate-image',
-    { method: 'POST', body: JSON.stringify(buildBody(req, seed)) },
+    { method: 'POST', body: JSON.stringify(prepared ? buildInpaintBody(req as NaiInpaintRequest, seed, prepared) : buildBody(req, seed)) },
     'application/zip',
     signal
   )
@@ -279,7 +302,7 @@ async function generateOne(req: NaiGenRequest, seed: number, signal?: AbortSigna
   if (/json|text/i.test(type)) throw new NaiError(`接口没有返回图片：${buf.toString('utf8').slice(0, 300)}`)
   const png = isPng(buf) ? buf : readZip(buf).find((e) => isPng(e.data))?.data
   if (!png) throw new NaiError('返回内容里没有找到 PNG 图片')
-  return png
+  return prepared ? compositeInpaint(prepared, png) : png
 }
 
 /** Anlas 分项变化（负数 = 扣除）；任一项缺失则无法判断 */
@@ -290,11 +313,25 @@ function anlasChange(before?: NaiSubscription, after?: NaiSubscription): { fixed
 }
 
 export async function generateImages(
-  req: NaiGenRequest,
+  req: NaiGenRequest | NaiInpaintRequest,
   onStep: (s: string) => void,
   isCancelled: () => boolean,
   opts: { freeOnly?: boolean } = {}
 ): Promise<NaiGenResult> {
+  let prepared: PreparedInpaint | undefined
+  if ('inpaint' in req) {
+    if (!req.inpaint || !Number.isFinite(req.inpaint.strength) || req.inpaint.strength < 0.01 || req.inpaint.strength > 1)
+      throw new Error('重绘强度必须在 0.01～1 之间')
+    if (!['v4.5', 'v5'].includes(req.version) || !Number.isInteger(req.params.steps) || req.params.steps < 1 || req.params.steps > 50 ||
+        !Number.isFinite(req.params.scale) || req.params.scale < 0 || req.params.scale > 10 || req.params.count !== 1)
+      throw new Error('局部重绘参数无效，一次只能生成一张')
+    if (req.params.seed !== null && (!Number.isInteger(req.params.seed) || req.params.seed < 0 || req.params.seed > 4_294_967_295))
+      throw new Error('种子必须留空或为 0～4294967295 的整数')
+    const path = imagePath(req.inpaint.imageName)
+    if (!path) throw new Error('原图不存在或已被删除')
+    if (statSync(path).size > 40 * 1024 * 1024) throw new Error('原图文件不能超过 40 MB')
+    prepared = prepareInpaint(readFileSync(path), req.inpaint.mask, req.params.width, req.params.height)
+  }
   const freeOnly = opts.freeOnly ?? getSettings().naiFreeOnly
   const count = Math.max(1, Math.min(8, Math.floor(req.params.count || 1)))
   const images: NaiImage[] = []
@@ -322,10 +359,10 @@ export async function generateImages(
       }
     }
     const seed = req.params.seed != null && Number.isFinite(req.params.seed) ? (req.params.seed + i) >>> 0 : randomSeed()
-    onStep(`生成第 ${i + 1}/${count} 张（种子 ${seed}）…`)
+    onStep(`${prepared ? '局部重绘' : '生成'}第 ${i + 1}/${count} 张（种子 ${seed}）…`)
     let png: Buffer
     try {
-      png = await generateOne(req, seed)
+      png = await generateOne(req, seed, undefined, prepared)
     } catch (e) {
       if (!images.length) throw e
       stopped = `第 ${i + 1} 张失败：${(e as Error).message}`

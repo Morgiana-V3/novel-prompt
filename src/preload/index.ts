@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  AiInpaintRequest,
+  AiInpaintResult,
   AiOptimizeRequest,
   AiOptimizeResult,
   AiPreviewRequest,
@@ -12,6 +14,7 @@ import type {
   NaiGenRequest,
   NaiGenResult,
   NaiImage,
+  NaiInpaintRequest,
   NaiSubscription,
   NaiVersion,
   SearchHit,
@@ -32,6 +35,7 @@ const on = <T>(channel: string, cb: (p: T) => void) => {
 }
 
 const api = {
+  setDarkTitlebar: (dark: boolean): Promise<void> => ipcRenderer.invoke('window:dark-titlebar', dark),
   dbStatus: (): Promise<DbStatus> => ipcRenderer.invoke('db:status'),
   dbUpdate: (): Promise<DbStatus> => ipcRenderer.invoke('db:update'),
   aiTranslate: (): Promise<DbStatus> => ipcRenderer.invoke('db:aiTranslate'),
@@ -42,6 +46,8 @@ const api = {
   analyze: (text: string): Promise<AnalysisResult> => ipcRenderer.invoke('prompt:analyze', text),
   getSettings: (): Promise<Settings> => ipcRenderer.invoke('settings:get'),
   saveSettings: (patch: Partial<Settings>): Promise<Settings> => ipcRenderer.invoke('settings:save', patch),
+  planInpaint: (req: AiInpaintRequest): Promise<AiInpaintResult> => ipcRenderer.invoke('ai:inpaint-plan', req),
+  cancelInpaintPlan: (): Promise<void> => ipcRenderer.invoke('ai:inpaint-plan-cancel'),
   optimize: (req: AiOptimizeRequest): Promise<AiOptimizeResult> => ipcRenderer.invoke('ai:optimize', req),
   preview: (req: AiPreviewRequest): Promise<AiPreviewResult> => ipcRenderer.invoke('ai:preview', req),
   skillsList: (): Promise<SkillConfigItem[]> => ipcRenderer.invoke('skills:list'),
@@ -60,6 +66,7 @@ const api = {
   naiFreeCheck: (params: NaiGenParams, version: NaiVersion, sub?: NaiSubscription): Promise<NaiFreeCheck> =>
     ipcRenderer.invoke('nai:freeCheck', params, version, sub),
   naiGenerate: (req: NaiGenRequest): Promise<NaiGenResult> => ipcRenderer.invoke('nai:generate', req),
+  naiInpaint: (req: NaiInpaintRequest): Promise<NaiGenResult> => ipcRenderer.invoke('nai:inpaint', req),
   naiCancel: (): Promise<void> => ipcRenderer.invoke('nai:cancel'),
   naiList: (): Promise<NaiImage[]> => ipcRenderer.invoke('nai:list'),
   naiReadImage: (name: string): Promise<Uint8Array> => ipcRenderer.invoke('nai:readImage', name),

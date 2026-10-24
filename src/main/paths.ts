@@ -13,8 +13,8 @@ export function dataFile(name: string): string {
   return join(dataDir(), name)
 }
 
-/** 随安装包发布的 skill 文档：core = 固定的使用总则，nai-prompt = 内置编排规范，nai-preview = 内置画面推测 */
-export const BUNDLED_SKILLS = ['core.md', 'nai-prompt.md', 'nai-preview.md'] as const
+/** 随安装包发布的使用总则、提示词编排、画面推测与局部重绘规则。 */
+export const BUNDLED_SKILLS = ['core.md', 'nai-prompt.md', 'nai-preview.md', 'nai-inpaint.md'] as const
 export type BundledSkill = (typeof BUNDLED_SKILLS)[number]
 
 /** 内置 skill 只读，直接读安装包里的文件 */

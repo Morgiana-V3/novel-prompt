@@ -6,11 +6,12 @@ import { CAT_CLASS, appendTag, copy, state, fieldList, fieldLabel, sameField } f
 import TagCard from '../components/TagCard.vue'
 import Icon from '../components/Icon.vue'
 import Mascot from '../components/Mascot.vue'
+import ThemeSelect from '../components/ThemeSelect.vue'
 
 /** tag 加到哪里：默认是最近编辑过的输入框 */
 const fields = computed(() => fieldList())
 const targetIndex = computed(() => Math.max(0, fields.value.findIndex((f) => sameField(f, state.focus))))
-function setTarget(i: string) {
+function setTarget(i: number) {
   const f = fields.value[Number(i)]
   if (f) state.focus = f
 }
@@ -68,9 +69,7 @@ watch(
       <span class="hint ml-auto">
         <span class="add-target">
           <kbd>单击</kbd>加入
-          <select class="input sm" :value="targetIndex" @change="setTarget(($event.target as HTMLSelectElement).value)">
-            <option v-for="(f, i) in fields" :key="i" :value="i">{{ fieldLabel(f) }}</option>
-          </select>
+          <ThemeSelect class="sm" :model-value="targetIndex" @update:model-value="setTarget" :options="fields.map((f, i) => ({ value: i, label: fieldLabel(f) }))" aria-label="添加提示词到" />
         </span>
         <span><kbd>右键</kbd>复制</span>
         <span><kbd>双击中文</kbd>编辑翻译</span>

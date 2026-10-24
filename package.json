@@ -12,6 +12,8 @@
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
     "data:export": "node scripts/export-data.mjs",
     "mcp:smoke": "electron-vite build && node scripts/mcp-smoke.mjs",
+    "inpaint:smoke": "electron-vite build && electron scripts/inpaint-smoke.cjs",
+    "inpaint:mcp-smoke": "electron scripts/inpaint-mcp-smoke.cjs",
     "screenshots": "electron-vite build && electron . --screenshots=docs/screenshots",
     "screenshots:ai": "electron-vite build && electron . --screenshots=docs/screenshots --screenshots-ai",
     "dist": "electron-vite build && electron-builder --win --x64"
@@ -69,10 +71,12 @@
   },
   "dependencies": {
     "pinyin-pro": "^3.29.5",
+    "pngjs": "^7.0.0",
     "vue": "^3.5.44"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "@types/pngjs": "^6.0.5",
     "@vitejs/plugin-vue": "^6.0.10",
     "electron": "^44.9.2",
     "electron-builder": "^26.15.3",

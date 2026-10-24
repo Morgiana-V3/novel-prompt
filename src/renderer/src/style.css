@@ -1,4 +1,5 @@
 :root {
+  --titlebar-safe-height: max(40px, env(titlebar-area-height, 40px));
   --bg: #ffffff;
   --side: #f7f7f8;
   --panel: #fafafb;
@@ -49,6 +50,13 @@ img { -webkit-user-drag: none; }
 h2 { margin: 0; font-size: 15px; font-weight: 650; }
 h3 { margin: 0; font-size: 13.5px; font-weight: 600; }
 button { font: inherit; color: inherit; cursor: pointer; border: none; background: none; padding: 0; }
+/* Replace Chromium's native focus outline across interactive controls. Mouse
+   clicks keep the normal appearance; keyboard navigation gets a theme halo. */
+:is(button, a[href], summary, [role="button"], [tabindex]):focus { outline: none; }
+:is(button, a[href], summary, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--pink-line);
+}
 input, textarea, select { font: inherit; color: var(--text); }
 ::selection { background: #ffd3e2; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -415,7 +423,8 @@ kbd {
 }
 .char-head { display: flex; align-items: center; gap: 8px; }
 .char-head h3 { white-space: nowrap; }
-.input.sm { height: 28px; padding: 0 10px; font-size: 12.5px; border-radius: 8px; flex: 1; min-width: 0; max-width: 220px; }
+.input.sm { height: 28px; min-height: 28px; padding: 0 10px; font-size: 12.5px; border-radius: 8px; flex: 0 0 auto; min-width: 0; max-width: 220px; }
+.char-head > .input.sm, .pos-line > .input.sm, .pair > .input.sm { flex: 1 1 0; }
 .input.sm.pos-bad { border-color: var(--alias); background: var(--alias-soft); }
 .char-block .composer { box-shadow: none; border-radius: 14px; }
 .char-block .composer:focus-within { box-shadow: 0 0 0 3px var(--pink-soft); }
@@ -504,7 +513,14 @@ select.input {
 select.input:hover { border-color: var(--pink-line); }
 select.input:focus { border-color: var(--pink-line); box-shadow: 0 0 0 3px var(--pink-soft); }
 .gen-params .pair .input.sm { height: 30px; border-radius: 10px; }
-.range { width: 100%; accent-color: var(--pink); height: 26px; cursor: pointer; }
+/* A thumb halo preserves keyboard focus without the native rectangular outline. */
+.range { appearance: none; width: 100%; height: 26px; margin: 0; padding: 0; background: transparent; cursor: pointer; outline: none; }
+.range::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: var(--line2); }
+.range::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; margin-top: -6px; border: 2px solid #fff; border-radius: 50%; background: var(--pink); box-shadow: 0 1px 4px #0002; transition: box-shadow .15s; }
+.range:hover::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--pink-soft); }
+.range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--pink-line); }
+.range:disabled { opacity: .45; cursor: default; }
+::-webkit-scrollbar-corner { background: transparent; }
 .free-check {
   display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; font-size: 12.5px; line-height: 1.7;
   animation: fade-up 0.3s var(--bounce) backwards;
@@ -543,12 +559,6 @@ select.input:focus { border-color: var(--pink-line); box-shadow: 0 0 0 3px var(-
 .thumb-actions { position: absolute; right: 4px; bottom: 4px; display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; }
 .thumb:hover .thumb-actions { opacity: 1; }
 .thumb-actions .icon-btn { background: rgba(255, 255, 255, 0.92); color: var(--text); box-shadow: var(--shadow-sm); }
-.lightbox {
-  position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 32px;
-  background: rgba(16, 16, 20, 0.82); cursor: zoom-out; backdrop-filter: blur(4px);
-}
-.lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; animation: pop 0.3s var(--bounce); }
-.lightbox-hint { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); color: rgba(255, 255, 255, 0.6); font-size: 12px; }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 
@@ -605,7 +615,7 @@ select.input:focus { border-color: var(--pink-line); box-shadow: 0 0 0 3px var(-
 .nav-sep { height: 1px; background: var(--line); margin: 8px 10px; }
 
 .add-target { display: inline-flex; align-items: center; gap: 4px; }
-.add-target select.input { height: 24px; font-size: 12px; padding: 0 26px 0 8px; border-radius: 8px; max-width: 140px; background-position: right 8px center; }
+.add-target .theme-select.input { height: 24px; min-height: 24px; font-size: 12px; padding: 0 8px; border-radius: 8px; max-width: 140px; }
 
 .drop-overlay {
   position: fixed; inset: 0; z-index: 95; display: grid; place-items: center; pointer-events: none;
@@ -656,15 +666,16 @@ details.manual[open] summary { margin-bottom: 4px; }
 .tile-num.sm { font-size: 14px; line-height: 27px; }
 .tile-label { font-size: 11.5px; color: var(--muted); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
-.form-field { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.form-field { flex-shrink: 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .form-field .input { align-self: stretch; }
 .form-field.full { grid-column: 1 / -1; }
 .form-field label { font-size: 12px; color: var(--text2); font-weight: 500; }
 .help { font-size: 11.5px; color: var(--muted); }
 .input {
-  height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line2); background: #fff; outline: none;
+  flex-shrink: 0; height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line2); background: #fff; outline: none;
   transition: border-color 0.2s, box-shadow 0.25s;
 }
+input.input:not(.sm), select.input:not(.sm) { min-height: 36px; }
 .input:focus { border-color: var(--pink-line); box-shadow: 0 0 0 3px var(--pink-soft); }
 .progress { display: flex; flex-direction: column; gap: 8px; }
 .progress-msg { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text2); }
@@ -712,4 +723,16 @@ details.manual[open] summary { margin-bottom: 4px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+
+/* Shared modal motion; parents unmount only after the leave transition. */
+.modal-enter-active { transition: opacity .22s ease; }
+.modal-leave-active { transition: opacity .16s ease; }
+.modal-leave-active > * { pointer-events: none; }
+.modal-enter-active .modal-panel { transition: transform .22s cubic-bezier(.2,.8,.2,1); }
+.modal-leave-active .modal-panel { transition: transform .16s ease; }
+.modal-enter-from, .modal-leave-to { opacity: 0; }
+.modal-enter-from .modal-panel, .modal-leave-to .modal-panel { transform: translateY(10px) scale(.98); }
+@media (prefers-reduced-motion: reduce) {
+  .modal-enter-active, .modal-leave-active, .modal-enter-active .modal-panel, .modal-leave-active .modal-panel { transition-duration: .001s; }
 }

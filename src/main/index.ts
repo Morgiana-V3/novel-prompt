@@ -4,10 +4,12 @@ import { tmpdir } from 'node:os'
 import { existsSync, copyFileSync, readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import type {
+  AiInpaintRequest,
   AiOptimizeRequest,
   AiPreviewRequest,
   NaiGenParams,
   NaiGenRequest,
+  NaiInpaintRequest,
   NaiSubscription,
   NaiVersion,
   McpInfo,
@@ -20,6 +22,7 @@ import { tagStore } from './tagdb/store'
 import { updateImplications, updateTagDatabase, Cancelled } from './tagdb/fetcher'
 import { analyzePrompt } from './prompt/analyzer'
 import { getSettings, saveSettings } from './settings'
+import { planInpaint } from './ai/inpaint-planner'
 import { optimizePrompt } from './ai/optimizer'
 import { previewPrompt } from './ai/previewer'
 import { aiTranslate } from './ai/translator'
@@ -67,7 +70,7 @@ function createWindow(): void {
     icon: appIcon(),
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#ffffff', symbolColor: '#6b6c75', height: 40 },
+    titleBarOverlay: { color: '#00000000', symbolColor: '#6b6c75', height: 40 },
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
@@ -80,6 +83,10 @@ function createWindow(): void {
 const send = (channel: string, payload: unknown) => win?.webContents.send(channel, payload)
 
 function registerIpc(): void {
+  ipcMain.handle('window:dark-titlebar', (event, dark: boolean) => {
+    if (win && event.sender === win.webContents && process.platform !== 'darwin')
+      win.setTitleBarOverlay({ color: '#00000000', symbolColor: dark === true ? '#f7f7f9' : '#6b6c75' })
+  })
   ipcMain.handle('db:status', () => tagStore.status())
   ipcMain.handle('db:update', async () => {
     if (busy) throw new Error('已有任务在运行')
@@ -148,6 +155,17 @@ function registerIpc(): void {
   ipcMain.handle('settings:save', (_e, patch: Partial<Settings>) => {
     const { skills: _s, skillsMigrated: _m, ...rest } = patch
     return saveSettings(rest)
+  })
+
+  let inpaintPlan: AbortController | null = null
+  ipcMain.handle('ai:inpaint-plan-cancel', () => inpaintPlan?.abort())
+  ipcMain.handle('ai:inpaint-plan', async (_e, req: AiInpaintRequest) => {
+    if (inpaintPlan) throw new Error('正在分析区域，请等待或取消当前分析')
+    const ctrl = new AbortController()
+    inpaintPlan = ctrl
+    try { return await planInpaint(req, ctrl.signal) }
+    catch (e) { if (ctrl.signal.aborted) throw new Error('已取消分析'); throw e }
+    finally { if (inpaintPlan === ctrl) inpaintPlan = null }
   })
 
   ipcMain.handle('ai:optimize', async (_e, req: AiOptimizeRequest) => {
@@ -247,6 +265,17 @@ function registerIpc(): void {
   )
   ipcMain.handle('nai:generate', async (_e, req: NaiGenRequest) => {
     if (naiRunning) throw new Error('上一批还在生成中')
+    naiRunning = true
+    naiCancel = false
+    try {
+      return await generateImages(req, (s) => send('nai:step', s), () => naiCancel)
+    } finally {
+      naiRunning = false
+    }
+  })
+  ipcMain.handle('nai:inpaint', async (_e, req: NaiInpaintRequest) => {
+    if (naiRunning) throw new Error('上一批还在生成中')
+    if (!req?.inpaint) throw new Error('缺少原图或遮罩')
     naiRunning = true
     naiCancel = false
     try {

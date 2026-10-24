@@ -8,20 +8,20 @@ import Icon from './Icon.vue'
  * 侧栏 Skill 入口：只负责启用 / 关闭和优先级（拖动排序）。导入、编辑、删除在设置页。
  */
 
-const SCOPE: Record<string, string> = { optimize: 'AI 优化', preview: '画面推测', all: '全部' }
+const SCOPE: Record<string, string> = { optimize: 'AI 优化', preview: '画面推测', inpaint: '局部重绘', all: '全部' }
 const MODEL: Record<string, string> = { 'v4.5': 'V4.5', v5: 'V5' }
 
 const version = computed(() => state.settings?.naiVersion ?? 'v4.5')
 const list = computed(() => state.skills)
 const enabled = computed(() => list.value.filter((s) => s.enabled))
 const fits = (s: SkillConfigItem) => s.model === 'all' || s.model === version.value
-const covers = (s: SkillConfigItem, f: 'optimize' | 'preview') => s.scope === 'all' || s.scope === f
+const covers = (s: SkillConfigItem, f: 'optimize' | 'preview' | 'inpaint') => s.scope === 'all' || s.scope === f
 
 /** 每个功能实际生效的 Skill（按优先级） */
-const effective = (f: 'optimize' | 'preview') => enabled.value.filter((s) => covers(s, f) && fits(s))
-const eff = computed(() => ({ optimize: effective('optimize'), preview: effective('preview') }))
+const effective = (f: 'optimize' | 'preview' | 'inpaint') => enabled.value.filter((s) => covers(s, f) && fits(s))
+const eff = computed(() => ({ optimize: effective('optimize'), preview: effective('preview'), inpaint: effective('inpaint') }))
 const fmtChars = (n: number) => (n >= 10000 ? `${(n / 10000).toFixed(1)} 万字` : `${n.toLocaleString()} 字`)
-const total = (f: 'optimize' | 'preview') => eff.value[f].reduce((a, s) => a + s.chars, 0)
+const total = (f: 'optimize' | 'preview' | 'inpaint') => eff.value[f].reduce((a, s) => a + s.chars, 0)
 /** 叠加后的正文很长时提醒：会明显增加每次调用的 token 消耗 */
 const LONG = 40000
 
@@ -32,7 +32,7 @@ const triggerTitle = computed(() => {
 const triggerSub = computed(() => {
   const o = eff.value.optimize.length
   const p = eff.value.preview.length
-  return `优化 ${o} · 推测 ${p}`
+  return `优化 ${o} · 推测 ${p} · 重绘 ${eff.value.inpaint.length}`
 })
 
 /* ---------- 浮层位置 ---------- */
@@ -130,8 +130,9 @@ onBeforeUnmount(() => {
     </button>
 
     <Teleport to="body">
+      <Transition name="modal">
       <div v-if="state.skillPanel" class="sp-mask" @pointerdown.self="close">
-        <div class="sp-pop" :style="{ left: pos.left + 'px', bottom: pos.bottom + 'px' }">
+        <div class="sp-pop modal-panel" :style="{ left: pos.left + 'px', bottom: pos.bottom + 'px' }">
           <div class="sp-head">
             <b>启用的 Skill</b>
             <span class="pill">{{ version === 'v5' ? 'V5' : 'V4.5' }}</span>
@@ -172,8 +173,8 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="sp-summary">
-            <div v-for="f in (['optimize', 'preview'] as const)" :key="f" class="sp-row">
-              <span class="sp-feature">{{ f === 'optimize' ? 'AI 优化' : '画面推测' }}</span>
+            <div v-for="f in (['optimize', 'preview', 'inpaint'] as const)" :key="f" class="sp-row">
+              <span class="sp-feature">{{ f === 'optimize' ? 'AI 优化' : f === 'preview' ? '画面推测' : '局部重绘' }}</span>
               <span v-if="eff[f].length" class="sp-chain">{{ eff[f].map((s) => s.name).join(' › ') }}</span>
               <span v-else class="sp-chain warn">没有启用的 Skill，只按通用知识工作</span>
               <span :class="['sp-size', { warn: total(f) > LONG }]" :title="total(f) > LONG ? 'Skill 较长，每次调用消耗的 token 会明显增加' : ''">{{ fmtChars(total(f)) }}</span>
@@ -185,6 +186,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
+      </Transition>
     </Teleport>
   </div>
 </template>
@@ -207,9 +209,8 @@ onBeforeUnmount(() => {
 .sp-pop {
   position: fixed; width: 360px; max-height: calc(100vh - 40px); display: flex; flex-direction: column; background: #fff;
   border: 1px solid var(--line2); border-radius: 16px; box-shadow: 0 18px 48px rgba(20, 20, 30, 0.18); overflow: hidden;
-  animation: sp-in 0.24s var(--bounce); transform-origin: left bottom;
+  transform-origin: left bottom;
 }
-@keyframes sp-in { from { opacity: 0; transform: translateX(-6px) scale(0.97); } }
 .sp-head { display: flex; align-items: center; gap: 8px; padding: 10px 10px 4px 14px; }
 .sp-head b { font-size: 13.5px; }
 .sp-tip { font-size: 11.5px; color: var(--muted); padding: 0 14px 8px; line-height: 1.5; }
