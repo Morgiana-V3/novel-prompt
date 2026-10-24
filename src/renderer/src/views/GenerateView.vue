@@ -9,6 +9,7 @@ import Mascot from '../components/Mascot.vue'
 import PromptEditor from '../components/PromptEditor.vue'
 import WorkspaceBar from '../components/WorkspaceBar.vue'
 import SharedParams from '../components/SharedParams.vue'
+import PositionEditor from '../components/PositionEditor.vue'
 
 /** 只属于生图的参数；画幅、质量词、UC 预设与画面推测共用（state.params） */
 type GenOnly = Omit<NaiGenParams, 'width' | 'height' | 'qualityTags' | 'ucPreset'>
@@ -97,8 +98,12 @@ const steps = ref<string[]>([])
 const error = ref('')
 const last = ref<NaiGenResult | null>(null)
 const gallery = ref<NaiImage[]>([])
-const current = ref<NaiImage | null>(null)
+const current = computed({
+  get: () => state.currentImage,
+  set: (image: NaiImage | null) => { state.currentImage = image }
+})
 const lightbox = ref(false)
+const posEditing = ref(false)
 
 const leftPane = ref<HTMLElement>()
 const resizeAll = () => resizeWithin(leftPane.value)
@@ -475,6 +480,11 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
             <img :src="current.url" :key="current.url" alt="生成结果" draggable="false" />
             <div v-if="running" class="viewer-busy"><Icon name="image" :size="16" class="spin-slow" />下一张生成中…</div>
           </div>
+          <div class="row" style="padding: 10px 12px">
+            <button class="btn ghost small" :disabled="!state.characters.length" :title="state.characters.length ? '以当前图片为底图，调整角色提示词的位置' : '先添加角色提示词，再对照图片定位'" @click="state.positionReference.visible = true; posEditing = true">
+              <Icon name="frame" :size="14" />对照图片定位
+            </button>
+          </div>
         </div>
 
         <div class="result-card" v-if="matchedPreview" style="--d: 60ms">
@@ -526,5 +536,6 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
         <span class="lightbox-hint">Esc 关闭 · ← → 切换</span>
       </div>
     </transition>
+    <PositionEditor v-if="posEditing" @close="posEditing = false" />
   </div>
 </template>

@@ -1,5 +1,5 @@
 import { reactive, watch } from 'vue'
-import type { AiPreviewResult, DbStatus, Settings, SkillConfigItem, TagCategory, UcPreset, UpdateInfo, UpdateProgress } from '@shared/types'
+import type { AiPreviewResult, DbStatus, NaiImage, Settings, SkillConfigItem, TagCategory, UcPreset, UpdateInfo, UpdateProgress } from '@shared/types'
 import type { ImportedPrompt } from '@shared/prompt-import'
 
 export const CAT_CLASS: Record<TagCategory, string> = {
@@ -80,6 +80,9 @@ export const state = reactive({
   lastPreview: null as { key: string; result: AiPreviewResult } | null,
   /** 生成的图片 → 生成时的提示词 key，用于和推测结果对照 */
   imageKeys: {} as Record<string, string>,
+  /** 生图预览当前选中的图片，也是各页面角色位置编辑器的参考底图；仅保留在本次会话 */
+  currentImage: null as NaiImage | null,
+  positionReference: { visible: true, opacity: 40 },
 
   settings: null as Settings | null,
   /** 全部 Skill，按优先级排列，含启用状态 */

@@ -21,6 +21,25 @@ const isV5 = computed(() => state.settings?.naiVersion === 'v5')
 const chars = computed(() => state.characters)
 const selected = ref(Math.min(props.start ?? 0, Math.max(0, state.characters.length - 1)))
 
+/* ---------- 当前预览图片作为参考底图 ---------- */
+const reference = computed(() => state.currentImage)
+const referenceSize = ref<{ w: number; h: number } | null>(null)
+const referenceError = ref(false)
+const showReference = computed(() => !!reference.value && state.positionReference.visible && !referenceError.value)
+const ratioMismatch = computed(() => {
+  const size = referenceSize.value
+  return !!size && Math.abs(size.w / size.h / (state.params.width / state.params.height) - 1) > 0.01
+})
+watch(() => reference.value?.url, () => {
+  referenceSize.value = null
+  referenceError.value = false
+})
+function onReferenceLoad(e: Event) {
+  const img = e.target as HTMLImageElement
+  referenceSize.value = { w: img.naturalWidth, h: img.naturalHeight }
+  referenceError.value = false
+}
+
 /* ---------- 画布尺寸：按当前画幅等比缩放，并保证整个弹窗能放进窗口 ---------- */
 const MAX_W = 520
 const viewH = ref(window.innerHeight)
@@ -220,12 +239,25 @@ onBeforeUnmount(() => {
             <div
               ref="canvas"
               class="pos-canvas"
+              :class="{ 'with-reference': showReference && referenceSize && state.positionReference.opacity > 0 }"
               :style="{ width: box.w + 'px', height: box.h + 'px' }"
               @pointerdown="onCanvasDown"
               @pointermove="onCanvasMove"
               @pointerup="onCanvasUp"
               @pointercancel="onCanvasUp"
             >
+              <img
+                v-if="reference && !referenceError"
+                v-show="showReference"
+                :key="reference.url"
+                class="pos-reference-image"
+                :src="reference.url"
+                :style="{ opacity: state.positionReference.opacity / 100 }"
+                alt="当前预览图片的坐标参考底图"
+                draggable="false"
+                @load="onReferenceLoad"
+                @error="referenceError = true"
+              />
               <div class="pos-grid">
                 <div v-for="n in 25" :key="n" class="pos-cell">
                   <span>{{ COLS[(n - 1) % 5] }}{{ Math.floor((n - 1) / 5) + 1 }}</span>
@@ -261,6 +293,33 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="pos-list">
+            <div class="pos-reference">
+              <div class="pos-reference-head">
+                <span class="group-badge pink"><Icon name="image" :size="14" /></span>
+                <b>参考底图</b>
+                <button
+                  class="icon-btn sm ml-auto"
+                  :class="{ on: showReference }"
+                  :disabled="!reference || referenceError"
+                  :aria-pressed="showReference"
+                  :title="showReference ? '隐藏参考底图' : '显示参考底图'"
+                  @click="state.positionReference.visible = !state.positionReference.visible"
+                ><Icon name="eye" :size="15" /></button>
+              </div>
+              <template v-if="reference && !referenceError">
+                <div class="pos-reference-name" :title="reference.name">{{ reference.name }}</div>
+                <label class="pos-opacity">
+                  <span>底图不透明度 <b>{{ state.positionReference.opacity }}%</b></span>
+                  <input class="range" type="range" min="0" max="100" step="5" v-model.number="state.positionReference.opacity" :disabled="!showReference" aria-label="底图不透明度" />
+                </label>
+                <div class="pos-reference-note muted">
+                  {{ ratioMismatch ? '图片比例与当前画幅不同，底图按当前画幅拉伸，点位仍按当前画幅计算。' : '来自生图预览当前选中的图片，可对照画面拖动角色圆点。' }}
+                </div>
+              </template>
+              <div v-else class="pos-reference-note muted" role="status">
+                {{ referenceError ? '底图加载失败，可回到生图预览重新选择图片。仍可直接编辑坐标。' : '在「生图预览」中选中一张图片，即可在这里透底参考。' }}
+              </div>
+            </div>
             <div
               v-for="(c, i) in chars"
               :key="i"
@@ -317,11 +376,23 @@ onBeforeUnmount(() => {
   position: relative; border-radius: 10px; overflow: hidden; touch-action: none; cursor: crosshair;
   background: repeating-conic-gradient(#f6f6f8 0% 25%, #fff 0% 50%) 50% / 20px 20px; box-shadow: inset 0 0 0 1px var(--line2);
 }
+.pos-reference-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; user-select: none; }
+.pos-reference { padding: 10px 12px; border: 1px solid var(--pink-line); border-radius: 12px; background: linear-gradient(135deg, var(--pink-soft), #fff); }
+.pos-reference-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.pos-reference-name { margin-top: 5px; color: var(--text2); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pos-opacity { display: block; margin-top: 9px; font-size: 12px; color: var(--text2); }
+.pos-opacity > span { display: flex; justify-content: space-between; }
+.pos-opacity b { color: var(--pink-deep); font-family: var(--mono); font-weight: 500; }
+.pos-opacity .range { display: block; }
+.pos-opacity .range:disabled { opacity: 0.4; cursor: default; }
+.pos-reference-note { font-size: 11.5px; line-height: 1.6; margin-top: 5px; }
 .pos-grid { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: repeat(5, 1fr); pointer-events: none; }
 .pos-cell { position: relative; border-right: 1px dashed var(--line2); border-bottom: 1px dashed var(--line2); }
 .pos-cell:nth-child(5n) { border-right: none; }
 .pos-cell:nth-child(n + 21) { border-bottom: none; }
 .pos-cell span { position: absolute; left: 5px; top: 3px; font-size: 10px; color: var(--muted); font-family: var(--mono); opacity: 0.8; }
+.with-reference .pos-cell { border-color: rgba(40, 42, 50, 0.3); }
+.with-reference .pos-cell span { padding: 0 3px; border-radius: 3px; background: rgba(255, 255, 255, 0.8); color: var(--text2); opacity: 1; }
 .pos-hl {
   position: absolute; width: 20%; height: 20%; pointer-events: none;
   background: color-mix(in srgb, var(--c) 14%, transparent); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--c) 55%, transparent);
