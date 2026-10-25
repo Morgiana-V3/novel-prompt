@@ -21,7 +21,7 @@ import { getSettings, saveSettings } from './settings'
  * 启用状态与优先级存在 settings.skills（数组顺序 = 优先级）。
  */
 
-export type SkillFeature = 'optimize' | 'preview' | 'inpaint'
+export type SkillFeature = 'optimize' | 'preview' | 'inpaint' | 'workspace'
 
 interface Builtin {
   id: string
@@ -49,7 +49,7 @@ const BUILTINS: Builtin[] = [
     id: BUILTIN_PREVIEW,
     file: 'nai-preview.md',
     name: '内置 · 画面推测',
-    description: '根据提示词推测成图效果、指出风险；附带《内置 · 提示词编排》第 1~8 节作为参考知识',
+    description: '根据提示词推测成图效果、指出风险',
     scope: 'preview'
   }
 ]
@@ -219,7 +219,7 @@ function insertConfig(id: string, enabled: boolean, index = 0): void {
 /** 某个功能在当前模型下实际生效的 Skill（按优先级） */
 export function activeSkills(feature: SkillFeature, version: NaiVersion): SkillDoc[] {
   return getConfig()
-    .filter((c) => c.enabled && (c.scope === 'all' || c.scope === feature) && (c.model === 'all' || c.model === version))
+    .filter((c) => c.enabled && (feature === 'workspace' || c.scope === 'all' || c.scope === feature) && (c.model === 'all' || c.model === version))
     .map((c) => getSkill(c.id))
     .filter((d): d is SkillDoc => !!d)
 }
@@ -327,15 +327,7 @@ export const skillFilePath = (id: string): string | null => {
 
 /* ---------- 组装系统提示词 ---------- */
 
-/** 从内置编排规范中截取第 1~8 节作为画面推测的参考知识 */
-function referenceKnowledge(): string {
-  const doc = readBundled('nai-prompt.md')
-  const start = doc.search(/^## 1\./m)
-  const end = doc.search(/^## 9\./m)
-  return start >= 0 && end > start ? doc.slice(start, end).trim() : doc
-}
-
-const FEATURE_LABEL: Record<SkillFeature, string> = { optimize: 'AI 优化 / 描述转提示词', preview: '画面推测', inpaint: '局部重绘优化' }
+const FEATURE_LABEL: Record<SkillFeature, string> = { optimize: 'AI 优化 / 描述转提示词', preview: '画面推测', inpaint: '局部重绘优化', workspace: 'AI 工作台（按任务选择适用规则）' }
 
 /**
  * 组装「总则 + 启用的 Skill 清单 + 按优先级排列的正文」。
@@ -352,9 +344,8 @@ export function composeSkills(feature: SkillFeature, version: NaiVersion): { tex
       ].join('\n')
     : '（本次没有启用任何 Skill：按你对 NovelAI 与 Danbooru 的通用知识工作）'
   const bodies = skills.map((s, i) => {
-    let body = s.content
-    if (s.id === BUILTIN_PREVIEW) body += `\n\n---\n## 参考知识（摘自《内置 · 提示词编排》第 1~8 节，仅用于理解提示词）\n\n${referenceKnowledge()}`
-    return `<skill priority="${i + 1}" name="${s.name.replace(/"/g, "'")}">\n${body}\n</skill>`
+    const body = s.content
+    return `<skill priority="${i + 1}" scope="${s.scope}" name="${s.name.replace(/"/g, "'")}">\n${body}\n</skill>`
   })
   const text = [coreText(), `---\n# 已启用的 Skill\n功能：${FEATURE_LABEL[feature]}；目标模型：${v}。\n\n${table}`, ...bodies].join('\n\n')
   return { text, skills }

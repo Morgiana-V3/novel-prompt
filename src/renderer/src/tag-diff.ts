@@ -6,7 +6,11 @@ export interface DiffTag {
   weight: number
 }
 
+export interface WordPart { kind: 'same' | 'add' | 'remove'; text: string }
+export interface SentenceDiff { before: string; after: string; parts: WordPart[] }
+
 export interface TagDiff {
+  sentences?: SentenceDiff[]
   added: DiffTag[]
   removed: DiffTag[]
   changed: { from: DiffTag; to: DiffTag }[]
@@ -62,4 +66,4 @@ function dedupe(list: DiffTag[]): DiffTag[] {
   return list.filter((t) => !seen.has(t.key) && seen.add(t.key))
 }
 
-export const diffSize = (d: TagDiff) => d.added.length + d.removed.length + d.changed.length
+export const diffSize = (d: TagDiff) => d.added.length + d.removed.length + d.changed.length + (d.sentences?.length ?? 0)

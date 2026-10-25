@@ -3,14 +3,15 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { parsePosition, isGridPosition } from '@shared/nai-presets'
 import { state, pushHistory } from '../store'
 import Icon from './Icon.vue'
+import type { AiCharacter, NaiImage, NaiVersion } from '@shared/types'
 
 /**
  * 角色位置编辑器（参考 NovelAI 的 Character Positions）：
  * - V4.5：5×5 网格，拖动后吸附到格子中心，写回 A1~E5
  * - V5：自由坐标，拖动写回 "x,y"（两位小数）；按住 Shift 吸附到网格中心
- * 修改实时同步到 state.characters[i].position
+ * 默认编辑共享角色；提供 characters 时仅编辑调用方草稿。
  */
-const props = defineProps<{ start?: number }>()
+const props = defineProps<{ start?: number; characters?: AiCharacter[]; version?: NaiVersion; params?: { width: number; height: number }; image?: NaiImage | null }>()
 const emit = defineEmits<{ close: [] }>()
 const opened = ref(true)
 const close = () => { opened.value = false }
@@ -19,18 +20,21 @@ const COLORS = ['#ff6b9a', '#3b82f6', '#1f9d68', '#c97f00', '#7c3aed', '#e5484d'
 const COLS = 'ABCDE'
 const color = (i: number) => COLORS[i % COLORS.length]
 
-const isV5 = computed(() => state.settings?.naiVersion === 'v5')
-const chars = computed(() => state.characters)
-const selected = ref(Math.min(props.start ?? 0, Math.max(0, state.characters.length - 1)))
+const isV5 = computed(() => (props.version ?? state.settings?.naiVersion) === 'v5')
+const chars = computed(() => props.characters ?? state.characters)
+const dimensions = computed(() => props.params ?? state.params)
+const localReference = ref({ ...state.positionReference })
+const referenceSettings = computed(() => props.characters ? localReference.value : state.positionReference)
+const selected = ref(Math.min(props.start ?? 0, Math.max(0, chars.value.length - 1)))
 
 /* ---------- 当前预览图片作为参考底图 ---------- */
-const reference = computed(() => state.currentImage)
+const reference = computed(() => props.image !== undefined ? props.image : state.currentImage)
 const referenceSize = ref<{ w: number; h: number } | null>(null)
 const referenceError = ref(false)
-const showReference = computed(() => !!reference.value && state.positionReference.visible && !referenceError.value)
+const showReference = computed(() => !!reference.value && referenceSettings.value.visible && !referenceError.value)
 const ratioMismatch = computed(() => {
   const size = referenceSize.value
-  return !!size && Math.abs(size.w / size.h / (state.params.width / state.params.height) - 1) > 0.01
+  return !!size && Math.abs(size.w / size.h / (dimensions.value.width / dimensions.value.height) - 1) > 0.01
 })
 watch(() => reference.value?.url, () => {
   referenceSize.value = null
@@ -47,8 +51,8 @@ const MAX_W = 520
 const viewH = ref(window.innerHeight)
 const onResize = () => (viewH.value = window.innerHeight)
 const box = computed(() => {
-  const w = state.params.width || 832
-  const h = state.params.height || 1216
+  const w = dimensions.value.width || 832
+  const h = dimensions.value.height || 1216
   const maxH = Math.max(260, Math.min(520, viewH.value - 230))
   const s = Math.min(MAX_W / w, maxH / h)
   return { w: Math.round(w * s), h: Math.round(h * s) }
@@ -63,9 +67,9 @@ const fmt = (v: number) => String(Number(clamp(v).toFixed(2)))
 
 /** 没写位置时生图的自动排布（与 main/nai/client.ts 一致：只算有内容的角色，按顺序从左到右均匀排开） */
 const autoPos = (i: number) => {
-  const sent = state.characters.map((c, k) => (c.prompt.trim() ? k : -1)).filter((k) => k >= 0)
+  const sent = chars.value.map((c, k) => (c.prompt.trim() ? k : -1)).filter((k) => k >= 0)
   const idx = sent.indexOf(i)
-  const n = sent.length || state.characters.length
+  const n = sent.length || chars.value.length
   const k = idx >= 0 ? idx : i
   return { x: Math.round(((k + 1) / (n + 1)) * 10) / 10, y: 0.5 }
 }
@@ -81,7 +85,7 @@ interface Dot {
 const dots = computed<Dot[]>(() => {
   const seen = new Map<string, number>()
   return chars.value.map((c, i) => {
-    const p = parsePosition(c.position)
+    const p = parsePosition(c.position ?? '')
     const { x, y } = p ?? autoPos(i)
     const key = `${x.toFixed(3)},${y.toFixed(3)}`
     const stack = seen.get(key) ?? 0
@@ -99,7 +103,7 @@ const cells = computed(() =>
 )
 
 function write(i: number, x: number, y: number, snap: boolean) {
-  const c = state.characters[i]
+  const c = chars.value[i]
   if (!c) return
   if (!isV5.value) c.position = toGrid(x, y)
   else if (snap) c.position = `${fmt(cellCenter(cellOf(x)))},${fmt(cellCenter(cellOf(y)))}`
@@ -169,7 +173,7 @@ function onKey(e: KeyboardEvent) {
   if (!isV5.value) {
     const col = Math.min(4, Math.max(0, cellOf(dot.x) + d[0]))
     const row = Math.min(4, Math.max(0, cellOf(dot.y) + d[1]))
-    state.characters[selected.value].position = `${COLS[col]}${row + 1}`
+    chars.value[selected.value].position = `${COLS[col]}${row + 1}`
   } else {
     const step = e.shiftKey ? 0.1 : 0.01
     write(selected.value, dot.x + d[0] * step, dot.y + d[1] * step, false)
@@ -178,15 +182,15 @@ function onKey(e: KeyboardEvent) {
 
 /* ---------- 列表操作 ---------- */
 function clearOne(i: number) {
-  state.characters[i].position = ''
+  chars.value[i].position = ''
 }
 function clearAll() {
-  for (const c of state.characters) c.position = ''
+  for (const c of chars.value) c.position = ''
 }
 /** 按当前顺序从左到右均匀排开（写成明确的位置） */
 function spread() {
-  const n = state.characters.length
-  state.characters.forEach((_, i) => write(i, (i + 1) / (n + 1), 0.5, false))
+  const n = chars.value.length
+  chars.value.forEach((_, i) => write(i, (i + 1) / (n + 1), 0.5, false))
 }
 /** 把坐标写法统一转换成当前版本支持的写法 */
 function normalizeAll() {
@@ -198,16 +202,16 @@ const excerpt = (s: string) => {
   return t.length > 46 ? `${t.slice(0, 46)}…` : t || '（空）'
 }
 const posNote = (i: number) => {
-  const p = state.characters[i]?.position?.trim()
+  const p = chars.value[i]?.position?.trim()
   if (!p) return anySet.value ? '自动（按顺序排开）' : '未设置（由模型决定）'
   if (!parsePosition(p)) return '写法无法解析，生图时会被忽略'
   if (!isV5.value && !isGridPosition(p)) return '坐标写法，V4.5 只支持网格，拖动后会转换'
   return ''
 }
-const hasConvertible = computed(() => dots.value.some((d) => d.set && !isV5.value && !isGridPosition(state.characters[d.i].position)))
+const hasConvertible = computed(() => dots.value.some((d) => d.set && !isV5.value && !isGridPosition(chars.value[d.i].position ?? '')))
 
 watch(
-  () => state.characters.length,
+  () => chars.value.length,
   (n) => {
     if (!n) close()
     else if (selected.value >= n) selected.value = n - 1
@@ -215,7 +219,7 @@ watch(
 )
 
 onMounted(() => {
-  pushHistory('编辑角色位置之前')
+  if (!props.characters) pushHistory('编辑角色位置之前')
   window.addEventListener('keydown', onKey)
   window.addEventListener('resize', onResize)
 })
@@ -234,7 +238,7 @@ onBeforeUnmount(() => {
           <span class="group-badge pink"><Icon name="frame" :size="14" /></span>
           <h3>角色位置</h3>
           <span class="pill">{{ isV5 ? 'V5 · 自由坐标' : 'V4.5 · 5×5 网格' }}</span>
-          <span class="pill">{{ state.params.width }}×{{ state.params.height }}</span>
+          <span class="pill">{{ dimensions.width }}×{{ dimensions.height }}</span>
           <button class="icon-btn sm ml-auto" title="关闭（Esc）" @click="close()"><Icon name="x" :size="15" /></button>
         </div>
 
@@ -243,7 +247,8 @@ onBeforeUnmount(() => {
             <div
               ref="canvas"
               class="pos-canvas"
-              :class="{ 'with-reference': showReference && referenceSize && state.positionReference.opacity > 0 }"
+              title="拖动圆点或点击定位；方向键微调，Shift 加大步长或吸附网格"
+              :class="{ 'with-reference': showReference && referenceSize && referenceSettings.opacity > 0 }"
               :style="{ width: box.w + 'px', height: box.h + 'px' }"
               @pointerdown="onCanvasDown"
               @pointermove="onCanvasMove"
@@ -256,7 +261,7 @@ onBeforeUnmount(() => {
                 :key="reference.url"
                 class="pos-reference-image"
                 :src="reference.url"
-                :style="{ opacity: state.positionReference.opacity / 100 }"
+                :style="{ opacity: referenceSettings.opacity / 100 }"
                 alt="当前预览图片的坐标参考底图"
                 draggable="false"
                 @load="onReferenceLoad"
@@ -291,9 +296,7 @@ onBeforeUnmount(() => {
                 {{ d.i + 1 }}
               </div>
             </div>
-            <div class="pos-tip muted">
-              拖动圆点调整位置；点击空白处把选中的角色移过去；方向键微调{{ isV5 ? '（Shift 加大步长，拖动时按住 Shift 吸附网格中心）' : '一格' }}
-            </div>
+
           </div>
 
           <div class="pos-list">
@@ -307,21 +310,21 @@ onBeforeUnmount(() => {
                   :disabled="!reference || referenceError"
                   :aria-pressed="showReference"
                   :title="showReference ? '隐藏参考底图' : '显示参考底图'"
-                  @click="state.positionReference.visible = !state.positionReference.visible"
+                  @click="referenceSettings.visible = !referenceSettings.visible"
                 ><Icon name="eye" :size="15" /></button>
               </div>
               <template v-if="reference && !referenceError">
                 <div class="pos-reference-name" :title="reference.name">{{ reference.name }}</div>
                 <label class="pos-opacity">
-                  <span>底图不透明度 <b>{{ state.positionReference.opacity }}%</b></span>
-                  <input class="range" type="range" min="0" max="100" step="5" v-model.number="state.positionReference.opacity" :disabled="!showReference" aria-label="底图不透明度" />
+                  <span>底图不透明度 <b>{{ referenceSettings.opacity }}%</b></span>
+                  <input class="range" type="range" min="0" max="100" step="5" v-model.number="referenceSettings.opacity" :disabled="!showReference" aria-label="底图不透明度" />
                 </label>
                 <div class="pos-reference-note muted">
-                  {{ ratioMismatch ? '图片比例与当前画幅不同，底图按当前画幅拉伸，点位仍按当前画幅计算。' : '来自生图预览当前选中的图片，可对照画面拖动角色圆点。' }}
+                  {{ ratioMismatch ? '图片比例与当前画幅不同，底图按当前画幅拉伸，点位仍按当前画幅计算。' : '可对照底图拖动角色圆点。' }}
                 </div>
               </template>
               <div v-else class="pos-reference-note muted" role="status">
-                {{ referenceError ? '底图加载失败，可回到生图预览重新选择图片。仍可直接编辑坐标。' : '在「生图预览」中选中一张图片，即可在这里透底参考。' }}
+                {{ referenceError ? '底图加载失败，可回到生图预览重新选择图片。仍可直接编辑坐标。' : '当前没有参考图片，可直接编辑坐标。' }}
               </div>
             </div>
             <div
@@ -347,9 +350,9 @@ onBeforeUnmount(() => {
               <button v-if="hasConvertible" class="btn ghost small" @click="normalizeAll"><Icon name="swap" :size="13" />转成网格</button>
               <button class="btn ghost small" :disabled="!anySet" title="全部交给模型决定" @click="clearAll"><Icon name="reset" :size="13" />全部清除</button>
             </div>
-            <div class="pos-help muted">
-              位置会实时写回角色提示词。全部留空时由模型自行排布；只要有一个角色设了位置，没设的角色会按顺序从左到右排开（虚线圆点）。打开前的内容已存入历史，可以撤销。
-            </div>
+            <details class="pos-help muted"><summary>位置说明</summary>
+              位置会实时写回角色提示词。全部留空时由模型自行排布；只要有一个角色设了位置，没设的角色会按顺序从左到右排开（虚线圆点）。{{ characters ? '完成后返回草稿，保存草稿才会采用修改。' : '打开前的内容已存入历史，可以撤销。' }}
+            </details>
           </div>
         </div>
 

@@ -8,32 +8,22 @@ import Icon from './Icon.vue'
  * 侧栏 Skill 入口：只负责启用 / 关闭和优先级（拖动排序）。导入、编辑、删除在设置页。
  */
 
-const SCOPE: Record<string, string> = { optimize: 'AI 优化', preview: '画面推测', inpaint: '局部重绘', all: '全部' }
+const SCOPE: Record<string, string> = { optimize: 'AI 优化', preview: '画面推测', inpaint: '局部重绘', workspace: '工作台', all: '全部' }
 const MODEL: Record<string, string> = { 'v4.5': 'V4.5', v5: 'V5' }
 
 const version = computed(() => state.settings?.naiVersion ?? 'v4.5')
 const list = computed(() => state.skills)
 const enabled = computed(() => list.value.filter((s) => s.enabled))
 const fits = (s: SkillConfigItem) => s.model === 'all' || s.model === version.value
-const covers = (s: SkillConfigItem, f: 'optimize' | 'preview' | 'inpaint') => s.scope === 'all' || s.scope === f
+const covers = (s: SkillConfigItem, f: 'optimize' | 'preview' | 'inpaint' | 'workspace') => f === 'workspace' || s.scope === 'all' || s.scope === f
 
 /** 每个功能实际生效的 Skill（按优先级） */
-const effective = (f: 'optimize' | 'preview' | 'inpaint') => enabled.value.filter((s) => covers(s, f) && fits(s))
-const eff = computed(() => ({ optimize: effective('optimize'), preview: effective('preview'), inpaint: effective('inpaint') }))
+const effective = (f: 'optimize' | 'preview' | 'inpaint' | 'workspace') => enabled.value.filter((s) => covers(s, f) && fits(s))
+const eff = computed(() => ({ optimize: effective('optimize'), preview: effective('preview'), inpaint: effective('inpaint'), workspace: effective('workspace') }))
 const fmtChars = (n: number) => (n >= 10000 ? `${(n / 10000).toFixed(1)} 万字` : `${n.toLocaleString()} 字`)
-const total = (f: 'optimize' | 'preview' | 'inpaint') => eff.value[f].reduce((a, s) => a + s.chars, 0)
+const total = (f: 'optimize' | 'preview' | 'inpaint' | 'workspace') => eff.value[f].reduce((a, s) => a + s.chars, 0)
 /** 叠加后的正文很长时提醒：会明显增加每次调用的 token 消耗 */
 const LONG = 40000
-
-const triggerTitle = computed(() => {
-  if (!enabled.value.length) return '未启用 Skill'
-  return enabled.value[0].name
-})
-const triggerSub = computed(() => {
-  const o = eff.value.optimize.length
-  const p = eff.value.preview.length
-  return `优化 ${o} · 推测 ${p} · 重绘 ${eff.value.inpaint.length}`
-})
 
 /* ---------- 浮层位置 ---------- */
 const trigger = ref<HTMLElement>()
@@ -123,8 +113,7 @@ onBeforeUnmount(() => {
     <button ref="trigger" :class="['skill-trigger', { on: state.skillPanel }]" title="选择启用的 Skill 与优先级" @click="state.skillPanel = !state.skillPanel">
       <span class="st-icon"><Icon name="layers" :size="15" /></span>
       <span class="st-text">
-        <b>{{ triggerTitle }}</b>
-        <span>{{ triggerSub }}</span>
+        <b>已启用 {{ enabled.length }} 个 Skill</b>
       </span>
       <Icon name="chevron" :size="14" class="st-chev" />
     </button>
@@ -134,11 +123,11 @@ onBeforeUnmount(() => {
       <div v-if="state.skillPanel" class="sp-mask" @pointerdown.self="close">
         <div class="sp-pop modal-panel" :style="{ left: pos.left + 'px', bottom: pos.bottom + 'px' }">
           <div class="sp-head">
-            <b>启用的 Skill</b>
+            <b title="拖动排序，越靠上优先级越高；冲突时采用优先级更高的规则">启用的 Skill</b>
             <span class="pill">{{ version === 'v5' ? 'V5' : 'V4.5' }}</span>
             <button class="icon-btn sm ml-auto" title="关闭（Esc）" @click="close"><Icon name="x" :size="14" /></button>
           </div>
-          <div class="sp-tip">拖动排序，越靠上优先级越高；多份 Skill 冲突时以靠上的为准，不冲突的互相补充。</div>
+
 
           <div class="sp-list">
             <div
@@ -154,7 +143,7 @@ onBeforeUnmount(() => {
               <span class="sp-grip" title="拖动调整优先级"><Icon name="grip" :size="14" /></span>
               <span class="sp-rank">{{ s.enabled ? rank(s) : '–' }}</span>
               <div class="sp-info">
-                <div class="sp-name">{{ s.name }}</div>
+                <div class="sp-name" :title="s.name">{{ s.name }}</div>
                 <div class="sp-tags">
                   <span v-if="s.builtin" class="sp-tag builtin">内置</span>
                   <span class="sp-tag">{{ SCOPE[s.scope] }}</span>
@@ -173,8 +162,8 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="sp-summary">
-            <div v-for="f in (['optimize', 'preview', 'inpaint'] as const)" :key="f" class="sp-row">
-              <span class="sp-feature">{{ f === 'optimize' ? 'AI 优化' : f === 'preview' ? '画面推测' : '局部重绘' }}</span>
+            <div v-for="f in (['optimize', 'preview', 'inpaint', 'workspace'] as const)" :key="f" class="sp-row">
+              <span class="sp-feature">{{ f === 'optimize' ? 'AI 优化' : f === 'preview' ? '画面推测' : f === 'workspace' ? '工作台' : '局部重绘' }}</span>
               <span v-if="eff[f].length" class="sp-chain">{{ eff[f].map((s) => s.name).join(' › ') }}</span>
               <span v-else class="sp-chain warn">没有启用的 Skill，只按通用知识工作</span>
               <span :class="['sp-size', { warn: total(f) > LONG }]" :title="total(f) > LONG ? 'Skill 较长，每次调用消耗的 token 会明显增加' : ''">{{ fmtChars(total(f)) }}</span>
@@ -211,7 +200,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--line2); border-radius: 16px; box-shadow: 0 18px 48px rgba(20, 20, 30, 0.18); overflow: hidden;
   transform-origin: left bottom;
 }
-.sp-head { display: flex; align-items: center; gap: 8px; padding: 10px 10px 4px 14px; }
+.sp-head { display: flex; align-items: center; gap: 8px; padding: 12px 10px 12px 14px; }
 .sp-head b { font-size: 13.5px; }
 .sp-tip { font-size: 11.5px; color: var(--muted); padding: 0 14px 8px; line-height: 1.5; }
 .sp-list { flex: 1; min-height: 0; overflow: auto; padding: 0 8px 8px; display: flex; flex-direction: column; gap: 4px; }

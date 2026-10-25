@@ -33,7 +33,7 @@ function remove(i: number) {
 <template>
   <div class="field">
     <div class="field-head">
-      <label class="field-label">{{ label }}<span class="muted" v-if="hint"> · {{ hint }}</span></label>
+      <label class="field-label" :title="hint">{{ label }}</label>
       <span class="group-count" v-if="state.characters.length">{{ state.characters.length }}</span>
       <button v-if="state.characters.length" class="btn ghost small ml-auto" title="在画布上拖动各角色的位置" @click="posEditing = 0">
         <Icon name="frame" :size="14" />编辑位置

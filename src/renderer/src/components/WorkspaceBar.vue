@@ -55,8 +55,8 @@ const preview = (s: string) => s.replace(/\s+/g, ' ').trim().slice(0, 60) || '�
   <div class="work-bar" ref="root">
     <span class="group-badge pink"><Icon name="paste" :size="15" /></span>
     <div class="work-text">
-      <b>当前提示词</b>
-      <span>{{ summary }} · 各页面共用，可拖入 NovelAI 原图</span>
+      <b title="各页面共用，可拖入 NovelAI 原图">当前提示词</b>
+      <span>{{ summary }}</span>
     </div>
     <div class="actions">
       <button class="btn small primary" title="从剪贴板导入分节文本或元数据" @click="pasteClipboard"><Icon name="paste" :size="14" />粘贴</button>

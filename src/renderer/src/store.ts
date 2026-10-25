@@ -42,7 +42,7 @@ export interface Snapshot {
   at: number
 }
 
-export type Tab = 'compare' | 'ai' | 'preview' | 'generate' | 'search' | 'settings'
+export type Tab = 'compare' | 'ai' | 'preview' | 'generate' | 'workspace' | 'search' | 'settings'
 
 const STORE_KEY = 'np-workspace-v1'
 const MAX_HISTORY = 30
@@ -83,6 +83,8 @@ export const state = reactive({
   /** 生图预览当前选中的图片，也是各页面角色位置编辑器的参考底图；仅保留在本次会话 */
   currentImage: null as NaiImage | null,
   positionReference: { visible: true, opacity: 40 },
+  /** 生图预览送入新建会话的图片，只暂存，不自动创建记录。 */
+  workspaceImage: null as NaiImage | null,
 
   settings: null as Settings | null,
   /** 全部 Skill，按优先级排列，含启用状态 */

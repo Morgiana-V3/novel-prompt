@@ -153,7 +153,7 @@ const fullText = (r: AiOptimizeResult) => sectionText({ base: r.positive, negati
       </div>
 
       <div class="field" v-if="mode === 'semantic'">
-        <label class="field-label">画面描述<span class="muted"> · 多人画面会自动拆成角色提示词</span></label>
+        <label class="field-label">画面描述</label>
         <div class="composer short">
           <textarea
             v-autosize

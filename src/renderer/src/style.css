@@ -675,6 +675,8 @@ details.manual[open] summary { margin-bottom: 4px; }
   flex-shrink: 0; height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line2); background: #fff; outline: none;
   transition: border-color 0.2s, box-shadow 0.25s;
 }
+textarea.input { height: auto; min-height: 80px; padding: 10px 12px; line-height: 1.7; }
+textarea.autosize { flex-shrink: 0; resize: none; }
 input.input:not(.sm), select.input:not(.sm) { min-height: 36px; }
 .input:focus { border-color: var(--pink-line); box-shadow: 0 0 0 3px var(--pink-soft); }
 .progress { display: flex; flex-direction: column; gap: 8px; }

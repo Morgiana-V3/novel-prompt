@@ -33,7 +33,7 @@ function onPaste(e: ClipboardEvent) {
 
 <template>
   <div class="field">
-    <label class="field-label">{{ baseLabel }}<span class="muted" v-if="baseHint"> · {{ baseHint }}</span></label>
+    <label class="field-label" :title="baseHint">{{ baseLabel }}</label>
     <div class="composer short">
       <textarea
         v-autosize
@@ -48,7 +48,7 @@ function onPaste(e: ClipboardEvent) {
   </div>
 
   <div class="field">
-    <label class="field-label">负面提示词（UC）<span class="muted" v-if="negHint"> · {{ negHint }}</span></label>
+    <label class="field-label" :title="negHint">负面提示词（UC）</label>
     <div class="composer short neg">
       <textarea
         v-autosize

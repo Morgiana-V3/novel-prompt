@@ -23,6 +23,10 @@ import { updateImplications, updateTagDatabase, Cancelled } from './tagdb/fetche
 import { analyzePrompt } from './prompt/analyzer'
 import { getSettings, saveSettings } from './settings'
 import { planInpaint } from './ai/inpaint-planner'
+import { createPage, deletePage, editPage, importPage, listPages, pageLocks, pageUsesImage, readPage } from './page-workspaces'
+import { discussPage, renderPage } from './ai/page-collaborator'
+import type { PageAction, PageExecution } from '../shared/page-workspace'
+import type { InpaintDraft } from '../shared/types'
 import { optimizePrompt } from './ai/optimizer'
 import { previewPrompt } from './ai/previewer'
 import { aiTranslate } from './ai/translator'
@@ -289,6 +293,24 @@ function registerIpc(): void {
     naiCancel = true
   })
   ipcMain.handle('nai:list', () => listImages())
+  ipcMain.handle('pages:list', () => listPages())
+  ipcMain.handle('pages:delete', (_e, id: string, revision: number) => deletePage(id, revision))
+  ipcMain.handle('pages:read', (_e, id: string) => readPage(id))
+  ipcMain.handle('pages:create', (_e, image: string | null, params: NaiGenParams, model: NaiVersion, draft: InpaintDraft) => createPage(image, params, model, draft))
+  ipcMain.handle('pages:import', async (_e, params: NaiGenParams, model: NaiVersion, draft: InpaintDraft) => {
+    if (!win) return null
+    const result = await dialog.showOpenDialog(win, { title: '导入创作会话图片', filters: [{ name: 'PNG 图片', extensions: ['png'] }], properties: ['openFile'] })
+    return result.canceled || !result.filePaths[0] ? null : importPage(result.filePaths[0], params, model, draft)
+  })
+  ipcMain.handle('pages:edit', (_e, id: string, revision: number, action: PageAction) => editPage(id, revision, action))
+  ipcMain.handle('pages:chat', (_e, id: string, revision: number, text: string, region: string | null, refs: string[]) => discussPage(id, revision, text, region, refs))
+  ipcMain.handle('pages:cancel', (_e, id: string) => pageLocks.get(id)?.abort())
+  ipcMain.handle('pages:generate', async (_e, id: string, revision: number, execution: PageExecution) => {
+    if (naiRunning) throw new Error('正在生成图片，请稍候')
+    naiRunning = true; naiCancel = false
+    try { return await renderPage(id, revision, execution, s => send('nai:step', s), () => naiCancel) }
+    finally { naiRunning = false }
+  })
   // 读回图片原始字节（用于解析图里的提示词）。不走 fetch(np-img://)，避免跨源被拦
   ipcMain.handle('nai:readImage', (_e, name: string) => {
     const src = imagePath(name)
@@ -316,6 +338,7 @@ function registerIpc(): void {
     else shell.openPath(imageDir())
   })
   ipcMain.handle('nai:delete', async (_e, name: string) => {
+    if (pageUsesImage(name)) throw new Error('这张图片被 AI 工作台的会话引用，为保留版本记录暂不能从图库删除')
     const src = imagePath(name)
     if (src) await shell.trashItem(src)
     return !!src

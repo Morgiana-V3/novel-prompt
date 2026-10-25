@@ -12,7 +12,7 @@ const { buildTools } = require('../src/main/mcp/tools.ts')
 const { imageDir, imagePath } = require('../src/main/nai/client.ts')
 const { saveSettings } = require('../src/main/settings.ts')
 const { diffTags } = require('../src/renderer/src/tag-diff.ts')
-const { diffPrompt, changedWords } = require('../src/renderer/src/prompt-diff.ts')
+const { diffPrompt, changedWords, wordParts } = require('../src/renderer/src/prompt-diff.ts')
 const source = new PNG({width:128,height:64}); source.data.fill(255)
 const sourceBytes = PNG.sync.write(source)
 writeFileSync(join(imageDir(), 'test.png'), sourceBytes)
@@ -81,6 +81,15 @@ app.whenReady().then(async()=>{
     assert.ok(prose.added.some(t=>t.text.includes('hair')));assert.ok(![...prose.added,...prose.removed].some(t=>t.text.includes('dress stays')))
     assert.deepEqual(changedWords('Text: 来了来了','Text: 等一下'),{removed:['来了来了'],added:['等一下']})
     assert.deepEqual(changedWords('same sentence.','same sentence.'),{removed:[],added:[]})
+    assert.equal(prose.sentences.length,1)
+    assert.ok(prose.sentences[0].parts.some(p=>p.kind==='same'&&p.text.includes('dress stays')))
+    assert.ok(prose.sentences[0].parts.some(p=>p.kind==='add'&&p.text.includes('hair')))
+    for(const [a,b] of [['Text: 来了，来了','Text: 等一下'],['The heart pupil is a heart.','The star pupil is a star.'],['','A new sentence.'],['A deleted sentence.',''],['x '.repeat(2000),'y '.repeat(2000)]]) {
+      const parts=wordParts(a,b)
+      assert.equal(parts.filter(p=>p.kind!=='add').map(p=>p.text).join(''),a)
+      assert.equal(parts.filter(p=>p.kind!=='remove').map(p=>p.text).join(''),b)
+    }
+
     console.log('PASS MCP guide, masks/previews, image plans, infill, metadata defaults, pixel preservation, validation, permission gates and tag diffs; no real API calls')
   } catch(e){console.error(e);process.exitCode=1} finally{app.exit(process.exitCode||0)}
 })

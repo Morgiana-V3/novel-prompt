@@ -78,6 +78,7 @@ const handlers = {
   'settings:get': () => getSettings(), 'settings:save': (_, p) => saveSettings(p),
   'db:status': () => ({loaded:true, tagCount:0, aliasCount:0, zhCount:0, implicationCount:0}),
   'skills:list': () => skillService.getConfig(), 'mcp:info': () => null, 'update:check': () => null,
+  'pages:list': () => [],
   'ai:inpaint-plan': async (_, req) => { lastPlanRequest=req; planController=new AbortController(); try{return await planInpaint(req,planController.signal)}finally{planController=null} },
   'ai:inpaint-plan-cancel': () => planController?.abort(),
   'prompt:analyze': () => ({tokens:[],stats:{total:0,valid:0,alias:0,unknown:0,natural:0,text:0}}),
@@ -440,8 +441,12 @@ app.whenReady().then(async () => {
     await run(`document.querySelectorAll('.ip-annotation-item > summary')[1].click()`)
     await check(`document.querySelectorAll('[role=combobox][aria-label="批注对应角色"]')[1].textContent.includes('角色 1')`, 'character choice is shared between floating card and overview')
     await check(`(()=>{const e=document.querySelectorAll('[role=combobox][aria-label="批注对应角色"]')[1];return e.getBoundingClientRect().height>=27 && getComputedStyle(e).flexBasis==='auto'})()`, 'vertical compact form controls no longer collapse')
+    const shortComment=await js(`document.querySelector('.ip-annotation-item[open] textarea').value`)
+    await input('.ip-annotation-item[open] textarea',Array(18).fill('描述此处的修改，保留其他内容。').join('\n'))
+    await check(`(()=>{const t=document.querySelector('.ip-annotation-item[open] textarea');return t.clientHeight>300&&t.scrollHeight<=t.clientHeight+1})()`, 'long annotations grow with content')
     win.setSize(1100,700);await pause(300)
     await check(`(()=>{const e=document.querySelectorAll('[role=combobox][aria-label="批注对应角色"]')[1],r=document.querySelector('.ip-dialog').getBoundingClientRect();return e.getBoundingClientRect().height>=27 && r.bottom<=innerHeight && document.querySelector('.ip-settings').scrollHeight>document.querySelector('.ip-settings').clientHeight})()`, 'small window scrolls form content instead of squeezing controls')
+    await input('.ip-annotation-item[open] textarea',shortComment)
     await check(`!document.querySelector('[aria-label="分析方式"]')`, 'analysis always includes images without a mode selector')
     await mouseClick('.ip-annotation-item[open] [aria-label="批注对应角色"]','角色 1')
     await check(`(()=>{const r=document.querySelector('.theme-select-menu').getBoundingClientRect();return r.top>=40 && r.bottom<=innerHeight})()`, 'themed popup stays within the small window')

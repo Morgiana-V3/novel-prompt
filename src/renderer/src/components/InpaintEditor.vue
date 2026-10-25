@@ -10,9 +10,11 @@ import { splitMaskComponent } from '../inpaint-mask'
 import DiffChips from './DiffChips.vue'
 import { diffSize } from '../tag-diff'
 import { diffPrompt } from '../prompt-diff'
+import { vAutosize } from '../autosize'
 import { applyInpaintChanges, changeLabel } from '@shared/inpaint-plan'
+import type { PageEditorState } from '@shared/page-workspace'
 
-const props = defineProps<{ image: NaiImage; params: NaiGenParams }>()
+const props = defineProps<{ image: NaiImage; params: NaiGenParams; initialEditor?: PageEditorState; initialModel?: NaiVersion; initialRegionId?: string | null; selectionOnly?: boolean; saveEditor?: (snapshot: PageEditorState) => Promise<void> }>()
 const emit = defineEmits<{ close: []; generated: [result: NaiGenResult]; busy: [value: boolean] }>()
 const source = ref(props.image)
 const sourceUrl = ref('')
@@ -25,7 +27,7 @@ const status = ref('')
 const promptNote = ref('')
 const width = ref(0)
 const height = ref(0)
-const version = ref<NaiVersion>(state.settings?.naiVersion ?? 'v4.5')
+const version = ref<NaiVersion>(props.initialModel ?? state.settings?.naiVersion ?? 'v4.5')
 const draft = reactive({ base: state.prompt, negative: state.negative, characters: toDrafts(state.characters) })
 const settings = reactive({ ...props.params, count: 1, seed: null as number | null, strength: 1 })
 const freeOnly = computed(() => state.settings?.naiFreeOnly !== false)
@@ -240,6 +242,44 @@ let pointer: number | null = null
 const previousFocus = document.activeElement as HTMLElement | null
 let unsubscribe: (() => void) | undefined
 let alive = true
+let savingSnapshot: Promise<void> | null = null
+let snapshotTimer: ReturnType<typeof setTimeout> | undefined
+function editorSnapshot(): PageEditorState {
+  const { strength, ...params } = settings
+  return { draft: cloneDraft(draft), params: { ...params, width: width.value, height: height.value, seed: params.seed === null || (params.seed as unknown) === '' ? null : Number(params.seed) }, strength,
+    regions: regions.value.filter(r => r.hasPixels).map(r => ({ id: r.id, label: r.label, instruction: r.instruction, target: r.target,
+      anchor: r.anchor ? { ...r.anchor } : null, annotated: r.annotated, mask: exportMask(r), accepted: r.accepted ? cloneDraft(r.accepted) : null })) }
+}
+async function persistEditor() {
+  if (!props.saveEditor || loading.value || !sourceUrl.value || active) return
+  if (savingSnapshot) await savingSnapshot
+  const request = props.saveEditor(editorSnapshot())
+  savingSnapshot = request
+  try { await request }
+  finally { if (savingSnapshot === request) savingSnapshot = null }
+}
+watch([regions, draft, settings], () => {
+  if (!props.saveEditor || loading.value) return
+  clearTimeout(snapshotTimer)
+  snapshotTimer = setTimeout(() => { void persistEditor().catch(e => { error.value = `选区保存失败：${cleanErr(e)}` }) }, 800)
+}, { deep: true })
+async function restoreEditor(saved: PageEditorState) {
+  Object.assign(draft, cloneDraft(saved.draft)); Object.assign(settings, saved.params, { strength: saved.strength })
+  await nextTick() // Let draft invalidation finish before restoring accepted suggestions.
+  const restored: Region[] = []
+  for (const item of saved.regions) {
+    const img = new Image(); img.src = `data:image/png;base64,${item.mask}`; await img.decode()
+    const c = document.createElement('canvas'); c.width = width.value; c.height = height.value
+    const ctx = c.getContext('2d')!; ctx.drawImage(img, 0, 0)
+    const pixels = ctx.getImageData(0, 0, width.value, height.value)
+    for (let i = 0; i < pixels.data.length; i += 4) { const a = pixels.data[i]; pixels.data.set([255, 107, 154, a], i) }
+    ctx.putImageData(pixels, 0, 0); usedLabels.add(item.label)
+    restored.push({ ...makeRegion(), ...item, number: item.annotated ? ++regionNumber : 0, baseMask: markRaw(c), strokes: [], hasPixels: true })
+  }
+  regions.value = restored.length ? restored : [makeRegion()]; selectedId.value = regions.value.find(r => r.id === props.initialRegionId)?.id ?? regions.value[0].id
+  promptNote.value = '已恢复当前版本的提示词、选区和批注。'
+  renderMask(); measureMask(); panel.value = 'regions'
+}
 
 function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke) {
   ctx.globalCompositeOperation = stroke.tool === 'erase' ? 'destination-out' : 'source-over'
@@ -409,6 +449,7 @@ async function loadSource(image: NaiImage, readPrompt = true) {
     await nextTick()
     viewport.value?.reset()
     clearMask()
+    if (readPrompt && props.initialEditor) await restoreEditor(props.initialEditor)
   } catch (e) {
     if (url) URL.revokeObjectURL(url)
     error.value = cleanErr(e)
@@ -448,7 +489,13 @@ async function generate(batch = false) {
   } catch (e) { error.value = cleanErr(e); status.value = '' }
   finally { running.value = false; emit('busy', false) }
 }
-function close() { if (!running.value) { if (analyzing.value) void window.api.cancelInpaintPlan(); opened.value = false } }
+async function close() {
+  if (running.value) return
+  clearTimeout(snapshotTimer)
+  try { await persistEditor() } catch (e) { error.value = `尚未保存，请重试：${cleanErr(e)}`; return }
+  if (analyzing.value) void window.api.cancelInpaintPlan()
+  opened.value = false
+}
 function key(e: KeyboardEvent) {
   if (!opened.value) return
   if (e.key === 'Escape') { if (contextAt.value) { contextAt.value = null; dialog.value?.focus() } else if (commentAt.value) finishComment(); else close(); return }
@@ -471,6 +518,7 @@ onMounted(() => {
   void loadSource(props.image)
 })
 onBeforeUnmount(() => {
+  clearTimeout(snapshotTimer)
   alive = false
   if (analyzing.value) void window.api.cancelInpaintPlan()
   unsubscribe?.()
@@ -487,9 +535,8 @@ onBeforeUnmount(() => {
       <div ref="dialog" class="ip-dialog modal-panel" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="ip-title">
         <div class="ip-head">
           <span class="group-badge pink"><Icon name="edit" :size="16" /></span>
-          <h3 id="ip-title">局部重绘</h3>
+          <h3 id="ip-title">{{ selectionOnly ? '页面选区与提示词' : '局部重绘' }}</h3>
           <span class="pill" v-if="width">{{ width }}×{{ height }}</span>
-          <span class="muted small">涂出区域，再修改想要的内容</span>
           <button class="icon-btn sm ml-auto" title="关闭（Esc）" :disabled="running" @click="close"><Icon name="x" :size="16" /></button>
         </div>
         <div class="ip-body">
@@ -512,7 +559,7 @@ onBeforeUnmount(() => {
               <label>遮罩 {{ opacity }}%<input class="range" type="range" min="10" max="80" step="5" v-model.number="opacity" aria-label="遮罩不透明度" /></label>
               <label>缩放 {{ zoom }}%<input class="range" type="range" min="25" max="1600" step="1" v-model.number="zoom" aria-label="画布缩放" /></label>
             </div>
-            <div class="ip-navigation muted small"><span>滚轮缩放 · 空格 + 拖动 / 中键拖动</span><button class="btn ghost small" @click="viewport?.reset()">适应画布</button></div>
+            <div class="ip-navigation muted small"><button class="btn ghost small ml-auto" title="滚轮缩放；空格 + 拖动或中键拖动" @click="viewport?.reset()">适应画布</button></div>
             <ImageViewport class="ip-viewport" ref="viewport" :width="width" :height="height" v-model:zoom="zoom" :editable="editable" :tool="tool" :brush-size="brush" label="局部重绘画布" @cancel-draw="cancelDraw" @contextmenu.prevent="openContext">
                 <template v-if="sourceUrl">
                   <img :src="viewing === 'result' && result ? result.url : sourceUrl" alt="局部重绘画布" draggable="false" />
@@ -531,33 +578,30 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div class="ip-settings scroll">
-            <div class="seg ip-tabs"><button :class="{ on: panel === 'regions' }" @click="panel = 'regions'">修改批注</button><button :class="{ on: panel === 'suggestions' }" @click="panel = 'suggestions'">AI 建议</button><button :class="{ on: panel === 'prompt' }" @click="panel = 'prompt'">提示词</button></div>
+            <div class="seg ip-tabs"><button :class="{ on: panel === 'regions' }" @click="panel = 'regions'">修改批注</button><button v-if="!selectionOnly" :class="{ on: panel === 'suggestions' }" @click="panel = 'suggestions'">AI 建议</button><button :class="{ on: panel === 'prompt' }" @click="panel = 'prompt'">提示词</button></div>
             <div v-show="panel === 'regions'" class="ip-ai-section">
-              <p v-if="!annotations.length" class="muted small">批注是可选功能。涂抹后右键选区，在菜单中选择「新增批注」。不使用 AI 时，可以直接编辑提示词并重绘。</p>
+              <p v-if="!annotations.length" class="muted small">涂抹后右键添加批注</p>
               <details v-for="r in annotations" :key="r.id" class="ip-annotation-item">
                 <summary><b>区域 {{ r.label }}</b><span>{{ r.instruction.trim() || '未填写修改要求' }}</span><small>{{ r.target === null ? '自动 / 背景' : `角色 ${r.target + 1}` }}</small></summary>
                 <div class="ip-annotation-fields">
-                  <textarea class="input ip-annotation" v-model="r.instruction" :disabled="running || analyzing" @input="invalidateRegion(r)" placeholder="支持自然语言、tag、权重，可稍后填写…" aria-label="区域修改批注"></textarea>
+                  <textarea v-autosize class="input ip-annotation" v-model="r.instruction" :disabled="running || analyzing" @input="invalidateRegion(r)" placeholder="支持自然语言、tag、权重，可稍后填写…" aria-label="区域修改批注"></textarea>
                   <label class="field-label">对应角色<ThemeSelect class="sm" v-model="r.target" :options="characterOptions" :disabled="running || analyzing" @update:model-value="invalidateRegion(r)" aria-label="批注对应角色" /></label>
                   <details v-if="r.target !== null && (r.accepted ?? draft).characters[r.target]" class="ip-character-note">
                     <summary>角色 {{ r.target + 1 }} 提示词</summary>
-                    <textarea class="input ip-annotation" v-model="(r.accepted ?? draft).characters[r.target].prompt" :disabled="running || analyzing" aria-label="批注角色提示词"></textarea>
+                    <textarea v-autosize class="input ip-annotation" v-model="(r.accepted ?? draft).characters[r.target].prompt" :disabled="running || analyzing" aria-label="批注角色提示词"></textarea>
                   </details>
                   <div class="row"><button class="btn ghost small" :disabled="running || analyzing" @click="editMask(r)">编辑此区域遮罩</button><button class="btn ghost small" :disabled="running || analyzing" @click="deleteAnnotation(r)">删除批注</button></div>
                 </div>
               </details>
-              <div class="ip-note plain">使用设置中的 AI 模型（{{ state.settings?.model || '未配置' }}），结合原图、选区裁剪和批注分析。</div>
-              <div class="muted small">空批注可以稍后补充，不影响继续新增。仅分析有修改要求的选区（{{ analyzable.length }}/{{ annotations.length }}）。最多 8 个区域。</div>
-              <button class="btn primary" :disabled="!editable || !analyzable.length" @click="analyzeRegions">分析批注</button>
+              <button v-if="!selectionOnly" class="btn primary" :title="`使用 ${state.settings?.model || '设置中的模型'} 分析原图和有内容的批注（${analyzable.length}/${annotations.length}）`" :disabled="!editable || !analyzable.length" @click="analyzeRegions">分析批注</button>
               <button v-if="analyzing" class="btn ghost small" @click="cancelAnalysis">取消分析</button>
               <span v-if="analyzing" class="muted small" role="status">AI 正在分析选区与提示词…</span>
             </div>
             <div v-show="panel === 'suggestions'" class="ip-ai-section">
               <div v-if="!analysisInfo" class="ip-note">先在区域上填写修改批注，再点击分析。AI 会提出建议，由你选择采纳。</div>
               <template v-else>
-                <div class="muted small">已结合图片分析 · {{ analysisInfo.skills.join('、') || '未启用专用 Skill' }}</div>
+                <details class="ip-analysis-details"><summary>本轮 Skill · {{ analysisInfo.skills.length }}</summary>{{ analysisInfo.skills.join('、') || '未启用 Skill' }}</details>
                 <button class="btn primary small" :disabled="running || analyzing" @click="adoptAll">采纳各区域已勾选的修改</button>
-                <div class="muted small">批量生成按批注创建顺序执行，每个区域一张，后一区域以前一张结果为底图。再次执行时从原图开始。</div>
                 <article v-for="r in annotations.filter(r => r.plan)" :key="r.id" class="ip-plan">
                   <button class="btn ghost small" @click="chooseRegion(r)">区域 {{ r.label }}{{ r.accepted ? ' · 已采纳' : '' }}</button>
                   <p>{{ r.plan!.summary }}</p><p v-if="r.plan!.warning" class="ip-plan-warning">{{ r.plan!.warning }}</p>
@@ -573,19 +617,19 @@ onBeforeUnmount(() => {
               </template>
             </div>
             <div v-show="panel === 'prompt'">
-              <div class="ip-note plain">{{ selected.accepted ? `区域 ${selected.label} 的独立草稿，已采纳 AI 建议，可继续手动修改。` : '原始重绘草稿。修改这里后，已有 AI 建议将失效，需要重新分析。' }}</div>
-            <div class="ip-note"><Icon name="image" :size="16" /><div>{{ promptNote || '正在读取图片提示词…' }}<span>这里的修改只用于本次重绘。</span></div></div>
+              <div v-if="selected.accepted" class="pill">区域 {{ selected.label }} · 已采纳</div>
+            <details class="ip-analysis-details"><summary>提示词来源</summary>{{ promptNote || '正在读取图片提示词…' }}</details>
             <fieldset :disabled="loading || running || analyzing">
               <label class="field-label" for="ip-prompt">重绘提示词</label>
-              <textarea id="ip-prompt" class="input ip-textarea" v-model="editDraft.base" spellcheck="false" placeholder="描述完成后的画面，例如 white shirt, long sleeves…"></textarea>
+              <textarea v-autosize id="ip-prompt" class="input ip-textarea" v-model="editDraft.base" spellcheck="false" placeholder="描述完成后的画面，例如 white shirt, long sleeves…"></textarea>
               <label class="field-label" for="ip-negative">负面提示词</label>
-              <textarea id="ip-negative" class="input ip-textarea ip-negative" v-model="editDraft.negative" spellcheck="false" placeholder="不希望出现的内容"></textarea>
+              <textarea v-autosize id="ip-negative" class="input ip-textarea ip-negative" v-model="editDraft.negative" spellcheck="false" placeholder="不希望出现的内容"></textarea>
               <details class="ip-details" v-if="editDraft.characters.length">
-                <summary>角色提示词 · {{ editDraft.characters.length }} 个<span class="muted">需要换装时也修改这里</span></summary>
+                <summary>角色提示词 · {{ editDraft.characters.length }} 个</summary>
                 <div class="ip-character" v-for="(character, i) in editDraft.characters" :key="i">
                   <label class="field-label" :for="'ip-char-' + i">角色 {{ i + 1 }} <span class="muted">{{ character.position || '自动位置' }}</span></label>
-                  <textarea :id="'ip-char-' + i" class="input ip-textarea" v-model="character.prompt" :aria-label="`角色 ${i + 1} 提示词`" spellcheck="false"></textarea>
-                  <textarea class="input ip-textarea ip-negative" v-model="character.negative" :aria-label="`角色 ${i + 1} 负面`" placeholder="角色负面" spellcheck="false"></textarea>
+                  <textarea v-autosize :id="'ip-char-' + i" class="input ip-textarea" v-model="character.prompt" :aria-label="`角色 ${i + 1} 提示词`" spellcheck="false"></textarea>
+                  <textarea v-autosize class="input ip-textarea ip-negative" v-model="character.negative" :aria-label="`角色 ${i + 1} 负面`" placeholder="角色负面" spellcheck="false"></textarea>
                 </div>
               </details>
               <div class="ip-strength">
@@ -594,23 +638,24 @@ onBeforeUnmount(() => {
                 <div class="ip-scale-label"><span>保留原有细节</span><span>更大幅度重画</span></div>
               </div>
               <div class="ip-param-grid">
-                <label>模型<ThemeSelect class="sm" v-model="version" :options="[{value: 'v4.5', label: 'V4.5 Full'}, {value: 'v5', label: 'V5 Full'}]" aria-label="重绘模型" /></label>
+                <label>模型<ThemeSelect class="sm" v-model="version" :disabled="selectionOnly" :options="[{value: 'v4.5', label: 'V4.5 Full'}, {value: 'v5', label: 'V5 Full'}]" aria-label="重绘模型" /></label>
                 <label>步数<input class="input sm" type="number" min="1" max="50" v-model.number="settings.steps" /></label>
                 <label>Guidance<input class="input sm" type="number" min="0" max="10" step="0.1" v-model.number="settings.scale" /></label>
                 <label>种子<input class="input sm" type="number" min="0" max="4294967295" v-model.number="settings.seed" placeholder="随机" /></label>
               </div>
             </fieldset>
-            <div class="ip-note plain"><Icon name="check" :size="14" /><div>{{ freeOnly ? '沿用「只用免费额度」，提交前检查原图尺寸、步数与会员额度。' : '当前允许消耗 Anlas，生成后会核对余额。' }}<span>每次生成一张，新结果另存，原图保留。</span></div></div>
+            <span class="pill" :title="freeOnly ? '提交前检查尺寸、步数和会员额度' : '生成后核对余额'">{{ freeOnly ? '仅免费额度' : '允许消耗 Anlas' }}</span>
             </div>
             <div v-if="error" class="error-box" role="alert"><Icon name="warn" :size="15" />{{ error }}</div>
             <div v-if="status" class="ip-status" role="status">{{ status }}</div>
           </div>
         </div>
         <div class="ip-foot">
-          <span class="muted small">{{ running ? '正在重绘，请等待本张完成…' : coverage ? '只替换选区内的内容，选区外保留原图。' : '先用画笔或框选标出想修改的区域。' }}</span>
+          <span v-if="running || !coverage" class="muted small">{{ running ? '正在重绘…' : '请先选择区域' }}</span>
           <button v-if="running" class="btn ghost small" @click="stopQueue = true">{{ stopQueue ? '将在本张完成后停止' : '停止后续区域' }}</button>
-          <button v-if="batchReady.length" class="btn primary" :disabled="running || analyzing || loading" @click="generate(true)">生成已采纳的 {{ batchReady.length }} 个区域</button>
-          <button class="btn accent ml-auto" :disabled="!canRun" @click="generate(false)"><Icon name="wand" :size="16" :class="{ 'spin-slow': running }" />{{ running ? '正在重绘' : result ? '再试当前区域' : '重绘当前区域' }}</button>
+          <button v-if="!selectionOnly && batchReady.length" title="按批注顺序生成，每一区域以上一区域结果为底图；重新执行从原图开始" class="btn primary" :disabled="running || analyzing || loading" @click="generate(true)">生成已采纳的 {{ batchReady.length }} 个区域</button>
+          <button v-if="!selectionOnly" class="btn accent ml-auto" :disabled="!canRun" @click="generate(false)"><Icon name="wand" :size="16" :class="{ 'spin-slow': running }" />{{ running ? '正在重绘' : result ? '再试当前区域' : '重绘当前区域' }}</button>
+          <button v-else class="btn accent ml-auto" :disabled="loading" @click="close"><Icon name="check" :size="16" />保存并返回讨论</button>
         </div>
         <Transition name="fade">
           <div v-if="contextAt" class="ip-context-menu" :style="{ left: contextAt.x + 'px', top: contextAt.y + 'px' }" role="menu" aria-label="选区操作">
@@ -623,7 +668,7 @@ onBeforeUnmount(() => {
         <Transition name="fade">
         <div v-if="commentAt && commentRegion" class="ip-comment" :style="{ left: commentAt.x + 'px', top: commentAt.y + 'px' }" role="group" :aria-label="`区域 ${commentRegion.label} 批注`">
           <div class="row"><b>区域 {{ commentRegion.label }}</b><button class="icon-btn sm ml-auto" title="收起批注" @click="finishComment"><Icon name="x" :size="14" /></button></div>
-          <textarea class="input ip-annotation" v-model="commentRegion.instruction" @input="invalidateRegion(commentRegion)" placeholder="描述想修改的内容，支持自然语言、tag、权重…" aria-label="浮动区域批注"></textarea>
+          <textarea v-autosize class="input ip-annotation" v-model="commentRegion.instruction" @input="invalidateRegion(commentRegion)" placeholder="描述想修改的内容，支持自然语言、tag、权重…" aria-label="浮动区域批注"></textarea>
           <label class="field-label">对应角色<ThemeSelect class="sm" v-model="commentRegion.target" :options="characterOptions" @update:model-value="invalidateRegion(commentRegion!)" aria-label="浮动批注对应角色" /></label>
           <button class="btn primary small" @click="finishComment">完成批注</button>
         </div>
@@ -659,7 +704,7 @@ onBeforeUnmount(() => {
 .ip-character-note summary { cursor: pointer; font-size: 12px; margin-bottom: 6px; }
 .ip-annotation-fields .input.sm, .ip-comment .input.sm, .ip-ai-section > label .input.sm { width: 100%; max-width: none; }
 .ip-annotation-fields :deep(.theme-select), .ip-comment :deep(.theme-select), .ip-ai-section > label :deep(.theme-select), .ip-param-grid :deep(.theme-select) { width: 100%; max-width: none; }
-.ip-annotation { width: 100%; min-height: 120px; height: auto; padding: 10px; resize: vertical; line-height: 1.6; }
+.ip-annotation { width: 100%; min-height: 120px; height: auto; padding: 10px; resize: none; line-height: 1.6; }
 .ip-plan { border: 1px solid var(--line2); border-radius: 12px; padding: 10px; font-size: 12px; }
 .ip-plan p { white-space: pre-wrap; line-height: 1.6; }
 .ip-plan-warning { color: var(--alias); }
@@ -692,7 +737,8 @@ onBeforeUnmount(() => {
 .ip-note span { display: block; color: var(--muted); }
 .ip-note.plain { background: var(--panel); border-color: var(--line); margin: 14px 0 0; }
 fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
-.ip-textarea { display: block; width: 100%; resize: vertical; min-height: 100px; line-height: 1.55; font-size: 12px; margin: 6px 0 14px; }
+.ip-analysis-details { font-size:11px;color:var(--muted);line-height:1.7;margin:10px 0; }.ip-analysis-details summary { cursor:pointer; }
+.ip-textarea { display: block; width: 100%; resize: none; min-height: 100px; line-height: 1.55; font-size: 12px; margin: 6px 0 14px; }
 .ip-negative { min-height: 64px; }
 .ip-details { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 14px; font-size: 12px; }
 .ip-details summary { cursor: pointer; }

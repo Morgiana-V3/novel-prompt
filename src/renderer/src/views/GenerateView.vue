@@ -258,10 +258,12 @@ async function copyImage(img: NaiImage) {
   if (await window.api.naiCopyImage(img.name)) toast('图片已复制')
 }
 async function remove(img: NaiImage) {
-  if (!(await window.api.naiDelete(img.name))) return
-  toast('已移到回收站')
-  if (current.value?.name === img.name) current.value = null
-  await refreshGallery()
+  try {
+    if (!(await window.api.naiDelete(img.name))) return
+    toast('已移到回收站')
+    if (current.value?.name === img.name) current.value = null
+    await refreshGallery()
+  } catch (e) { toast(cleanErr(e)) }
 }
 function useSeed(img: NaiImage) {
   if (img.seed === undefined) return
@@ -485,12 +487,15 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
             <img :src="current.url" :key="current.url" alt="生成结果" draggable="false" />
             <div v-if="running" class="viewer-busy"><Icon name="image" :size="16" class="spin-slow" />下一张生成中…</div>
           </div>
-          <div class="row" style="padding: 10px 12px">
+          <div class="row" style="padding: 10px 12px; flex-wrap: wrap">
             <button class="btn small accent" :disabled="running || inpaintBusy" @click="inpaintSource = current">
               <Icon name="edit" :size="14" />局部重绘
             </button>
             <button class="btn ghost small" :disabled="!state.characters.length" :title="state.characters.length ? '以当前图片为底图，调整角色提示词的位置' : '先添加角色提示词，再对照图片定位'" @click="state.positionReference.visible = true; posEditing = true">
               <Icon name="frame" :size="14" />对照图片定位
+            </button>
+            <button class="btn ghost small ml-auto" :disabled="running || inpaintBusy" title="以这张图片新建 AI 会话" @click="state.workspaceImage = { ...current }; state.tab = 'workspace'">
+              <Icon name="chat" :size="14" />用于新会话
             </button>
           </div>
         </div>
@@ -499,7 +504,6 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
           <div class="result-head">
             <span class="group-badge pink"><Icon name="eye" :size="14" /></span>
             <h3>推测 vs 实际</h3>
-            <span class="muted small">这张图用的就是推测过的那套提示词，对照看看准不准</span>
             <button class="btn ghost small ml-auto" @click="state.tab = 'preview'">完整推测</button>
           </div>
           <div class="notes">{{ matchedPreview.summary }}</div>

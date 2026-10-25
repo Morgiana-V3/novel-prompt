@@ -7,6 +7,7 @@ import SearchView from './views/SearchView.vue'
 import AiView from './views/AiView.vue'
 import PreviewView from './views/PreviewView.vue'
 import GenerateView from './views/GenerateView.vue'
+import WorkspacesView from './views/WorkspacesView.vue'
 import SettingsView from './views/SettingsView.vue'
 import Icon from './components/Icon.vue'
 import Mascot from './components/Mascot.vue'
@@ -20,6 +21,7 @@ const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: bool
   { key: 'ai', label: 'AI 优化', icon: 'sparkle', desc: '让 AI 帮你挑 tag、排顺序，采用后写回当前提示词' },
   { key: 'preview', label: '画面推测', icon: 'eye', desc: '让 AI 猜猜当前提示词会画成什么样' },
   { key: 'generate', label: '生图预览', icon: 'image', desc: '用 NovelAI 接口直接出图看效果' },
+  { key: 'workspace', label: 'AI 工作台', icon: 'chat', desc: '围绕一个目标持续讨论、生成和调整，保留每次尝试' },
   { key: 'search', label: 'Tag 搜索', icon: 'search', desc: '中文、英文、拼音首字母都能搜，单击加到最近编辑的输入框', tool: true },
   { key: 'settings', label: '设置 / 数据', icon: 'sliders', desc: 'Danbooru 数据、DeepSeek 与 NovelAI 配置', tool: true }
 ]
@@ -130,11 +132,11 @@ async function onDrop(e: DragEvent) {
 
     <main class="main">
       <header class="topbar">
-        <div class="topbar-title" :key="current.key">
+        <div class="topbar-title" :key="current.key" :title="current.desc">
           <Icon :name="current.icon" :size="17" />
           {{ current.label }}
         </div>
-        <span class="topbar-desc">{{ current.desc }}</span>
+
       </header>
       <div class="content">
         <CompareView v-show="state.tab === 'compare'" />
@@ -142,6 +144,7 @@ async function onDrop(e: DragEvent) {
         <AiView v-show="state.tab === 'ai'" />
         <PreviewView v-show="state.tab === 'preview'" />
         <GenerateView v-show="state.tab === 'generate'" />
+        <WorkspacesView v-show="state.tab === 'workspace'" />
         <SettingsView v-show="state.tab === 'settings'" />
       </div>
     </main>

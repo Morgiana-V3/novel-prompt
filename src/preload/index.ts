@@ -1,4 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { PageExecution, PageAction, PageWorkspace, PageWorkspaceSummary } from '../shared/page-workspace'
+import type { InpaintDraft } from '../shared/types'
 import type {
   AiInpaintRequest,
   AiInpaintResult,
@@ -35,6 +37,15 @@ const on = <T>(channel: string, cb: (p: T) => void) => {
 }
 
 const api = {
+  pagesList: (): Promise<PageWorkspaceSummary[]> => ipcRenderer.invoke('pages:list'),
+  pagesImport: (params: NaiGenParams, model: NaiVersion, draft: InpaintDraft): Promise<PageWorkspace | null> => ipcRenderer.invoke('pages:import', params, model, draft),
+  pagesDelete: (id: string, revision: number): Promise<void> => ipcRenderer.invoke('pages:delete', id, revision),
+  pagesRead: (id: string): Promise<PageWorkspace> => ipcRenderer.invoke('pages:read', id),
+  pagesCreate: (image: string | null, params: NaiGenParams, model: NaiVersion, draft: InpaintDraft): Promise<PageWorkspace> => ipcRenderer.invoke('pages:create', image, params, model, draft),
+  pagesEdit: (id: string, revision: number, action: PageAction): Promise<PageWorkspace> => ipcRenderer.invoke('pages:edit', id, revision, action),
+  pagesChat: (id: string, revision: number, text: string, region: string | null, refs: string[]): Promise<PageWorkspace> => ipcRenderer.invoke('pages:chat', id, revision, text, region, refs),
+  pagesCancel: (id: string): Promise<void> => ipcRenderer.invoke('pages:cancel', id),
+  pagesGenerate: (id: string, revision: number, execution: PageExecution): Promise<PageWorkspace> => ipcRenderer.invoke('pages:generate', id, revision, execution),
   setDarkTitlebar: (dark: boolean): Promise<void> => ipcRenderer.invoke('window:dark-titlebar', dark),
   dbStatus: (): Promise<DbStatus> => ipcRenderer.invoke('db:status'),
   dbUpdate: (): Promise<DbStatus> => ipcRenderer.invoke('db:update'),

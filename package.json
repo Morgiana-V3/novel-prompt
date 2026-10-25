@@ -14,6 +14,7 @@
     "mcp:smoke": "electron-vite build && node scripts/mcp-smoke.mjs",
     "inpaint:smoke": "electron-vite build && electron scripts/inpaint-smoke.cjs",
     "inpaint:mcp-smoke": "electron scripts/inpaint-mcp-smoke.cjs",
+    "pages:smoke": "electron-vite build && electron scripts/page-workspace-smoke.cjs",
     "screenshots": "electron-vite build && electron . --screenshots=docs/screenshots",
     "screenshots:ai": "electron-vite build && electron . --screenshots=docs/screenshots --screenshots-ai",
     "dist": "electron-vite build && electron-builder --win --x64"
