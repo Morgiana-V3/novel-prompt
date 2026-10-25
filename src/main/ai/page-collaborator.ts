@@ -24,6 +24,7 @@ function picture(bytes: Buffer): ChatPart {
 export async function discussPage(id: string, revision: number, text: string, regionId: string | null, referenceIds: string[]): Promise<PageWorkspace> {
   if (pageLocks.has(id)) throw new Error('当前页面正在处理，请稍候')
   const w = readPage(id), v = pageCurrent(w)
+  if (w.agentMode === 'external') throw new Error('此会话由外部 Agent 接管，不会调用内置 AI')
   if (w.revision !== revision) throw new Error('工作区已更新，请重新打开')
   if (typeof text !== 'string' || !text.trim() || text.length > 6000 || !Array.isArray(referenceIds) || referenceIds.length > 2) throw new Error('请输入 6000 字以内的内容，最多引用两个历史版本')
   const region = v.editor.regions.find(r => r.id === regionId)
@@ -115,6 +116,7 @@ export async function discussPage(id: string, revision: number, text: string, re
       pageEvent(w, `目标：${w.goal || '未指定'}${w.preserve ? '\n保留：' + w.preserve : ''}`)
     }
     const message = pageMessage('assistant', raw.reply, v.id)
+    message.author = { kind: 'internal', name: '内置 AI' }
     message.regionId = regionId; message.referenceIds = referenceIds; message.skills = skills.skills.map(s => s.name)
     if (raw.proposal) {
       const p = raw.proposal, changes = pageChanges(draft, p.draft)
@@ -135,7 +137,7 @@ export async function discussPage(id: string, revision: number, text: string, re
   } finally { pageLocks.delete(id) }
 }
 
-export async function renderPage(id: string, revision: number, execution: import('../../shared/page-workspace').PageExecution, progress: (s: string) => void, cancelled: () => boolean): Promise<PageWorkspace> {
+export async function renderPage(id: string, revision: number, execution: import('../../shared/page-workspace').PageExecution, progress: (s: string) => void, cancelled: () => boolean, options: { freeOnly?: boolean; onResult?: (result: { stopped?: string }) => void } = {}): Promise<PageWorkspace> {
   if (pageLocks.has(id)) throw new Error('当前页面正在处理')
   const w = readPage(id), v = pageCurrent(w)
   if (w.revision !== revision) throw new Error('工作区状态已更新')
@@ -149,7 +151,9 @@ export async function renderPage(id: string, revision: number, execution: import
     const params = { ...v.editor.params, count: 1, qualityTags: false, ucPreset: 'none' as const }
     checkPageParams(params)
     const request = { ...draft, params, version: w.model, ...(selectedExecution.kind === 'inpaint' ? { inpaint: { imageName: v.image!.name, mask: region!.mask, strength: v.editor.strength } } : {}) }
-    const result = await generateImages(request, progress, cancelled)
+    const result = await generateImages(request, progress, cancelled, options)
+    if (cancelled()) result.stopped ??= '已停止，已完成的图片已保留'
+    options.onResult?.(result)
     if (!result.images.length) throw new Error(result.stopped ?? '没有返回图片')
     const next = { id: randomUUID(), parentId: v.id, label: `版本 ${w.versions.length}`, image: result.images[0], createdAt: Date.now(),
       generated: { draft: structuredClone(draft), params: { ...params, seed: result.images[0].seed ?? params.seed }, execution: selectedExecution, sourceVersionId: v.id,

@@ -137,16 +137,17 @@ function fromMetadata(raw: unknown): ImportedPrompt | null {
   const ncap = p.v4_negative_prompt?.caption
   const base = s(cap?.base_caption) || s(p.prompt) || s(p.input)
   const negative = s(ncap?.base_caption) || s(p.uc) || s(p.negative_prompt)
-  if (!base && !negative) return null
   const useCoords = p.v4_prompt?.use_coords === true
+  const characters = (cap?.char_captions ?? []).map((c, i) => ({
+    prompt: s(c.char_caption),
+    negative: s(ncap?.char_captions?.[i]?.char_caption),
+    position: useCoords ? positionOf(c.centers?.[0]) : ''
+  }))
+  if (!base && !negative && !characters.some(c => c.prompt || c.negative)) return null
   return {
     base,
     negative,
-    characters: (cap?.char_captions ?? []).map((c, i) => ({
-      prompt: s(c.char_caption),
-      negative: s(ncap?.char_captions?.[i]?.char_caption),
-      position: useCoords ? positionOf(c.centers?.[0]) : ''
-    })),
+    characters,
     width: n(p.width),
     height: n(p.height),
     fromMetadata: true,

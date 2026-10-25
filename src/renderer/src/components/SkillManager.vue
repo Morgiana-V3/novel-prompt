@@ -17,6 +17,10 @@ const mine = computed(() => list.value.filter((s) => !s.builtin))
 /** 编辑器：undefined = 关闭；null doc = 新建 */
 const editing = ref<{ doc: SkillDoc | null; readonly: boolean; title?: string } | undefined>()
 const confirmDel = ref('')
+function prepareUpdate(): void {
+  if (editing.value && !editing.value.readonly) throw new Error('请先保存或关闭 Skill 编辑器，再重启更新')
+}
+defineExpose({ prepareUpdate })
 
 onMounted(loadSkills)
 watch(

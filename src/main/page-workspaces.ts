@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { dataDir } from './paths'
 import { imageDir, imagePath, listImages } from './nai/client'
 import { pngSize } from './nai/zip'
@@ -8,9 +8,12 @@ import { PNG } from 'pngjs'
 import { prepareInpaint } from './nai/inpaint'
 import { readPngPrompt } from '../shared/prompt-import'
 import { applyInpaintChanges } from '../shared/inpaint-plan'
-import { compactPageProposals, pageContextKey, pageCurrent, pageDraft, type PageAction, type PageEditorState, type PageMessage, type PageWorkspace, type PageWorkspaceSummary } from '../shared/page-workspace'
+import { compactPageProposals, pageChanges, pageContextKey, pageCurrent, pageDraft, type PageAction, type PageEditorState, type PageMessage, type PageWorkspace, type PageWorkspaceSummary } from '../shared/page-workspace'
 import { MAX_CHARACTERS, parsePosition, isGridPosition } from '../shared/nai-presets'
 import type { InpaintDraft, NaiGenParams, NaiVersion } from '../shared/types'
+import type { PageAgentIdentity, PageExternalReply } from '../shared/page-workspace'
+import { agentIsConnected } from './agent-sessions'
+import { composeSkills } from './skills'
 
 const directory = () => { const p = join(dataDir(), 'page-workspaces'); mkdirSync(p, { recursive: true }); return p }
 function file(id: string) {
@@ -37,7 +40,6 @@ export function readPage(id: string): PageWorkspace {
     pageEvent(w, '已升级为通用创作会话。旧版区域独立草稿保留在历史版本；请选择要继续使用的草稿。')
     savePage(w)
   }
-  if (compactPageProposals(w)) savePage(w)
   return w
 }
 export function savePage(w: PageWorkspace): PageWorkspace {
@@ -154,7 +156,7 @@ export function editPage(id: string, revision: number, action: PageAction): Page
       const r = v.editor.regions.find(r => r.id === p.regionId)
       if (p.regionId && !r) throw new Error('建议对应选区已不存在')
       if (action.decision === 'accept') {
-        if (p.status !== 'pending' || p.contextKey !== pageContextKey(v, p.regionId, w)) throw new Error('目标、提示词、选区或执行方式已变化，请重新提出修改')
+        if (p.superseded || p.status !== 'pending' || p.contextKey !== pageContextKey(v, p.regionId, w)) throw new Error('目标、提示词、选区或执行方式已变化，或建议已有更新，请重新提出修改')
         const next = p.after ? clone(p.after) : applyInpaintChanges(pageDraft(v, p.regionId), p.changes)
         checkDraft(next, w.model)
         p.previousExecution = clone(w.execution)
@@ -180,6 +182,97 @@ export function editPage(id: string, revision: number, action: PageAction): Page
 }
 export function pageMessage(role: PageMessage['role'], text: string, versionId: string): PageMessage {
   return { id: randomUUID(), role, text, versionId, createdAt: Date.now() }
+}
+
+/** External agents submit the same reviewable proposals as the built-in collaborator. */
+export function proposePage(id: string, revision: number, draft: InpaintDraft, title: string, text: string): PageWorkspace {
+  if (pageLocks.has(id)) throw new Error('会话仍在运行')
+  const w = readPage(id), v = pageCurrent(w)
+  if (w.agentMode === 'external') throw new Error('外部接管会话请使用 reply_workspace_request 或 ui_reply_workspace_request 回复待处理需求')
+  if (w.revision !== revision) throw new Error('会话已变化，请重新读取后提交建议')
+  checkDraft(draft, w.model)
+  if (!title.trim() || title.length > 200 || text.length > 6000) throw new Error('建议标题或说明无效')
+  const message = pageMessage('assistant', text || title, v.id)
+  message.author = { kind: 'external', name: '外部 Agent' }
+  message.proposal = { regionId: null, title, warning: '', changes: pageChanges(v.editor.draft, draft), status: 'pending',
+    contextKey: pageContextKey(v, null, w), before: clone(v.editor.draft), after: clone(draft), previousAccepted: null }
+  w.messages.push(message)
+  return savePage(w)
+}
+
+export function pendingExternalRequest(w: PageWorkspace) {
+  return w.messages.find(m => m.externalRequest?.status === 'pending')
+}
+function writablePage(id: string, revision: number) {
+  if (pageLocks.has(id)) throw new Error('会话仍在运行')
+  const w = readPage(id)
+  if (w.revision !== revision) throw new Error('会话已变化，请重新读取后继续')
+  return w
+}
+export function setPageAgent(id: string, revision: number, mode: 'internal' | 'external', agent?: PageAgentIdentity): PageWorkspace {
+  const w = writablePage(id, revision)
+  if (!['internal', 'external'].includes(mode)) throw new Error('未知的会话处理方式')
+  if (agent && w.externalAgent && w.externalAgent.sessionId !== agent.sessionId && agentIsConnected(w.externalAgent.sessionId))
+    throw new Error('此会话已由另一个在线 Agent 接管，请先在界面解除接管')
+  if (mode === 'internal') for (const m of w.messages) if (m.externalRequest?.status === 'pending') m.externalRequest.status = 'cancelled'
+  w.agentMode = mode; w.externalAgent = mode === 'external' ? agent ?? null : null
+  pageEvent(w, mode === 'external' ? (agent ? `已交给外部 Agent「${agent.name}」处理；不会调用内置 AI。` : '已切换外部 Agent，等待连接；需求会保存在本会话。') : '已切换为内置 AI；待处理的外部需求已取消。')
+  return savePage(w)
+}
+export function queueExternalRequest(id: string, revision: number, text: string, regionId: string | null, referenceIds: string[]) {
+  const w = writablePage(id, revision), v = pageCurrent(w)
+  if (w.agentMode !== 'external') throw new Error('会话未开启外部 Agent 接管')
+  if (pendingExternalRequest(w)) throw new Error('已有待处理需求，请等待回复或取消后再发送')
+  if (typeof text !== 'string' || !text.trim() || text.length > 6000 || !Array.isArray(referenceIds) || referenceIds.length > 2 || referenceIds.some(id => !w.versions.some(v => v.id === id))) throw new Error('需求或引用版本无效')
+  if (regionId && !v.editor.regions.some(r => r.id === regionId)) throw new Error('区域已不存在')
+  const m = pageMessage('user', text.trim(), v.id), skills = composeSkills('workspace', w.model)
+  m.regionId = regionId; m.referenceIds = [...referenceIds]
+  m.externalRequest = { status: 'pending', contextKey: pageContextKey(v, regionId, w) }
+  m.skills = skills.skills.map(s => s.name)
+  m.skillSnapshot = { digest: createHash('sha256').update(skills.text).digest('hex'), text: skills.text }
+  w.messages.push(m); w.composer = ''
+  return savePage(w)
+}
+export function cancelExternalRequest(id: string, revision: number, agent?: PageAgentIdentity) {
+  const w = writablePage(id, revision), pending = pendingExternalRequest(w)
+  if (agent && w.externalAgent?.sessionId !== agent.sessionId) throw new Error('当前 Agent 未接管此会话')
+  if (!pending) throw new Error('没有待处理的外部需求')
+  pending.externalRequest!.status = 'cancelled'
+  pageEvent(w, '已取消外部需求，原消息保留；后续回复不会覆盖当前内容。')
+  return savePage(w)
+}
+export function replyExternalRequest(id: string, revision: number, response: PageExternalReply, agent?: PageAgentIdentity) {
+  const w = writablePage(id, revision), v = pageCurrent(w)
+  if (w.agentMode !== 'external' || !agent || !agentIsConnected(agent.sessionId) || w.externalAgent?.sessionId !== agent.sessionId)
+    throw new Error('当前 Agent 未接管此会话，请先连接；不会切换为内置 AI')
+  const request = w.messages.find(m => m.id === response?.requestId && m.externalRequest?.status === 'pending')
+  if (!request) throw new Error('需求已完成、已取消或不存在，请读取会话确认，勿重复提交')
+  if (request.versionId !== v.id || request.externalRequest!.contextKey !== pageContextKey(v, request.regionId ?? null, w))
+    throw new Error('需求发出后目标、版本、提示词或选区已改变，请取消旧需求后重新发送')
+  if (typeof response.reply !== 'string' || !response.reply.trim() || response.reply.length > 16000) throw new Error('回复须为 1～16000 字符')
+  if (response.understanding && [response.understanding.goal, response.understanding.preserve].some(t => typeof t !== 'string' || t.length > 6000)) throw new Error('目标记录格式无效')
+  const p = response.proposal
+  if (p) {
+    checkDraft(p.draft, w.model)
+    if (typeof p.title !== 'string' || !p.title.trim() || p.title.length > 200 || typeof p.warning !== 'string' || p.warning.length > 4000) throw new Error('建议标题或风险说明无效')
+    validateExecution(w, p.execution)
+  }
+  if (response.understanding) {
+    w.goal = response.understanding.goal; w.preserve = response.understanding.preserve
+    pageEvent(w, `目标：${w.goal || '未指定'}${w.preserve ? '\n保留：' + w.preserve : ''}`)
+  }
+  const message = pageMessage('assistant', response.reply, v.id)
+  message.author = { kind: 'external', name: agent.name }; message.requestId = request.id
+  message.regionId = request.regionId; message.referenceIds = request.referenceIds
+  message.skills = request.skills
+  if (p) {
+    const before = pageDraft(v, request.regionId ?? null)
+    message.proposal = { regionId: request.regionId ?? null, title: p.title, warning: p.warning, changes: pageChanges(before, p.draft),
+      status: 'pending', contextKey: pageContextKey(v, request.regionId ?? null, w), before: clone(before), after: clone(p.draft),
+      execution: validateExecution(w, p.execution), previousAccepted: null }
+  }
+  request.externalRequest!.status = 'completed'; w.messages.push(message)
+  return savePage(w)
 }
 
 export function validateExecution(w: PageWorkspace, e: import('../shared/page-workspace').PageExecution) {

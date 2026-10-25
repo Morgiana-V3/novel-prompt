@@ -132,7 +132,8 @@ export function inpaintTools(): McpTool[] {
       inputSchema: { type: 'object', properties: { ...SOURCE_PROPS, ...DRAFT_PROPS, regions: { type: 'array', minItems: 1, maxItems: 8, items: { type: 'object', properties: { id: { type: 'string' }, label: { type: 'string', pattern: '^[A-Z]{2,16}$' }, instruction: { type: 'string' }, target: { type: ['integer', 'null'], description: '角色索引从 0 开始；省略或 null 由 AI 判断' }, ...MASK_PROPS }, required: ['id', 'instruction'] } } }, required: ['image_name', 'regions'] },
       annotations: { ...READ, openWorldHint: true },
       gate: () => !getSettings().mcpAllowAi ? '请在 Agent 接入中开启允许调用 AI' : !getSettings().apiKey ? '请配置 AI API Key' : null,
-      run: async (a, signal) => {
+      run: async (a, signal, progress) => {
+        progress?.('正在准备原图、选区和批注…')
         if (!Array.isArray(a.regions) || !a.regions.length || a.regions.length > 8) throw new Error('请提供 1～8 个区域')
         const s = source(a), original = await draft(a, s)
         const regions = a.regions.map(r => {
@@ -148,13 +149,14 @@ export function inpaintTools(): McpTool[] {
       description: '对图库原图的指定区域重绘一张并另存。与界面同一生成/合成链路，选区外像素不变。必须 confirm:true；强制免费检查并核对 Anlas，返回 stopped 时停止。',
       inputSchema: { type: 'object', properties: { ...SOURCE_PROPS, ...DRAFT_PROPS, ...MASK_PROPS, confirm: { type: 'boolean' }, strength: { type: 'number', minimum: .01, maximum: 1, description: '默认 1；降低时更多保留旧像素' }, seed: { type: 'integer', minimum: 0, maximum: 4294967295 }, steps: { type: 'integer', minimum: 1, maximum: 28 }, scale: { type: 'number', minimum: 0, maximum: 10 }, cfg_rescale: { type: 'number', minimum: 0, maximum: 1 }, sampler: { type: 'string', enum: ['k_euler_ancestral', 'k_euler', 'k_dpmpp_2s_ancestral', 'k_dpmpp_2m_sde', 'k_dpmpp_2m', 'k_dpmpp_sde'] } }, required: ['image_name', 'confirm'] }, annotations: WRITE,
       gate: () => !getSettings().mcpAllowGenerate ? '请在 Agent 接入中开启允许生图' : !getSettings().naiToken.trim() ? '请配置 NovelAI Token' : null,
-      run: async (a, signal) => {
+      run: async (a, signal, progress) => {
         if (a.confirm !== true) throw new Error('需要 confirm: true 和用户的生图授权')
         const s = source(a), encoded = mask(a, s), prompts = await draft(a, s)
         const sampler = a.sampler ?? 'k_euler_ancestral'
         if (!['k_euler_ancestral', 'k_euler', 'k_dpmpp_2s_ancestral', 'k_dpmpp_2m_sde', 'k_dpmpp_2m', 'k_dpmpp_sde'].includes(String(sampler))) throw new Error('sampler 无效')
         const params: NaiGenParams = { width: s.width, height: s.height, count: 1, steps: number(a.steps, 23, 1, 28, true), scale: number(a.scale, 5, 0, 10), cfgRescale: number(a.cfg_rescale, 0, 0, 1), seed: a.seed === undefined ? null : number(a.seed, 0, 0, 4294967295, true), sampler: sampler as NaiGenParams['sampler'], noiseSchedule: 'karras', qualityTags: false, ucPreset: 'none' }
-        const result = await generateImages({ ...prompts, params, version: version(a.version), inpaint: { imageName: s.name, mask: encoded, strength: number(a.strength, 1, .01, 1) } }, () => {}, () => signal.aborted, { freeOnly: true })
+        const result = await generateImages({ ...prompts, params, version: version(a.version), inpaint: { imageName: s.name, mask: encoded, strength: number(a.strength, 1, .01, 1) } }, progress ?? (() => {}), () => signal.aborted, { freeOnly: true })
+        if (signal.aborted) result.stopped ??= '已停止，已完成的图片已保留'
         return json({ images: result.images.map(i => ({ ...i, path: join(imageDir(), i.name) })), anlasChange: result.anlasDelta ?? '未知', stopped: result.stopped ?? null, source: s.name })
       }
     }

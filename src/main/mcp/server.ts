@@ -3,10 +3,13 @@ import { StringDecoder } from 'node:string_decoder'
 import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync, writeSync } from 'node:fs'
 import type { McpLogEntry } from '../../shared/types'
 import { dataFile } from '../paths'
+import { randomUUID } from 'node:crypto'
+import { connectAgent, disconnectAgent, runAsAgent } from '../agent-sessions'
+import { AGENT_GUIDE_URI, agentGuide } from './agent-guide'
 
 /**
  * 最小 MCP（Model Context Protocol）服务端：stdio 上的换行分隔 JSON-RPC 2.0。
- * 只实现 tools 能力：initialize / ping / tools/list / tools/call / notifications/cancelled。
+ * 支持工具、进度、取消，以及当前应用状态资源和变化订阅。
  * stdout 只能写协议消息，日志一律写 stderr。
  */
 
@@ -18,7 +21,13 @@ export interface McpTool {
   annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean; openWorldHint?: boolean }
   /** 返回不可用的原因（例如设置里没有开启），可用时返回 null */
   gate?: () => string | null
-  run: (args: Record<string, unknown>, signal: AbortSignal) => Promise<string>
+  run: (args: Record<string, unknown>, signal: AbortSignal, progress?: McpProgress) => Promise<string | McpResult>
+}
+export type McpProgress = (message: string, current?: number, total?: number) => void
+export interface McpResult { content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[]; structuredContent?: Record<string, unknown>; isError?: boolean }
+export interface McpSessionOptions {
+  execute?: (tool: McpTool, args: Record<string, unknown>, signal: AbortSignal, progress: McpProgress) => Promise<string | McpResult>
+  state?: () => unknown
 }
 
 export interface ServerInfo {
@@ -93,7 +102,7 @@ for (;;) {
 }
 `
 
-function readStdinLines(onLine: (line: string) => void, onEnd: () => void): void {
+export function readStdinLines(onLine: (line: string) => void, onEnd: () => void): void {
   const decoder = new StringDecoder('utf8')
   let pending = ''
   const worker = new Worker(STDIN_WORKER, { eval: true })
@@ -134,11 +143,13 @@ function writeStdout(text: string): void {
 
 /* ---------- 服务端 ---------- */
 
-export function startMcpServer(tools: McpTool[], info: ServerInfo, onClose: () => void): void {
+export function createMcpSession(tools: McpTool[], info: ServerInfo, write: (line: string) => void, options: McpSessionOptions = {}) {
+  const agent = { sessionId: randomUUID(), name: '外部 Agent' }
   const byName = new Map(tools.map((t) => [t.name, t]))
   const running = new Map<Id, AbortController>()
 
-  const send = (msg: Record<string, unknown>) => writeStdout(JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n')
+  let closed = false, subscribed = false
+  const send = (msg: Record<string, unknown>) => { if (!closed) write(JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n') }
   const reply = (id: Id, result: unknown) => send({ id, result })
   const fail = (id: Id | null, code: number, message: string) => send({ id, error: { code, message } })
 
@@ -156,9 +167,20 @@ export function startMcpServer(tools: McpTool[], info: ServerInfo, onClose: () =
     const ctrl = new AbortController()
     running.set(id, ctrl)
     try {
-      const text = await tool.run(args, ctrl.signal)
+      let sequence = 0
+      const token = (params._meta as Record<string, unknown> | undefined)?.progressToken
+      const progress: McpProgress = (message) => {
+        if ((typeof token === 'string' || typeof token === 'number') && !ctrl.signal.aborted)
+          send({ method: 'notifications/progress', params: { progressToken: token, progress: ++sequence, message } })
+      }
+      const output = await runAsAgent(agent, () => options.execute ? options.execute(tool, args, ctrl.signal, progress) : tool.run(args, ctrl.signal, progress))
+      const result: McpResult = typeof output === 'string' ? { content: [{ type: 'text', text: output }] } : output
+      if (typeof output === 'string') {
+        try { const value = JSON.parse(output); if (value && typeof value === 'object') result.structuredContent = Array.isArray(value) ? { items: value } : value } catch { /* Narrative output remains text. */ }
+      }
+      const text = result.content.filter(c => c.type === 'text').map(c => c.text).join('\n')
       appendLog({ at: start, tool: name, ok: true, ms: Date.now() - start, summary: text.replace(/\s+/g, ' ').slice(0, 120) })
-      reply(id, { content: [{ type: 'text', text }] })
+      reply(id, result)
     } catch (e) {
       const message = String((e as Error)?.message ?? e).replace(/pst-[\w-]+/g, 'pst-***')
       appendLog({ at: start, tool: name, ok: false, ms: Date.now() - start, summary: message.slice(0, 120) })
@@ -178,16 +200,32 @@ export function startMcpServer(tools: McpTool[], info: ServerInfo, onClose: () =
     }
     switch (method) {
       case 'initialize': {
+        const client = params.clientInfo as { name?: unknown } | undefined
+        agent.name = typeof client?.name === 'string' && client.name.trim() ? client.name.trim().slice(0, 100) : '外部 Agent'
+        connectAgent(agent)
         const asked = String(params.protocolVersion ?? '')
         return reply(id, {
           protocolVersion: SUPPORTED.includes(asked) ? asked : SUPPORTED[0],
-          capabilities: { tools: { listChanged: false } },
+          capabilities: { tools: { listChanged: false }, resources: { subscribe: !!options.state, listChanged: false } },
           serverInfo: { name: info.name, version: info.version },
           instructions: info.instructions
         })
       }
       case 'ping':
         return reply(id, {})
+      case 'resources/list':
+        return reply(id, { resources: [
+          { uri: AGENT_GUIDE_URI, name: '外部 Agent 操作指南', mimeType: 'text/markdown', description: '能力地图、前后台选择、工作流、恢复和边界；与 agent_guide(topic=all) 内容一致' },
+          ...(options.state ? [{ uri: 'novelprompt://app/state', name: '当前应用状态', mimeType: 'application/json', description: '当前页面、提示词、工作台和任务；不含账户密钥' }] : [])
+        ] })
+      case 'resources/read':
+        if (params.uri === AGENT_GUIDE_URI) return reply(id, { contents: [{ uri: AGENT_GUIDE_URI, mimeType: 'text/markdown', text: agentGuide('all').content }] })
+        if (!options.state || params.uri !== 'novelprompt://app/state') return fail(id, -32602, '未知资源')
+        return reply(id, { contents: [{ uri: params.uri, mimeType: 'application/json', text: JSON.stringify(options.state()) }] })
+      case 'resources/subscribe':
+      case 'resources/unsubscribe':
+        if (!options.state || params.uri !== 'novelprompt://app/state') return fail(id, -32602, '未知资源')
+        subscribed = method === 'resources/subscribe'; return reply(id, {})
       case 'tools/list':
         return reply(id, {
           tools: tools.map((t) => ({
@@ -206,9 +244,9 @@ export function startMcpServer(tools: McpTool[], info: ServerInfo, onClose: () =
     }
   }
 
-  readStdinLines(
-    (line) => {
-      if (!line.trim()) return
+  return {
+    receive: (line: string) => {
+      if (closed || !line.trim()) return
       let parsed: unknown
       try {
         parsed = JSON.parse(line)
@@ -216,13 +254,27 @@ export function startMcpServer(tools: McpTool[], info: ServerInfo, onClose: () =
         return fail(null, -32700, '无法解析的 JSON')
       }
       for (const m of Array.isArray(parsed) ? parsed : [parsed]) {
-        if (m && typeof m === 'object') handle(m as Message)
+        if (!m || typeof m !== 'object' || Array.isArray(m) || m.jsonrpc !== '2.0'
+          || m.params !== undefined && (!m.params || typeof m.params !== 'object' || Array.isArray(m.params))
+          || m.id !== undefined && typeof m.id !== 'string' && typeof m.id !== 'number') {
+          fail(m && (typeof m.id === 'string' || typeof m.id === 'number') ? m.id : null, -32600, '无效的 JSON-RPC 请求'); continue
+        }
+        if (m.id !== undefined && running.has(m.id)) { fail(m.id, -32600, '请求 id 正在使用'); continue }
+        handle(m as Message)
       }
     },
-    () => {
+    changed: () => { if (subscribed) send({ method: 'notifications/resources/updated', params: { uri: 'novelprompt://app/state' } }) },
+    close: () => {
+      closed = true
+      disconnectAgent(agent.sessionId)
       for (const c of running.values()) c.abort()
-      onClose()
+      running.clear()
     }
-  )
+  }
+}
+
+export function startMcpServer(tools: McpTool[], info: ServerInfo, onClose: () => void): void {
+  const session = createMcpSession(tools, info, writeStdout)
+  readStdinLines(session.receive, () => { session.close(); onClose() })
   process.stderr.write(`[novel-prompt] MCP 服务已启动，提供 ${tools.length} 个工具\n`)
 }

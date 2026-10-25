@@ -103,20 +103,16 @@ export const state = reactive({
 })
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined
+export function flushWorkspace(): void {
+  clearTimeout(saveTimer)
+  const data: Persisted = { prompt: state.prompt, negative: state.negative, characters: state.characters, params: state.params, history: state.history }
+  localStorage.setItem(STORE_KEY, JSON.stringify(data))
+}
 watch(
   () => [state.prompt, state.negative, state.characters, state.params, state.history],
   () => {
     clearTimeout(saveTimer)
-    saveTimer = setTimeout(() => {
-      const data: Persisted = {
-        prompt: state.prompt,
-        negative: state.negative,
-        characters: state.characters,
-        params: state.params,
-        history: state.history
-      }
-      localStorage.setItem(STORE_KEY, JSON.stringify(data))
-    }, 300)
+    saveTimer = setTimeout(flushWorkspace, 300)
   },
   { deep: true }
 )
@@ -326,13 +322,17 @@ export async function saveSettings(patch: Partial<Settings>): Promise<void> {
 
 /* ---------- 版本检查 ---------- */
 
-/**
- * 启动后异步查一次（有 24 小时缓存，不会每次都请求）。失败静默，不打扰用户。
- * force = 用户手动点「检查更新」。
- */
+/** 进度事件和 IPC 回包可能交错，只接受最新状态。 */
+export function receiveUpdate(info: UpdateInfo | null): void {
+  if (!info || (info.revision ?? 0) < (state.update?.revision ?? 0)) return
+  if (info.latest !== state.update?.latest || info.stage === 'ready' && state.update?.stage !== 'ready') state.updateDismissed = false
+  state.update = info
+}
+
+/** 启动时静默检查；force 用于用户主动重试，下载与缓存策略由主进程负责。 */
 export async function checkUpdate(force = false): Promise<void> {
   try {
-    state.update = await window.api.checkUpdate(force)
+    receiveUpdate(await window.api.checkUpdate(force))
     // 新版本号变了就重新允许提示（用户之前关掉的是旧的那次提示）
     if (force) state.updateDismissed = false
   } catch {

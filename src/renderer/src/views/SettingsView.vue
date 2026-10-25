@@ -3,6 +3,8 @@ import { reactive, ref, watch, computed, onMounted, nextTick } from 'vue'
 import { state, saveSettings, refreshDb, toast, copy, checkUpdate } from '../store'
 import Icon from '../components/Icon.vue'
 import SkillManager from '../components/SkillManager.vue'
+import UpdateAction from '../components/UpdateAction.vue'
+import { updateLabel } from '../updates'
 import type { McpInfo, ReasoningEffort } from '@shared/types'
 
 const form = reactive({
@@ -17,6 +19,14 @@ const form = reactive({
   mcpAllowAi: false,
   mcpAllowGenerate: false
 })
+const editableKeys = Object.keys(form) as (keyof typeof form)[]
+const skillManager = ref<InstanceType<typeof SkillManager>>()
+function prepareUpdate(): void {
+  skillManager.value?.prepareUpdate()
+  if (filled && state.settings && editableKeys.some(key => String(form[key]) !== String(state.settings![key])))
+    throw new Error('设置有尚未保存的修改，请先保存设置再重启更新')
+}
+defineExpose({ prepareUpdate })
 const efforts: { v: ReasoningEffort; label: string }[] = [
   { v: 'off', label: '关闭' },
   { v: 'low', label: '低' },
@@ -107,18 +117,14 @@ const agentPrompt = computed(() =>
 )
 /* ---------- 版本与更新 ---------- */
 const checking = ref(false)
-const versionText = computed(() => {
-  const u = state.update
-  if (!u) return '当前版本'
-  return u.newer ? `有新版本 ${u.latest}` : `已是最新 v${u.current}`
-})
+const versionText = computed(() => updateLabel(state.update))
 const updateSub = computed(() => {
   const u = state.update
   if (!u) return ''
-  if (u.error && !u.latest) return `检查失败：${u.error}`
+  if (u.error) return `更新失败：${u.error}`
+  if (u.manualReason) return u.manualReason
   const at = u.checkedAt ? new Date(u.checkedAt).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
   const parts = [`当前 v${u.current}`, at && `检查于 ${at}`]
-  if (u.error) parts.push('本次检查失败，显示的是上次结果')
   return parts.filter(Boolean).join(' · ')
 })
 async function runCheck() {
@@ -127,7 +133,6 @@ async function runCheck() {
   checking.value = false
   toast(state.update?.error ? '检查失败，可能是网络问题' : state.update?.newer ? `发现新版本 ${state.update.latest}` : '已是最新版本')
 }
-const openUpdatePage = () => window.api.openUpdatePage(state.update?.url ?? '')
 
 const fmtLogTime = (t: number) => new Date(t).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 async function testNai() {
@@ -256,7 +261,7 @@ async function translate() {
       <div class="form-grid">
         <div class="form-field full">
           <label>API Key</label>
-          <input class="input" type="password" v-model="form.apiKey" placeholder="sk-..." />
+          <input class="input" type="password" data-mcp-private v-model="form.apiKey" placeholder="sk-..." />
         </div>
         <div class="form-field">
           <label>Base URL</label>
@@ -282,7 +287,7 @@ async function translate() {
       </div>
     </div>
 
-    <SkillManager />
+    <SkillManager ref="skillManager" />
 
     <div class="card" style="--d: 105ms">
       <div class="card-head">
@@ -295,7 +300,7 @@ async function translate() {
       <div class="form-grid">
         <div class="form-field full">
           <label>Persistent API Token</label>
-          <input class="input" type="password" v-model="form.naiToken" placeholder="pst-..." autocomplete="off" />
+          <input class="input" type="password" data-mcp-private v-model="form.naiToken" placeholder="pst-..." autocomplete="off" />
           <span class="help">在 NovelAI 网页「设置 → Account → Get Persistent API Token」获取。只保存在本机，只用于请求头</span>
         </div>
         <div class="form-field full">
@@ -321,17 +326,18 @@ async function translate() {
         <span class="card-icon blue"><Icon name="wand" /></span>
         <div>
           <h2>Agent 接入（MCP）</h2>
-          <div class="card-desc">让 Codex、Claude Code、Cursor 等 agent 直接调用本软件的 tag 库、检查和生图。不需要打开本软件，agent 会在后台自动启动它</div>
+          <div class="card-desc">同一套 MCP 支持后台处理与前台可视化操作，由 Agent 按你的要求选择。</div>
         </div>
       </div>
       <div class="form-grid">
+        <div class="form-field full"><label>两种操作方式</label><span class="help">后台模式：查词、检查、处理提示词和图片，可在无窗口时运行。前台模式：打开工作台，填写并提交讨论、展示建议、绘制区域批注、采纳和生成；每一步都在软件界面中显示，可随时停止。告诉 Agent「这次使用前台可视化模式」即可，无需另配服务。</span></div>
         <div class="form-field">
           <label>允许调用 DeepSeek</label>
           <div class="seg">
             <button :class="{ on: !form.mcpAllowAi }" @click="setMcp('mcpAllowAi', false)">关闭</button>
             <button :class="{ on: form.mcpAllowAi }" @click="setMcp('mcpAllowAi', true)">开启</button>
           </div>
-          <span class="help">optimize_prompt / preview_prompt 会消耗你的 DeepSeek 额度。agent 本身就是大模型，一般不需要开</span>
+          <span class="help">允许 Agent 使用已配置的 AI 服务，包括前台工作台讨论、优化和画面推测，会消耗对应服务额度。仅填写输入、查看或绘制区域无需开启。</span>
         </div>
         <div class="form-field">
           <label>允许生图</label>
@@ -339,7 +345,7 @@ async function translate() {
             <button :class="{ on: !form.mcpAllowGenerate }" @click="setMcp('mcpAllowGenerate', false)">关闭</button>
             <button :class="{ on: form.mcpAllowGenerate }" @click="setMcp('mcpAllowGenerate', true)">开启</button>
           </div>
-          <span class="help">generate_image 强制只用免费额度，且每次调用都要显式传 confirm: true</span>
+          <span class="help">前台与后台生图、重绘均检查免费条件，并要求 Agent 取得你的生成授权。</span>
         </div>
         <div class="form-field full" v-if="mcp?.portable">
           <div class="error-box"><Icon name="warn" :size="16" />便携版每次运行都会解压到临时目录，路径不固定，agent 无法稳定启动它。请改用安装版。</div>
@@ -422,7 +428,7 @@ async function translate() {
         <span class="card-icon"><Icon name="download" /></span>
         <div>
           <h2>版本与更新</h2>
-          <div class="card-desc">启动时自动检查一次 GitHub 上的最新版本（有 24 小时缓存）。只做提示，不会自动下载或安装</div>
+          <div class="card-desc">安装版启动时及每 6 小时检查更新，发现新版后后台下载。准备好后点击「重启并更新」，已保存的数据会保留。</div>
         </div>
       </div>
       <div class="form-grid">
@@ -430,12 +436,10 @@ async function translate() {
           <div class="update-line">
             <span class="pill" :class="state.update?.newer ? 'alias' : 'ok'"><i></i>{{ versionText }}</span>
             <span class="muted small grow">{{ updateSub }}</span>
-            <button class="btn small" :disabled="checking" @click="runCheck">
+            <button class="btn small" :disabled="checking || ['checking', 'downloading', 'ready', 'installing'].includes(state.update?.stage ?? '')" @click="runCheck">
               <Icon name="swap" :size="13" />{{ checking ? '检查中' : '检查更新' }}
             </button>
-            <button class="btn accent small" v-if="state.update?.newer" @click="openUpdatePage">
-              <Icon name="download" :size="13" />去下载
-            </button>
+            <UpdateAction />
           </div>
           <pre v-if="state.update?.newer && state.update.notes" class="release-notes">{{ state.update.notes }}</pre>
         </div>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
+import type { FrontendRequest, FrontendContext } from '@shared/desktop'
 import type { PageWorkspace as Session, PageWorkspaceSummary } from '@shared/page-workspace'
 import type { NaiImage, NaiGenParams } from '@shared/types'
 import { state, cleanErr } from '../store'
@@ -11,6 +12,42 @@ const sessions = ref<PageWorkspaceSummary[]>([]), current = ref<Session | null>(
 const creating = ref(false), busy = ref(false), error = ref(''), deleting = ref<string | null>(null)
 const start = ref('blank'), title = ref(''), selectedImage = ref<NaiImage | null>(null)
 const workspace = ref<InstanceType<typeof PageWorkspace>>()
+async function prepareUpdate(): Promise<boolean> {
+  if (busy.value || creating.value) return false
+  return current.value ? !!(await workspace.value?.prepareLeave()) : true
+}
+async function agentOpen(id: string) {
+  if (!(await prepareUpdate())) throw new Error('请先完成当前会话编辑或新建操作')
+  if (current.value?.id === id) return
+  const doc = await window.api.pagesRead(id)
+  current.value = doc
+}
+async function beginRemote(id: string, lease: string) {
+  if (current.value?.id === id) await workspace.value?.beginRemote(lease)
+}
+async function endRemote(id: string, lease: string) {
+  if (current.value?.id === id) await workspace.value?.endRemote(lease)
+  await refresh()
+}
+const desktopState = () => workspace.value?.desktopState() ?? null
+const isCreating = () => creating.value
+async function frontendAction(a: FrontendRequest, ctx: FrontendContext) {
+  if (a.action === 'open') {
+    await agentOpen(a.id!); await nextTick(); await ctx.step('已打开工作台会话')
+  } else if (a.action === 'create') {
+    if (!(await prepareUpdate())) throw new Error('请先完成当前编辑或新建操作')
+    current.value = null; newSession(a.image)
+    title.value = a.title!; start.value = a.source === 'image' ? 'gallery' : a.source!
+    await ctx.step('已填写新建会话表单')
+    await create()
+    if (error.value || !current.value) throw new Error(error.value || '会话未创建')
+    await nextTick(); await ctx.step('会话已创建并显示')
+  } else {
+    if (creating.value || busy.value || !workspace.value || current.value?.id !== a.id) throw new Error('目标会话未在前台打开，请先使用 ui_open_workspace')
+    await workspace.value.frontendAction(a, ctx)
+  }
+}
+defineExpose({ prepareUpdate, agentOpen, beginRemote, endRemote, desktopState, isCreating, frontendAction })
 async function refresh() { try { sessions.value = await window.api.pagesList() } catch(e) { error.value = cleanErr(e) } }
 watch(() => state.tab, t => { if(t === 'workspace' && !current.value) void refresh() })
 onMounted(refresh)

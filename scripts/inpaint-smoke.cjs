@@ -74,17 +74,18 @@ net.fetch = async (url, init) => {
   return new Response(generated, {headers:{'content-type':'image/png'}})
 }
 const handlers = {
+  'tasks:list': () => ({ revision: 0, tasks: [] }),
   'window:dark-titlebar': (event, dark) => BrowserWindow.fromWebContents(event.sender)?.setTitleBarOverlay({color:'#00000000',symbolColor:dark?'#f7f7f9':'#6b6c75'}),
   'settings:get': () => getSettings(), 'settings:save': (_, p) => saveSettings(p),
   'db:status': () => ({loaded:true, tagCount:0, aliasCount:0, zhCount:0, implicationCount:0}),
-  'skills:list': () => skillService.getConfig(), 'mcp:info': () => null, 'update:check': () => null,
+  'skills:list': () => skillService.getConfig(), 'mcp:info': () => null, 'update:check': () => null, 'update:state': () => null,
   'pages:list': () => [],
   'ai:inpaint-plan': async (_, req) => { lastPlanRequest=req; planController=new AbortController(); try{return await planInpaint(req,planController.signal)}finally{planController=null} },
   'ai:inpaint-plan-cancel': () => planController?.abort(),
   'prompt:analyze': () => ({tokens:[],stats:{total:0,valid:0,alias:0,unknown:0,natural:0,text:0}}),
   'nai:subscription': () => client.getSubscription(), 'nai:freeCheck': (_, ...args) => client.freeCheck(...args),
   'nai:list': () => client.listImages(), 'nai:readImage': (_, name) => new Uint8Array(readFileSync(client.imagePath(name))),
-  'nai:inpaint': async (event, req) => { lastRequest = req; generationRequests.push(req); await new Promise(r=>setTimeout(r,150)); return client.generateImages(req, s=>event.sender.send('nai:step',s), ()=>false) }
+  'nai:inpaint': async (event, req) => { lastRequest = req; generationRequests.push(req); await new Promise(r=>setTimeout(r,150)); return client.generateImages(req, s=>event.sender.send('nai:step',{id:'fixture',kind:'inpaint',step:s}), ()=>false) }
 }
 for (const [name, handler] of Object.entries(handlers)) ipcMain.handle(name, handler)
 const pause = ms => new Promise(r=>setTimeout(r,ms))

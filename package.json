@@ -1,6 +1,6 @@
 {
   "name": "novel-prompt",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "NovelAI 提示词比对 / 搜索 / AI 优化桌面工具",
   "main": "./out/main/index.js",
   "author": "holyxie",
@@ -10,6 +10,12 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
+    "prompt:smoke": "electron-vite build && electron scripts/prompt-smoke.cjs",
+    "tasks:smoke": "electron-vite build && electron scripts/tasks-smoke.cjs",
+    "tasks:preview": "electron-vite build && electron scripts/tasks-smoke.cjs --preview",
+    "update:smoke": "electron scripts/update-smoke.cjs",
+    "desktop:smoke": "electron-vite build && electron scripts/desktop-mcp-smoke.cjs",
+    "mcp:host-smoke": "electron-vite build && node scripts/mcp-host-smoke.mjs",
     "data:export": "node scripts/export-data.mjs",
     "mcp:smoke": "electron-vite build && node scripts/mcp-smoke.mjs",
     "inpaint:smoke": "electron-vite build && electron scripts/inpaint-smoke.cjs",
@@ -17,11 +23,19 @@
     "pages:smoke": "electron-vite build && electron scripts/page-workspace-smoke.cjs",
     "screenshots": "electron-vite build && electron . --screenshots=release/screenshots",
     "screenshots:ai": "electron-vite build && electron . --screenshots=release/screenshots --screenshots-ai",
-    "dist": "electron-vite build && electron-builder --win --x64"
+    "dist": "electron-vite build && electron-builder --win --x64 --publish never"
   },
   "build": {
     "appId": "com.holyxie.novelprompt",
     "productName": "NovelPrompt",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Morgiana-V3",
+        "repo": "novel-prompt",
+        "releaseType": "draft"
+      }
+    ],
     "directories": {
       "output": "release"
     },
@@ -71,6 +85,7 @@
     }
   },
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "markdown-it": "^15.0.3",
     "pinyin-pro": "^3.29.5",
     "pngjs": "^7.0.0",

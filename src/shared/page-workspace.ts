@@ -28,12 +28,20 @@ export interface PageVersion {
   generated?: { draft: InpaintDraft; params: NaiGenParams; execution: PageExecution; sourceVersionId: string; inpaint?: { mask: string; strength: number; label?: string; instruction?: string; target?: number | null } }
 }
 export interface PageExecution { kind: 'generate' | 'inpaint'; regionId: string | null }
+export interface PageAgentIdentity { sessionId: string; name: string }
+export interface PageExternalReply {
+  requestId: string
+  reply: string
+  understanding?: { goal: string; preserve: string } | null
+  proposal?: { title: string; warning: string; draft: InpaintDraft; execution: PageExecution } | null
+}
 export interface PageProposal {
   regionId: string | null
   title: string
   warning: string
   changes: InpaintChange[]
   status: 'pending' | 'accepted' | 'rejected' | 'withdrawn'
+  superseded?: boolean
   /** Guards bind suggestions to the exact page, draft and selection they saw. */
   contextKey: string
   before: InpaintDraft
@@ -60,6 +68,10 @@ export interface PageMessage {
   draftBefore?: InpaintDraft
   draftAfter?: InpaintDraft
   skills?: string[]
+  author?: { kind: 'internal' | 'external'; name: string }
+  requestId?: string
+  externalRequest?: { status: 'pending' | 'completed' | 'cancelled'; contextKey: string }
+  skillSnapshot?: { digest: string; text: string }
 }
 export interface PageWorkspace {
   schema: 1 | 2
@@ -76,6 +88,8 @@ export interface PageWorkspace {
   messages: PageMessage[]
   composer: string
   execution: PageExecution
+  agentMode?: 'internal' | 'external'
+  externalAgent?: PageAgentIdentity | null
 }
 export interface PageWorkspaceSummary {
   id: string; title: string; updatedAt: number; image: NaiImage | null; versions: number; messages: number
@@ -102,9 +116,7 @@ export function compactPageProposals(w: PageWorkspace): boolean {
     const m = w.messages[i]
     if (!m.proposal) continue
     if (seen.has(m.versionId)) {
-      m.proposalSummary = { title: m.proposal.title, status: m.proposal.status }
-      delete m.proposal
-      changed = true
+      if (!m.proposal.superseded) { m.proposal.superseded = true; changed = true }
     } else seen.add(m.versionId)
   }
   return changed

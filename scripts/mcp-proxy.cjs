@@ -1,36 +1,59 @@
-/**
- * NovelPrompt MCP 代理。
- *
- * 由 agent 以 Node 模式启动（同一个 NovelPrompt.exe / electron.exe，设置 ELECTRON_RUN_AS_NODE=1），
- * 再以正常模式拉起 `NovelPrompt.exe --mcp`，只把 JSON 行转发给 agent。
- * 原因：Electron 在 Windows 启动时会往 stdout 写一个空行，部分 MCP 客户端解析到非 JSON 内容会报错。
- *
- * 用法：<exe> mcp-proxy.cjs [应用目录（仅开发模式）]，环境变量 ELECTRON_RUN_AS_NODE=1
- */
+// Thin stdio client: all agents and the UI execute in one application host.
 const { spawn } = require('node:child_process')
-const readline = require('node:readline')
+const { createConnection } = require('node:net')
+const { createHash } = require('node:crypto')
+const { readFileSync } = require('node:fs')
+const { resolve, dirname, join } = require('node:path')
+const { homedir, tmpdir } = require('node:os')
 
-const env = { ...process.env }
-delete env.ELECTRON_RUN_AS_NODE
-
-const child = spawn(process.execPath, [...process.argv.slice(2), '--mcp'], {
-  stdio: ['pipe', 'pipe', 'inherit'],
-  env,
-  windowsHide: true
-})
-
-process.stdin.pipe(child.stdin)
-process.stdin.on('end', () => child.stdin.end())
-
-readline.createInterface({ input: child.stdout, crlfDelay: Infinity }).on('line', (line) => {
-  const t = line.trim()
-  if (t.startsWith('{') || t.startsWith('[')) process.stdout.write(t + '\n')
-  else if (t) process.stderr.write(`[novel-prompt] ${t}\n`)
-})
-
-child.on('error', (e) => {
-  process.stderr.write(`[novel-prompt] 启动失败：${e.message}\n`)
-  process.exit(1)
-})
-child.on('exit', (code) => process.exit(code ?? 0))
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => child.kill())
+const args = process.argv.slice(2)
+const root = args[0] ? resolve(args[0]) : dirname(process.execPath)
+const profile = process.env.NOVELPROMPT_USER_DATA || ''
+const key = createHash('sha256').update([root.toLowerCase(), homedir(), profile].join('|')).digest('hex').slice(0, 24)
+const descriptor = join(tmpdir(), `novelprompt-${key}`, 'bridge.json')
+let connected, starting = false, stopped = false
+process.stdin.pause()
+function connect() {
+  return new Promise((resolve, reject) => {
+    let config
+    try { config = JSON.parse(readFileSync(descriptor, 'utf8')) } catch(e) { reject(e); return }
+    const socket = createConnection(config.address)
+    let pending = Buffer.alloc(0), ready = false
+    const timer = setTimeout(() => { socket.destroy(); reject(Error('Bridge handshake timeout')) }, 2000)
+    socket.on('error', e => { if (!ready) { clearTimeout(timer); reject(e) } else process.stderr.write(`[novel-prompt] ${e.message}\n`) })
+    socket.once('connect', () => socket.write(JSON.stringify({ token: config.token }) + '\n'))
+    socket.on('data', bytes => {
+      if (ready) { process.stdout.write(bytes); return }
+      pending = Buffer.concat([pending, bytes])
+      const end = pending.indexOf(10)
+      if (end < 0) return
+      if (!pending.subarray(0, end).toString().includes('"bridgeReady":true')) { socket.destroy(); return }
+      ready = true; clearTimeout(timer)
+      if (pending.length > end + 1) process.stdout.write(pending.subarray(end + 1))
+      pending = Buffer.alloc(0); resolve(socket)
+    })
+    socket.on('close', () => {
+      clearTimeout(timer)
+      if (!ready) reject(Error('Application bridge disconnected'))
+      else process.exit(stopped ? 0 : 1) // Never replay a request after disconnecting.
+    })
+  })
+}
+async function main() {
+  const deadline = Date.now() + 30000
+  while (!stopped && Date.now() < deadline) {
+    try { connected = await connect(); break } catch {}
+    if (!starting) {
+      starting = true
+      const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE
+      const host = spawn(process.execPath, [...args, '--mcp-host'], { env, detached: true, windowsHide: true, stdio: 'ignore' })
+      host.on('error', e => process.stderr.write(`[novel-prompt] ${e.message}\n`)); host.unref()
+    }
+    await new Promise(r => setTimeout(r, 150))
+  }
+  if (!connected) throw Error('无法连接 NovelPrompt，请退出旧版本并重新打开应用后重试')
+  process.stdin.pipe(connected)
+}
+process.stdin.on('end', () => { stopped = true; connected?.end() })
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { stopped = true; connected?.end(); process.exit(0) })
+main().catch(e => { process.stderr.write(`[novel-prompt] ${e.message}\n`); process.exit(1) })

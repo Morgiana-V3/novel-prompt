@@ -42,6 +42,7 @@ const tool = async (name, args) => {
   const r = await call('tools/call', { name, arguments: args })
   const text = r.result?.content?.[0]?.text ?? JSON.stringify(r.error)
   console.log(`\n=== ${name}${r.result?.isError ? '（isError）' : ''} ===\n${text.slice(0, name === 'analyze_prompt' ? 6000 : 700)}`)
+  return r
 }
 
 try {
@@ -57,7 +58,9 @@ try {
     characters: [{ prompt: 'girl, hatsune miku, red hair', position: 'B3' }, { prompt: 'girl, black hair, glasses', position: 'D3' }],
     negative: 'lowres, worst quality, glasses'
   })
-  await tool('generate_image', { base: '1girl', confirm: true })
+  // Never submit a real generation, even when the user's MCP permissions are enabled.
+  const denied = await tool('generate_image', { base: '1girl', confirm: false })
+  if (!denied.result?.isError) throw new Error('未确认的生图请求没有被拒绝')
 } catch (e) {
   console.error('失败：', e.message)
   process.exitCode = 1

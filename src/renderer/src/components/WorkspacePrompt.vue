@@ -6,7 +6,7 @@ import type { PageEditorState } from '@shared/page-workspace'
 import { pageChanges } from '@shared/page-workspace'
 import { changeLabel } from '@shared/inpaint-plan'
 import { diffPrompt } from '../prompt-diff'
-import { cleanErr, copy } from '../store'
+import { cleanErr, copy, sectionText } from '../store'
 import DiffChips from './DiffChips.vue'
 import Icon from './Icon.vue'
 import PositionEditor from './PositionEditor.vue'
@@ -26,7 +26,7 @@ async function save() {
   try { const e=JSON.parse(JSON.stringify(draft.value)); if(e.params.seed==='')e.params.seed=null; await props.save(e); cancel() }
   catch(e) { error.value=cleanErr(e) } finally { saving.value=false }
 }
-const fullText = computed(() => JSON.stringify(props.editor.draft,null,2))
+const fullText = computed(() => sectionText(props.editor.draft))
 defineExpose({ begin, save, cancel, saving, copyPrompt: () => copy(fullText.value) })
 </script>
 <template>

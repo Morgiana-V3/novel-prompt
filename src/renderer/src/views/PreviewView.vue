@@ -11,11 +11,14 @@ import SharedParams from '../components/SharedParams.vue'
 import BasisPill from '../components/BasisPill.vue'
 import EvidenceNote from '../components/EvidenceNote.vue'
 import type { IconName } from '../components/icons'
+import { activeTask, cancelTask } from '../tasks'
 
 const expectation = ref('')
 const running = ref(false)
 const steps = ref<string[]>([])
 const error = ref('')
+const task = computed(() => activeTask('preview'))
+let offStep: (() => void) | undefined
 /** 推测结果存在全局，生图页可以拿它和实际出图对照 */
 const result = computed(() => state.lastPreview?.result ?? null)
 const stale = computed(() => !!state.lastPreview && !running.value && state.lastPreview.key !== workKey())
@@ -24,12 +27,12 @@ const leftPane = ref<HTMLElement>()
 const resizeAll = () => resizeWithin(leftPane.value)
 
 onMounted(() => {
-  window.api.onAiStep((s) => {
+  offStep = window.api.onAiStep('preview', (s) => {
     if (running.value) steps.value.push(s)
   })
   window.addEventListener('resize', resizeAll)
 })
-onBeforeUnmount(() => window.removeEventListener('resize', resizeAll))
+onBeforeUnmount(() => { offStep?.(); window.removeEventListener('resize', resizeAll) })
 
 watch(
   () => state.tab,
@@ -50,6 +53,7 @@ function openSkill() {
 
 /* ---------- 推测 ---------- */
 async function run() {
+  if (running.value) return
   if (!state.settings?.apiKey) {
     error.value = '请先在「设置 / 数据」中填写 DeepSeek API Key'
     return
@@ -211,6 +215,7 @@ function toOptimize() {
           <Icon name="eye" :size="17" :class="{ 'spin-slow': running }" />
           {{ running ? '正在想象' : '开始推测' }}
         </button>
+        <button v-if="running && task" class="btn ghost" :disabled="task.status==='cancelling'" @click="cancelTask(task.id)"><Icon name="stop" :size="15" />{{ task.status==='cancelling' ? '正在取消…' : '取消' }}</button>
         <span class="pill">目标 {{ state.settings?.naiVersion.toUpperCase() }}</span>
         <div class="actions ml-auto">
           <button class="icon-btn" title="选择推测使用的 Skill" @click="openSkill"><Icon name="layers" /></button>

@@ -109,6 +109,10 @@ const lightbox = ref(false)
 const posEditing = ref(false)
 const inpaintSource = ref<NaiImage | null>(null)
 const inpaintBusy = ref(false)
+function prepareUpdate(): void {
+  if (running.value || inpaintSource.value || posEditing.value) throw new Error('请先完成生图或关闭局部重绘、角色位置编辑器，再重启更新')
+}
+defineExpose({ prepareUpdate })
 
 async function onInpaintGenerated(response: NaiGenResult) {
   last.value = response
@@ -168,14 +172,17 @@ watch(
   { immediate: true }
 )
 
+let offGallery: (() => void) | undefined
 onMounted(() => {
-  window.api.onNaiStep((s) => {
+  offGallery = window.api.onGalleryChanged(() => { void refreshGallery().catch(e => toast(cleanErr(e))) })
+  window.api.onNaiStep('generate', (s) => {
     if (running.value) steps.value.push(s)
   })
   window.addEventListener('resize', resizeAll)
   refreshGallery()
 })
 onBeforeUnmount(() => {
+  offGallery?.()
   window.removeEventListener('resize', resizeAll)
 })
 

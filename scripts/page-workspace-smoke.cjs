@@ -60,10 +60,12 @@ net.fetch = async (url, init) => {
 }
 const openedLinks = []
 const handlers = {
+  'agents:list': () => [],
+  'tasks:list': () => ({ revision: 0, tasks: [] }),
   'web:open':(_,url)=>{assert.ok(isWebUrl(url));openedLinks.push(url)},
   'settings:get':()=>getSettings(), 'settings:save':(_,v)=>saveSettings(v),
   'window:dark-titlebar':()=>{}, 'db:status':()=>({loaded:true,tagCount:0,aliasCount:0,zhCount:0,implicationCount:0}),
-  'skills:list':()=>skills.getConfig(), 'mcp:info':()=>null, 'update:check':()=>null,
+  'skills:list':()=>skills.getConfig(), 'mcp:info':()=>null, 'update:check':()=>null, 'update:state':()=>null,
   'prompt:analyze':()=>({tokens:[],stats:{total:0,valid:0,alias:0,unknown:0,natural:0,text:0}}),
   'nai:subscription':()=>client.getSubscription(), 'nai:freeCheck':(_, ...args)=>client.freeCheck(...args),
   'nai:list':()=>client.listImages(), 'nai:readImage':(_,name)=>new Uint8Array(readFileSync(client.imagePath(name))),
@@ -71,13 +73,18 @@ const handlers = {
   'pages:list':()=>pages.listPages(), 'pages:read':(_,id)=>pages.readPage(id),
   'pages:create':(_, ...args)=>pages.createPage(...args), 'pages:edit':(_, ...args)=>pages.editPage(...args),
   'pages:chat':(_, ...args)=>collaborator.discussPage(...args), 'pages:cancel':(_,id)=>pages.pageLocks.get(id)?.abort(),
-  'pages:generate':(e,id,rev,r)=>collaborator.renderPage(id,rev,r,s=>e.sender.send('nai:step',s),()=>false)
+  'pages:generate':(e,id,rev,r)=>collaborator.renderPage(id,rev,r,s=>e.sender.send('nai:step',{id:'fixture',kind:'page-generate',step:s}),()=>false)
 }
 for (const [name,handler] of Object.entries(handlers)) ipcMain.handle(name,handler)
 const pause = ms => new Promise(r=>setTimeout(r,ms))
 app.whenReady().then(async()=>{
   let win
   try {
+    const { reviewPrompt } = require('../src/main/ai/previewer.ts')
+    require('../src/main/tagdb/store.ts').tagStore.load()
+    const textRequest={base:'',negative:'',characters:[{prompt:'other',negative:'text'},{prompt:'boy, Text: Hello',negative:''}],version:'v5',params,expectation:''}
+    assert.doesNotMatch(await reviewPrompt(textRequest),/角色 1 负面里的 text 会压制/)
+    assert.match(await reviewPrompt({...textRequest,characters:[{prompt:'other, Text: Hello',negative:'text'}]}),/角色 1 负面里的 text 会压制/)
     const md=renderMarkdown(markdownSample)
     const payload={reply:markdownSample,proposal:null}
     assert.deepEqual(extractJson(JSON.stringify(payload)),payload)
@@ -116,9 +123,9 @@ app.whenReady().then(async()=>{
     decide('undo');assert.equal(pageCurrent(w).editor.draft.base,'')
     const replacedId=proposal().id
     await talk('按刚才的目标继续')
-    assert.equal(w.messages.filter(m=>m.versionId===original&&m.proposal).length,1)
-    assert.ok(w.messages.find(m=>m.id===replacedId).proposalSummary)
-    assert.throws(()=>edit({type:'proposal',messageId:replacedId,decision:'accept'}),/不存在/)
+    assert.equal(w.messages.filter(m=>m.versionId===original&&m.proposal).length,2)
+    assert.ok(w.messages.find(m=>m.id===replacedId).proposal.superseded);assert.ok(w.messages.find(m=>m.id===replacedId).proposal.before)
+    assert.throws(()=>edit({type:'proposal',messageId:replacedId,decision:'accept'}),/已有更新|已变化/)
     decide('accept')
     w=await collaborator.renderPage(id,w.revision,w.execution,()=>{},()=>false)
     assert.equal(generationInputs.at(-1).action,'generate');assert.ok(!generationInputs.at(-1).parameters.image)
@@ -302,8 +309,8 @@ app.whenReady().then(async()=>{
     }
     assert.ok(await js(`!!document.querySelector('.pw-change-board')`),'new suggestions do not interrupt comparison')
     const latest=pages.readPage(ui.id)
-    assert.equal(latest.messages.filter(m=>m.proposal&&m.versionId===latest.currentVersionId).length,1)
-    await click('.pw-plan-link','查看此版本最新建议')
+    assert.ok(latest.messages.filter(m=>m.proposal&&m.versionId===latest.currentVersionId).length>=2)
+    await run(`[...document.querySelectorAll('.pw-plan-link')].at(-1).click()`)
     assert.equal(await js(`document.querySelectorAll('.pw-suggestion-board article.pw-proposal').length`),1)
     assert.ok(await js(`document.querySelector('.pw-suggestion-heading').textContent.includes('版本 2')`))
     await shot('13-latest-suggestion.png')

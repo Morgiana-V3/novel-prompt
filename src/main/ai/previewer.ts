@@ -152,9 +152,12 @@ function textIssues(req: AiPreviewRequest, sections: Section[], presetTokens: An
     out.push({ kind: 'warn', where: '主提示词', basis: 'doc', text: `有 Text: 块，但开启了 Add Quality Tags，会隐式追加 no text，可能压制画面文字；短文字建议关闭` })
   for (const t of main?.tokens ?? []) if (t.weight > 0 && nameOf(t) === 'no_text') out.push({ kind: 'conflict', where: '主提示词', basis: 'rule', text: '主提示词里的 no text 与 Text: 块冲突' })
   const negs: [string, AnalyzedToken[]][] = [...sections.filter((s) => s.negative).map((s) => [s.label, s.tokens] as [string, AnalyzedToken[]]), ['UC 预设', presetTokens]]
-  // 正向里也写了的词已经按正负冲突报过
-  const posNames = new Set(sections.filter((s) => !s.negative).flatMap((s) => s.tokens.filter((t) => t.weight > 0).map(nameOf)))
   for (const [where, tokens] of negs) {
+    const owner = /^角色 (\d+) 负面$/.exec(where)
+    const ownLabel = owner ? `角色 ${owner[1]}` : null
+    // A character's negative applies to its own text, not dialogue in other panels.
+    if (ownLabel && !texts.some(([label]) => label === ownLabel)) continue
+    const posNames = new Set(sections.filter(s => !s.negative && (!ownLabel || s.label === ownLabel)).flatMap(s => s.tokens.filter(t => t.weight > 0).map(nameOf)))
     const hit = [
       ...new Set(
         tokens

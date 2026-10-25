@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { AnalysisResult, AnalyzedToken, TagInfo } from '@shared/types'
-import { state, copy, toast, readField, writeField, fieldLabel, fieldList, sameField, validField, importPrompt, type FieldRef } from '../store'
+import { state, copy, toast, cleanErr, readField, writeField, fieldLabel, fieldList, sameField, validField, importPrompt, type FieldRef } from '../store'
 import { parsePromptText } from '@shared/prompt-import'
 import { findTextBlock } from '@shared/nai-presets'
 import TagCard from '../components/TagCard.vue'
@@ -9,9 +9,10 @@ import Icon from '../components/Icon.vue'
 import Mascot from '../components/Mascot.vue'
 import WorkspaceBar from '../components/WorkspaceBar.vue'
 
-const result = ref<AnalysisResult | null>(null)
+const analyzed = ref<{ key: string; result: AnalysisResult } | null>(null)
 const textarea = ref<HTMLTextAreaElement>()
 let timer: ReturnType<typeof setTimeout> | undefined
+let analysisEpoch = 0
 
 const BASE_PLACEHOLDER =
   '把 NovelAI 提示词贴到这里～整套分节文本会自动拆到主提示词、角色和负面\n\n例如：1girl, artist:wlop, {silver hair}, 1.3::red eyes::, school uniform, looking at viewer, very aesthetic, masterpiece, no text'
@@ -32,6 +33,9 @@ const text = computed({
   get: () => readField(target.value),
   set: (v: string) => writeField(target.value, v)
 })
+// Hide stale offsets immediately, including switches between fields with identical text.
+const analysisKey = computed(() => JSON.stringify([target.value, text.value, state.settings?.naiVersion, state.db?.tagCount]))
+const result = computed(() => analyzed.value?.key === analysisKey.value ? analyzed.value.result : null)
 const isNeg = computed(() => target.value.kind === 'negative' || (target.value.kind === 'char' && !!target.value.neg))
 const count = (f: FieldRef) => readField(f).split(/[,\n]/).filter((x) => x.trim()).length
 
@@ -50,16 +54,26 @@ function onPaste(e: ClipboardEvent) {
 }
 
 async function analyze() {
-  result.value = await window.api.analyze(text.value)
+  const key = analysisKey.value, epoch = ++analysisEpoch
+  try {
+    const next = await window.api.analyze(text.value)
+    if (epoch === analysisEpoch && key === analysisKey.value) analyzed.value = { key, result: next }
+  } catch (e) {
+    if (epoch === analysisEpoch && key === analysisKey.value) toast(`检查失败：${cleanErr(e)}`)
+  }
 }
 watch(
-  () => [text.value, state.settings?.naiVersion, state.db?.tagCount],
+  analysisKey,
   () => {
+    analysisEpoch++
     clearTimeout(timer)
     timer = setTimeout(analyze, 200)
   },
   { immediate: true }
 )
+onBeforeUnmount(() => { clearTimeout(timer); analysisEpoch++ })
+
+const currentTokens = (tokens: AnalyzedToken[]) => tokens.length > 0 && tokens.every(t => result.value?.tokens.includes(t))
 
 const groups = computed(() => {
   const t = result.value?.tokens ?? []
@@ -76,6 +90,7 @@ const allGood = computed(
 )
 
 function locate(t: AnalyzedToken) {
+  if (!currentTokens([t])) return
   const el = textarea.value
   if (!el) return
   // 先失焦再设选区后聚焦，Chromium 才会把滚动条滚到选区位置
@@ -102,21 +117,21 @@ function replacement(t: AnalyzedToken, tag: TagInfo): string {
 }
 
 function applyReplacements(items: { t: AnalyzedToken; text: string }[]) {
+  if (!currentTokens(items.map(item => item.t))) return false
   let p = text.value
   for (const { t, text } of [...items].sort((a, b) => b.t.start - a.t.start)) {
     p = p.slice(0, t.start) + text + p.slice(t.end)
   }
   setPrompt(p)
+  return true
 }
 
 function replaceWith(t: AnalyzedToken, tag: TagInfo) {
-  applyReplacements([{ t, text: replacement(t, tag) }])
-  toast(`已替换为 ${tag.display}`)
+  if (applyReplacements([{ t, text: replacement(t, tag) }])) toast(`已替换为 ${tag.display}`)
 }
 
 function fixAllAliases() {
-  applyReplacements(groups.value.alias.map((t) => ({ t, text: replacement(t, t.aliasOf!) })))
-  toast('已全部修正为标准写法')
+  if (applyReplacements(groups.value.alias.map((t) => ({ t, text: replacement(t, t.aliasOf!) })))) toast('已全部修正为标准写法')
 }
 
 function cut(p: string, t: AnalyzedToken): string {
@@ -126,10 +141,12 @@ function cut(p: string, t: AnalyzedToken): string {
 }
 
 function removeToken(t: AnalyzedToken) {
+  if (!currentTokens([t])) return
   setPrompt(cut(text.value, t))
 }
 
 function removeAllUnknown() {
+  if (!currentTokens(groups.value.unknown)) return
   let p = text.value
   for (const t of [...groups.value.unknown].sort((a, b) => b.start - a.start)) p = cut(p, t)
   setPrompt(p)

@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 import type { AiCharacter, NaiGenParams, NaiNoiseSchedule, NaiSampler, NaiVersion, UcPreset } from '../../shared/types'
 import { readPngPrompt } from '../../shared/prompt-import'
 import { getSettings } from '../settings'
@@ -22,6 +23,7 @@ import { previewPrompt, reviewPrompt } from '../ai/previewer'
 import { freeCheck, generateImages, getSubscription, imageDir, imagePath, listImages, FREE_MAX_PIXELS, FREE_MAX_STEPS } from '../nai/client'
 import type { McpTool } from './server'
 import { inpaintTools } from './inpaint-tools'
+import { AGENT_ENTRY, AGENT_GUIDE_TOPICS, agentGuide } from './agent-guide'
 
 /* ---------- 参数解析 ---------- */
 
@@ -260,19 +262,15 @@ function skillTools(): McpTool[] {
  * 给外部 agent 的入口说明。本软件不再往 agent 目录安装 Skill：
  * 提示词规范由用户在软件里启用的 Skill 组合而成（按优先级），agent 通过 prompt_guide 读取。
  */
-export const MCP_INSTRUCTIONS = `NovelPrompt：NovelAI（V4.5 / V5）提示词工具。提供本地 Danbooru tag 库（约 33 万 tag，含别名、包含关系和中文）、Danbooru 共现统计与释义、用户在软件里启用的 NovelAI 提示词 Skill，以及 NovelAI 文生图。
+export const MCP_INSTRUCTIONS = `${AGENT_ENTRY}
 
-写、查、改 NovelAI 提示词之前，先调用一次 prompt_guide：它返回工具使用说明，以及用户当前启用的 Skill（按优先级排列，以它为准，不要用其他来源的 NovelAI 规则替代）。Skill 可以用 list_skills / get_skill / create_skill / update_skill / delete_skill / set_skill_config 管理。
+写、查、改 NovelAI 提示词先读取 prompt_guide；局部重绘读取 inpaint_guide；接管工作台读取 get_workspace_context 中本轮冻结的 Skill。实际处理前阅读相关完整规则，按用户启用的优先级执行。
+tag 使用 search_tags / validate_tags 的依据；保留用户明确的语义，完成后 analyze_prompt 复查。生成须有用户明确授权并传 confirm:true，返回 stopped 则停止。optimize_prompt / preview_prompt / plan_inpaint 调用内置 AI 并消耗额度；外部 Agent 通常自行推理。
+工具参数以 tools/list 为准，能力选择、操作顺序与恢复方式以 agent_guide 为准。`
 
-核心规则：
-1. tag 不编造：除 NAI 专用质量词和英文自然语言短句外，tag 必须来自 search_tags / validate_tags 的结果。
-2. 用户写明的内容（角色、画师、服装、持物与动作对象、数量与左右、画面文字、负面刻意排除项）必须保留；新增画师、饰物、风格等只作为可选建议。
-3. 写好后用 analyze_prompt 复查，逐条处理报告（修正，或说明保留理由）；不为了清零警告删掉用户要的内容。
-4. generate_image / inpaint_image 只在用户明确要求生图或重绘时调用，必须传 confirm: true；返回 stopped 时停止并如实告知。
-5. 局部重绘先读 inpaint_guide（inpaint 范围的 Skill），用 prepare_inpaint 准备并查看选区；plan_inpaint 只分析图片和批注，inpaint_image 才实际生成。不要把计划当成已生成结果。
-optimize_prompt / preview_prompt / plan_inpaint 会调用软件内置的 AI 并消耗用户额度，一般你自己推理即可。`
+const AGENT_GUIDE = `# NovelPrompt 提示词工作指南（给外部 agent）
 
-const AGENT_GUIDE = `# NovelPrompt 使用说明（给外部 agent）
+本指南只指导提示词任务。软件能力、前后台选择与工作台操作顺序先读 agent_guide；通过工作台回复方案时按工具的 JSON schema 写回，不使用下述分节文本替代接口参数。
 
 本工具返回两部分：先是这份使用说明，然后是「Skill 使用总则」和用户在软件里为 AI 优化功能启用的 Skill（按优先级排列）。Skill 也是软件内置 AI 的系统提示词：其中要求输出 JSON、填写 assessment / changes 字段的部分只针对内置 AI，你交付给用户时按本说明的格式；其余规则（语法、编排、角色提示词、负面、依据）同样适用于你，多份 Skill 冲突时按总则的优先级处理。本说明里的语法与格式要求优先于 Skill。
 
@@ -336,15 +334,27 @@ optimize_prompt / preview_prompt 调用内置 DeepSeek，消耗用户额度；�
 
 export function buildTools(): McpTool[] {
   return [
+    {
+      name: 'agent_guide', title: '外部 Agent 能力与操作指南',
+      description: '首次接入先读：能力地图、何时用后台/前台、外部 Agent 与内置 AI 的区别、工作台和重绘操作流程、冲突恢复及限制。overview 为默认入口；操作工作台前读 workflows。提示词规则另读 prompt_guide/inpaint_guide 或本轮冻结 Skill。',
+      inputSchema: { type: 'object', properties: { topic: { type: 'string', enum: AGENT_GUIDE_TOPICS, description: '默认 overview；按需读取其他章节，all 返回完整指南。' } } },
+      annotations: READ_ONLY,
+      run: async a => json(agentGuide(a.topic))
+    },
     ...inpaintTools(),
     {
       name: 'prompt_guide',
       title: '提示词规范',
       description:
         '返回工具使用说明（工作流、交付格式、参数要点），以及用户在软件里启用的 NovelAI 提示词 Skill（按优先级排列，附优先级取舍总则）。写提示词前先读一遍。',
-      inputSchema: { type: 'object', properties: { version: PROMPT_PROPS.version } },
+      inputSchema: { type: 'object', properties: { version: PROMPT_PROPS.version, detail: { type: 'string', enum: ['full', 'summary'], description: '默认 full。仅探索工具时可用 summary 获取规则目录与指纹；实际写提示词前仍需读取相关完整规则。' } } },
       annotations: READ_ONLY,
-      run: async (a) => AGENT_GUIDE + composeSkills('optimize', version(a.version)).text
+      run: async (a) => {
+        const text = AGENT_GUIDE + composeSkills('optimize', version(a.version)).text
+        return a.detail === 'summary' ? json({ fingerprint: createHash('sha256').update(text).digest('hex'), version: version(a.version),
+          guide: '先读 core 与下列启用规则，再查词、编排、analyze_prompt 复核；生成必须获得用户授权。用 get_skill 读取正文，或 prompt_guide(detail:full)。',
+          skills: getConfig().filter(s => s.enabled && ['optimize', 'all'].includes(s.scope) && (s.model === 'all' || s.model === version(a.version))).map(s => ({ id: s.id, name: s.name, chars: s.chars })) }) : text
+      }
     },
     ...skillTools(),
     {
@@ -399,7 +409,7 @@ export function buildTools(): McpTool[] {
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
       gate: aiGate,
-      run: async (a, signal) => {
+      run: async (a, signal, progress) => {
         const r = await optimizePrompt(
           {
             mode: a.mode === 'semantic' ? 'semantic' : 'optimize',
@@ -409,7 +419,7 @@ export function buildTools(): McpTool[] {
             instruction: str(a.instruction),
             version: version(a.version)
           },
-          () => {},
+          progress ?? (() => {}),
           signal
         )
         const semantic = a.mode === 'semantic'
@@ -439,7 +449,7 @@ export function buildTools(): McpTool[] {
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
       gate: aiGate,
-      run: async (a, signal) => {
+      run: async (a, signal, progress) => {
         const notes = sizeNotes(a)
         const r = await previewPrompt(
           {
@@ -455,7 +465,7 @@ export function buildTools(): McpTool[] {
             expectation: str(a.expectation),
             version: version(a.version)
           },
-          () => {},
+          progress ?? (() => {}),
           signal
         )
         return json(notes.length ? { paramNotes: notes, ...r } : r)
@@ -500,7 +510,7 @@ export function buildTools(): McpTool[] {
         if (!s.naiToken.trim()) return '需要先在 NovelPrompt 设置里填写 NovelAI Token'
         return null
       },
-      run: async (a, signal) => {
+      run: async (a, signal, progress) => {
         if (a.confirm !== true) throw new Error('需要传 confirm: true 才会生成图片')
         const params: NaiGenParams = {
           width: Math.round(num(a.width, 832, 64, 2048) / 64) * 64,
@@ -517,10 +527,11 @@ export function buildTools(): McpTool[] {
         }
         const r = await generateImages(
           { base: str(a.base), negative: str(a.negative), characters: characters(a.characters), params, version: version(a.version) },
-          () => {},
+          progress ?? (() => {}),
           () => signal.aborted,
           { freeOnly: true }
         )
+        if (signal.aborted) r.stopped ??= '已停止，已完成的图片已保留'
         return json({
           images: r.images.map((img) => ({ path: join(imageDir(), img.name), name: img.name, seed: img.seed, width: img.width, height: img.height })),
           anlasChange: r.anlasDelta ?? '未知',

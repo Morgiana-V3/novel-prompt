@@ -2,11 +2,13 @@ import { app } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { UpdateInfo } from '../shared/types'
 import { dataFile } from './paths'
+import { join } from 'node:path'
+import { autoUpdater } from 'electron-updater'
+import { AppUpdateService } from './app-updater'
 
 /**
  * 版本检查：GitHub Releases 是静态存储，不会主动推给客户端，只能客户端启动时来问一次。
- * 这里只做「发现新版 → 提示」，不下载也不安装；真正的自动更新（electron-updater）以后要加时，
- * 也复用这里的版本比较和缓存。
+ * 安装版使用 electron-updater；下面的网页检测只供开发环境和便携版使用。
  *
  * 不用 api.github.com：未认证限流是每 IP 每小时 60 次，共享出口 IP 很容易被别的程序吃光，
  * 一旦用完整个小时都是 403。改为请求 releases/latest 的网页地址，让它 302 到
@@ -23,6 +25,15 @@ const PAGE = `https://github.com/${REPO}/releases`
 const TTL = 24 * 60 * 60 * 1000
 const CACHE = 'update-check.json'
 const TIMEOUT = 10_000
+
+export function createAppUpdater(publish: (state: UpdateInfo) => void, isBusy: () => boolean): AppUpdateService {
+  const manualReason = !app.isPackaged ? '开发预览不安装更新，请使用 Windows 安装版体验自动更新'
+    : process.platform !== 'win32' ? '当前平台暂不支持应用内安装'
+      : process.env.PORTABLE_EXECUTABLE_FILE || process.env.PORTABLE_EXECUTABLE_DIR ? '便携版需手动替换程序；安装版支持自动更新'
+        : !existsSync(join(process.resourcesPath, 'app-update.yml')) ? '此安装包未配置更新源，请安装支持自动更新的版本' : undefined
+  return new AppUpdateService(manualReason ? null : autoUpdater,
+    { current: app.getVersion(), url: LATEST_PAGE, manualReason }, publish, checkUpdate, isBusy)
+}
 
 interface Cached {
   checkedAt: number

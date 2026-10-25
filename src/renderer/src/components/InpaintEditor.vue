@@ -21,6 +21,9 @@ const sourceUrl = ref('')
 const result = ref<NaiImage | null>(null)
 const viewing = ref<'source' | 'result'>('source')
 const loading = ref(true)
+const frontendBusy = ref(false)
+const stopFrontend = () => window.api.cancelFrontend()
+let sourceReady: Promise<void> | undefined
 const running = ref(false)
 const error = ref('')
 const status = ref('')
@@ -497,6 +500,7 @@ async function close() {
   opened.value = false
 }
 function key(e: KeyboardEvent) {
+  if (frontendBusy.value) return
   if (!opened.value) return
   if (e.key === 'Escape') { if (contextAt.value) { contextAt.value = null; dialog.value?.focus() } else if (commentAt.value) finishComment(); else close(); return }
   if (e.key === 'Tab' && dialog.value) {
@@ -512,11 +516,38 @@ function key(e: KeyboardEvent) {
   }
 }
 onMounted(() => {
-  unsubscribe = window.api.onNaiStep(s => { if (running.value) status.value = s })
+  unsubscribe = window.api.onNaiStep('inpaint', s => { if (running.value) status.value = s })
   window.addEventListener('keydown', key)
   dialog.value?.focus({ preventScroll: true })
-  void loadSource(props.image)
+  sourceReady = loadSource(props.image)
 })
+async function frontendRegion(a: import('@shared/desktop').FrontendRequest, ctx: import('@shared/desktop').FrontendContext) {
+  frontendBusy.value = true
+  try {
+    await sourceReady
+    if (loading.value || error.value || !sourceUrl.value || !props.selectionOnly || !props.saveEditor) throw new Error(error.value || '选区编辑器尚未就绪')
+    if (regions.value.filter(r => r.hasPixels).length >= 16) throw new Error('最多保留 16 个区域')
+    if (a.target != null && a.target >= draft.characters.length) throw new Error('角色索引超出当前角色数量')
+    const rectangles = a.rectangles!
+    if (rectangles.some(r => r.x + r.width > width.value || r.y + r.height > height.value)) throw new Error('选区超出原图边界')
+    await ctx.step('已打开原图选区编辑器')
+    regions.value.push(makeRegion()); const r = regions.value[regions.value.length - 1]
+    chooseRegion(r); tool.value = 'rect'; panel.value = 'regions'
+    for (const rect of rectangles) {
+      r.strokes.push({ tool:'rect', radius:brush.value, points:[{x:rect.x,y:rect.y},{x:rect.x+rect.width,y:rect.y+rect.height}] })
+    }
+    layerCache.delete(r.id); await nextTick(); renderMask(); measureMask()
+    await ctx.step('已在原图上绘制遮罩')
+    r.instruction = a.instruction!; r.target = a.target ?? null; r.annotated = true; r.number = ++regionNumber
+    r.anchor = { x:rectangles[0].x + rectangles[0].width / 2, y:rectangles[0].y + rectangles[0].height / 2 }
+    await ctx.step('已填写区域批注')
+    clearTimeout(snapshotTimer); await persistEditor()
+    await ctx.step('区域批注已保存')
+    opened.value = false
+    return r.id
+  } finally { frontendBusy.value = false }
+}
+defineExpose({ frontendRegion })
 onBeforeUnmount(() => {
   clearTimeout(snapshotTimer)
   alive = false
@@ -532,7 +563,8 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <Transition name="modal" appear @after-leave="emit('close')">
     <div v-if="opened" class="ip-mask" @pointerdown.capture="dismissFloating">
-      <div ref="dialog" class="ip-dialog modal-panel" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="ip-title">
+      <div v-if="frontendBusy" style="position:absolute;top:8px;right:24px;z-index:2"><button class="btn small" @click="stopFrontend">停止 Agent 前台操作</button></div>
+      <div ref="dialog" class="ip-dialog modal-panel" :inert="frontendBusy" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="ip-title">
         <div class="ip-head">
           <span class="group-badge pink"><Icon name="edit" :size="16" /></span>
           <h3 id="ip-title">{{ selectionOnly ? '页面选区与提示词' : '局部重绘' }}</h3>

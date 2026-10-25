@@ -17,7 +17,7 @@ const source = new PNG({width:128,height:64}); source.data.fill(255)
 const sourceBytes = PNG.sync.write(source)
 writeFileSync(join(imageDir(), 'test.png'), sourceBytes)
 saveSettings({mcpAllowAi:true,mcpAllowGenerate:true,apiKey:'fixture',baseUrl:'https://fixture.test',model:'fixture',naiToken:'fixture'})
-let calls=0, aiCalls=0, lastBody
+let calls=0, aiCalls=0, lastBody, cancelOnGenerate
 net.fetch = async (url, init) => {
   if(url.endsWith('/user/subscription'))return Response.json({active:true,tier:3,trainingStepsLeft:{fixedTrainingStepsLeft:1000,purchasedTrainingSteps:0},usage:{percent:80,isNegative:false}})
   if(url.endsWith('/chat/completions')) {
@@ -28,6 +28,7 @@ net.fetch = async (url, init) => {
   }
   assert.equal(url,'https://image.novelai.net/ai/generate-image')
   calls++; lastBody=JSON.parse(init.body)
+  cancelOnGenerate?.abort()
   const result=new PNG({width:128,height:64}); for(let i=0;i<result.data.length;i+=4)result.data.set([0,50,150,255],i)
   return new Response(PNG.sync.write(result),{headers:{'content-type':'image/png'}})
 }
@@ -72,6 +73,13 @@ app.whenReady().then(async()=>{
     await assert.rejects(call('prepare_inpaint',{...args,image_name:'../settings.json'}),/image_name/)
     await assert.rejects(call('prepare_inpaint',{image_name:'test.png',mask_base64:'nope'}),/PNG/)
     assert.equal(calls,1)
+    // Cancellation after submission keeps the saved single image and must stop the agent's next step.
+    for (const [name, args] of [['inpaint_image',gen], ['generate_image',{base:'1girl',width:128,height:64,confirm:true,seed:42}]]) {
+      cancelOnGenerate = new AbortController()
+      const stopped = JSON.parse(await find(name).run(args,cancelOnGenerate.signal))
+      assert.equal(stopped.images.length,1); assert.match(stopped.stopped,/已停止/)
+    }
+    cancelOnGenerate = undefined
     saveSettings({mcpAllowAi:false,mcpAllowGenerate:false})
     await assert.rejects(call('plan_inpaint',{}),/开启/);await assert.rejects(call('inpaint_image',{}),/开启/)
     const diff=diffTags('girl, black hair, 1.2::smile::, short hair','girl, black hair, 1.4::smile::, long hair')

@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { PageExecution, PageAction, PageWorkspace, PageWorkspaceSummary } from '../shared/page-workspace'
+import type { DesktopCommand, DesktopReply, DesktopState } from '../shared/desktop'
+import type { AiStep, NaiStep, TaskSnapshot } from '../shared/tasks'
+import type { PageExecution, PageAction, PageWorkspace, PageWorkspaceSummary, PageExternalReply, PageAgentIdentity } from '../shared/page-workspace'
 import type { InpaintDraft } from '../shared/types'
 import type {
   AiInpaintRequest,
@@ -37,15 +39,31 @@ const on = <T>(channel: string, cb: (p: T) => void) => {
 }
 
 const api = {
+  publishDesktop: (state: DesktopState): void => ipcRenderer.send('desktop:state', state),
+  replyDesktop: (reply: DesktopReply): void => ipcRenderer.send('desktop:reply', reply),
+  onDesktopCommand: (cb: (command: DesktopCommand) => void) => on('desktop:command', cb),
+  cancelFrontend: (): void => ipcRenderer.send('desktop:cancel-frontend'),
+  onFrontendCancel: (cb: (id: string) => void) => on('desktop:frontend-cancel', cb),
+  onGalleryChanged: (cb: () => void) => on('gallery:changed', cb),
+  onSkillsChanged: (cb: () => void) => on('skills:changed', cb),
+  tasksList: (): Promise<TaskSnapshot> => ipcRenderer.invoke('tasks:list'),
+  tasksCancel: (id: string): Promise<void> => ipcRenderer.invoke('tasks:cancel', id),
+  tasksClear: (): Promise<void> => ipcRenderer.invoke('tasks:clear'),
+  onTasks: (cb: (snapshot: TaskSnapshot) => void) => on('tasks:changed', cb),
   pagesList: (): Promise<PageWorkspaceSummary[]> => ipcRenderer.invoke('pages:list'),
+  agentConnections: (): Promise<PageAgentIdentity[]> => ipcRenderer.invoke('agents:list'),
+  onAgentConnections: (cb: (agents: PageAgentIdentity[]) => void) => on('agents:changed', cb),
+  pagesAgent: (id: string, revision: number, mode: 'internal' | 'external', actionId?: string): Promise<PageWorkspace> => ipcRenderer.invoke('pages:agent', id, revision, mode, actionId),
+  pagesExternalReply: (id: string, revision: number, response: PageExternalReply, actionId: string): Promise<PageWorkspace> => ipcRenderer.invoke('pages:external-reply', id, revision, response, actionId),
+  pagesExternalCancel: (id: string, revision: number, actionId?: string): Promise<PageWorkspace> => ipcRenderer.invoke('pages:external-cancel', id, revision, actionId),
   pagesImport: (params: NaiGenParams, model: NaiVersion, draft: InpaintDraft): Promise<PageWorkspace | null> => ipcRenderer.invoke('pages:import', params, model, draft),
   pagesDelete: (id: string, revision: number): Promise<void> => ipcRenderer.invoke('pages:delete', id, revision),
   pagesRead: (id: string): Promise<PageWorkspace> => ipcRenderer.invoke('pages:read', id),
   pagesCreate: (image: string | null, params: NaiGenParams, model: NaiVersion, draft: InpaintDraft): Promise<PageWorkspace> => ipcRenderer.invoke('pages:create', image, params, model, draft),
   pagesEdit: (id: string, revision: number, action: PageAction): Promise<PageWorkspace> => ipcRenderer.invoke('pages:edit', id, revision, action),
-  pagesChat: (id: string, revision: number, text: string, region: string | null, refs: string[]): Promise<PageWorkspace> => ipcRenderer.invoke('pages:chat', id, revision, text, region, refs),
+  pagesChat: (id: string, revision: number, text: string, region: string | null, refs: string[], actionId?: string): Promise<PageWorkspace> => ipcRenderer.invoke('pages:chat', id, revision, text, region, refs, actionId),
   pagesCancel: (id: string): Promise<void> => ipcRenderer.invoke('pages:cancel', id),
-  pagesGenerate: (id: string, revision: number, execution: PageExecution): Promise<PageWorkspace> => ipcRenderer.invoke('pages:generate', id, revision, execution),
+  pagesGenerate: (id: string, revision: number, execution: PageExecution, actionId?: string): Promise<PageWorkspace> => ipcRenderer.invoke('pages:generate', id, revision, execution, actionId),
   setDarkTitlebar: (dark: boolean): Promise<void> => ipcRenderer.invoke('window:dark-titlebar', dark),
   dbStatus: (): Promise<DbStatus> => ipcRenderer.invoke('db:status'),
   dbUpdate: (): Promise<DbStatus> => ipcRenderer.invoke('db:update'),
@@ -85,13 +103,21 @@ const api = {
   naiCopyImage: (name: string): Promise<boolean> => ipcRenderer.invoke('nai:copyImage', name),
   naiReveal: (name?: string): Promise<void> => ipcRenderer.invoke('nai:reveal', name),
   naiDelete: (name: string): Promise<boolean> => ipcRenderer.invoke('nai:delete', name),
-  onNaiStep: (cb: (s: string) => void) => on('nai:step', cb),
+  onNaiStep: (kind: NaiStep['kind'], cb: (s: string) => void) => on<NaiStep>('nai:step', event => {
+    if (event.kind === kind) cb(event.step)
+  }),
   mcpInfo: (): Promise<McpInfo> => ipcRenderer.invoke('mcp:info'),
   checkUpdate: (force?: boolean): Promise<UpdateInfo> => ipcRenderer.invoke('update:check', force),
+  updateState: (): Promise<UpdateInfo> => ipcRenderer.invoke('update:state'),
+  onUpdate: (cb: (info: UpdateInfo) => void) => on('update:state', cb),
+  downloadUpdate: (): Promise<void> => ipcRenderer.invoke('update:download'),
+  installUpdate: (): Promise<void> => ipcRenderer.invoke('update:install'),
   openUpdatePage: (url: string): Promise<void> => ipcRenderer.invoke('update:open', url),
   openWebUrl: (url: string): Promise<void> => ipcRenderer.invoke('web:open', url),
   onProgress: (cb: (p: UpdateProgress) => void) => on('progress', cb),
-  onAiStep: (cb: (s: string) => void) => on('ai:step', cb)
+  onAiStep: (kind: AiStep['kind'], cb: (s: string) => void) => on<AiStep>('ai:step', event => {
+    if (event.kind === kind) cb(event.step)
+  })
 }
 
 export type Api = typeof api

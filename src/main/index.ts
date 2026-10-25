@@ -1,15 +1,11 @@
 import { app, BrowserWindow, ipcMain, shell, clipboard, ClipboardItem, nativeImage, dialog, protocol, net } from 'electron'
-import { join, resolve } from 'node:path'
+import { join, resolve, dirname } from 'node:path'
+import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { existsSync, copyFileSync, readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import type {
-  AiInpaintRequest,
-  AiOptimizeRequest,
-  AiPreviewRequest,
   NaiGenParams,
-  NaiGenRequest,
-  NaiInpaintRequest,
   NaiSubscription,
   NaiVersion,
   McpInfo,
@@ -19,17 +15,11 @@ import type {
   SkillInput
 } from '../shared/types'
 import { tagStore } from './tagdb/store'
-import { updateImplications, updateTagDatabase, Cancelled } from './tagdb/fetcher'
 import { analyzePrompt } from './prompt/analyzer'
 import { getSettings, saveSettings } from './settings'
-import { planInpaint } from './ai/inpaint-planner'
-import { createPage, deletePage, editPage, importPage, listPages, pageLocks, pageUsesImage, readPage } from './page-workspaces'
-import { discussPage, renderPage } from './ai/page-collaborator'
-import type { PageAction, PageExecution } from '../shared/page-workspace'
+import { createPage, deletePage, editPage, importPage, listPages, pageUsesImage, readPage } from './page-workspaces'
+import type { PageAction } from '../shared/page-workspace'
 import type { InpaintDraft } from '../shared/types'
-import { optimizePrompt } from './ai/optimizer'
-import { previewPrompt } from './ai/previewer'
-import { aiTranslate } from './ai/translator'
 import { userSkillDir } from './paths'
 import {
   coreText,
@@ -43,15 +33,32 @@ import {
   skillFilePath,
   updateSkill
 } from './skills'
-import { IMAGE_SCHEME, freeCheck, generateImages, getSubscription, imageDir, imagePath, listImages } from './nai/client'
-import { startMcpServer, readLog } from './mcp/server'
+import { IMAGE_SCHEME, freeCheck, getSubscription, imageDir, imagePath, listImages } from './nai/client'
+import { readStdinLines, readLog } from './mcp/server'
 import { buildTools, MCP_INSTRUCTIONS } from './mcp/tools'
-import { checkUpdate, UPDATE_REPO } from './update'
+import { createAppUpdater, UPDATE_REPO } from './update'
 import { isWebUrl } from '../shared/web-url'
 import { SHOT_DIR, prepareScreenshotProfile, takeScreenshots } from './screenshots'
+import { registerTaskIpc } from './task-ipc'
+import { taskIsActive } from '../shared/tasks'
+import { DesktopBridge } from './desktop'
+import { startMcpBridge } from './mcp/bridge'
+import { desktopTools } from './mcp/desktop-tools'
+import { frontendTools } from './mcp/frontend-tools'
+import { agentExecutor } from './mcp/runtime'
+import type { TaskManager } from './tasks'
 
 let win: BrowserWindow | null = null
-let busy: AbortController | null = null
+let desktop: DesktopBridge
+let tasks: TaskManager
+let bridge: Awaited<ReturnType<typeof startMcpBridge>> | undefined
+let changeTimer: ReturnType<typeof setTimeout> | undefined
+function notifyAppChanged() {
+  if (changeTimer) return
+  changeTimer = setTimeout(() => { changeTimer = undefined; bridge?.changed() }, 100)
+}
+// Explicit profile override for isolated tests and separate local installations.
+if (process.env.NOVELPROMPT_USER_DATA) app.setPath('userData', resolve(process.env.NOVELPROMPT_USER_DATA))
 
 const APP_ID = 'com.holyxie.novelprompt'
 
@@ -65,6 +72,7 @@ function appIcon(): Electron.NativeImage | undefined {
 }
 
 function createWindow(): void {
+  if (win && !win.isDestroyed()) { win.show(); win.focus(); return }
   win = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -83,73 +91,24 @@ function createWindow(): void {
   })
   if (process.env.ELECTRON_RENDERER_URL) win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else win.loadFile(join(__dirname, '../renderer/index.html'))
+  win.on('closed', () => { win = null; desktop?.disconnected() })
 }
 
-const send = (channel: string, payload: unknown) => win?.webContents.send(channel, payload)
+const send = (channel: string, payload: unknown) => {
+  if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
+  if (channel === 'tasks:changed') notifyAppChanged()
+}
 
 function registerIpc(): void {
+  tasks = registerTaskIpc(send)
+  const updater = createAppUpdater(info => send('update:state', info), () => tasks.snapshot().tasks.some(taskIsActive))
+  const updateTimer = setInterval(() => void updater.check(true), 6 * 60 * 60 * 1000)
+  updateTimer.unref()
   ipcMain.handle('window:dark-titlebar', (event, dark: boolean) => {
     if (win && event.sender === win.webContents && process.platform !== 'darwin')
       win.setTitleBarOverlay({ color: '#00000000', symbolColor: dark === true ? '#f7f7f9' : '#6b6c75' })
   })
   ipcMain.handle('db:status', () => tagStore.status())
-  ipcMain.handle('db:update', async () => {
-    if (busy) throw new Error('已有任务在运行')
-    busy = new AbortController()
-    try {
-      await updateTagDatabase(getSettings().minPostCount, (p) => send('progress', p), busy.signal)
-      send('progress', { stage: 'index', message: '正在构建索引…' })
-      tagStore.load()
-      send('progress', { stage: 'done', message: '数据更新完成' })
-      return tagStore.status()
-    } catch (e) {
-      if (e instanceof Cancelled) {
-        send('progress', { stage: 'done', message: '已取消，原有数据继续使用' })
-        return tagStore.status()
-      }
-      send('progress', { stage: 'error', message: String(e) })
-      throw e
-    } finally {
-      busy = null
-    }
-  })
-  ipcMain.handle('db:aiTranslate', async () => {
-    if (busy) throw new Error('已有任务在运行')
-    busy = new AbortController()
-    try {
-      await aiTranslate(getSettings().translateMinCount, (p) => send('progress', p), busy.signal)
-      return tagStore.status()
-    } catch (e) {
-      if (e instanceof Cancelled) {
-        send('progress', { stage: 'done', message: '已取消' })
-        return tagStore.status()
-      }
-      send('progress', { stage: 'error', message: String(e) })
-      throw e
-    } finally {
-      busy = null
-    }
-  })
-  ipcMain.handle('db:implications', async () => {
-    if (busy) throw new Error('已有任务在运行')
-    busy = new AbortController()
-    try {
-      const n = await updateImplications(tagStore.names(), (p) => send('progress', p), busy.signal)
-      tagStore.loadImplications()
-      send('progress', { stage: 'done', message: `包含关系下载完成，共 ${n.toLocaleString()} 条` })
-      return tagStore.status()
-    } catch (e) {
-      if (e instanceof Cancelled) {
-        send('progress', { stage: 'done', message: '已取消' })
-        return tagStore.status()
-      }
-      send('progress', { stage: 'error', message: String(e) })
-      throw e
-    } finally {
-      busy = null
-    }
-  })
-  ipcMain.handle('task:cancel', () => busy?.abort())
 
   ipcMain.handle('tag:search', (_e, opts: SearchOptions) => tagStore.search(opts))
   ipcMain.handle('tag:setZh', (_e, name: string, zh: string) => tagStore.setTranslation(name, zh))
@@ -160,44 +119,6 @@ function registerIpc(): void {
   ipcMain.handle('settings:save', (_e, patch: Partial<Settings>) => {
     const { skills: _s, skillsMigrated: _m, ...rest } = patch
     return saveSettings(rest)
-  })
-
-  let inpaintPlan: AbortController | null = null
-  ipcMain.handle('ai:inpaint-plan-cancel', () => inpaintPlan?.abort())
-  ipcMain.handle('ai:inpaint-plan', async (_e, req: AiInpaintRequest) => {
-    if (inpaintPlan) throw new Error('正在分析区域，请等待或取消当前分析')
-    const ctrl = new AbortController()
-    inpaintPlan = ctrl
-    try { return await planInpaint(req, ctrl.signal) }
-    catch (e) { if (ctrl.signal.aborted) throw new Error('已取消分析'); throw e }
-    finally { if (inpaintPlan === ctrl) inpaintPlan = null }
-  })
-
-  ipcMain.handle('ai:optimize', async (_e, req: AiOptimizeRequest) => {
-    const ctrl = new AbortController()
-    busy = busy ?? ctrl
-    try {
-      return await optimizePrompt(req, (step) => send('ai:step', step), ctrl.signal)
-    } catch (e) {
-      // 用户主动取消时 fetch 抛的是 AbortError，对界面来说就是「已取消」
-      if (ctrl.signal.aborted) throw new Error('已取消')
-      throw e
-    } finally {
-      if (busy === ctrl) busy = null
-    }
-  })
-
-  ipcMain.handle('ai:preview', async (_e, req: AiPreviewRequest) => {
-    const ctrl = new AbortController()
-    busy = busy ?? ctrl
-    try {
-      return await previewPrompt(req, (step) => send('ai:step', step), ctrl.signal)
-    } catch (e) {
-      if (ctrl.signal.aborted) throw new Error('已取消')
-      throw e
-    } finally {
-      if (busy === ctrl) busy = null
-    }
   })
 
   /* ---------- Skill ---------- */
@@ -237,7 +158,7 @@ function registerIpc(): void {
 
   /* ---------- Agent 接入（MCP） ---------- */
   ipcMain.handle('mcp:info', (): McpInfo => {
-    // agent 以 Node 模式运行同一个可执行文件，跑一个转发代理，代理再拉起 `--mcp` 并过滤掉 Electron 写到 stdout 的杂讯。
+    // Node 模式代理连接同一个应用主进程，必要时启动无窗口的宿主。
     // 路径取自当前运行的程序，所以配置跟随用户实际的安装位置。
     const root = app.getAppPath()
     const proxy = app.isPackaged ? join(process.resourcesPath, 'mcp-proxy.cjs') : join(root, 'scripts', 'mcp-proxy.cjs')
@@ -259,44 +180,29 @@ function registerIpc(): void {
     if (!isWebUrl(url)) throw new Error('仅支持打开 HTTP / HTTPS 网页')
     await shell.openExternal(url)
   })
-  ipcMain.handle('update:check', (_e, force?: boolean) => checkUpdate(!!force))
+  ipcMain.handle('update:state', () => updater.snapshot())
+  ipcMain.handle('update:check', (_e, force?: boolean) => updater.check(!!force))
+  ipcMain.handle('update:download', () => updater.download())
+  ipcMain.handle('update:install', async () => {
+    if (!win || updater.snapshot().stage !== 'ready') throw new Error('更新尚未准备好')
+    if (tasks.snapshot().tasks.some(taskIsActive)) throw new Error('还有任务正在运行，请等任务结束后再更新')
+    const result = await dialog.showMessageBox(win, {
+      type: 'question', title: '重启并更新', message: `安装 NovelPrompt ${updater.snapshot().latest}？`,
+      detail: '应用将关闭并在更新后重新打开。已保存的设置、提示词、会话和图库会保留。',
+      buttons: ['稍后', '重启并更新'], defaultId: 0, cancelId: 0, noLink: true
+    })
+    if (result.response === 1) updater.install()
+  })
   // 只允许打开本仓库的 release 页，避免渲染进程被注入后借 shell 打开任意地址
   ipcMain.handle('update:open', (_e, url: string) =>
-    shell.openExternal(/^https:\/\/github\.com\/Morgiana-V3\/novel-prompt\/?/.test(url) ? url : `https://github.com/${UPDATE_REPO}/releases/latest`)
+    shell.openExternal(/^https:\/\/github\.com\/Morgiana-V3\/novel-prompt\/releases(?:[/?#]|$)/.test(url) ? url : `https://github.com/${UPDATE_REPO}/releases/latest`)
   )
 
   /* ---------- NovelAI 生图 ---------- */
-  let naiRunning = false
-  let naiCancel = false
   ipcMain.handle('nai:subscription', () => getSubscription())
   ipcMain.handle('nai:freeCheck', (_e, params: NaiGenParams, version: NaiVersion, sub?: NaiSubscription) =>
     freeCheck(params, version, sub)
   )
-  ipcMain.handle('nai:generate', async (_e, req: NaiGenRequest) => {
-    if (naiRunning) throw new Error('上一批还在生成中')
-    naiRunning = true
-    naiCancel = false
-    try {
-      return await generateImages(req, (s) => send('nai:step', s), () => naiCancel)
-    } finally {
-      naiRunning = false
-    }
-  })
-  ipcMain.handle('nai:inpaint', async (_e, req: NaiInpaintRequest) => {
-    if (naiRunning) throw new Error('上一批还在生成中')
-    if (!req?.inpaint) throw new Error('缺少原图或遮罩')
-    naiRunning = true
-    naiCancel = false
-    try {
-      return await generateImages(req, (s) => send('nai:step', s), () => naiCancel)
-    } finally {
-      naiRunning = false
-    }
-  })
-  // 只在两张之间停止，不中断正在进行的请求（中断后服务端可能仍会生成并扣费）
-  ipcMain.handle('nai:cancel', () => {
-    naiCancel = true
-  })
   ipcMain.handle('nai:list', () => listImages())
   ipcMain.handle('pages:list', () => listPages())
   ipcMain.handle('pages:delete', (_e, id: string, revision: number) => deletePage(id, revision))
@@ -308,14 +214,6 @@ function registerIpc(): void {
     return result.canceled || !result.filePaths[0] ? null : importPage(result.filePaths[0], params, model, draft)
   })
   ipcMain.handle('pages:edit', (_e, id: string, revision: number, action: PageAction) => editPage(id, revision, action))
-  ipcMain.handle('pages:chat', (_e, id: string, revision: number, text: string, region: string | null, refs: string[]) => discussPage(id, revision, text, region, refs))
-  ipcMain.handle('pages:cancel', (_e, id: string) => pageLocks.get(id)?.abort())
-  ipcMain.handle('pages:generate', async (_e, id: string, revision: number, execution: PageExecution) => {
-    if (naiRunning) throw new Error('正在生成图片，请稍候')
-    naiRunning = true; naiCancel = false
-    try { return await renderPage(id, revision, execution, s => send('nai:step', s), () => naiCancel) }
-    finally { naiRunning = false }
-  })
   // 读回图片原始字节（用于解析图里的提示词）。不走 fetch(np-img://)，避免跨源被拦
   ipcMain.handle('nai:readImage', (_e, name: string) => {
     const src = imagePath(name)
@@ -362,10 +260,7 @@ function registerImageProtocol(): void {
 
 protocol.registerSchemesAsPrivileged([{ scheme: IMAGE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } }])
 
-/**
- * MCP 模式（NovelPrompt.exe --mcp）：不开窗口，通过 stdio 给 Codex 等 agent 提供工具。
- * 与界面共用 tag 库、设置和图库；浏览器会话数据单独存放，避免和正在运行的界面抢锁。
- */
+/** Legacy --mcp is a relay too; it must never own a second copy of application state. */
 const MCP_MODE = process.argv.includes('--mcp')
 
 if (MCP_MODE) {
@@ -373,20 +268,40 @@ if (MCP_MODE) {
   const toErr = (...a: unknown[]) => process.stderr.write(a.map(String).join(' ') + '\n')
   console.log = console.info = console.debug = toErr
   app.disableHardwareAcceleration()
-  app.setPath('sessionData', join(app.getPath('userData'), 'mcp-session'))
+  app.setPath('sessionData', join(tmpdir(), `novelprompt-relay-${process.pid}`))
   app.whenReady().then(() => {
-    tagStore.load()
-    startMcpServer(buildTools(), { name: 'novel-prompt', version: app.getVersion(), instructions: MCP_INSTRUCTIONS }, () => app.quit())
+    const proxy = app.isPackaged ? join(process.resourcesPath, 'mcp-proxy.cjs') : join(app.getAppPath(), 'scripts/mcp-proxy.cjs')
+    const client = spawn(process.execPath, [proxy, ...(app.isPackaged ? [] : [app.getAppPath()])], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, windowsHide: true, stdio: ['pipe', 'pipe', 'inherit'] })
+    readStdinLines(line => client.stdin.write(line + '\n'), () => client.stdin.end())
+    client.stdout.on('data', data => process.stdout.write(data))
+    client.on('error', e => { console.error(e); app.exit(1) })
+    client.on('exit', code => app.exit(code ?? 0))
   })
 } else {
   if (SHOT_DIR) prepareScreenshotProfile()
-  app.whenReady().then(() => {
+  const primary = app.requestSingleInstanceLock()
+  if (!primary) app.quit()
+  else {
+  app.on('second-instance', (_event, argv) => {
+    if (!argv.includes('--mcp-host')) void app.whenReady().then(createWindow)
+  })
+  app.whenReady().then(async () => {
     // 让 Windows 任务栏 / Alt+Tab 使用窗口图标，而不是 electron.exe 的默认图标
     if (process.platform === 'win32') app.setAppUserModelId(APP_ID)
     tagStore.load()
+    desktop = new DesktopBridge(() => win, createWindow)
+    desktop.onChange = notifyAppChanged
     registerIpc()
     registerImageProtocol()
-    createWindow()
+    const appState = () => ({ version: app.getVersion(), hostPid: process.pid, visible: desktop.visible(), desktop: desktop.state, tasks: tasks.snapshot() })
+    bridge = await startMcpBridge(app.isPackaged ? dirname(process.execPath) : app.getAppPath(), process.env.NOVELPROMPT_USER_DATA ?? '',
+      [...buildTools(), ...desktopTools(desktop, tasks, appState), ...frontendTools(desktop)], { name: 'novel-prompt', version: app.getVersion(), instructions: MCP_INSTRUCTIONS },
+      { state: appState, execute: agentExecutor(tasks, desktop, send) })
+    const idleTimer = setInterval(() => {
+      if (!win && !bridge?.clients() && !tasks.snapshot().tasks.some(taskIsActive)) app.quit()
+    }, 30000)
+    idleTimer.unref()
+    if (!process.argv.includes('--mcp-host')) createWindow()
     if (SHOT_DIR && win) {
       const w = win
       w.webContents.once('did-finish-load', () =>
@@ -399,9 +314,12 @@ if (MCP_MODE) {
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })
-  })
+  }).catch(e => { console.error('应用服务启动失败', e); app.exit(1) })
 
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit()
+    // Connected agents and in-flight work retain their shared host when the window closes.
+    if (process.platform !== 'darwin' && !bridge?.clients() && !tasks?.snapshot().tasks.some(taskIsActive)) app.quit()
   })
+  app.on('before-quit', () => bridge?.close())
+  }
 }

@@ -11,6 +11,7 @@ import WorkspaceBar from '../components/WorkspaceBar.vue'
 import BasisPill from '../components/BasisPill.vue'
 import EvidenceNote from '../components/EvidenceNote.vue'
 import DiffChips from '../components/DiffChips.vue'
+import { activeTask, cancelTask } from '../tasks'
 
 const mode = ref<'optimize' | 'semantic'>('optimize')
 const instruction = ref('')
@@ -18,6 +19,8 @@ const running = ref(false)
 const steps = ref<string[]>([])
 const result = ref<AiOptimizeResult | null>(null)
 const error = ref('')
+const task = computed(() => activeTask('optimize'))
+let offStep: (() => void) | undefined
 /** 发起请求时的提示词，用于对比改动 */
 const sent = ref<{ base: string; negative: string; characters: AiCharacter[] } | null>(null)
 /** 结果已经采用到当前提示词 */
@@ -31,13 +34,12 @@ const leftPane = ref<HTMLElement>()
 const resizeAll = () => resizeWithin(leftPane.value)
 
 onMounted(() => {
-  // 画面推测也会推送 ai:step，只记录本页任务的进度
-  window.api.onAiStep((s) => {
+  offStep = window.api.onAiStep('optimize', (s) => {
     if (running.value) steps.value.push(s)
   })
   window.addEventListener('resize', resizeAll)
 })
-onBeforeUnmount(() => window.removeEventListener('resize', resizeAll))
+onBeforeUnmount(() => { offStep?.(); window.removeEventListener('resize', resizeAll) })
 
 // 视图常驻但可能是隐藏状态（v-show），隐藏时量不出内容高度，切回来时重算一次
 watch(
@@ -86,6 +88,7 @@ const totalChanges = computed(() =>
 )
 
 async function run() {
+  if (running.value) return
   if (!state.settings?.apiKey) {
     error.value = '请先在「设置 / 数据」中填写 DeepSeek API Key'
     return
@@ -128,7 +131,7 @@ function adopt(next?: Tab) {
   const r = result.value
   if (!r) return
   if (!adopted.value) {
-    applyWorkspace({ base: r.positive, negative: r.negative || state.negative, characters: r.characters }, 'AI 优化前')
+    applyWorkspace({ base: r.positive, negative: r.negative, characters: r.characters }, 'AI 优化前')
     adopted.value = true
     nextTick(resizeAll)
   }
@@ -184,6 +187,7 @@ const fullText = (r: AiOptimizeResult) => sectionText({ base: r.positive, negati
           <Icon name="sparkle" :size="17" :class="{ spin: running }" />
           {{ running ? '正在思考' : '开始' }}
         </button>
+        <button v-if="running && task" class="btn ghost" :disabled="task.status==='cancelling'" @click="cancelTask(task.id)"><Icon name="stop" :size="15" />{{ task.status==='cancelling' ? '正在取消…' : '取消' }}</button>
         <span class="pill">目标 {{ state.settings?.naiVersion.toUpperCase() }}</span>
         <span class="pill nl" v-if="charCount"><i></i>{{ charCount }} 个角色</span>
       </div>
