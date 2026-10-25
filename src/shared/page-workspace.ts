@@ -23,7 +23,9 @@ export interface PageVersion {
   image: NaiImage | null
   createdAt: number
   editor: PageEditorState
-  generated?: { draft: InpaintDraft; params: NaiGenParams; execution: PageExecution; sourceVersionId: string; inpaint?: { mask: string; strength: number } }
+  /** Immutable starting draft/settings; not a claim about imported image generation parameters. */
+  initial?: { draft: InpaintDraft; params: NaiGenParams }
+  generated?: { draft: InpaintDraft; params: NaiGenParams; execution: PageExecution; sourceVersionId: string; inpaint?: { mask: string; strength: number; label?: string; instruction?: string; target?: number | null } }
 }
 export interface PageExecution { kind: 'generate' | 'inpaint'; regionId: string | null }
 export interface PageProposal {
@@ -52,6 +54,8 @@ export interface PageMessage {
   regionId?: string | null
   referenceIds?: string[]
   proposal?: PageProposal
+  /** Replaced suggestions retain only a chat receipt; each version owns one latest proposal. */
+  proposalSummary?: { title: string; status: PageProposal['status'] }
   error?: boolean
   draftBefore?: InpaintDraft
   draftAfter?: InpaintDraft
@@ -87,6 +91,31 @@ export function pageCurrent(w: PageWorkspace): PageVersion {
   const v = w.versions.find(v => v.id === w.currentVersionId)
   if (!v) throw new Error('当前版本不存在')
   return v
+}
+export function pageLatestProposal(w: PageWorkspace, versionId: string): PageMessage | undefined {
+  return w.messages.slice().reverse().find(m => m.versionId === versionId && m.proposal)
+}
+export function compactPageProposals(w: PageWorkspace): boolean {
+  const seen = new Set<string>()
+  let changed = false
+  for (let i = w.messages.length - 1; i >= 0; i--) {
+    const m = w.messages[i]
+    if (!m.proposal) continue
+    if (seen.has(m.versionId)) {
+      m.proposalSummary = { title: m.proposal.title, status: m.proposal.status }
+      delete m.proposal
+      changed = true
+    } else seen.add(m.versionId)
+  }
+  return changed
+}
+/** Never compare against an editable parent draft: it may already contain the next iteration. */
+export function pageIteration(w: PageWorkspace, id: string) {
+  const version = w.versions.find(v => v.id === id)
+  const result = version?.generated
+  const source = w.versions.find(v => v.id === (result?.sourceVersionId ?? version?.parentId))
+  const before = source?.generated ?? source?.initial
+  return { version, result, source, before, changes: result && before ? pageChanges(before.draft, result.draft) : [] }
 }
 export function pageDraft(v: PageVersion, regionId: string | null): InpaintDraft {
   return v.editor.draft

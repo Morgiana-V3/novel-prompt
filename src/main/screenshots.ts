@@ -1,6 +1,45 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, nativeImage } from 'electron'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { PNG } from 'pngjs'
+import { createPage, savePage } from './page-workspaces'
+import { imageDir, listImages } from './nai/client'
+import { pageChanges, pageContextKey, pageCurrent } from '../shared/page-workspace'
+import type { InpaintDraft, NaiGenParams } from '../shared/types'
+
+/** Offline display fixture, using only the repository's own mascot assets. */
+async function prepareWorkspaceDemo(): Promise<void> {
+  const width = 512, height = 768
+  for (const [name, asset] of [['demo-before.png', 'idle'], ['demo-after.png', 'wink']]) {
+    const src = PNG.sync.read(nativeImage.createFromPath(resolve(`src/renderer/src/assets/mascot/${asset}.png`)).resize({ height: 650 }).toPNG())
+    const canvas = new PNG({ width, height }); canvas.data.fill(255)
+    const left = Math.floor((width - src.width) / 2), top = 60
+    for (let y = 0; y < src.height; y++) for (let x = 0; x < src.width; x++) {
+      if (x + left < 0 || x + left >= width || y + top >= height) continue
+      const a = (y * src.width + x) * 4, b = ((y + top) * width + x + left) * 4, alpha = src.data[a + 3] / 255
+      for (let c = 0; c < 3; c++) canvas.data[b + c] = Math.round(src.data[a + c] * alpha + 255 * (1 - alpha))
+    }
+    writeFileSync(join(imageDir(), name), PNG.sync.write(canvas))
+  }
+  const params: NaiGenParams = { width, height, steps: 23, scale: 5, cfgRescale: 0, seed: 42, count: 1, sampler: 'k_euler_ancestral', noiseSchedule: 'native', qualityTags: false, ucPreset: 'none' }
+  const before: InpaintDraft = { base: '1girl, solo, cat ears, white hair, pink eyes, white background, full body, smile', negative: 'lowres, blurry', characters: [] }
+  const after = { ...before, base: before.base + ', one eye closed' }
+  const w = await createPage('demo-before.png', params, 'v5', before)
+  w.title = '角色表情探索 · 演示会话'; w.goal = '保持角色设计，比较不同表情'; w.preserve = '保留发色、服装与整体画风'
+  const first = pageCurrent(w), now = Date.now()
+  w.versions.push({ id: 'demo-result', parentId: first.id, label: '眨眼表情', image: listImages().find(i => i.name === 'demo-after.png')!, createdAt: now,
+    editor: { draft: after, params: { ...params, seed: 43 }, regions: [], strength: 1 },
+    generated: { draft: structuredClone(after), params: { ...params, seed: 43 }, execution: { kind: 'generate', regionId: null }, sourceVersionId: first.id } })
+  w.currentVersionId = 'demo-result'
+  const next = { ...after, base: after.base + ', head tilt' }
+  w.messages = [
+    { id: 'demo-note', role: 'event', text: '离线演示：图片使用项目内置素材，对话与版本记录为示例，不调用在线模型。', createdAt: now, versionId: first.id },
+    { id: 'demo-user', role: 'user', text: '保留目前的眨眼表情，下一版试试轻微歪头。先给我看提示词修改。', createdAt: now, versionId: w.currentVersionId },
+    { id: 'demo-ai', role: 'assistant', text: '### 下一步建议\n\n保留当前的**角色设计与眨眼表情**，只增加 `head tilt`。\n\n- 在「AI 建议」中检查词语变化，再决定是否采纳。\n- 采纳只更新草稿，仍需单独点击生成。\n- 「修改对比」保留每轮图片、提示词和参数。\n\n> 这是界面演示数据，不代表已调用模型。', createdAt: now, versionId: w.currentVersionId,
+      proposal: { title: '保留表情，尝试轻微歪头', warning: '', regionId: null, status: 'pending', contextKey: pageContextKey(pageCurrent(w), null, w), before: structuredClone(after), after: next, previousAccepted: null, changes: pageChanges(after, next), execution: { kind: 'generate', regionId: null } } }
+  ]
+  savePage(w)
+}
 
 /**
  * README 截图模式：NovelPrompt --screenshots=<输出目录> [--screenshots-ai]
@@ -105,6 +144,7 @@ export async function takeScreenshots(win: BrowserWindow): Promise<void> {
         await sleep(800)
       }
     }
+    throw new Error(`Failed to capture ${name}`)
   }
   const openTab = (label: string) =>
     js(`[...document.querySelectorAll('.nav-item')].find((b) => b.textContent.includes(${JSON.stringify(label)}))?.click()`)
@@ -115,6 +155,7 @@ export async function takeScreenshots(win: BrowserWindow): Promise<void> {
     if (!done) console.log(`[screenshots] ${view} 超时`)
   }
 
+  await prepareWorkspaceDemo()
   // 写入示例提示词后重新加载
   await js(`localStorage.setItem('np-workspace-v1', ${JSON.stringify(JSON.stringify(SAMPLE))}); setTimeout(() => location.reload(), 50); true`)
   await sleep(1500)
@@ -133,7 +174,14 @@ export async function takeScreenshots(win: BrowserWindow): Promise<void> {
   await shot('preview')
 
   await openTab('生图预览')
+  await waitFor(`!!document.querySelector('.gallery .thumb')`, 5000)
+  await js(`document.querySelector('.gallery .thumb')?.click()`)
   await shot('generate')
+  await js(`[...document.querySelectorAll('.viewer button')].find(b => b.textContent.includes('局部重绘'))?.click()`)
+  if (!await waitFor(`!!document.querySelector('.ip-dialog')`, 5000)) throw new Error('Inpaint editor did not open')
+  await shot('inpaint')
+  await js(`document.querySelector('.ip-dialog button[title="关闭（Esc）"]')?.click()`)
+  await waitFor(`!document.querySelector('.ip-dialog')`, 5000)
 
   // 角色位置编辑器
   await js(`document.querySelector('button[title="在画布上拖动各角色的位置"]')?.click()`)
@@ -159,6 +207,16 @@ export async function takeScreenshots(win: BrowserWindow): Promise<void> {
 
   await js(`document.getElementById('skill-manager')?.scrollIntoView({ block: 'start' })`)
   await shot('skill-manager')
+
+  await openTab('AI 工作台')
+  if (!await waitFor(`!!document.querySelector('.session-open')`, 5000)) throw new Error('Demo workspace missing')
+  await js(`document.querySelector('.session-open').click()`)
+  if (!await waitFor(`!!document.querySelector('.pw-shell')`, 5000)) throw new Error('Workspace did not open')
+  await shot('workspace')
+  await js(`[...document.querySelectorAll('.pw-view-tabs button')].find(b => b.textContent.includes('AI 建议')).click()`)
+  await shot('workspace-suggestions')
+  await js(`[...document.querySelectorAll('.pw-view-tabs button')].find(b => b.textContent.includes('修改对比')).click()`)
+  await shot('workspace-iterations')
 
   app.quit()
 }

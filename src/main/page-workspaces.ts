@@ -8,7 +8,7 @@ import { PNG } from 'pngjs'
 import { prepareInpaint } from './nai/inpaint'
 import { readPngPrompt } from '../shared/prompt-import'
 import { applyInpaintChanges } from '../shared/inpaint-plan'
-import { pageContextKey, pageCurrent, pageDraft, type PageAction, type PageEditorState, type PageMessage, type PageWorkspace, type PageWorkspaceSummary } from '../shared/page-workspace'
+import { compactPageProposals, pageContextKey, pageCurrent, pageDraft, type PageAction, type PageEditorState, type PageMessage, type PageWorkspace, type PageWorkspaceSummary } from '../shared/page-workspace'
 import { MAX_CHARACTERS, parsePosition, isGridPosition } from '../shared/nai-presets'
 import type { InpaintDraft, NaiGenParams, NaiVersion } from '../shared/types'
 
@@ -37,9 +37,11 @@ export function readPage(id: string): PageWorkspace {
     pageEvent(w, '已升级为通用创作会话。旧版区域独立草稿保留在历史版本；请选择要继续使用的草稿。')
     savePage(w)
   }
+  if (compactPageProposals(w)) savePage(w)
   return w
 }
 export function savePage(w: PageWorkspace): PageWorkspace {
+  compactPageProposals(w)
   w.updatedAt = Date.now(); w.revision++
   const data = JSON.stringify(w)
   if (Buffer.byteLength(data) > 64 * 1024 * 1024) throw new Error('当前工作区超过 64 MB，请减少不再使用的选区')
@@ -99,6 +101,7 @@ export async function createPage(imageName: string | null, params: NaiGenParams,
   const w: PageWorkspace = { schema: 2, id: randomUUID(), title: '新会话', goal: '', preserve: '', model, createdAt: now, updatedAt: now, revision: 0,
     currentVersionId: versionId, composer: '', execution: { kind: 'generate', regionId: null }, versions: [{ id: versionId, parentId: null, label: image ? '原稿' : '起点', image, createdAt: now,
       editor: { draft: clone(draft), regions: [], params: { ...params, width: image?.width ?? params.width, height: image?.height ?? params.height, count: 1, qualityTags: false, ucPreset: 'none' }, strength: 1 } }], messages: [] }
+  w.versions[0].initial = { draft: clone(draft), params: clone(w.versions[0].editor.params) }
   pageEvent(w, imported ? '会话已建立，已读取原图提示词。' : image ? '会话已建立。图片没有可读取的提示词，初始草稿请核对。' : '会话已建立。')
   return savePage(w)
 }

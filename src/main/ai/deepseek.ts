@@ -73,10 +73,14 @@ export async function chat(messages: ChatInputMessage[], opts: ChatOptions = {})
 
 /** 从模型输出中提取 JSON 对象 */
 export function extractJson<T>(text: string): T {
+  // A valid JSON reply can itself contain Markdown fences inside string values.
+  try { return JSON.parse(text) as T } catch { /* Also accept prose/fenced wrappers below. */ }
   const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text)
-  const src = fenced ? fenced[1] : text
-  const start = src.indexOf('{')
-  const end = src.lastIndexOf('}')
-  if (start < 0 || end < start) throw new Error('AI 输出中未找到 JSON')
-  return JSON.parse(src.slice(start, end + 1)) as T
+  let error: unknown = new Error('AI 输出中未找到 JSON')
+  for (const src of [text, ...(fenced ? [fenced[1]] : [])]) {
+    const start = src.indexOf('{'), end = src.lastIndexOf('}')
+    if (start < 0 || end < start) continue
+    try { return JSON.parse(src.slice(start, end + 1)) as T } catch (e) { error = e }
+  }
+  throw error
 }

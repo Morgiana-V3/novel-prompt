@@ -89,6 +89,7 @@ const api = {
   mcpInfo: (): Promise<McpInfo> => ipcRenderer.invoke('mcp:info'),
   checkUpdate: (force?: boolean): Promise<UpdateInfo> => ipcRenderer.invoke('update:check', force),
   openUpdatePage: (url: string): Promise<void> => ipcRenderer.invoke('update:open', url),
+  openWebUrl: (url: string): Promise<void> => ipcRenderer.invoke('web:open', url),
   onProgress: (cb: (p: UpdateProgress) => void) => on('progress', cb),
   onAiStep: (cb: (s: string) => void) => on('ai:step', cb)
 }

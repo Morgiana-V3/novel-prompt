@@ -17,7 +17,12 @@ require.extensions['.ts'] = (m, f) => m._compile(ts.transpileModule(readFileSync
 const client = require('../src/main/nai/client.ts')
 const pages = require('../src/main/page-workspaces.ts')
 const collaborator = require('../src/main/ai/page-collaborator.ts')
-const { pageCurrent, pageDraft } = require('../src/shared/page-workspace.ts')
+const { pageCurrent, pageDraft, pageIteration } = require('../src/shared/page-workspace.ts')
+const { renderMarkdown } = require('../src/renderer/src/markdown.ts')
+const { isWebUrl } = require('../src/shared/web-url.ts')
+const { extractJson } = require('../src/main/ai/deepseek.ts')
+const markdownSample = '## 修改建议\n\n**保留主体轮廓**，调整 `grey shirt`。\n\n1. 先检查提示词\n2. 再生成图片\n\n> 采纳后仍需单独执行\n\n```text\nblack shirt\n```\n\n| 项目 | 结果 |\n| --- | --- |\n| 提示词 | 更新 |\n\n[参考说明](https://example.com/guide)'
+const markdownAttack = '<img src=x onerror="window.pwned=true"><script>window.pwned=true</script>\n\n[危险](javascript:alert(1))\n\n![远程图片](https://example.com/tracker.png)\n\n[本地文件](file:///C:/private.txt)'
 const { getSettings, saveSettings } = require('../src/main/settings.ts')
 const skills = require('../src/main/skills.ts')
 const width = 640, height = 896
@@ -46,14 +51,16 @@ net.fetch = async (url, init) => {
     if (mode === 'malformed') return Response.json({choices:[{message:{content:'not json'}}]})
     if(mode==='tool' && !body.messages.some(m=>m.role==='tool')) return Response.json({choices:[{message:{role:'assistant',content:null,tool_calls:[{id:'fixture-tool',type:'function',function:{name:'validate_tags',arguments:JSON.stringify({tags:['grey shirt']})}}]}}]})
     const proposed={...input.draft,base:input.draft.base ? input.draft.base.replace('grey shirt','black shirt')+(input.draft.base.includes('black shirt')?', subtle shading':'') : 'A simple grey object stands on a table.'}
-    const reply = {reply:'已理解你的目标。我会根据启用的 Skill 准备修改方案；采纳后仍需单独执行。',understanding:{goal:'调整主体明暗',preserve:'保留主体轮廓'},proposal:mode==='discuss'?null:{title:'调整主体明暗',warning:'请先检查当前提示词与执行方式。',draft:proposed,execution:{kind:mode==='inpaint'?'inpaint':'generate',regionId:mode==='inpaint'?input.currentRegion?.id:null}}}
+    const reply = {reply:markdownSample,understanding:{goal:'调整主体明暗',preserve:'保留主体轮廓'},proposal:mode==='discuss'?null:{title:'调整主体明暗',warning:'请先检查当前提示词与执行方式。',draft:proposed,execution:{kind:mode==='inpaint'?'inpaint':'generate',regionId:mode==='inpaint'?input.currentRegion?.id:null}}}
     return Response.json({choices:[{message:{content:JSON.stringify(reply)}}]})
   }
   assert.equal(url,'https://image.novelai.net/ai/generate-image', 'No unexpected external requests')
   generationInputs.push(JSON.parse(init.body))
   return new Response(PNG.sync.write(image([28,28,28,255], generationInputs.at(-1).parameters.width, generationInputs.at(-1).parameters.height)),{headers:{'content-type':'image/png'}})
 }
+const openedLinks = []
 const handlers = {
+  'web:open':(_,url)=>{assert.ok(isWebUrl(url));openedLinks.push(url)},
   'settings:get':()=>getSettings(), 'settings:save':(_,v)=>saveSettings(v),
   'window:dark-titlebar':()=>{}, 'db:status':()=>({loaded:true,tagCount:0,aliasCount:0,zhCount:0,implicationCount:0}),
   'skills:list':()=>skills.getConfig(), 'mcp:info':()=>null, 'update:check':()=>null,
@@ -71,6 +78,15 @@ const pause = ms => new Promise(r=>setTimeout(r,ms))
 app.whenReady().then(async()=>{
   let win
   try {
+    const md=renderMarkdown(markdownSample)
+    const payload={reply:markdownSample,proposal:null}
+    assert.deepEqual(extractJson(JSON.stringify(payload)),payload)
+    assert.deepEqual(extractJson('```json\n'+JSON.stringify(payload)+'\n```'),payload)
+    assert.deepEqual(extractJson('说明\n```json\n'+JSON.stringify(payload)+'\n```\n结束'),payload)
+    assert.throws(()=>extractJson('not json'))
+    for(const tag of ['h2','strong','code','ol','blockquote','pre','table']) assert.ok(md.includes('<'+tag),tag+' renders')
+    assert.doesNotMatch(renderMarkdown(markdownAttack),/<(?:script|img)\b|href="(?:javascript:|file:)/i)
+    assert.ok(!isWebUrl('file:///C:/private.txt')&&!isWebUrl('javascript:alert(1)')&&!isWebUrl('https://user:pass@example.com'))
     const originalConfig=skills.getConfig().map(s=>({id:s.id,enabled:s.enabled}))
     const custom=skills.createSkill({name:'会话规则测试',scope:'optimize',model:'v5',content:'WORKSPACE_ENABLED_ONLY_MARKER'})
     skills.setConfig(skills.getConfig().map(s=>({id:s.id,enabled:s.id===custom.id})))
@@ -98,11 +114,19 @@ app.whenReady().then(async()=>{
     assert.equal(pageCurrent(w).editor.draft.base,'');decide('accept')
     assert.match(pageCurrent(w).editor.draft.base,/grey object/)
     decide('undo');assert.equal(pageCurrent(w).editor.draft.base,'')
-    await talk('按刚才的目标继续');decide('accept')
+    const replacedId=proposal().id
+    await talk('按刚才的目标继续')
+    assert.equal(w.messages.filter(m=>m.versionId===original&&m.proposal).length,1)
+    assert.ok(w.messages.find(m=>m.id===replacedId).proposalSummary)
+    assert.throws(()=>edit({type:'proposal',messageId:replacedId,decision:'accept'}),/不存在/)
+    decide('accept')
     w=await collaborator.renderPage(id,w.revision,w.execution,()=>{},()=>false)
     assert.equal(generationInputs.at(-1).action,'generate');assert.ok(!generationInputs.at(-1).parameters.image)
     assert.equal(pageCurrent(w).parentId,original);assert.deepEqual(pageCurrent(w).generated.draft,pageCurrent(w).editor.draft)
     const generated=w.currentVersionId
+    assert.equal(pageIteration(w,generated).before.draft.base,'','first iteration compares immutable session start')
+    assert.ok(pageIteration(w,generated).changes.length)
+    const firstSnapshot=structuredClone(pageCurrent(w).generated)
     edit({type:'editor',versionId:generated,editor:{...pageCurrent(w).editor,draft,regions:[region]}})
     assert.equal(w.execution.kind,'generate','annotations never choose execution mode')
     mode='change';await talk('我圈出的是这个部位，请调整提示词',region.id)
@@ -117,11 +141,20 @@ app.whenReady().then(async()=>{
     const result=PNG.sync.read(readFileSync(client.imagePath(pageCurrent(w).image.name)))
     for(let i=0;i<before.data.length;i+=4)if(!mask.data[i])assert.ok(before.data.subarray(i,i+4).equals(result.data.subarray(i,i+4)))
     const snapshot=structuredClone(pageCurrent(w).generated)
+    assert.deepEqual(pageIteration(w,w.currentVersionId).before,firstSnapshot,'compare actual source generation, not its modified editor')
+    assert.ok(pageIteration(w,w.currentVersionId).changes.length)
+    assert.equal(snapshot.inpaint.instruction,region.instruction)
+    assert.equal(snapshot.inpaint.label,region.label)
     assert.equal(snapshot.inpaint.mask,region.mask);assert.equal(snapshot.inpaint.strength,pageCurrent(w).editor.strength)
     edit({type:'editor',versionId:w.currentVersionId,editor:{...pageCurrent(w).editor,draft:{...pageCurrent(w).editor.draft,base:'A different object.'}}})
     assert.deepEqual(pageCurrent(w).generated,snapshot,'generated prompt remains immutable after editing')
+    assert.deepEqual(pageIteration(w,w.currentVersionId).result,snapshot)
+    const old=structuredClone(w);delete old.versions.find(v=>v.id===generated).generated
+    assert.equal(pageIteration(old,old.currentVersionId).before,undefined,'missing historical snapshot must not fall back to edited draft')
     assert.ok(w.messages.at(-1).draftBefore)
+    const retainedProposalId=proposal().id
     mode='discuss';await talk('参考上一版，先讨论',region.id,[generated]);assert.equal(aiInputs.at(-1).parts.filter(p=>p.type==='image_url').length,3)
+    assert.equal(proposal().id,retainedProposalId,'discussion without a new proposal does not erase latest suggestion')
     const {tagStore}=require('../src/main/tagdb/store.ts');tagStore.loaded=true
     mode='tool';await talk('先查证这个词，再给方案')
     assert.ok(aiInputs.at(-1).messages.some(m=>m.role==='tool'&&m.tool_call_id==='fixture-tool'));tagStore.loaded=false
@@ -132,6 +165,8 @@ app.whenReady().then(async()=>{
     assert.ok(!pages.pageLocks.has(id));assert.match(w.messages.at(-1).text,/取消/)
     edit({type:'switch',versionId:original});assert.equal(pageCurrent(w).image,null)
     w=await collaborator.renderPage(id,w.revision,w.execution,()=>{},()=>false);assert.equal(pageCurrent(w).parentId,original)
+    assert.equal(pageIteration(w,w.currentVersionId).source.id,original,'branches compare actual parent, not chronological predecessor')
+    assert.equal(pageIteration(w,w.currentVersionId).before.draft.base,'')
     const imported=await pages.importPage(join(client.imageDir(),'page-fixture.png'),params,'v5',draft)
     const importedName=pageCurrent(imported).image.name;assert.notEqual(importedName,'page-fixture.png')
     assert.throws(()=>pages.deletePage(imported.id,imported.revision-1),/更新/)
@@ -173,14 +208,19 @@ app.whenReady().then(async()=>{
     let ui=pages.listPages().find(p=>p.title==='通用创作会话测试');assert.ok(ui);assert.equal(ui.image,null)
     await shot('01-new-session.png')
     mode='change';await input('.pw-input-wrap textarea','我想生成一个灰色物体，保留主体轮廓');await run(`document.querySelector('.pw-send').click()`)
-    await wait(`!!document.querySelector('.pw-change-board .pw-proposal')&&!document.querySelector('.pw-thinking')`)
+    await wait(`!!document.querySelector('.pw-plan-link')&&!document.querySelector('.pw-thinking')`)
+    assert.ok(await js(`!!document.querySelector('.pw-canvas-bar')&&!document.querySelector('.pw-suggestion-board')`),'new proposal does not navigate away from canvas')
+    await click('.pw-plan-link','查看提示词建议');await wait(`!!document.querySelector('.pw-suggestion-board .pw-proposal')`)
+    assert.ok(await js(`!!document.querySelector('.markdown-text h2')&&!!document.querySelector('.markdown-text strong')&&!!document.querySelector('.markdown-text ol')&&!!document.querySelector('.markdown-text pre code')&&!!document.querySelector('.markdown-text table')`))
+    await run(`document.querySelector('.markdown-text a').click()`);assert.deepEqual(openedLinks,['https://example.com/guide'])
+    await shot('12-markdown-suggestion-tab.png')
     assert.equal(pageCurrent(pages.readPage(ui.id)).editor.draft.base,'')
     assert.ok(await js(`!document.querySelector('.pw-understanding') && !document.querySelector('.pw-header').textContent.includes('已保存到本机')`))
     assert.ok(await js(`document.querySelector('.pw-header').getBoundingClientRect().height<=48`))
     assert.ok(await js(`document.querySelector('.skill-trigger').textContent.includes('已启用 3 个 Skill') && document.querySelector('.skill-trigger').getBoundingClientRect().height<50`))
     await click('.pw-rename','通用创作会话测试');await input('.pw-heading input','会话重命名测试');await run(`document.querySelector('.pw-heading input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`);assert.equal(pages.readPage(ui.id).title,'会话重命名测试')
     await click('.pw-rename','会话重命名测试');await input('.pw-heading input','通用创作会话测试');await run(`document.querySelector('.pw-heading input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`)
-    await click('.pw-change-board button','采纳方案')
+    await click('.pw-suggestion-board button','采纳方案')
     await click('.pw-view-tabs button','当前提示词');assert.ok(await js(`document.querySelector('.workspace-prompt').textContent.includes('grey object')`))
     await shot('02-current-prompt.png')
     await click('.pw-execution button','生成新版本');await wait(`document.querySelector('.pw-canvas-bar b')?.textContent==='版本 1'`)
@@ -194,13 +234,22 @@ app.whenReady().then(async()=>{
     win.webContents.sendInputEvent({type:'mouseDown',button:'right',clickCount:1,...point(.23,.46)});win.webContents.sendInputEvent({type:'mouseUp',button:'right',clickCount:1,...point(.23,.46)})
     await wait(`!!document.querySelector('.ip-context-menu')`);await click('.ip-context-menu button','新增批注');await input('.ip-comment textarea','我指的是这个位置');await click('.ip-comment button','完成批注');await click('.ip-foot button','保存并返回讨论');await wait(`!document.querySelector('.ip-dialog')`)
     assert.equal(pages.readPage(ui.id).execution.kind,'generate')
-    mode='inpaint';await input('.pw-input-wrap textarea','这次只重绘刚才的区域');await run(`document.querySelector('.pw-send').click()`);await wait(`document.querySelector('.pw-change-board')?.textContent.includes('局部重绘')&&!document.querySelector('.pw-thinking')`)
-    await click('.pw-change-board button','采纳方案');assert.equal(pages.readPage(ui.id).execution.kind,'inpaint')
+    mode='inpaint';await input('.pw-input-wrap textarea','这次只重绘刚才的区域');await run(`document.querySelector('.pw-send').click()`);await wait(`document.querySelectorAll('.pw-plan-link').length===2&&!document.querySelector('.pw-thinking')`)
+    await run(`document.querySelectorAll('.pw-plan-link')[1].click()`);await wait(`document.querySelector('.pw-suggestion-board')?.textContent.includes('局部重绘')`)
+    await click('.pw-suggestion-board button','采纳方案');assert.equal(pages.readPage(ui.id).execution.kind,'inpaint')
     await shot('03-proposal-and-execution.png')
     await click('.pw-execution button','检查遮罩');await shot('04-mask-review.png')
     await click('.pw-execution button','执行局部重绘');await wait(`document.querySelector('.pw-canvas-bar b')?.textContent==='版本 2'`)
-    await click('.pw-plan-link','调整主体明暗');assert.ok(await js(`document.querySelector('.pw-change-board h3').textContent.includes('起点')`));assert.ok(await js(`document.querySelector('.pw-canvas-bar')===null`))
-    await click('.pw-change-board button','回到当前版本');assert.ok(await js(`document.querySelector('.pw-change-board h3').textContent.includes('版本 2')`))
+    await click('.pw-plan-link','调整主体明暗');assert.ok(await js(`document.querySelector('.pw-suggestion-heading').textContent.includes('起点')`));assert.ok(await js(`document.querySelector('.pw-canvas-bar')===null`))
+    await click('.pw-suggestion-board button','回到当前版本');assert.ok(await js(`document.querySelector('.pw-suggestion-board').textContent.includes('此版本暂无修改建议')`))
+    await click('.pw-view-tabs button','修改对比');assert.ok(await js(`!document.querySelector('.pw-change-board article.pw-proposal')`),'AI suggestions are separate from iteration history')
+    assert.ok(await js(`document.querySelector('.wi-heading').textContent.includes('版本 1 → 版本 2')&&document.querySelector('.wi-heading').textContent.includes('局部重绘')`))
+    assert.equal(await js(`document.querySelectorAll('.wi-images img').length`),2)
+    assert.ok(await js(`(()=>{const rows=[...document.querySelectorAll('.wi-timeline button')];return rows.every(b=>Math.abs(b.getBoundingClientRect().top-rows[0].getBoundingClientRect().top)<1)})()`),'iteration navigation stays in one horizontal row')
+    await run(`document.querySelector('.wi-mask').open=true`);await shot('11-iteration-history.png')
+    await click('.wi-timeline button','版本 1');assert.ok(await js(`document.querySelector('.wi-heading').textContent.includes('起点 → 版本 1')`))
+    assert.equal(pages.readPage(ui.id).currentVersionId,pages.readPage(ui.id).versions[2].id,'review does not switch current version')
+    await click('.wi-timeline button','版本 2')
     await click('.pw-view-tabs button','当前提示词');await click('.pw-prompt-actions button','编辑');
     const sharedValues=await js(`[...document.querySelectorAll('.view textarea,.view .char-head input')].map(e=>e.value)`)
     const moveCharacter=async(x,y)=>{
@@ -245,6 +294,19 @@ app.whenReady().then(async()=>{
     win.setSize(1440,960);await pause(150);await click('.pw-prompt-actions button','保存草稿');await wait(`!document.querySelector('.workspace-prompt fieldset')`)
     const saved=pages.readPage(ui.id);assert.equal(pageCurrent(saved).editor.draft.characters[0].position,'0.3,0.6');assert.ok(saved.messages.some(m=>m.draftBefore));assert.notEqual(pageCurrent(saved).generated.draft.base,pageCurrent(saved).editor.draft.base)
     await click('.pw-view-tabs button','修改对比');await run(`document.querySelector('details.pw-proposal').open=true`);await shot('09-context-diff.png');assert.ok(await js(`!!document.querySelector('.diff-prose')&&!document.querySelector('.pw-change-board').textContent.includes('句内：')`));
+    mode='change'
+    for (const text of ['给当前版本一个新建议','再给一份最新建议']) {
+      const count=await js(`document.querySelectorAll('.pw-message.assistant').length`)
+      await input('.pw-input-wrap textarea',text);await run(`document.querySelector('.pw-send').click()`)
+      await wait(`document.querySelectorAll('.pw-message.assistant').length===${count+1}&&!document.querySelector('.pw-thinking')`)
+    }
+    assert.ok(await js(`!!document.querySelector('.pw-change-board')`),'new suggestions do not interrupt comparison')
+    const latest=pages.readPage(ui.id)
+    assert.equal(latest.messages.filter(m=>m.proposal&&m.versionId===latest.currentVersionId).length,1)
+    await click('.pw-plan-link','查看此版本最新建议')
+    assert.equal(await js(`document.querySelectorAll('.pw-suggestion-board article.pw-proposal').length`),1)
+    assert.ok(await js(`document.querySelector('.pw-suggestion-heading').textContent.includes('版本 2')`))
+    await shot('13-latest-suggestion.png')
     await click('.pw-header button','历史');assert.ok(await js(`!document.querySelector('.pw-history').textContent.includes('种子')&&!document.querySelector('.pw-history').textContent.includes('点击查看')`));await click('.pw-version b','版本 1');await wait(`!!document.querySelector('.pw-history-banner')`)
     await click('.pw-history-banner button','引用此版');mode='discuss';await input('.pw-input-wrap textarea','参考这版，先讨论');await run(`document.querySelector('.pw-send').click()`);await wait(`!document.querySelector('.pw-thinking')`)
     assert.equal(aiInputs.at(-1).input.currentVersion.label,'版本 2');assert.equal(aiInputs.at(-1).input.referencedVersions[0].label,'版本 1')

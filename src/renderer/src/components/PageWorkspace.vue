@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { PageExecution, PageAction, PageEditorState, PageMessage, PageWorkspace } from '@shared/page-workspace'
-import { pageChanges, pageContextKey, pageCurrent } from '@shared/page-workspace'
+import { pageChanges, pageContextKey, pageCurrent, pageLatestProposal } from '@shared/page-workspace'
 import { changeLabel } from '@shared/inpaint-plan'
 import { cleanErr, state } from '../store'
 import { diffPrompt } from '../prompt-diff'
@@ -11,6 +11,8 @@ import InpaintEditor from './InpaintEditor.vue'
 import ThemeSelect from './ThemeSelect.vue'
 import DiffChips from './DiffChips.vue'
 import WorkspacePrompt from './WorkspacePrompt.vue'
+import WorkspaceIterations from './WorkspaceIterations.vue'
+import MarkdownText from './MarkdownText.vue'
 import { vAutosize } from '../autosize'
 
 const props = defineProps<{ workspace: PageWorkspace }>()
@@ -25,12 +27,14 @@ const region = computed(() => current.value.editor.regions.find(r => r.id === re
 const regionOptions = computed(() => [{ value: null as string | null, label: '不附加区域批注' }, ...current.value.editor.regions.map(r => ({ value: r.id, label: `区域 ${r.label}${r.instruction ? ` · ${r.instruction.slice(0, 20)}` : ''}` }))])
 const references = ref<string[]>([])
 const title = ref(work.value.title), composer = ref(work.value.composer)
-const pane = ref<'canvas'|'prompt'|'changes'>('canvas'), editingPrompt = ref(false)
+const pane = ref<'canvas'|'prompt'|'changes'|'suggestions'>('canvas'), editingPrompt = ref(false)
 const reviewVersionId = ref(work.value.currentVersionId)
+const suggestionVersionId = ref(work.value.currentVersionId)
 const overlayMode = ref<'annotation'|'execution'>('annotation')
 const displayRegion = computed(() => overlayMode.value === 'execution' ? current.value.editor.regions.find(r=>r.id===work.value.execution.regionId) : region.value)
-const proposals = computed(() => work.value.messages.filter(m=>m.proposal && m.versionId===reviewVersionId.value).slice().reverse())
-const pendingCount = computed(() => proposals.value.filter(m=>m.proposal?.status==='pending' && !stale(m)).length)
+const latestProposal = computed(() => pageLatestProposal(work.value, suggestionVersionId.value))
+const pendingCount = computed(() => { const m = pageLatestProposal(work.value, current.value.id); return m?.proposal?.status==='pending' && !stale(m) ? 1 : 0 })
+const suggestionVersions = computed(() => work.value.versions.filter(v=>v.id===suggestionVersionId.value||v.id===current.value.id||pageLatestProposal(work.value,v.id)).map(v=>({value:v.id,label:shortVersion(v.id)+(v.id===current.value.id?' · 当前':'')})))
 const executionRegion = computed(() => current.value.editor.regions.find(r=>r.id===work.value.execution.regionId))
 const historyOpen = ref(false), editing = ref(false)
 const operation = ref<'chat' | 'generate' | 'save' | ''>('')
@@ -104,7 +108,7 @@ async function send() {
     composer.value = ''
     await scrollEnd()
     work.value = await window.api.pagesChat(work.value.id, work.value.revision, text, regionId.value, [...references.value])
-    references.value = []; if(work.value.messages.at(-1)?.proposal) review(current.value.id); savedNotes.value = JSON.stringify(notesValue()); emit('updated')
+    references.value = []; savedNotes.value = JSON.stringify(notesValue()); emit('updated')
   } catch (e) {
     error.value = cleanErr(e)
     try { work.value = await window.api.pagesRead(work.value.id); composer.value = work.value.composer; savedNotes.value = JSON.stringify(notesValue()) } catch { /* Preserve local state if reading also fails. */ }
@@ -126,8 +130,9 @@ async function setExecution(execution: PageExecution) {
 function chooseExecution(kind: 'generate'|'inpaint') {
   void setExecution({kind,regionId:kind==='inpaint' ? work.value.execution.regionId ?? current.value.editor.regions[0]?.id ?? null : null})
 }
-function planLabel(e?: PageExecution) { return e?.kind === 'inpaint' ? '局部重绘 · '+(work.value.versions.find(v=>v.id===reviewVersionId.value)?.editor.regions.find(r=>r.id===e.regionId)?.label ?? '遮罩已不存在') : '按提示词生成新图' }
+function planLabel(e?: PageExecution) { return e?.kind === 'inpaint' ? '局部重绘 · '+(work.value.versions.find(v=>v.id===suggestionVersionId.value)?.editor.regions.find(r=>r.id===e.regionId)?.label ?? '遮罩已不存在') : '按提示词生成新图' }
 function review(id: string) { reviewVersionId.value=id; pane.value='changes' }
+function showSuggestions(id: string) { suggestionVersionId.value=id; pane.value='suggestions' }
 function inspectMask() { overlayMode.value='execution';showMask.value=true;viewedId.value=current.value.id;pane.value='canvas' }
 
 async function generate() {
@@ -201,7 +206,7 @@ onBeforeUnmount(() => { alive = false; clearTimeout(notesTimer); window.removeEv
     <div class="pw-main">
       <aside v-if="historyOpen" class="pw-history scroll"><div class="pw-section-title">历史</div><button v-for="v in work.versions.slice().reverse()" :key="v.id" class="pw-version" :disabled="editingPrompt" :class="{selected:viewedId===v.id}" :title="versionDetail(v)" @click="viewedId=v.id;pane='canvas'"><img v-if="v.image" :src="v.image.url" alt="" loading="lazy"><div v-else class="pw-version-empty"><Icon name="chat"/></div><div><b :title="v.label">{{ shortVersion(v.id) }}</b><span v-if="v.id===current.id" class="pw-current">当前采用</span></div></button></aside>
       <div class="pw-canvas-column">
-        <div class="pw-toolbar"><div class="pw-view-tabs seg"><button :class="{on:pane==='canvas'}" :disabled="editingPrompt" @click="pane='canvas'">画布</button><button :class="{on:pane==='prompt'}" @click="pane='prompt'">当前提示词</button><button :class="{on:pane==='changes'}" :disabled="editingPrompt" @click="review(current.id)">修改对比 <span v-if="pendingCount">{{ pendingCount }}</span></button></div><div v-if="pane==='prompt'" class="pw-prompt-actions">
+        <div class="pw-toolbar"><div class="pw-view-tabs seg"><button :class="{on:pane==='canvas'}" :disabled="editingPrompt" @click="pane='canvas'">画布</button><button :class="{on:pane==='prompt'}" @click="pane='prompt'">当前提示词</button><button :class="{on:pane==='changes'}" :disabled="editingPrompt" @click="review(current.id)">修改对比</button><button :class="{on:pane==='suggestions'}" :disabled="editingPrompt" @click="showSuggestions(viewedId)">AI 建议 <span v-if="pendingCount" class="pw-suggestion-dot" aria-label="有待采纳建议"></span></button></div><div v-if="pane==='prompt'" class="pw-prompt-actions">
           <template v-if="editingPrompt"><button class="btn ghost small" :disabled="promptEditor?.saving" @click="promptEditor?.cancel()">取消编辑</button><button class="btn primary small" :disabled="promptEditor?.saving" @click="promptEditor?.save()">{{ promptEditor?.saving?'保存中…':'保存草稿' }}</button></template>
           <template v-else><button class="icon-btn sm" title="复制完整提示词" @click="promptEditor?.copyPrompt()"><Icon name="copy" :size="15"/></button><button class="btn small" :disabled="busy" @click="promptEditor?.begin()"><Icon name="edit" :size="14"/>编辑</button></template>
         </div></div>
@@ -215,16 +220,21 @@ onBeforeUnmount(() => { alive = false; clearTimeout(notesTimer); window.removeEv
           <details v-if="historical" class="pw-historical-prompt scroll"><summary>此版本的提示词与参数</summary><pre>{{ JSON.stringify(viewed.generated ?? viewed.editor, (k,v)=>k==='regions'||k==='mask'?undefined:v, 2) }}</pre></details>
         </template>
         <WorkspacePrompt ref="promptEditor" v-else-if="pane==='prompt'" :key="current.id" :editor="current.editor" :model="work.model" :image="current.image" :baseline="current.generated?.draft" :has-image="!!current.image" :disabled="busy" :save="saveEditor" @editing="editingPrompt=$event" />
-        <div v-else class="pw-change-board scroll"><div class="row"><h3>修改记录 · {{ shortVersion(reviewVersionId) }}</h3><button v-if="reviewVersionId!==current.id" class="btn ghost small ml-auto" @click="review(current.id)">回到当前版本</button></div>
-          <p v-if="!proposals.length && !work.messages.some(m=>m.draftBefore&&m.versionId===reviewVersionId)" class="pw-empty-plan">暂无修改方案</p>
-          <article v-for="m in proposals" :key="m.id" class="pw-proposal"><div class="row"><b>{{ m.proposal!.title }}</b><span class="pill ml-auto">{{ status(m.proposal!.status) }}</span></div><p class="pw-plan-kind">建议执行：{{ planLabel(m.proposal!.execution) }}</p><p v-if="m.proposal!.warning" class="pw-warning">{{ m.proposal!.warning }}</p><div v-for="(c,i) in m.proposal!.changes" :key="i" class="pw-change"><label>{{ changeLabel(c) }}</label><DiffChips :diff="diffPrompt(c.before,c.after)"/><p v-if="c.reason">{{ c.reason }}</p><details v-if="c.before||c.after"><summary>完整修改前后</summary><pre>{{ c.before||'（空）' }}</pre><pre>{{ c.after||'（空）' }}</pre></details></div><p v-if="!m.proposal!.changes.length" class="muted small">保持当前提示词，使用上述执行方式继续尝试。</p><p v-if="m.proposal!.status==='pending'&&stale(m)" class="muted small">上下文或执行设置已改变，请基于当前状态重新提出方案。</p><div v-if="m.proposal!.status==='pending'" class="row"><button class="btn small primary" :disabled="busy||stale(m)" @click="proposal(m,'accept')">采纳方案</button><button class="btn ghost small" :disabled="busy" @click="proposal(m,'reject')">不采用</button></div><button v-if="m.proposal!.status==='accepted'" class="btn ghost small" :disabled="busy||m.versionId!==current.id" @click="proposal(m,'undo')">撤销采纳</button></article>
+        <div v-else-if="pane==='changes'" class="pw-change-board scroll"><div class="row"><h3>修改记录 · {{ shortVersion(reviewVersionId) }}</h3><button v-if="reviewVersionId!==current.id" class="btn ghost small ml-auto" @click="review(current.id)">回到当前版本</button></div>
+          <WorkspaceIterations :work="work" :version-id="reviewVersionId" @select="review"/>
+          <h4 v-if="work.messages.some(m=>m.draftBefore&&m.versionId===reviewVersionId)">草稿修改</h4>
           <details v-for="m in work.messages.filter(m=>m.draftBefore&&m.versionId===reviewVersionId).slice().reverse()" :key="m.id" class="pw-proposal"><summary>{{ m.text }} · {{ time(m.createdAt) }}</summary><div v-for="(c,i) in pageChanges(m.draftBefore!,m.draftAfter!)" :key="i" class="pw-change"><label>{{ changeLabel(c) }}</label><DiffChips :diff="diffPrompt(c.before,c.after)"/><p v-if="c.reason">{{ c.reason }}</p></div></details>
+        </div>
+        <div v-else class="pw-suggestion-board scroll">
+          <div class="row pw-suggestion-heading"><h3>AI 建议</h3><ThemeSelect v-model="suggestionVersionId" :options="suggestionVersions" aria-label="建议所属版本"/><button v-if="suggestionVersionId!==current.id" class="btn ghost small ml-auto" @click="showSuggestions(current.id)">回到当前版本</button></div>
+          <p v-if="!latestProposal" class="pw-empty-plan">此版本暂无修改建议</p>
+          <article v-for="m in latestProposal ? [latestProposal] : []" :key="m.id" class="pw-proposal"><div class="row"><b>{{ m.proposal!.title }}</b><span class="pill ml-auto">{{ status(m.proposal!.status) }}</span></div><p class="pw-plan-kind">建议执行：{{ planLabel(m.proposal!.execution) }}</p><p v-if="m.proposal!.warning" class="pw-warning">{{ m.proposal!.warning }}</p><div v-for="(c,i) in m.proposal!.changes" :key="i" class="pw-change"><label>{{ changeLabel(c) }}</label><DiffChips :diff="diffPrompt(c.before,c.after)"/><p v-if="c.reason">{{ c.reason }}</p><details v-if="c.before||c.after"><summary>完整修改前后</summary><pre>{{ c.before||'（空）' }}</pre><pre>{{ c.after||'（空）' }}</pre></details></div><p v-if="!m.proposal!.changes.length" class="muted small">保持当前提示词，使用上述执行方式继续尝试。</p><p v-if="m.proposal!.status==='pending'&&stale(m)" class="muted small">上下文或执行设置已改变，请基于当前状态重新提出方案。</p><div v-if="m.proposal!.status==='pending'" class="row"><button class="btn small primary" :disabled="busy||stale(m)" @click="proposal(m,'accept')">采纳方案</button><button class="btn ghost small" :disabled="busy" @click="proposal(m,'reject')">不采用</button></div><button v-if="m.proposal!.status==='accepted'" class="btn ghost small" :disabled="busy||m.versionId!==current.id" @click="proposal(m,'undo')">撤销采纳</button></article>
         </div>
         <div class="pw-execution" :title="work.execution.kind==='generate' ? '使用当前提示词重新生成整张图' : '以当前图片为底图，仅重绘所选遮罩'"><div class="row"><b>本次执行</b><ThemeSelect :model-value="work.execution.kind" :disabled="busy" :options="[{value:'generate',label:'按提示词生成新图'},{value:'inpaint',label:'局部重绘当前图片',disabled:!current.image||!current.editor.regions.length}]" @update:model-value="chooseExecution" /></div><div v-if="work.execution.kind==='inpaint'" class="row"><ThemeSelect :model-value="work.execution.regionId" :disabled="busy" :options="current.editor.regions.map(r=>({value:r.id,label:'遮罩 '+r.label}))" @update:model-value="id=>setExecution({kind:'inpaint',regionId:id})"/><button class="btn small ghost" @click="inspectMask">检查遮罩</button></div><div class="row"><span class="muted small">{{ current.editor.params.width }}×{{ current.editor.params.height }} · {{ current.editor.params.steps }} 步</span><button class="btn accent ml-auto" :disabled="busy || !current.editor.draft.base.trim()&&!current.editor.draft.characters.some(c=>c.prompt.trim())" @click="generate"><Icon name="wand" :size="14"/>{{ operation==='generate'?'正在执行…':work.execution.kind==='generate'?'生成新版本':'执行局部重绘' }}</button></div></div>
       </div>
       <aside class="pw-conversation"><div class="pw-thread-header"><div><Icon name="sparkle" :size="17"/><b>对话</b></div><span :title="state.settings?.model">{{ state.settings?.model || '请先配置 AI' }}</span></div><div class="pw-context"><span class="pw-context-dot"></span>当前采用 <b>{{ current.label }}</b><button v-if="historical" @click="viewedId=current.id">回到当前</button></div>
         <div class="pw-thread scroll" ref="thread" aria-live="polite"><div v-if="!work.messages.some(m=>m.role==='user')&&!pendingText" class="pw-welcome"><p>描述想生成或修改的内容</p></div>
-          <div v-for="m in work.messages" :key="m.id" :class="['pw-message',m.role,{failed:m.error}]"><template v-if="m.role==='event'"><span>{{ m.text }}</span></template><template v-else><div class="pw-message-meta"><b>{{ m.role==='user'?'你':'AI' }}</b><button :disabled="editingPrompt" @click="viewedId=m.versionId;pane='canvas'">{{ label(m.versionId) }}</button><time>{{ time(m.createdAt) }}</time></div><div class="pw-message-text">{{ m.text }}</div><div v-if="m.referenceIds?.length" class="pw-citations"><button v-for="id in m.referenceIds" :key="id" :disabled="editingPrompt" @click="viewedId=id;pane='canvas'">引用 {{ label(id) }}</button></div><button v-if="m.proposal" class="pw-plan-link" :disabled="editingPrompt" @click="review(m.versionId)">{{ m.proposal.title }} · {{ status(m.proposal.status) }} → 查看修改对比</button><details v-if="m.skills" class="pw-used-skills"><summary>本轮 Skill · {{ m.skills.length }}</summary>{{ m.skills.join('、') || '未启用 Skill' }}</details></template></div>
+          <div v-for="m in work.messages" :key="m.id" :class="['pw-message',m.role,{failed:m.error}]"><template v-if="m.role==='event'"><span>{{ m.text }}</span></template><template v-else><div class="pw-message-meta"><b>{{ m.role==='user'?'你':'AI' }}</b><button :disabled="editingPrompt" @click="viewedId=m.versionId;pane='canvas'">{{ label(m.versionId) }}</button><time>{{ time(m.createdAt) }}</time></div><MarkdownText v-if="m.role==='assistant'" :text="m.text"/><div v-else class="pw-message-text">{{ m.text }}</div><div v-if="m.referenceIds?.length" class="pw-citations"><button v-for="id in m.referenceIds" :key="id" :disabled="editingPrompt" @click="viewedId=id;pane='canvas'">引用 {{ label(id) }}</button></div><button v-if="m.proposal||m.proposalSummary" class="pw-plan-link" :disabled="editingPrompt" @click="showSuggestions(m.versionId)"><span class="pw-plan-title">{{ m.proposal?.title||m.proposalSummary?.title }}</span><span class="pw-plan-action"><span>{{ m.proposal ? status(m.proposal.status) : '已有更新' }}</span><b>{{ m.proposalSummary ? '查看此版本最新建议' : m.proposal?.changes.length ? '查看提示词建议' : '查看执行建议' }}</b><Icon name="arrow" :size="14"/></span></button><details v-if="m.skills" class="pw-used-skills"><summary>本轮 Skill · {{ m.skills.length }}</summary>{{ m.skills.join('、') || '未启用 Skill' }}</details></template></div>
           <div v-if="pendingText" class="pw-message user"><div class="pw-message-text">{{ pendingText }}</div></div><div v-if="operation==='chat'" class="pw-thinking"><Icon name="sparkle" :size="16" class="spin-slow"/>正在分析上下文…<button @click="cancelChat">停止</button></div><div v-if="operation==='generate'" class="pw-thinking">{{ progress }}</div>
         </div>
         <div class="pw-compose"><div v-if="error" class="pw-error" role="alert">{{ error }}<button @click="error=''">×</button></div><div v-if="references.length" class="pw-reference-chips"><button v-for="id in references" :key="id" :disabled="busy" @click="reference(id)">引用 {{ label(id) }} ×</button></div><div v-if="current.editor.regions.length" class="pw-target"><ThemeSelect v-model="regionId" :options="regionOptions" :disabled="busy" aria-label="附加区域批注" @update:model-value="overlayMode='annotation'"/></div><div class="pw-input-wrap"><textarea v-autosize ref="input" v-model="composer" :disabled="busy" maxlength="6000" aria-label="持续讨论输入" placeholder="描述目标，或接着上次的结果继续说…" @keydown.enter.exact.prevent="!$event.isComposing&&send()"></textarea><button class="pw-send" :disabled="busy||!composer.trim()" title="发送" @click="send"><Icon name="arrow" :size="18"/></button></div></div>
@@ -235,6 +245,10 @@ onBeforeUnmount(() => { alive = false; clearTimeout(notesTimer); window.removeEv
 </template>
 
 <style scoped>
+.pw-suggestion-board{flex:1;min-height:0;padding:16px 0}.pw-suggestion-heading{gap:10px;flex-wrap:wrap}.pw-suggestion-heading h3{font-size:14px;margin:0}.pw-suggestion-heading :deep(.theme-select){width:160px}.pw-suggestion-dot{display:inline-block;width:6px;height:6px;margin-left:3px;border-radius:50%;background:var(--pink)}
+.pw-plan-link{width:100%}.pw-plan-title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}.pw-plan-action{display:flex;align-items:center;gap:8px;margin-top:5px}.pw-plan-action>span{color:var(--muted);font-size:10px}.pw-plan-action>b{margin-left:auto;font-weight:600}.pw-plan-link:hover{background:var(--pink-soft)}
+.pw-view-tabs{max-width:100%;overflow-x:auto}
+
 .pw-shell{height:100%;min-height:0;display:flex;flex-direction:column;background:var(--bg);outline:none}
 .pw-header{height:46px;flex-shrink:0;display:flex;align-items:center;gap:10px;padding:6px 18px;border-bottom:1px solid var(--line)}
 .pw-heading{min-width:0;flex:1}.pw-rename{display:flex;align-items:center;gap:8px;max-width:100%;padding:5px 8px;border:1px solid transparent;border-radius:8px;text-align:left}.pw-rename b{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pw-rename .icon{flex-shrink:0;color:var(--muted)}.pw-rename:hover,.pw-rename:focus-visible{background:var(--hover);border-color:var(--line2)}.pw-heading input{width:100%;max-width:360px}

@@ -47,6 +47,7 @@ import { IMAGE_SCHEME, freeCheck, generateImages, getSubscription, imageDir, ima
 import { startMcpServer, readLog } from './mcp/server'
 import { buildTools, MCP_INSTRUCTIONS } from './mcp/tools'
 import { checkUpdate, UPDATE_REPO } from './update'
+import { isWebUrl } from '../shared/web-url'
 import { SHOT_DIR, prepareScreenshotProfile, takeScreenshots } from './screenshots'
 
 let win: BrowserWindow | null = null
@@ -254,6 +255,10 @@ function registerIpc(): void {
   })
 
   /* ---------- 版本检查 ---------- */
+  ipcMain.handle('web:open', async (_e, url: unknown) => {
+    if (!isWebUrl(url)) throw new Error('仅支持打开 HTTP / HTTPS 网页')
+    await shell.openExternal(url)
+  })
   ipcMain.handle('update:check', (_e, force?: boolean) => checkUpdate(!!force))
   // 只允许打开本仓库的 release 页，避免渲染进程被注入后借 shell 打开任意地址
   ipcMain.handle('update:open', (_e, url: string) =>

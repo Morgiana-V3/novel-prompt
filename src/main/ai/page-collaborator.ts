@@ -153,7 +153,7 @@ export async function renderPage(id: string, revision: number, execution: import
     if (!result.images.length) throw new Error(result.stopped ?? '没有返回图片')
     const next = { id: randomUUID(), parentId: v.id, label: `版本 ${w.versions.length}`, image: result.images[0], createdAt: Date.now(),
       generated: { draft: structuredClone(draft), params: { ...params, seed: result.images[0].seed ?? params.seed }, execution: selectedExecution, sourceVersionId: v.id,
-        ...(selectedExecution.kind === 'inpaint' ? { inpaint: { mask: region!.mask, strength: v.editor.strength } } : {}) },
+        ...(selectedExecution.kind === 'inpaint' ? { inpaint: { mask: region!.mask, strength: v.editor.strength, label: region!.label, instruction: region!.instruction, target: region!.target } } : {}) },
       editor: { ...structuredClone(v.editor), draft, regions: selectedExecution.kind === 'inpaint' ? v.editor.regions.map(r => ({ ...r, accepted: null })) : [] } }
     w.versions.push(next); w.currentVersionId = next.id; w.execution = selectedExecution
     pageEvent(w, `从「${v.label}」${region ? `局部重绘 ${region.label}` : '按提示词生成'}，得到「${next.label}」并设为当前版本。${result.stopped ? ` ${result.stopped}` : ''}请查看画面后继续反馈。`)
