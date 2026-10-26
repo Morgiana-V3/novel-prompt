@@ -139,12 +139,12 @@ app.whenReady().then(async () => {
     await click('.nav-item', '提示词比对')
     await click('.section-tab', '主提示词1')
     await paste('[Prompt]\noutdoors\n[Character 1 @ B3]\nsilver hair\n[Character 1 Undesired Content]\nglasses\n[Undesired Content]\nblurry')
-    await click('.nav-item', 'AI 工作台'); await click('.sessions-home header button', '新建会话')
+    await click('.nav-item', 'AI 工作台'); await click('.sessions-home header button', '新建项目')
     // Select the current shared prompt as the new session's starting point.
     await js(`document.querySelector('.session-create .theme-select').click()`)
     await click('.theme-select-option', '复制当前提示词')
-    await click('.session-create button', '开始会话'); await waitUI(`!!document.querySelector('.pw-shell')`)
-    await click('.pw-view-tabs button', '当前提示词')
+    await click('.session-create button', '开始项目'); await waitUI(`!!document.querySelector('.pw-shell')`)
+    await click('.pw-view-tabs button', '生图配置')
     await js(`document.querySelector('[title="复制完整提示词"]').click()`)
     await wait(() => !!copied)
     assert.deepEqual(parsePromptText(copied), { base: 'outdoors', negative: 'blurry',
@@ -153,16 +153,16 @@ app.whenReady().then(async () => {
     assert.equal(await value(), 'outdoors')
     console.log('PASS workspace copy round-trips through the real paste flow with character negatives and positions')
 
-    // 新建会话沿用生图页参数，而不是写死的默认值
+    // 新建项目沿用生图页参数，而不是写死的默认值
     const created = pages.listPages().map(s => pages.readPage(s.id))
     assert.ok(created.length >= 1)
     await click('.nav-item', '生图预览')
     await js(`localStorage.setItem('np-gen-params', JSON.stringify({steps:28,scale:6.5,cfgRescale:0.2,sampler:'k_dpmpp_2m',noiseSchedule:'karras',count:4}))`)
     await click('.nav-item', 'AI 工作台')
-    await js(`[...document.querySelectorAll('.pw-shell button')].find(b=>b.textContent.trim()==='返回会话').click()`)
+    await js(`[...document.querySelectorAll('.pw-shell button')].find(b=>b.textContent.trim()==='返回项目').click()`)
     await waitUI(`!!document.querySelector('.sessions-home header button')`)
-    await click('.sessions-home header button', '新建会话')
-    await click('.session-create button', '开始会话'); await waitUI(`!!document.querySelector('.pw-shell')`)
+    await click('.sessions-home header button', '新建项目')
+    await click('.session-create button', '开始项目'); await waitUI(`!!document.querySelector('.pw-shell')`)
     const newest = pages.listPages().sort((a, b) => b.updatedAt - a.updatedAt)[0]
     const p = pages.readPage(newest.id).versions[0].editor.params
     assert.deepEqual([p.steps, p.scale, p.cfgRescale, p.sampler, p.noiseSchedule, p.count, p.seed], [28, 6.5, 0.2, 'k_dpmpp_2m', 'karras', 1, null])

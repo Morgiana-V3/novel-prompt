@@ -94,16 +94,16 @@ export function registerTaskIpc(send: (channel: string, payload: unknown) => voi
   })
   // Do not abort an in-flight image request: wait for its saved result before stopping the batch.
   ipcMain.handle('nai:cancel', () => tasks.cancelResource('generation'))
-  ipcMain.handle('pages:chat', (_, id: string, revision: number, text: string, region: string | null, refs: string[], actionId?: string) => {
+  ipcMain.handle('pages:chat', (_, id: string, revision: number, text: string, region: string | null, refs: string[], actionId?: string, discussionVersionId?: string) => {
     const front = claimFrontend(actionId, 'send', id)
-    if (readPage(id).agentMode === 'external') return queueExternalRequest(id, revision, text, region, refs)
+    if (readPage(id).agentMode === 'external') return queueExternalRequest(id, revision, text, region, refs, discussionVersionId)
     if (front && (!getSettings().mcpAllowAi || !getSettings().apiKey)) throw new Error('Agent AI 权限已关闭或未配置')
     return tasks.run('page-chat', async ({ id: taskId, progress }) => {
       const cancel = () => tasks.cancel(taskId)
       front?.signal.addEventListener('abort', cancel, { once: true })
       try {
         progress('正在分析会话上下文…'); front?.report('正在分析会话上下文…')
-        const result = await discussPage(id, revision, text, region, refs); progress('讨论完成'); return result
+        const result = await discussPage(id, revision, text, region, refs, discussionVersionId); progress('讨论完成'); return result
       } finally { front?.signal.removeEventListener('abort', cancel) }
     }, { key: `page-chat:${id}`, targetId: id, onCancel: () => pageLocks.get(id)?.abort(), ...(front ? { origin: 'agent', label: front.label } : {}) })
   })

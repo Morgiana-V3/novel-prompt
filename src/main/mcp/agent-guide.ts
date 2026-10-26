@@ -6,7 +6,7 @@ export const AGENT_ENTRY = `NovelPrompt 不只是提示词查询工具，也提�
 首次使用先读 agent_guide(topic=overview)；开始工作台操作前读 agent_guide(topic=workflows)。完整指南也可通过资源 novelprompt://guide/agent 读取。
 按用户意图选择执行方式：查词、检查、只要结果用后台；“在软件里操作、每一步可见、演示给我看”用 ui_* 前台工具。前台流程允许后台只读查询，不要混入后台写入来冒充可见步骤。未指定时，纯资料任务走后台；明确操作当前工作台走前台。
 执行方式（前台/后台）与处理者（你自己/内置 AI）独立。用户让你接管时选择 external，由你读取上下文、分析并写回；不要默认转调 DeepSeek。外部模式提交只保存需求，不会自动唤醒 Agent。
-涉及当前内容先 get_app_state；完整对话/修改记录读 get_workspace，实际像素用 ui_capture_app/read_image。状态、截图和历史不是同一种信息。所有写入遵守最新 token/revision 和用户授权。`
+涉及当前内容先 get_app_state；runtime.mode、runtime.dataPath 和 runtime.appPath 标识连接的开发版或安装版及实际目录，操作前确认环境符合用户意图。两套环境的数据不会自动同步。完整对话/修改记录读 get_workspace，实际像素用 ui_capture_app/read_image。状态、截图和历史不是同一种信息。所有写入遵守最新 token/revision 和用户授权。`
 
 const sections = {
   overview: `# NovelPrompt 外部 Agent 操作指南
@@ -41,7 +41,7 @@ ${AGENT_ENTRY}
 | 当前状态 | get_app_state | 当前页面、共享稿、工作台摘要、任务；不是完整聊天或像素 |
 | 当前窗口 | ui_capture_app | 真实应用截图；包含可见弹窗，不能读取被滚动隐藏的完整历史 |
 | 图片资料 | list_images、read_image、read_image_prompt | 分别读取图库目录、图像像素、PNG 内提示词；元数据不能证明画面实际符合要求 |
-| 会话与完整记录 | list_workspaces、get_workspace、get_workspace_context | 会话列表、完整聊天与方案/版本、本轮待处理任务与冻结规则 |
+| 会话与完整记录 | list_workspaces、get_workspace、get_workspace_context、list_workspace_requests、compare_workspace_versions | 会话列表、完整聊天与方案/版本、本轮待处理任务与冻结规则 |
 | 后台工作台 | create_workspace、propose_workspace_edit、apply_workspace_action、generate_workspace | 创建、提交建议、采纳/撤销/切换版本、生成；结果可能同步界面，不展示逐步交互 |
 | 外部处理者 | set_workspace_agent、reply_workspace_request、cancel_workspace_request；对应 ui_* | 接管、回复、取消；分析来自你，不是 DeepSeek |
 | 前台工作台 | ui_open_workspace、ui_create_workspace、ui_set_workspace_input、ui_send_workspace_message、ui_view_workspace、ui_review_workspace | 在真实窗口中打开、填写、提交、切 tab、展示方案、审核和查看历史 |
@@ -66,22 +66,35 @@ ${AGENT_ENTRY}
 2. ui_set_workspace_agent(id,expected_token,mode:external)，绑定当前 MCP 连接。先 get_workspace_context 检查是否已有待处理需求；有则直接读取处理，不能再重复发送。
 3. 若要新选区，先 read_image 看原图，再 ui_add_workspace_region。rectangles 使用原图像素 x/y/width/height，不是截图显示坐标；target 为角色零基索引或 null。保存后记录返回的区域 id。
 4. 需要新需求时 ui_set_workspace_input(text,region_id,reference_ids) 只填写；ui_send_workspace_message 才提交并保存请求。使用用户要求的文本，不替换用户未发送的其他草稿。
-5. get_workspace_context 获取 request.id、stale、draft、params、图片、选区预览和 Skill 正文；读 Skill、原图和 preview_path，必要时 get_workspace 补齐历史。stale=true 时走恢复流程。
+5. get_workspace_context 获取 request.id、stale、discussion、editTarget、draft、params、图片、选区预览和 Skill 正文。discussion 是发送时所指的画面，editTarget 是建议修改的已采用稿；不同则须读取两张图，不把候选图当成当前底图。发送前可用 ui_view_workspace 查看要讨论的候选；发送后切换画布不改变该请求。读 Skill、原图和 preview_path，必要时 get_workspace 补齐历史。stale=true 时走恢复流程。
 6. 你自行分析、查词、校验；ui_reply_workspace_request 的 response 至少包含 requestId 和 reply。纯讨论不传 proposal；修改方案传 title、warning、完整 draft（base/negative/characters）和 execution（kind:generate|inpaint，regionId:null 或区域 id）。这里是 JSON 接口，不能用提示词指南的分节交付文本代替 schema。
-7. 写回只产生回复/建议，不等于采纳。按用户已授权范围 ui_review_workspace(decision:accept|reject|undo,message_id)；仅要求“给建议”则停在方案展示。
+7. 写回只产生回复/建议，不等于采纳。按用户已授权范围 ui_review_workspace(decision:accept|reject|undo,message_id)；仅要求“给建议”则停在方案展示。前台采纳后进入下一版配置编辑页，可继续微调，使用 ui_edit_workspace_config(config_action:save) 返回查看后再执行其他操作。
 8. 已获生图授权后 ui_generate_workspace(kind,region_id?,confirm:true)。完成后 ui_view_workspace(pane:canvas|changes) 并 read_image/ui_capture_app 核验。报告方案、执行、视觉结果三个层次。
 
 ## B. 后台处理
 - 查词/检查：读取相关 Skill → 查词 → 自己组织内容 → analyze_prompt → 返回结果；不用打开工作台。
 - 往普通会话提交建议：get_workspace → propose_workspace_edit → 按授权 apply_workspace_action → 按生成授权 generate_workspace。新建时 create_workspace 显式传 show:false，默认 true 会打开窗口。
-- 回复外部接管需求：get_workspace → set_workspace_agent(mode:external,revision) → get_workspace_context → 自己分析 → reply_workspace_request(id,revision,response)。必须有用户已经提交的待处理请求；接管本身不创建请求。取消用 cancel_workspace_request。
-- 当前没有后台“提交新外部需求”或“向工作台添加新区域”的对等工具。没有待处理请求时，不要假造 requestId，也不要偷偷改用 ui_*；可先交付建议，说明需要用户在应用提交或允许进入前台。独立后台重绘可用 prepare_inpaint → 查看预览 → 自己拟定提示词 → inpaint_image，具体参数读 schema。
+- 回复外部接管需求：get_workspace → set_workspace_agent(mode:external,revision) → get_workspace_context → 自己分析 → reply_workspace_request(id,revision,response)。必须有待处理请求；接管本身不创建请求，新需求按下一条显式提交。取消用 cancel_workspace_request。
+- 新需求：set_workspace_agent(mode:external) → 按需 add_workspace_region(id,revision,version_id,rectangles,instruction) → submit_workspace_request(id,revision,text,discussion_version_id?,region_id?,reference_ids?) → get_workspace_context → 自行分析 → reply_workspace_request。添加区域必须指定已采用候选；提交会冻结讨论图片与 Skill，存在未发送草稿时拒绝覆盖。不调用内置 AI，不自动采用或生成。list_workspace_requests 可发现待处理需求，但不自动唤醒。独立后台重绘可用 prepare_inpaint → 查看预览 → 自己拟定提示词 → inpaint_image，具体参数读 schema。
 - 后台表示不展示交互步骤，当前并非完全隔离的沙箱：共享数据、图片选择和打开会话可能同步变化。用户要求绝不干扰当前状态时，应先确认将调用工具的副作用；没有满足条件的写入入口时只读并说明限制。
 
 ## C. 用户明确委托内置 AI
 前台打开会话 → ui_set_workspace_agent(mode:internal) → 填写/提交 → 查看回复 → 按授权采纳/生成。切回 internal 会取消待处理的外部需求，不要无意切换。后台 optimize_prompt/preview_prompt/plan_inpaint 也调用内置 AI，不代表由你完成了分析。
 
-## D. 只查看当前内容与历史
+## D. 版本与比较的共同概念
+- 版本组（groupId）：同一配置的一组生成结果；左栏显示版本 V1 / V2。
+- 候选（versionId）：组内某一张图片，有稳定 id 和独立生成记录；version_id 参数始终接受候选 id，不能传组 id。
+- 查看对象（viewedVersionId / viewedGroupId）：画布、生图配置、修改对比、本版图片共用同一候选，切 tab 不改变它；查看不会采用。
+- 本版图片（pane:images）：展示查看版本组内的候选缩略图。选择候选只查看，不采用；采用需要 ui_review_workspace(decision:switch)。
+- 当前蓝本（adoptedVersionId / currentVersionId；旧状态字段 versionId，字段名兼容保留）：后续修改、批注、生成的目标。历史图片配置只读；ui_review_workspace(decision:switch) 对应界面「设为蓝本」，明确切换下一版草稿的起点。
+- 对比对象（comparisonVersionId）：仅作差异参照；comparisonMode=source 默认实际来源，specified 为指定候选，不改变查看与采用对象。ui_view_workspace(pane:changes,compare_version_id) 控制参照；空字符串恢复默认。compare_workspace_versions 可在后台只读比较。
+- 图像生成快照（generated）与该候选可编辑草稿（editor）不同；initial 是会话起始稿，不能推断为导入图片的实际生成参数。
+- 生图配置页（pane:prompt）始终只读 generated/initial 快照，已采用图片也不例外。底部「编辑配置」打开下一版草稿，独立于版本页签；返回时保存，直接生成也先保存。查看其他版本不会覆盖下一版草稿。张数 count 支持 1/2/4，qualityTags 和 ucPreset 可编辑；同批逐张保存，停止时保留已完成图片。遮罩存在时尺寸锁定，disabledFields 会说明原因。
+- 手动编辑的前台入口是 ui_edit_workspace_config：begin → update(patch.draft/params/strength) → save 或 cancel，不需要 AI 建议。每一步使用最新 token。get_app_state.desktop.workspace.config 返回 open、owner、dirty、sourceVersionId、draft、params、strength、disabledFields。只允许本 MCP 连接继续自己打开的编辑；用户触碰表单后归用户所有，不能强行取消或保存。重新连接时请让用户完成/退出编辑，不能接管旧连接的编辑。
+- 修改对比仅展示有变化的配置，完整内容在生图配置中查看。方案留在对应对话消息内；pane:suggestions 是兼容入口，只展开消息中的方案，不再切换到独立页签。focusedProposalId 表示通过操作定位的方案，不代表已采纳。
+- 讨论对象（discussion）在发送时冻结；建议的 editTarget 始终是已采用稿。引用（referenceIds）仅为讨论资料，也不等于对比对象或重绘底图。
+
+## E. 只查看当前内容与历史
 “现在窗口是什么”：get_app_state，视觉细节用 ui_capture_app；“右侧完整对话/修改记录”：get_workspace；“此前生成图”：read_image。ui_view_workspace(version_id,pane:history) 仅查看历史；ui_review_workspace(decision:switch,version_id) 才切换当前采用版本，二者不可混淆。工作台相同配置重复生成会加入同一方案的候选；首张以外不会自动采用。latestGeneratedVersionId 指向最新结果，currentVersionId 是已采用版本。图片 missing=true 时只能使用文字记录，不能声称已查看画面。普通生图的 storage=temporary 表示退出软件后会清理，saved/workspace 表示已留存。`,
   recovery: `# 冲突、取消与恢复
 

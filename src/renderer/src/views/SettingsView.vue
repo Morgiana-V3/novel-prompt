@@ -126,23 +126,23 @@ const codexConfig = computed(() => {
   const m = mcp.value
   if (!m) return ''
   const env = Object.entries(m.env).map(([k, v]) => `${k} = ${tomlStr(v)}`)
-  return `[mcp_servers.novel-prompt]\ncommand = ${tomlStr(m.command)}\nargs = [${m.args.map(tomlStr).join(', ')}]\nenv = { ${env.join(', ')} }`
+  return `[mcp_servers.${m.serverName ?? 'novel-prompt'}]\ncommand = ${tomlStr(m.command)}\nargs = [${m.args.map(tomlStr).join(', ')}]\nenv = { ${env.join(', ')} }`
 })
 const launchJson = computed(() =>
   mcp.value ? JSON.stringify({ command: mcp.value.command, args: mcp.value.args, env: mcp.value.env }, null, 2) : ''
 )
 const jsonConfig = computed(() =>
   mcp.value
-    ? JSON.stringify({ mcpServers: { 'novel-prompt': { command: mcp.value.command, args: mcp.value.args, env: mcp.value.env } } }, null, 2)
+    ? JSON.stringify({ mcpServers: { [mcp.value.serverName ?? 'novel-prompt']: { command: mcp.value.command, args: mcp.value.args, env: mcp.value.env } } }, null, 2)
     : ''
 )
 const agentPrompt = computed(() =>
   mcp.value
     ? [
         '帮我把 NovelPrompt 完整配置成你的 MCP 服务：',
-        '- 服务名 novel-prompt，传输方式 stdio，启动参数如下（路径原样使用）：',
+        `- 服务名 ${mcp.value.serverName ?? 'novel-prompt'}，传输方式 stdio，启动参数如下（路径原样使用）：`,
         launchJson.value,
-        '- 写进你自己的 MCP 配置文件（用户级），改之前先把原文件备份为 .bak，只新增或覆盖 novel-prompt 这一项，其他配置不要动。',
+        `- 写进你自己的 MCP 配置文件（用户级），改之前先把原文件备份为 .bak，只新增或覆盖 ${mcp.value.serverName ?? 'novel-prompt'} 这一项，其他配置不要动。`,
         '- 配置完告诉我需要完全重启你；重启后调用 prompt_guide，能返回使用说明即接入成功，之后写 NovelAI 提示词时按它执行。'
       ].join('\n')
     : ''
@@ -364,6 +364,7 @@ async function translate() {
         </div>
       </div>
       <div class="form-grid">
+        <div v-if="mcp?.runtime" class="form-field full"><label>当前环境：{{ mcp.runtime.mode === 'development' ? '开发版' : '安装版' }}</label><span class="help">数据目录：{{ mcp.runtime.dataPath }}</span><span class="help">程序目录：{{ mcp.runtime.appPath }}</span><span class="help">下面的 MCP 配置连接此环境。开发版与安装版的数据分别保存。</span></div>
         <div class="form-field full"><label>两种操作方式</label><span class="help">后台模式：查词、检查、处理提示词和图片，可在无窗口时运行。前台模式：打开工作台，填写并提交讨论、展示建议、绘制区域批注、采纳和生成；每一步都在软件界面中显示，可随时停止。告诉 Agent「这次使用前台可视化模式」即可，无需另配服务。</span></div>
         <div class="form-field">
           <label>允许调用 DeepSeek</label>

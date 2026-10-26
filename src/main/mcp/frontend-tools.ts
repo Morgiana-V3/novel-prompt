@@ -28,6 +28,7 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
         }
         if (action === 'agent' || action === 'reply' || action === 'external-cancel') requireAgent()
         const request = { ...a, action, label } as unknown as FrontendRequest
+        request.agent_session = requireAgent().sessionId
         if (action === 'create' && a.source === 'image') {
           request.image = listImages().find(i => i.name === a.image_name)
           if (!request.image) throw new Error('图库图片不存在')
@@ -43,6 +44,12 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
       } }
   }
   return [
+    tool('ui_edit_workspace_config', '编辑下一版生图配置', 'config', '从底部入口打开独立的下一版配置。config_action=begin 开始；update 修改同一表单的提示词或参数；save 保存并返回原查看面板；cancel 放弃本次未保存修改并返回。无需 AI 建议，不生成图片，也不改变查看、采用版本或图片快照。操作前读取最新 token；只能继续本连接打开的编辑，用户手动操作后拒绝覆盖。get_app_state.workspace.config 返回当前表单和禁用原因。',
+      {config_action:{type:'string',enum:['begin','update','save','cancel']},patch:{type:'object',additionalProperties:false,properties:{draft:{type:'object',additionalProperties:false,properties:{base:{type:'string'},negative:{type:'string'},characters:{type:'array',maxItems:6,items:{type:'object',properties:{prompt:{type:'string'},negative:{type:'string'},position:{type:'string'}},required:['prompt','negative'],additionalProperties:false}}}},params:{type:'object',additionalProperties:false,properties:{count:{type:'integer',enum:[1,2,4]},qualityTags:{type:'boolean'},ucPreset:{type:'string',enum:['heavy','light','human','none']},width:{type:'integer'},height:{type:'integer'},steps:{type:'integer'},scale:{type:'number'},seed:{type:['integer','null']},cfgRescale:{type:'number'},sampler:{type:'string'},noiseSchedule:{type:'string'}}},strength:{type:'number'}}}},['config_action'],a=>{
+        if(!['begin','update','save','cancel'].includes(String(a.config_action)))throw new Error('未知配置操作')
+        if(a.config_action==='update'&&(!a.patch||typeof a.patch!=='object'||Array.isArray(a.patch)))throw new Error('修改配置需要 patch')
+        if(a.config_action!=='update'&&a.patch!==undefined)throw new Error('仅 update 可传 patch')
+      }),
     tool('ui_cancel_workspace_request', '取消外部需求', 'external-cancel', '取消当前待处理的外部需求并显示结果；保留原始消息和修改记录。', {}, []),
     tool('ui_set_workspace_agent', '设置会话处理方式', 'agent', '显示并切换内置 AI / 外部 Agent。external 绑定当前 MCP 连接，断开后等待连接，不回退 DeepSeek。',
       { mode: { type: 'string', enum: ['internal', 'external'] } }, ['mode'], a => { if (!['internal', 'external'].includes(String(a.mode))) throw new Error('未知的处理方式') }),
@@ -53,9 +60,10 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
       { title: { type: 'string' }, source: { type: 'string', enum: ['blank', 'current', 'image'] }, image_name: { type: 'string' } }, ['title', 'source'], a => {
         if (typeof a.title !== 'string' || a.title.length > 100 || !['blank', 'current', 'image'].includes(String(a.source))) throw new Error('会话名称或来源无效')
       }),
-    tool('ui_view_workspace', '查看会话内容', 'view', '切换画布、提示词、修改对比、AI 建议或历史。version_id 只查看历史，不改变当前采用版本。',
-      { pane: { type: 'string', enum: ['canvas', 'prompt', 'changes', 'suggestions', 'history'] }, version_id: { type: 'string' } }, ['pane'], a => {
-        if (!['canvas', 'prompt', 'changes', 'suggestions', 'history'].includes(String(a.pane))) throw new Error('未知工作台页面')
+    tool('ui_view_workspace', '查看项目内容', 'view', '工作台在界面称为创作项目；pane=prompt 为完整生图配置（提示词与参数），changes 仅展示变化项，images 展示当前版本组的候选缩略图；选择查看不会采用，suggestions 是兼容入口：展开对话中对应方案，保持当前面板，focusedProposalId 返回定位的方案。所有面板跟随同一个查看版本。version_id 是候选 id，省略保留当前查看对象；只查看，不采用。changes 面板可传 compare_version_id 指定另一个候选作为参照，空字符串恢复生成来源；不改变查看或采用对象。',
+      { pane: { type: 'string', enum: ['canvas', 'prompt', 'changes', 'images', 'suggestions', 'history'] }, version_id: { type: 'string' }, compare_version_id: { type: 'string' } }, ['pane'], a => {
+        if (!['canvas', 'prompt', 'changes', 'images', 'suggestions', 'history'].includes(String(a.pane))) throw new Error('未知工作台页面')
+        if (a.compare_version_id !== undefined && (typeof a.compare_version_id !== 'string' || a.pane !== 'changes')) throw new Error('对比对象仅用于修改对比面板')
       }),
     tool('ui_set_workspace_input', '填写讨论内容', 'compose', '在可见的工作台输入框填写需求，选择区域和参考版本。只填入，不发送、不调用 AI；随后使用 ui_send_workspace_message。',
       { text: { type: 'string' }, region_id: { type: ['string', 'null'] }, reference_ids: { type: 'array', items: { type: 'string' }, maxItems: 2 } }, ['text'], a => {

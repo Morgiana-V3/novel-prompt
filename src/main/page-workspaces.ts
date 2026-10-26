@@ -14,7 +14,7 @@ import { applyInpaintChanges } from '../shared/inpaint-plan'
 import { compactPageProposals, pageChanges, pageContextKey, pageCurrent, pageDraft, type PageAction, type PageEditorState, type PageMessage, type PageWorkspace, type PageWorkspaceSummary } from '../shared/page-workspace'
 import { MAX_CHARACTERS, parsePosition, isGridPosition } from '../shared/nai-presets'
 import type { InpaintDraft, NaiGenParams, NaiVersion } from '../shared/types'
-import type { PageAgentIdentity, PageExternalReply } from '../shared/page-workspace'
+import type { PageAgentIdentity, PageExternalReply, PageDiscussion } from '../shared/page-workspace'
 import { agentIsConnected } from './agent-sessions'
 import { composeSkills } from './skills'
 
@@ -39,7 +39,7 @@ export function readPage(id: string): PageWorkspace {
       }
       v.editor.regions.forEach(r => { r.accepted = null })
     }
-    if (w.title === '未命名漫画页') w.title = '未命名会话'
+    if (w.title === '未命名漫画页') w.title = '未命名项目'
     pageEvent(w, '已升级为通用创作会话。旧版区域独立草稿保留在历史版本；请选择要继续使用的草稿。')
     savePage(w)
   }
@@ -79,12 +79,17 @@ export function checkDraft(d: InpaintDraft, model: NaiVersion = 'v5') {
   if (d.characters.some(c => c.position?.trim() && (!parsePosition(c.position) || model === 'v4.5' && !isGridPosition(c.position)))) throw new Error('角色位置格式无效')
 }
 export function checkPageParams(p: NaiGenParams) {
+  if(!p || ![1,2,4].includes(p.count) || typeof p.qualityTags!=='boolean' || !['heavy','light','human','none'].includes(p.ucPreset))throw new Error('张数或提示词预设无效')
   if (!p || !Number.isInteger(p.width) || !Number.isInteger(p.height) || p.width < 64 || p.height < 64 || p.width % 64 || p.height % 64 || p.width * p.height > 4 * 1024 * 1024
     || !Number.isInteger(p.steps) || p.steps < 1 || p.steps > 50 || !Number.isFinite(p.scale) || p.scale < 0 || p.scale > 10
     || p.seed !== null && (!Number.isInteger(p.seed) || p.seed < 0 || p.seed > 4294967295)) throw new Error('生成参数无效：尺寸需为 64 的倍数，步数为 1–50，种子留空或为有效整数')
 }
 function checkEditor(editor: PageEditorState, imageName: string | undefined, allowMissingRegions = false) {
   checkDraft(editor.draft)
+  checkPageParams(editor.params)
+  if (!Number.isFinite(editor.params.cfgRescale) || editor.params.cfgRescale < 0 || editor.params.cfgRescale > 1
+    || !['k_euler_ancestral','k_euler','k_dpmpp_2s_ancestral','k_dpmpp_2m_sde','k_dpmpp_2m','k_dpmpp_sde'].includes(editor.params.sampler)
+    || !['native','karras','exponential','polyexponential'].includes(editor.params.noiseSchedule)) throw new Error('采样器、噪声调度或引导重缩放无效')
   if (!Array.isArray(editor.regions) || editor.regions.length > 16 || !Number.isFinite(editor.strength) || editor.strength < .01 || editor.strength > 1) throw new Error('选区或重绘强度无效')
   const image = imageName ? imagePath(imageName) : null
   if (!image && editor.regions.length && !allowMissingRegions) throw new Error('工作区图片不存在，不能修改遮罩；可加载历史设置后重新生成')
@@ -118,7 +123,7 @@ export async function createPage(imageName: string | null, params: NaiGenParams,
   checkPageParams(params)
   const now = Date.now(), versionId = randomUUID(), id = randomUUID()
   if (imageName) image = ownWorkspaceImage(imageName, id)
-  const w: PageWorkspace = { schema: 2, id, title: '新会话', goal: '', preserve: '', model, createdAt: now, updatedAt: now, revision: 0,
+  const w: PageWorkspace = { schema: 2, id, title: '新项目', goal: '', preserve: '', model, createdAt: now, updatedAt: now, revision: 0,
     currentVersionId: versionId, composer: '', execution: { kind: 'generate', regionId: null }, versions: [{ id: versionId, parentId: null, label: image ? '原稿' : '起点', image, createdAt: now,
       editor: { draft: clone(draft), regions: [], params: { ...params, width: image?.width ?? params.width, height: image?.height ?? params.height, count: 1, qualityTags: false, ucPreset: 'none' }, strength: 1 } }], messages: [] }
   w.versions[0].editor.model = model
@@ -136,7 +141,7 @@ export async function importPage(path: string, params: NaiGenParams, model: NaiV
   writeFileSync(join(imageDir(), name), bytes)
   let w: PageWorkspace
   try { w = await createPage(name, params, model, fallback) } finally { unlinkSync(join(imageDir(), name)) }
-  w.title = basename(path).replace(/\.png$/i, '').slice(0, 100) || '未命名会话'
+  w.title = basename(path).replace(/\.png$/i, '').slice(0, 100) || '未命名项目'
   return savePage(w)
 }
 export function editPage(id: string, revision: number, action: PageAction): PageWorkspace {
@@ -156,7 +161,7 @@ export function editPage(id: string, revision: number, action: PageAction): Page
     pageEvent(w, '已加载收藏配方，替换提示词、模型和生成设置，清除旧选区；尚未生成图片。')
   } else if (action.type === 'notes') {
     for (const t of [action.title, action.goal, action.preserve, action.composer]) if (typeof t !== 'string' || t.length > 6000) throw new Error('文本过长')
-    w.title = action.title.trim().slice(0, 100) || '未命名会话'; w.goal = action.goal; w.preserve = action.preserve; w.composer = action.composer
+    w.title = action.title.trim().slice(0, 100) || '未命名项目'; w.goal = action.goal; w.preserve = action.preserve; w.composer = action.composer
   } else if (action.type === 'editor') {
     if (action.versionId !== v.id) throw new Error('编辑器对应的版本已切换')
     const updated = clone(action.editor)
@@ -176,7 +181,7 @@ export function editPage(id: string, revision: number, action: PageAction): Page
   } else if (action.type === 'switch') {
     const next = w.versions.find(v => v.id === action.versionId)
     if (!next || (next.image && !imagePath(next.image.name))) throw new Error('该版本图片已不存在')
-    if (next.id !== v.id) { w.currentVersionId = next.id; w.model = next.editor.model ?? next.generated?.model ?? next.initial?.model ?? w.model; w.execution = { kind: 'generate', regionId: null }; pageEvent(w, `当前采用版本切换为「${next.label}」。之后从此版本继续，其他结果保留为历史。`) }
+    if (next.id !== v.id) { w.currentVersionId = next.id; w.model = next.editor.model ?? next.generated?.model ?? next.initial?.model ?? w.model; w.execution = { kind: 'generate', regionId: null }; pageEvent(w, `创作蓝本切换为「${next.label}」。之后从此版本继续，其他结果保留为历史。`) }
   } else if (action.type === 'proposal') {
     const m = w.messages.find(m => m.id === action.messageId), p = m?.proposal
     if (!m || !p) throw new Error('建议不存在')
@@ -235,6 +240,19 @@ export function proposePage(id: string, revision: number, draft: InpaintDraft, t
 export function pendingExternalRequest(w: PageWorkspace) {
   return w.messages.find(m => m.externalRequest?.status === 'pending')
 }
+export function discussionSnapshot(w: PageWorkspace, versionId = w.currentVersionId): PageDiscussion {
+  const v = w.versions.find(v => v.id === versionId)
+  if (!v) throw new Error('讨论版本已不存在，请重新选择')
+  const recipe = v.generated ?? v.initial
+  return clone({ versionId: v.id, label: v.label, image: v.image,
+    recipe: recipe ? { source: v.generated ? 'generated' : 'initial', draft: recipe.draft, params: recipe.params } : null })
+}
+export function discussionIsStale(w: PageWorkspace, discussion?: PageDiscussion): boolean {
+  if (!discussion) return false // Requests saved before discussion snapshots used the adopted version.
+  if (!w.versions.some(v => v.id === discussion.versionId)) return true
+  const key = (d: PageDiscussion) => JSON.stringify([d.versionId, d.image?.name, d.image?.contentHash, !!d.image?.missing, d.recipe])
+  return key(discussion) !== key(discussionSnapshot(w, discussion.versionId))
+}
 function writablePage(id: string, revision: number) {
   if (pageLocks.has(id)) throw new Error('会话仍在运行')
   const w = readPage(id)
@@ -251,13 +269,16 @@ export function setPageAgent(id: string, revision: number, mode: 'internal' | 'e
   pageEvent(w, mode === 'external' ? (agent ? `已交给外部 Agent「${agent.name}」处理；不会调用内置 AI。` : '已切换外部 Agent，等待连接；需求会保存在本会话。') : '已切换为内置 AI；待处理的外部需求已取消。')
   return savePage(w)
 }
-export function queueExternalRequest(id: string, revision: number, text: string, regionId: string | null, referenceIds: string[]) {
+export function queueExternalRequest(id: string, revision: number, text: string, regionId: string | null, referenceIds: string[], discussionVersionId?: string, agent?: PageAgentIdentity) {
   const w = writablePage(id, revision), v = pageCurrent(w)
+  if (agent && (!agentIsConnected(agent.sessionId) || w.externalAgent?.sessionId !== agent.sessionId)) throw new Error('当前 Agent 未接管此会话')
   if (w.agentMode !== 'external') throw new Error('会话未开启外部 Agent 接管')
   if (pendingExternalRequest(w)) throw new Error('已有待处理需求，请等待回复或取消后再发送')
   if (typeof text !== 'string' || !text.trim() || text.length > 6000 || !Array.isArray(referenceIds) || referenceIds.length > 2 || referenceIds.some(id => !w.versions.some(v => v.id === id))) throw new Error('需求或引用版本无效')
   if (regionId && !v.editor.regions.some(r => r.id === regionId)) throw new Error('区域已不存在')
+  const discussion = discussionSnapshot(w, discussionVersionId)
   const m = pageMessage('user', text.trim(), v.id), skills = composeSkills('workspace', w.model)
+  m.discussion = discussion
   m.regionId = regionId; m.referenceIds = [...referenceIds]
   m.externalRequest = { status: 'pending', contextKey: pageContextKey(v, regionId, w) }
   m.skills = skills.skills.map(s => s.name)
@@ -279,8 +300,8 @@ export function replyExternalRequest(id: string, revision: number, response: Pag
     throw new Error('当前 Agent 未接管此会话，请先连接；不会切换为内置 AI')
   const request = w.messages.find(m => m.id === response?.requestId && m.externalRequest?.status === 'pending')
   if (!request) throw new Error('需求已完成、已取消或不存在，请读取会话确认，勿重复提交')
-  if (request.versionId !== v.id || request.externalRequest!.contextKey !== pageContextKey(v, request.regionId ?? null, w))
-    throw new Error('需求发出后目标、版本、提示词或选区已改变，请取消旧需求后重新发送')
+  if (request.versionId !== v.id || request.externalRequest!.contextKey !== pageContextKey(v, request.regionId ?? null, w) || discussionIsStale(w, request.discussion))
+    throw new Error('需求发出后讨论图片、目标、版本、提示词或选区已改变，请取消旧需求后重新发送')
   if (typeof response.reply !== 'string' || !response.reply.trim() || response.reply.length > 16000) throw new Error('回复须为 1～16000 字符')
   if (response.understanding && [response.understanding.goal, response.understanding.preserve].some(t => typeof t !== 'string' || t.length > 6000)) throw new Error('目标记录格式无效')
   const p = response.proposal
@@ -296,6 +317,7 @@ export function replyExternalRequest(id: string, revision: number, response: Pag
   const message = pageMessage('assistant', response.reply, v.id)
   message.author = { kind: 'external', name: agent.name }; message.requestId = request.id
   message.regionId = request.regionId; message.referenceIds = request.referenceIds
+  message.discussion = request.discussion ? clone(request.discussion) : undefined
   message.skills = request.skills
   if (p) {
     const before = pageDraft(v, request.regionId ?? null)

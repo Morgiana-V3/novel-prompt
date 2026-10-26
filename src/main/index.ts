@@ -49,6 +49,7 @@ import { desktopTools } from './mcp/desktop-tools'
 import { frontendTools } from './mcp/frontend-tools'
 import { agentExecutor } from './mcp/runtime'
 import type { TaskManager } from './tasks'
+import { resolveRuntimeProfile } from '../../scripts/runtime-profile.cjs'
 
 let win: BrowserWindow | null = null
 let desktop: DesktopBridge
@@ -59,10 +60,16 @@ function notifyAppChanged() {
   if (changeTimer) return
   changeTimer = setTimeout(() => { changeTimer = undefined; bridge?.changed() }, 100)
 }
-// Explicit profile override for isolated tests and separate local installations.
-if (process.env.NOVELPROMPT_USER_DATA) app.setPath('userData', resolve(process.env.NOVELPROMPT_USER_DATA))
-
-const APP_ID = 'com.holyxie.novelprompt'
+// Apply before the single-instance lock, browser sessions or persistent services.
+let runtimeData = ''
+try { runtimeData = resolveRuntimeProfile({ packaged: app.isPackaged, appData: app.getPath('appData'), defaultUserData: app.getPath('userData') }) }
+catch (error) { console.error(String(error)); app.exit(1) }
+app.setPath('userData', runtimeData)
+app.setPath('sessionData', runtimeData)
+let bridgeProfile = !app.isPackaged || process.env.NOVELPROMPT_USER_DATA ? runtimeData : ''
+const runtimeInfo = () => ({ mode: app.isPackaged ? 'installed' as const : 'development' as const, dataPath: app.getPath('userData'), appPath: app.getAppPath() })
+const APP_ID = app.isPackaged ? 'com.holyxie.novelprompt' : 'com.holyxie.novelprompt.dev'
+const WINDOW_TITLE = app.isPackaged ? 'NovelPrompt' : 'NovelPrompt · 开发版'
 
 function appIcon(): Electron.NativeImage | undefined {
   const base = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'build')
@@ -81,7 +88,7 @@ function createWindow(): void {
     minWidth: 1100,
     minHeight: 700,
     backgroundColor: '#ffffff',
-    title: 'NovelPrompt',
+    title: WINDOW_TITLE,
     icon: appIcon(),
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
@@ -91,6 +98,7 @@ function createWindow(): void {
       sandbox: false
     }
   })
+  win.on('page-title-updated', event => { event.preventDefault(); win?.setTitle(WINDOW_TITLE) })
   if (process.env.ELECTRON_RENDERER_URL) win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else win.loadFile(join(__dirname, '../renderer/index.html'))
   win.on('closed', () => { win = null; desktop?.disconnected() })
@@ -170,7 +178,9 @@ function registerIpc(): void {
     return {
       command: process.execPath,
       args: app.isPackaged ? [proxy] : [proxy, root],
-      env: { ELECTRON_RUN_AS_NODE: '1' },
+      env: { ELECTRON_RUN_AS_NODE: '1', ...(bridgeProfile ? { NOVELPROMPT_USER_DATA: runtimeData } : {}) },
+      runtime: runtimeInfo(),
+      serverName: app.isPackaged ? 'novel-prompt' : 'novel-prompt-dev',
       packaged: app.isPackaged,
       portable,
       log: readLog()
@@ -297,7 +307,11 @@ if (MCP_MODE) {
     client.on('exit', code => app.exit(code ?? 0))
   })
 } else {
-  if (SHOT_DIR) prepareScreenshotProfile()
+  if (SHOT_DIR) {
+    prepareScreenshotProfile()
+    runtimeData = app.getPath('userData'); bridgeProfile = runtimeData
+    app.setPath('sessionData', runtimeData)
+  }
   const primary = app.requestSingleInstanceLock()
   if (!primary) app.quit()
   else {
@@ -313,8 +327,8 @@ if (MCP_MODE) {
     desktop.onChange = notifyAppChanged
     registerIpc()
     registerImageProtocol()
-    const appState = () => ({ version: app.getVersion(), hostPid: process.pid, visible: desktop.visible(), desktop: desktop.state, tasks: tasks.snapshot() })
-    bridge = await startMcpBridge(app.isPackaged ? dirname(process.execPath) : app.getAppPath(), process.env.NOVELPROMPT_USER_DATA ?? '',
+    const appState = () => ({ version: app.getVersion(), hostPid: process.pid, runtime: runtimeInfo(), visible: desktop.visible(), desktop: desktop.state, tasks: tasks.snapshot() })
+    bridge = await startMcpBridge(app.isPackaged ? dirname(process.execPath) : app.getAppPath(), bridgeProfile,
       [...buildTools(), ...desktopTools(desktop, tasks, appState), ...frontendTools(desktop)], { name: 'novel-prompt', version: app.getVersion(), instructions: MCP_INSTRUCTIONS },
       { state: appState, execute: agentExecutor(tasks, desktop, send) })
     const idleTimer = setInterval(() => {

@@ -8,9 +8,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, unlink
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { gzipSync } from 'node:zlib'
+import runtimeProfile from './runtime-profile.cjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const SRC = process.env.NP_DATA_DIR ?? join(process.env.APPDATA ?? '', 'novel-prompt', 'data')
+const SRC = process.env.NP_DATA_DIR ?? join(runtimeProfile.resolveRuntimeProfile({ packaged: false }), 'data')
 const OUT = join(ROOT, 'default-data')
 const FILES = ['tags.json', 'aliases.json', 'implications.json', 'zh-community.json', 'zh-ai.json', 'zh-user.json', 'pinyin-cache.json']
 

@@ -183,6 +183,8 @@ export interface McpLogEntry {
 }
 
 export interface McpInfo {
+  serverName?: string
+  runtime?: { mode: 'installed' | 'development'; dataPath: string; appPath: string }
   command: string
   args: string[]
   env: Record<string, string>

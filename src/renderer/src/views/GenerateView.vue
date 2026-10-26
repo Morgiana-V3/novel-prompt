@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import type { NaiFreeCheck, NaiGenParams, NaiGenResult, NaiImage, NaiNoiseSchedule, NaiSampler, NaiSubscription } from '@shared/types'
+import type { NaiFreeCheck, NaiGenParams, NaiGenResult, NaiImage, NaiSubscription } from '@shared/types'
 import { state, copy, toast, importPrompt, workKey, cleanErr, DEFAULT_PARAMS, DEFAULT_GEN, GEN_PARAMS_KEY, loadGenParams, type GenOnly } from '../store'
 import { resizeWithin } from '../autosize'
 import { readPngPrompt, type ImportedPrompt } from '@shared/prompt-import'
@@ -11,7 +11,7 @@ import Icon from '../components/Icon.vue'
 import Mascot from '../components/Mascot.vue'
 import PromptEditor from '../components/PromptEditor.vue'
 import WorkspaceBar from '../components/WorkspaceBar.vue'
-import SharedParams from '../components/SharedParams.vue'
+import GenerationParameters from '../components/GenerationParameters.vue'
 import PositionEditor from '../components/PositionEditor.vue'
 import InpaintEditor from '../components/InpaintEditor.vue'
 import ImageViewer from '../components/ImageViewer.vue'
@@ -24,16 +24,6 @@ const loadGen = loadGenParams
 const gen = reactive<GenOnly>(loadGen())
 watch(gen, (p) => localStorage.setItem(PARAMS_KEY, JSON.stringify({ ...p, seed: null })), { deep: true })
 const params = state.params
-
-const SAMPLERS: { v: NaiSampler; label: string }[] = [
-  { v: 'k_euler_ancestral', label: 'Euler Ancestral' },
-  { v: 'k_euler', label: 'Euler' },
-  { v: 'k_dpmpp_2s_ancestral', label: 'DPM++ 2S Ancestral' },
-  { v: 'k_dpmpp_2m_sde', label: 'DPM++ 2M SDE' },
-  { v: 'k_dpmpp_2m', label: 'DPM++ 2M' },
-  { v: 'k_dpmpp_sde', label: 'DPM++ SDE' }
-]
-const SCHEDULES: NaiNoiseSchedule[] = ['native', 'karras', 'exponential', 'polyexponential']
 
 /** 种子留空即默认，不参与比较 */
 const GEN_KEYS = ['steps', 'scale', 'cfgRescale', 'sampler', 'noiseSchedule', 'count'] as const
@@ -50,24 +40,6 @@ function resetDefaults() {
 }
 
 /** 高级设置（默认收起）：不常改的参数，收起时在标题上显示当前值 */
-const advancedSummary = computed(() =>
-  [
-    SAMPLERS.find((s) => s.v === gen.sampler)?.label ?? gen.sampler,
-    gen.noiseSchedule,
-    `Rescale ${gen.cfgRescale}`,
-    params.qualityTags ? '质量词开' : '质量词关',
-    `UC ${params.ucPreset}`
-  ].join(' · ')
-)
-const advancedChanged = computed(
-  () =>
-    gen.sampler !== DEFAULT_GEN.sampler ||
-    gen.noiseSchedule !== DEFAULT_GEN.noiseSchedule ||
-    gen.cfgRescale !== DEFAULT_GEN.cfgRescale ||
-    params.qualityTags !== DEFAULT_PARAMS.qualityTags ||
-    params.ucPreset !== DEFAULT_PARAMS.ucPreset
-)
-
 const hasToken = computed(() => !!state.settings?.naiToken?.trim())
 const freeOnly = computed(() => state.settings?.naiFreeOnly !== false)
 const version = computed(() => state.settings?.naiVersion ?? 'v4.5')
@@ -217,9 +189,6 @@ watch(hasToken, (v) => {
 })
 
 /* ---------- 生成 ---------- */
-function randomizeSeed() {
-  gen.seed = null
-}
 
 async function run() {
   if (running.value || inpaintBusy.value) return
@@ -393,62 +362,7 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
             <Icon name="reset" :size="14" />恢复默认
           </button>
         </div>
-        <div class="gen-params">
-          <SharedParams :only="['size']" />
-          <div class="param">
-            <span class="side-label">张数（逐张生成）</span>
-            <div class="seg block">
-              <button v-for="n in [1, 2, 4]" :key="n" :class="{ on: gen.count === n }" @click="gen.count = n">{{ n }}</button>
-            </div>
-          </div>
-          <div class="param">
-            <span class="side-label">步数 · {{ gen.steps }}</span>
-            <input class="range" type="range" min="1" max="50" v-model.number="gen.steps" />
-          </div>
-          <div class="param">
-            <span class="side-label">Prompt Guidance · {{ gen.scale }}</span>
-            <input class="range" type="range" min="0" max="10" step="0.1" v-model.number="gen.scale" />
-          </div>
-          <div class="param">
-            <span class="side-label">种子（留空随机）</span>
-            <div class="pair">
-              <input class="input sm" type="number" min="0" v-model.number="gen.seed" placeholder="随机" />
-              <button class="icon-btn sm" title="改回随机" @click="randomizeSeed"><Icon name="x" :size="14" /></button>
-            </div>
-          </div>
-        </div>
-
-        <details class="gen-advanced">
-          <summary>
-            <Icon name="chevron" :size="14" class="gen-advanced-arrow" />
-            <span class="gen-advanced-title">高级设置</span>
-            <span v-if="advancedChanged" class="gen-advanced-dot" title="有参数改过默认值"></span>
-            <span class="muted gen-advanced-sum">{{ advancedSummary }}</span>
-          </summary>
-          <div class="gen-params">
-            <div class="param">
-              <span class="side-label">自定义尺寸（64 的倍数）</span>
-              <div class="pair">
-                <input class="input sm" type="number" min="64" step="64" v-model.number="params.width" />
-                <span class="muted">×</span>
-                <input class="input sm" type="number" min="64" step="64" v-model.number="params.height" />
-              </div>
-            </div>
-            <div class="param">
-              <span class="side-label">Guidance Rescale · {{ gen.cfgRescale }}</span>
-              <input class="range" type="range" min="0" max="1" step="0.02" v-model.number="gen.cfgRescale" />
-            </div>
-            <div class="param">
-              <span class="side-label">采样器</span>
-              <ThemeSelect class="sm" v-model="gen.sampler" :options="SAMPLERS.map(s => ({ value: s.v, label: s.label }))" aria-label="采样器" />
-            </div>
-            <div class="param">
-              <span class="side-label">噪声调度</span>
-              <ThemeSelect class="sm" v-model="gen.noiseSchedule" :options="SCHEDULES.map(s => ({ value: s, label: s }))" aria-label="噪声调度" />
-            </div>
-            <SharedParams :only="['quality', 'uc']" />
-          </div>
-        </details>
+        <GenerationParameters :gen="gen" :params="params" />
 
         <div v-if="hasToken && check" :class="['free-check', check.ok ? 'ok' : freeOnly ? 'bad' : 'warn']">
           <Icon :name="check.ok ? 'check' : 'warn'" :size="15" :stroke="check.ok ? 2.2 : 1.8" />
@@ -536,7 +450,7 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
               <Icon name="frame" :size="14" />对照图片定位
             </button>
             <button class="btn ghost small ml-auto" :disabled="running || inpaintBusy" title="以这张图片新建 AI 会话" @click="state.workspaceImage = { ...current }; state.tab = 'workspace'">
-              <Icon name="chat" :size="14" />用于新会话
+              <Icon name="chat" :size="14" />用于新项目
             </button>
           </div>
         </div>

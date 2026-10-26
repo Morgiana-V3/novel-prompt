@@ -5,10 +5,18 @@ const { createHash } = require('node:crypto')
 const { readFileSync } = require('node:fs')
 const { resolve, dirname, join } = require('node:path')
 const { homedir, tmpdir } = require('node:os')
+const { resolveRuntimeProfile } = require('./runtime-profile.cjs')
 
 const args = process.argv.slice(2)
 const root = args[0] ? resolve(args[0]) : dirname(process.execPath)
-const profile = process.env.NOVELPROMPT_USER_DATA || ''
+// Repository proxies use the development profile, including headless cold starts.
+let profile = ''
+try {
+  if (args[0] || process.env.NOVELPROMPT_USER_DATA) {
+    profile = resolveRuntimeProfile({ packaged: !args[0] })
+    process.env.NOVELPROMPT_USER_DATA = profile
+  }
+} catch (error) { process.stderr.write(`[novel-prompt] ${error.message}\n`); process.exit(1) }
 const key = createHash('sha256').update([root.toLowerCase(), homedir(), profile].join('|')).digest('hex').slice(0, 24)
 const descriptor = join(tmpdir(), `novelprompt-${key}`, 'bridge.json')
 let connected, starting = false, stopped = false

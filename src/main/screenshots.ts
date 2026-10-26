@@ -35,7 +35,7 @@ async function prepareWorkspaceDemo(): Promise<void> {
   w.messages = [
     { id: 'demo-note', role: 'event', text: '离线演示：图片使用项目内置素材，对话与版本记录为示例，不调用在线模型。', createdAt: now, versionId: first.id },
     { id: 'demo-user', role: 'user', text: '保留目前的眨眼表情，下一版试试轻微歪头。先给我看提示词修改。', createdAt: now, versionId: w.currentVersionId },
-    { id: 'demo-ai', role: 'assistant', text: '### 下一步建议\n\n保留当前的**角色设计与眨眼表情**，只增加 `head tilt`。\n\n- 在「AI 建议」中检查词语变化，再决定是否采纳。\n- 采纳只更新草稿，仍需单独点击生成。\n- 「修改对比」保留每轮图片、提示词和参数。\n\n> 这是界面演示数据，不代表已调用模型。', createdAt: now, versionId: w.currentVersionId,
+    { id: 'demo-ai', role: 'assistant', text: '### 下一步建议\n\n保留当前的**角色设计与眨眼表情**，只增加 `head tilt`。\n\n- 在这条消息下方检查词语变化，再决定是否采纳。\n- 采纳只更新草稿，仍需单独点击生成。\n- 「修改对比」保留每轮图片、提示词和参数。\n\n> 这是界面演示数据，不代表已调用模型。', createdAt: now, versionId: w.currentVersionId,
       proposal: { title: '保留表情，尝试轻微歪头', warning: '', regionId: null, status: 'pending', contextKey: pageContextKey(pageCurrent(w), null, w), before: structuredClone(after), after: next, previousAccepted: null, changes: pageChanges(after, next), execution: { kind: 'generate', regionId: null } } }
   ]
   savePage(w)
@@ -213,7 +213,7 @@ export async function takeScreenshots(win: BrowserWindow): Promise<void> {
   await js(`document.querySelector('.session-open').click()`)
   if (!await waitFor(`!!document.querySelector('.pw-shell')`, 5000)) throw new Error('Workspace did not open')
   await shot('workspace')
-  await js(`[...document.querySelectorAll('.pw-view-tabs button')].find(b => b.textContent.includes('AI 建议')).click()`)
+  await js(`(()=>{const proposal=document.querySelector('.pw-thread .pw-proposal');if(!proposal)throw new Error('Demo proposal missing');proposal.open=true;proposal.scrollIntoView({block:'nearest'})})()`)
   await shot('workspace-suggestions')
   await js(`[...document.querySelectorAll('.pw-view-tabs button')].find(b => b.textContent.includes('修改对比')).click()`)
   await shot('workspace-iterations')

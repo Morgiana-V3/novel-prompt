@@ -6,7 +6,7 @@
   "author": "holyxie",
   "private": true,
   "scripts": {
-    "dev": "electron-vite dev --watch",
+    "dev": "node scripts/dev.cjs",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
@@ -16,6 +16,8 @@
     "update:smoke": "electron scripts/update-smoke.cjs",
     "desktop:smoke": "electron-vite build && electron scripts/desktop-mcp-smoke.cjs",
     "mcp:host-smoke": "electron-vite build && node scripts/mcp-host-smoke.mjs",
+    "startup:smoke": "electron-vite build && node scripts/workspace-startup-smoke.mjs",
+    "isolation:smoke": "electron-vite build && node scripts/environment-isolation-smoke.mjs",
     "data:export": "node scripts/export-data.mjs",
     "mcp:smoke": "electron-vite build && node scripts/mcp-smoke.mjs",
     "inpaint:smoke": "electron-vite build && electron scripts/inpaint-smoke.cjs",
@@ -67,6 +69,10 @@
       {
         "from": "scripts/mcp-proxy.cjs",
         "to": "mcp-proxy.cjs"
+      },
+      {
+        "from": "scripts/runtime-profile.cjs",
+        "to": "runtime-profile.cjs"
       }
     ],
     "win": {

@@ -276,8 +276,8 @@ export async function generateImages(
     if (!req.inpaint || !Number.isFinite(req.inpaint.strength) || req.inpaint.strength < 0.01 || req.inpaint.strength > 1)
       throw new Error('重绘强度必须在 0.01～1 之间')
     if (!['v4.5', 'v5'].includes(req.version) || !Number.isInteger(req.params.steps) || req.params.steps < 1 || req.params.steps > 50 ||
-        !Number.isFinite(req.params.scale) || req.params.scale < 0 || req.params.scale > 10 || req.params.count !== 1)
-      throw new Error('局部重绘参数无效，一次只能生成一张')
+        !Number.isFinite(req.params.scale) || req.params.scale < 0 || req.params.scale > 10 || ![1,2,4].includes(req.params.count))
+      throw new Error('局部重绘参数无效，张数须为 1、2 或 4')
     if (req.params.seed !== null && (!Number.isInteger(req.params.seed) || req.params.seed < 0 || req.params.seed > 4_294_967_295))
       throw new Error('种子必须留空或为 0～4294967295 的整数')
     const path = imagePath(req.inpaint.imageName)

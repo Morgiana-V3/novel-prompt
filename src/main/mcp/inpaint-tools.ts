@@ -64,6 +64,10 @@ function mask(a: Args, s: ReturnType<typeof source>): string {
   prepareInpaint(s.bytes, encoded, s.width, s.height)
   return encoded
 }
+/** Reuse source bounds and binary-mask validation for workspace annotations. */
+export function workspaceRectangleMask(imageName: string, rectangles: unknown): string {
+  return mask({ rectangles }, source({ image_name: imageName }))
+}
 async function draft(a: Args, s: ReturnType<typeof source>): Promise<InpaintDraft> {
   let original: InpaintDraft = { base: '', negative: '', characters: [] }
   try { original = await readPngPrompt(new Blob([Uint8Array.from(s.bytes)], { type: 'image/png' })) }

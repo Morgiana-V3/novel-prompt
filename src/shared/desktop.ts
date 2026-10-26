@@ -3,7 +3,7 @@ import type { PageExternalReply } from './page-workspace'
 
 export const APP_TABS = ['compare', 'ai', 'preview', 'generate', 'workspace', 'search', 'settings'] as const
 export type AppTab = typeof APP_TABS[number]
-export type FrontendAction = 'open' | 'create' | 'view' | 'compose' | 'send' | 'region' | 'review' | 'generate' | 'agent' | 'reply' | 'external-cancel'
+export type FrontendAction = 'open' | 'create' | 'view' | 'compose' | 'send' | 'region' | 'review' | 'generate' | 'agent' | 'reply' | 'external-cancel' | 'config'
 export interface FrontendRequest {
   action: FrontendAction
   actionId: string
@@ -14,8 +14,9 @@ export interface FrontendRequest {
   title?: string
   source?: 'blank' | 'current' | 'image'
   image?: NaiImage
-  pane?: 'canvas' | 'prompt' | 'changes' | 'suggestions' | 'history'
+  pane?: 'canvas' | 'prompt' | 'changes' | 'images' | 'suggestions' | 'history'
   version_id?: string
+  compare_version_id?: string
   text?: string
   region_id?: string | null
   reference_ids?: string[]
@@ -27,8 +28,11 @@ export interface FrontendRequest {
   kind?: 'generate' | 'inpaint'
   mode?: 'internal' | 'external'
   response?: PageExternalReply
+  config_action?: 'begin' | 'update' | 'save' | 'cancel'
+  patch?: import('./workspace-config').WorkspaceConfigPatch
+  agent_session?: string
 }
-export interface FrontendContext { actionId: string; signal: AbortSignal; step: (message: string) => Promise<void> }
+export interface FrontendContext { actionId: string; agentSession?: string; signal: AbortSignal; step: (message: string) => Promise<void> }
 export interface DesktopState {
   token: string
   tab: AppTab
@@ -36,9 +40,11 @@ export interface DesktopState {
   model: NaiVersion
   image: NaiImage | null
   workspace: { id: string; revision: number; title: string; versionId: string; regionId: string | null; pane: string; editing: boolean; composer: string;
-    viewedVersionId?: string; historyOpen?: boolean; references?: string[]; image?: NaiImage | null;
+    viewedVersionId?: string; viewedGroupId?: string; adoptedVersionId?: string; comparisonVersionId?: string | null; comparisonMode?: 'source' | 'specified'; discussionVersionId?: string; historyOpen?: boolean; references?: string[]; image?: NaiImage | null;
     regions?: { id: string; label: string; instruction: string; target: number | null }[];
     latestProposal?: { id: string; title: string; status: string } | null; lastMessage?: string;
+    focusedProposalId?: string | null;
+    config?: { open: boolean; sourceVersionId: string; owner: string | null; dirty: boolean; draft: InpaintDraft; params: import('./types').NaiGenParams; strength: number; disabledFields: Record<string,string> };
     agentMode?: 'internal' | 'external'; agentName?: string; agentConnected?: boolean; pendingRequestId?: string | null } | null
   frontend?: { label: string; stage: string; status: 'running' | 'completed' | 'error' } | null
   blockers: string[]

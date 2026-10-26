@@ -42,7 +42,7 @@ try {
   assert.equal((await a.request('resources/read',{uri:'novelprompt://guide/missing'})).error.code,-32602)
   await assert.rejects(a.data('agent_guide',{topic:'missing'}),/未知指南/)
   assert.equal((await a.data('get_app_state')).visible,false)
-  assert.equal((await a.request('tools/list')).result.tools.length,51)
+  assert.equal((await a.request('tools/list')).result.tools.length,56)
   console.log('PASS agent onboarding in initialize; guide topics/resource share content and fingerprint; invalid topic/resource rejected; reading keeps host headless')
   const w=await a.data('create_workspace',{title:'冷启动持久化测试',draft:{base:'1girl',negative:'',characters:[]},show:false})
   a.child.stdin.end();await b.request('ping')

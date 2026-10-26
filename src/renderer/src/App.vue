@@ -18,7 +18,8 @@ import type { NaiVersion } from '@shared/types'
 import TaskCenter from './components/TaskCenter.vue'
 import UpdateAction from './components/UpdateAction.vue'
 import { prepareUpdateKey, updateLabel } from './updates'
-import { connectTasks } from './tasks'
+import { connectTasks, taskState, cancelTask } from './tasks'
+import { taskIsActive } from '@shared/tasks'
 
 /** 按工作流排序：写 → 校验 → 优化 → 推测 → 出图；搜索与设置是工具 */
 const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: boolean }[] = [
@@ -31,6 +32,7 @@ const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: bool
   { key: 'settings', label: '设置 / 数据', icon: 'sliders', desc: 'Danbooru 数据、DeepSeek 与 NovelAI 配置', tool: true }
 ]
 const current = computed(() => tabs.find((t) => t.key === state.tab)!)
+const development = ref(false)
 const cleanup = ref({ pending: 0, message: '' }), cleanupBusy = ref(false)
 async function retryCleanup() {
   cleanupBusy.value = true
@@ -48,12 +50,23 @@ const settingsView = ref<InstanceType<typeof SettingsView>>()
 const generateView = ref<InstanceType<typeof GenerateView>>()
 const desktopSession = crypto.randomUUID()
 const frontend = ref<DesktopState['frontend']>(null)
+const agentTask = computed(() => taskState.tasks.find(t => t.origin === 'agent' && taskIsActive(t)))
+const agentOperating = computed(() => frontend.value?.status === 'running' || !!agentTask.value)
+const agentStage = computed(() => frontend.value?.status === 'running' ? frontend.value.stage : agentTask.value?.message ?? '')
+const showAgentResult = ref(false)
+let agentResultTimer: ReturnType<typeof setTimeout> | undefined
+watch(() => frontend.value?.status, status => {
+  clearTimeout(agentResultTimer); showAgentResult.value = status === 'completed'
+  if (showAgentResult.value) agentResultTimer = setTimeout(() => { showAgentResult.value = false }, 4000)
+})
+onBeforeUnmount(() => clearTimeout(agentResultTimer))
 let frontendController: AbortController | null = null, frontendId = ''
 let cancelledFrontendId = ''
 let markDesktopReady: () => void
 const desktopReady = new Promise<void>(resolve => { markDesktopReady = resolve })
 let offFrontend: (() => void) | undefined
 function stopFrontend() { frontendController?.abort(); window.api.cancelFrontend() }
+provide('frontend-control', { state: frontend, stop: stopFrontend })
 let captureLease = '', captureStyle: HTMLStyleElement | null = null
 let captureTimer: ReturnType<typeof setTimeout> | undefined
 function endCapture(lease = captureLease) {
@@ -86,7 +99,7 @@ let desktopRevision = 0, desktopKey = ''
 function desktopSnapshot(): DesktopState {
   const blockers: string[] = []
   try { generateView.value?.prepareUpdate() } catch(e) { blockers.push(cleanErr(e)) }
-  if (workspaceView.value?.isCreating()) blockers.push('正在新建工作台会话')
+  if (workspaceView.value?.isCreating()) blockers.push('正在新建工作台项目')
   const value = { tab: state.tab, draft: { base: state.prompt, negative: state.negative, characters: state.characters.map(c => ({ ...c })) },
     model: state.settings?.naiVersion ?? 'v5', image: state.currentImage ? { ...state.currentImage } : null,
     workspace: workspaceView.value?.desktopState() ?? null, blockers, frontend: frontend.value ? { ...frontend.value } : null }
@@ -113,7 +126,7 @@ async function desktopCommand(command: DesktopCommand) {
       if (!workspaceView.value) throw new Error('工作台尚未就绪')
       const ctrl = new AbortController(); frontendController = ctrl; frontendId = request.actionId
       frontend.value = { label: request.label, stage: '准备操作…', status: 'running' }
-      const context: FrontendContext = { actionId: request.actionId, signal: ctrl.signal, step: async message => {
+      const context: FrontendContext = { actionId: request.actionId, agentSession: request.agent_session, signal: ctrl.signal, step: async message => {
         if (ctrl.signal.aborted) throw new Error('已停止，已保存的内容保留')
         frontend.value = { label: request.label, stage: message, status: 'running' }
         await nextTick(); publishDesktop()
@@ -154,6 +167,7 @@ provide(prepareUpdateKey, async () => {
 onBeforeUnmount(() => { offTasks?.(); offUpdate?.(); offDesktop?.(); offSkills?.(); offFrontend?.(); frontendController?.abort(); clearTimeout(updateTimer); endCapture() })
 
 onMounted(async () => {
+  void window.api.mcpInfo().then(info => { development.value = info?.runtime?.mode === 'development' }).catch(() => {})
   void window.api.imagesCleanupStatus().then(value => { cleanup.value = value }).catch(() => {})
   offTasks = connectTasks()
   offSkills = window.api.onSkillsChanged(() => { void loadSkills().catch(e => toast(cleanErr(e))) })
@@ -217,7 +231,7 @@ async function onDrop(e: DragEvent) {
         <Mascot mood="avatar" :size="46" class="brand-avatar" />
         <div>
           <div class="brand-name">Novel<b>Prompt</b></div>
-          <div class="brand-sub">tag 小助手</div>
+          <div class="brand-sub">{{ development ? '开发版 · 独立数据' : 'tag 小助手' }}</div>
         </div>
       </div>
 
@@ -273,14 +287,14 @@ async function onDrop(e: DragEvent) {
           <Icon :name="current.icon" :size="17" />
           {{ current.label }}
         </div>
+        <div class="agent-status-slot" aria-live="polite">
+          <div v-if="agentOperating" class="agent-operating" role="status" :title="agentStage"><Icon name="sparkle" :size="14" class="spin-slow"/><b>外部 Agent 正在操作</b><span>{{ agentStage }}</span><button class="btn ghost small" @click="frontend?.status==='running' ? stopFrontend() : agentTask && cancelTask(agentTask.id)">停止</button></div>
+          <details v-else-if="frontend?.status==='error'" class="agent-error"><summary>Agent 操作未完成</summary><div role="alert">{{ frontend.stage }}<button class="btn ghost small" @click="frontend=null">关闭</button></div></details>
+          <span v-else-if="showAgentResult" class="muted small" role="status">Agent 操作已完成</span>
+        </div>
         <TaskCenter />
       </header>
       <div v-if="cleanup.message" class="frontend-status" role="status"><span>{{ cleanup.message }} 本次新生成的临时图片会保留到退出。</span><button class="btn small" :disabled="cleanupBusy" @click="retryCleanup">{{ cleanupBusy ? '正在清理' : '重试清理' }}</button></div>
-      <div v-if="frontend" class="frontend-status" role="status" aria-live="polite">
-        <span><b>Agent 前台 · {{ frontend.label }}</b> {{ frontend.stage }}</span>
-        <button v-if="frontend.status === 'running'" class="btn small" @click="stopFrontend">停止操作</button>
-        <button v-else class="btn ghost small" @click="frontend=null">收起</button>
-      </div>
       <div class="content" :inert="frontend?.status === 'running'">
         <CompareView v-show="state.tab === 'compare'" />
         <SearchView v-show="state.tab === 'search'" />
@@ -313,5 +327,7 @@ async function onDrop(e: DragEvent) {
 </template>
 
 <style scoped>
+.agent-status-slot{margin-left:auto;min-width:0;max-width:470px;-webkit-app-region:no-drag}.agent-operating{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--pink-deep);min-width:0}.agent-operating b{white-space:nowrap;font-weight:500}.agent-operating>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);max-width:180px}.agent-operating button{flex-shrink:0}.agent-error{position:relative;font-size:12px;color:var(--bad)}.agent-error summary{cursor:pointer}.agent-error>div{position:absolute;right:0;top:28px;z-index:100;width:300px;padding:16px;line-height:1.8;overflow-wrap:anywhere;border:1px solid var(--pink-line);border-radius:12px;background:var(--bg);box-shadow:0 8px 24px #0002}.agent-error button{display:block;margin-left:auto}@media(max-width:1200px){.agent-operating>span{display:none}}
+
 .frontend-status{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:9px 20px;border-bottom:1px solid var(--pink-line);background:var(--panel);font-size:12px}.frontend-status b{margin-right:12px}
 </style>

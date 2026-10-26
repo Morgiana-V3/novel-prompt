@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="T extends string | number | boolean | null">
-import { computed, nextTick, onBeforeUnmount, ref, useAttrs, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, shallowRef, useAttrs, useId, watch } from 'vue'
 
 defineOptions({ inheritAttrs: false })
 const props = defineProps<{ modelValue: T; options: readonly { value: T; label: string; disabled?: boolean }[]; disabled?: boolean }>()
@@ -9,6 +9,7 @@ const id = useId()
 const trigger = ref<HTMLButtonElement>()
 const menu = ref<HTMLElement>()
 const opened = ref(false)
+const portal = shallowRef<string | HTMLElement>('body')
 const active = ref(-1)
 const position = ref({ left: '0px', top: '0px', width: '0px', maxHeight: '240px' })
 const label = computed(() => props.options.find(o => o.value === props.modelValue)?.label ?? '请选择')
@@ -16,6 +17,7 @@ const label = computed(() => props.options.find(o => o.value === props.modelValu
 function close() { opened.value = false }
 async function open() {
   if (!trigger.value || trigger.value.matches(':disabled') || !props.options.length) return
+  portal.value = trigger.value.closest('dialog') ?? 'body'
   active.value = props.options.findIndex(o => o.value === props.modelValue && !o.disabled)
   if (active.value < 0) active.value = props.options.findIndex(o => !o.disabled)
   const r = trigger.value.getBoundingClientRect()
@@ -24,7 +26,11 @@ async function open() {
   const desired = Math.min(252, props.options.length * 34 + 12)
   const upwards = below < desired && above > below
   const height = Math.max(0, Math.min(desired, upwards ? above : below))
-  const width = Math.min(Math.max(r.width, 150), innerWidth - 16)
+  const metrics = document.createElement('canvas').getContext('2d')
+  const font = getComputedStyle(trigger.value)
+  if (metrics) metrics.font = `600 ${font.fontSize} ${font.fontFamily}`
+  const contentWidth = Math.max(...props.options.map(o => metrics?.measureText(o.label).width ?? 0)) + 66
+  const width = Math.min(Math.max(r.width, 150, contentWidth), innerWidth - 16)
   position.value = { left: `${Math.max(8, Math.min(r.left, innerWidth - width - 8))}px`,
     top: `${upwards ? r.top - height - 6 : r.bottom + 6}px`, width: `${width}px`, maxHeight: `${height}px` }
   opened.value = true
@@ -84,14 +90,16 @@ onBeforeUnmount(() => {
     @click="opened ? close() : open()" @keydown="keydown" @blur="close">
     <span>{{ label }}</span><svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
   </button>
-  <Teleport to="body">
+  <Teleport :to="portal">
     <Transition name="select-menu">
-      <div v-if="opened" :id="id" ref="menu" class="theme-select-menu scroll" :style="position" role="listbox" :aria-label="String(attrs['aria-label'] ?? '选项')" @pointerdown.prevent>
+      <div v-if="opened" ref="menu" class="theme-select-menu" :style="position" @pointerdown.prevent>
+        <div :id="id" class="theme-select-options scroll" role="listbox" :aria-label="String(attrs['aria-label'] ?? '选项')">
         <div v-for="(option, i) in options" :id="`${id}-${i}`" :key="i" :data-index="i" role="option"
           :aria-selected="option.value === modelValue" :aria-disabled="option.disabled || undefined"
           :class="['theme-select-option', { active: i === active, selected: option.value === modelValue, disabled: option.disabled }]"
           @pointermove="!option.disabled && (active = i)" @click="select(i)">
-          <span>{{ option.label }}</span><span v-if="option.value === modelValue" aria-hidden="true">✓</span>
+          <span :title="option.label">{{ option.label }}</span><span v-if="option.value === modelValue" aria-hidden="true">✓</span>
+        </div>
         </div>
       </div>
     </Transition>
@@ -105,8 +113,11 @@ onBeforeUnmount(() => {
 .theme-select.expanded svg { transform: rotate(180deg); }
 .theme-select:hover:not(:disabled), .theme-select.expanded { border-color: var(--pink-line); }
 .theme-select:focus:not(:focus-visible):not(.expanded) { box-shadow: none; }
-.theme-select-menu { position: fixed; z-index: 200; padding: 5px; overflow-y: auto; background: var(--bg); border: 1px solid var(--pink-line); border-radius: 12px; box-shadow: 0 8px 28px #24202c20; }
+.theme-select-menu { position: fixed; z-index: 200; display: flex; padding: 5px; overflow: hidden; background: var(--bg); border: 1px solid var(--pink-line); border-radius: 12px; box-shadow: 0 8px 28px #24202c20; }
+.theme-select-options { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; border-radius: 7px; }
 .theme-select-option { min-height: 34px; padding: 7px 10px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border-radius: 7px; font-size: 12.5px; color: var(--text2); cursor: pointer; }
+.theme-select-option > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.theme-select-option > span:last-child:not(:first-child) { flex-shrink: 0; }
 .theme-select-option.active { background: var(--pink-soft); }
 .theme-select-option.selected { color: var(--pink-deep); font-weight: 600; }
 .theme-select-option.disabled { opacity: .4; cursor: default; }
