@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs'
+import { writeFileAtomic as writeFileSync } from '../fs-safe'
 import { pinyin } from 'pinyin-pro'
 import type { DbStatus, SearchHit, SearchOptions, TagCategory, TagInfo } from '../../shared/types'
 import { dataFile } from '../paths'

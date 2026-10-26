@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { parsePosition } from '@shared/nai-presets'
-import { state, toast } from '../store'
+import { state, toast, removeCharacter } from '../store'
 import { vAutosize } from '../autosize'
 import Icon from './Icon.vue'
 import PositionEditor from './PositionEditor.vue'
@@ -24,10 +24,7 @@ function add() {
   state.focus = { kind: 'char', index: state.characters.length - 1 }
 }
 
-function remove(i: number) {
-  state.characters.splice(i, 1)
-  if (state.focus.kind === 'char') state.focus = { kind: 'base' }
-}
+const remove = removeCharacter
 </script>
 
 <template>

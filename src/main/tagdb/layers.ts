@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import { dataFile } from '../paths'
+import { quarantine } from '../fs-safe'
 
 /**
  * 两层数据：
@@ -26,6 +27,8 @@ export function readUser<T>(name: string): T | undefined {
   try {
     return JSON.parse(readFileSync(p, 'utf8')) as T
   } catch {
+    // 改名留存坏文件：否则下次保存（如手动改一条翻译）会用空数据把它覆盖掉
+    quarantine(p)
     return undefined
   }
 }

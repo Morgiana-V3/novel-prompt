@@ -1,5 +1,6 @@
 import { app } from 'electron'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { writeFileAtomic as writeFileSync } from './fs-safe'
 import type { UpdateInfo } from '../shared/types'
 import { dataFile } from './paths'
 import { join } from 'node:path'

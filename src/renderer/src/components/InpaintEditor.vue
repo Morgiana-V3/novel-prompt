@@ -119,12 +119,43 @@ function editMask(r: Region) {
   chooseRegion(r)
   editingMaskId.value = r.id
 }
+/* ---------- 可撤销的破坏性操作：清空遮罩、删除区域、删除批注 ---------- */
+type RegionBackup = Pick<Region, 'annotated' | 'anchor' | 'baseMask' | 'instruction' | 'target' | 'strokes' | 'hasPixels' | 'plan' | 'checked' | 'accepted' | 'number'>
+const backupRegion = (r: Region): RegionBackup => ({ annotated: r.annotated, anchor: r.anchor, baseMask: r.baseMask, instruction: r.instruction, target: r.target,
+  strokes: [...r.strokes], hasPixels: r.hasPixels, plan: r.plan, checked: [...r.checked], accepted: r.accepted, number: r.number })
+/** 最近一次破坏性操作；Ctrl+Z 或「撤销」优先恢复它，新的涂抹会让它失效 */
+const lastRemoval = ref<{ label: string; restore: () => void } | null>(null)
+function remember(label: string, restore: () => void) {
+  lastRemoval.value = { label, restore }
+  status.value = `${label}，可按 Ctrl+Z 或点击画布下方「撤销」恢复。`
+}
+function restoreRemoval() {
+  const item = lastRemoval.value
+  if (!item || active || running.value || analyzing.value) return
+  lastRemoval.value = null
+  item.restore()
+  status.value = `已撤销：${item.label}`
+}
+function restoreRegion(r: Region, saved: RegionBackup) {
+  Object.assign(r, saved)
+  layerCache.delete(r.id)
+  chooseRegion(r)
+}
 function removeRegion() {
   if (!editable.value || active) return
+  const removed = selected.value
+  const index = regions.value.indexOf(removed)
+  const saved = backupRegion(removed)
   layerCache.delete(selectedId.value)
   regions.value = regions.value.filter(r => r.id !== selectedId.value)
   if (!regions.value.length) regions.value.push(makeRegion())
   chooseRegion(regions.value[0])
+  remember(`已删除${removed.annotated ? `区域 ${removed.label}` : '选区'}`, () => {
+    // 删除后补上的空白工作区没有内容，恢复时去掉，避免留下多余的空区域
+    regions.value = regions.value.filter(r => r.hasPixels || r.annotated || r.strokes.length)
+    regions.value.splice(Math.min(index, regions.value.length), 0, removed)
+    restoreRegion(removed, saved)
+  })
 }
 function layer(r: Region): HTMLCanvasElement {
   const cached = layerCache.get(r.id)
@@ -164,6 +195,7 @@ function openContext(e: MouseEvent, region?: Region) {
 }
 function openComment() {
   if (!editable.value || !selected.value.hasPixels) return
+  lastRemoval.value = null
   let r = selected.value
   if (!r.annotated) {
     if (annotations.value.length >= 8) { error.value = '最多保留 8 条批注，请先删除不用的批注。'; contextAt.value = null; return }
@@ -208,6 +240,8 @@ function dismissFloating(e: PointerEvent) {
 }
 function deleteAnnotation(r: Region) {
   if (running.value || analyzing.value) return
+  const saved = backupRegion(r), label = r.label
+  remember(`已删除区域 ${label} 的批注`, () => restoreRegion(r, saved))
   r.annotated = false; r.instruction = ''; r.target = null; invalidateRegion(r)
   contextAt.value = commentAt.value = null
   commentId.value = null
@@ -217,6 +251,7 @@ async function analyzeRegions() {
   if (!editable.value || analyzing.value) return
   const annotated = analyzable.value
   if (!annotated.length) { error.value = '请先涂选区域并填写修改批注'; return }
+  lastRemoval.value = null
   error.value = ''; analyzing.value = true; commentAt.value = contextAt.value = null
   const snapshot = cloneDraft(draft)
   try {
@@ -232,6 +267,7 @@ async function analyzeRegions() {
 }
 function adopt(r: Region) {
   if (!r.plan || !analysisDraft || analyzing.value || running.value || !r.checked.some(Boolean)) return
+  lastRemoval.value = null
   try {
     r.accepted = applyInpaintChanges(draft, r.plan.changes.filter((_, i) => r.checked[i]))
     status.value = `区域 ${r.label} 已采纳，可在「提示词」中继续编辑；尚未生成图片。`
@@ -364,7 +400,7 @@ function move(e: PointerEvent) {
 }
 function up(e: PointerEvent) {
   if (!active || pointer !== e.pointerId) return
-  if (e.type !== 'pointercancel') { move(e); strokes.value.push(active); invalidateRegion(selected.value) }
+  if (e.type !== 'pointercancel') { move(e); strokes.value.push(active); invalidateRegion(selected.value); lastRemoval.value = null; confirmingClose.value = false }
   active = null
   pointer = null
   if (mask.value?.hasPointerCapture(e.pointerId)) mask.value.releasePointerCapture(e.pointerId)
@@ -373,8 +409,10 @@ function up(e: PointerEvent) {
 }
 function undo() {
   if (!editable.value || active) return
-  if (strokes.value.length) strokes.value.pop()
-  else selected.value.baseMask = null
+  if (lastRemoval.value) return restoreRemoval()
+  // 只撤销本次涂抹的笔画；已恢复或拆分得到的底层遮罩（baseMask）不是一笔操作，不能被一次 Ctrl+Z 整块清掉
+  if (!strokes.value.length) return
+  strokes.value.pop()
   invalidateRegion(selected.value)
   renderMask()
   measureMask()
@@ -395,6 +433,16 @@ function clearMask() {
   renderMask()
   measureMask()
 }
+function userClearMask() {
+  if (!editable.value || active) return
+  const r = selected.value, saved = backupRegion(r)
+  clearMask()
+  remember(`已清空${r.annotated ? `区域 ${r.label} 的` : '当前'}遮罩`, () => restoreRegion(r, saved))
+}
+const canUndo = computed(() => !!lastRemoval.value || selected.value.strokes.length > 0)
+/** 生图页的完整模式不会自动保存，关闭即丢失；有内容时需要再确认一次 */
+const confirmingClose = ref(false)
+const hasUnsavedWork = computed(() => !props.saveEditor && regions.value.some(r => r.hasPixels || r.instruction.trim() || r.accepted))
 function exportMask(region = selected.value): string {
   const data = layer(region).getContext('2d')!.getImageData(0, 0, width.value, height.value)
   for (let i = 0; i < data.data.length; i += 4) {
@@ -448,6 +496,7 @@ async function loadSource(image: NaiImage, readPrompt = true) {
     if (!readPrompt && resultDraft) { draft.base = resultDraft.base; draft.negative = resultDraft.negative; draft.characters = toDrafts(resultDraft.characters) }
     resultDraft = null; layerCache.clear()
     regionNumber = 0; regions.value = [makeRegion()]; selectedId.value = regions.value[0].id
+    lastRemoval.value = null; confirmingClose.value = false
     analysisDraft = null; analysisInfo.value = null; commentAt.value = contextAt.value = null; commentId.value = editingMaskId.value = null
     await nextTick()
     viewport.value?.reset()
@@ -464,6 +513,7 @@ async function generate(batch = false) {
   if (!state.settings?.naiToken?.trim()) { error.value = '请先在设置中填写 NovelAI Token'; return }
   if (!editDraft.value.base.trim() && !editDraft.value.characters.some(c => c.prompt.trim())) { error.value = '请填写希望重绘后呈现的内容'; return }
   error.value = ''
+  lastRemoval.value = null
   status.value = '检查重绘参数…'
   running.value = true
   commentAt.value = contextAt.value = null
@@ -494,6 +544,10 @@ async function generate(batch = false) {
 }
 async function close() {
   if (running.value) return
+  if (hasUnsavedWork.value && !confirmingClose.value) {
+    confirmingClose.value = true
+    return
+  }
   clearTimeout(snapshotTimer)
   try { await persistEditor() } catch (e) { error.value = `尚未保存，请重试：${cleanErr(e)}`; return }
   if (analyzing.value) void window.api.cancelInpaintPlan()
@@ -502,7 +556,8 @@ async function close() {
 function key(e: KeyboardEvent) {
   if (frontendBusy.value) return
   if (!opened.value) return
-  if (e.key === 'Escape') { if (contextAt.value) { contextAt.value = null; dialog.value?.focus() } else if (commentAt.value) finishComment(); else close(); return }
+  // 连按 Esc 关浮层时不能顺手把整个编辑器关掉：确认条出现后 Esc 只取消确认，需点「仍然关闭」
+  if (e.key === 'Escape') { if (contextAt.value) { contextAt.value = null; dialog.value?.focus() } else if (commentAt.value) finishComment(); else if (confirmingClose.value) confirmingClose.value = false; else close(); return }
   if (e.key === 'Tab' && dialog.value) {
     const controls = [...dialog.value.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), summary')]
       .filter(el => el.getClientRects().length && !el.closest('fieldset:disabled'))
@@ -579,8 +634,8 @@ onBeforeUnmount(() => {
                 <button :class="{ on: tool === 'erase' }" :disabled="!editable" @click="tool = 'erase'">橡皮</button>
                 <button :class="{ on: tool === 'rect' }" :disabled="!editable" @click="tool = 'rect'"><Icon name="frame" :size="14" />框选</button>
               </div>
-              <button class="icon-btn sm" title="撤销遮罩（Ctrl+Z）" :disabled="!editable || !historyCount" @click="undo"><Icon name="reset" :size="15" /></button>
-              <button class="btn ghost small" :disabled="!editable || !historyCount" @click="clearMask">清空</button>
+              <button class="icon-btn sm" title="撤销（Ctrl+Z）" :disabled="!editable || !canUndo" @click="undo"><Icon name="reset" :size="15" /></button>
+              <button class="btn ghost small" title="清空当前区域的遮罩，可撤销" :disabled="!editable || !historyCount" @click="userClearMask">清空</button>
               <div class="seg ml-auto" v-if="result">
                 <button :class="{ on: viewing === 'source' }" @click="viewing = 'source'">原图 / 遮罩</button>
                 <button :class="{ on: viewing === 'result' }" @click="viewing = 'result'">重绘结果</button>
@@ -605,6 +660,7 @@ onBeforeUnmount(() => {
             </ImageViewport>
             <div class="ip-canvas-foot">
               <span><i></i>{{ regionLabel(selected) }} · 已选 {{ coverage.toFixed(1) }}%</span>
+              <button v-if="lastRemoval" class="btn small" :disabled="running || analyzing" :title="lastRemoval.label" @click="restoreRemoval"><Icon name="reset" :size="13" />撤销{{ lastRemoval.label.replace(/^已/, '') }}</button>
               <button v-if="editingMaskId" class="btn ghost small" @click="editingMaskId = null">完成遮罩编辑</button>
               <button v-if="result" class="btn small primary" :disabled="running || loading" @click="loadSource(result, false)"><Icon name="check" :size="13" />以结果继续修改</button>
             </div>
@@ -682,6 +738,12 @@ onBeforeUnmount(() => {
             <div v-if="status" class="ip-status" role="status">{{ status }}</div>
           </div>
         </div>
+        <div v-if="confirmingClose" class="ip-close-confirm" role="alertdialog" aria-label="确认关闭">
+          <Icon name="warn" :size="15" />
+          <span>关闭后，本次涂抹的选区、批注和 AI 建议都不会保留（已生成的图片在图库中）。</span>
+          <button class="btn ghost small ml-auto" @click="confirmingClose = false">继续编辑</button>
+          <button class="btn small danger" @click="close">仍然关闭</button>
+        </div>
         <div class="ip-foot">
           <span v-if="running || !coverage" class="muted small">{{ running ? '正在重绘…' : '请先选择区域' }}</span>
           <button v-if="running" class="btn ghost small" @click="stopQueue = true">{{ stopQueue ? '将在本张完成后停止' : '停止后续区域' }}</button>
@@ -717,6 +779,8 @@ onBeforeUnmount(() => {
 .ip-marker { border-radius: 50%; width: 22px; height: 22px; background: var(--pink-soft); color: var(--pink-deep); font-size: 9px; font-weight: 600; border: 1px solid var(--pink-line); }
 .ip-marker { position: absolute; transform: translate(-50%, -50%); box-shadow: 0 1px 5px #0003; cursor: pointer; }
 .ip-mask-preview { pointer-events: none; }
+.ip-close-confirm { display: flex; align-items: center; gap: 10px; padding: 9px 18px; border-top: 1px solid var(--line2); background: #fff4f4; color: #b4232a; font-size: 12.5px; }
+.ip-close-confirm .danger { background: #e5484d; color: #fff; border-color: transparent; }
 /* Keep a separate interaction/measurement surface; only the union is visible. */
 .ip-active-mask { opacity: 0; }
 .ip-tabs { margin-bottom: 12px; }

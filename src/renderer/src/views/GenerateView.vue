@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import type { NaiFreeCheck, NaiGenParams, NaiGenResult, NaiImage, NaiNoiseSchedule, NaiSampler, NaiSubscription } from '@shared/types'
-import { state, copy, toast, importPrompt, workKey, cleanErr, DEFAULT_PARAMS } from '../store'
+import { state, copy, toast, importPrompt, workKey, cleanErr, DEFAULT_PARAMS, DEFAULT_GEN, GEN_PARAMS_KEY, loadGenParams, type GenOnly } from '../store'
 import { resizeWithin } from '../autosize'
 import { readPngPrompt, type ImportedPrompt } from '@shared/prompt-import'
 import Icon from '../components/Icon.vue'
@@ -13,31 +13,10 @@ import PositionEditor from '../components/PositionEditor.vue'
 import InpaintEditor from '../components/InpaintEditor.vue'
 import ImageViewer from '../components/ImageViewer.vue'
 import ThemeSelect from '../components/ThemeSelect.vue'
+import { usePageShortcuts, runKeyLabel, runKeyShort } from '../shortcuts'
 
-/** 只属于生图的参数；画幅、质量词、UC 预设与画面推测共用（state.params） */
-type GenOnly = Omit<NaiGenParams, 'width' | 'height' | 'qualityTags' | 'ucPreset'>
-
-const PARAMS_KEY = 'np-gen-params'
-const DEFAULT_GEN: GenOnly = {
-  steps: 23,
-  scale: 5,
-  cfgRescale: 0,
-  sampler: 'k_euler_ancestral',
-  noiseSchedule: 'native',
-  seed: null,
-  count: 1
-}
-
-function loadGen(): GenOnly {
-  try {
-    const saved = JSON.parse(localStorage.getItem(PARAMS_KEY) ?? '{}') as Partial<GenOnly>
-    const out = { ...DEFAULT_GEN }
-    for (const k of Object.keys(DEFAULT_GEN) as (keyof GenOnly)[]) if (k in saved) (out as Record<string, unknown>)[k] = saved[k]
-    return { ...out, seed: null }
-  } catch {
-    return { ...DEFAULT_GEN }
-  }
-}
+const PARAMS_KEY = GEN_PARAMS_KEY
+const loadGen = loadGenParams
 
 const gen = reactive<GenOnly>(loadGen())
 watch(gen, (p) => localStorage.setItem(PARAMS_KEY, JSON.stringify({ ...p, seed: null })), { deep: true })
@@ -210,7 +189,7 @@ function randomizeSeed() {
 }
 
 async function run() {
-  if (inpaintBusy.value) return
+  if (running.value || inpaintBusy.value) return
   if (!hasToken.value) {
     error.value = '请先在「设置 / 数据」中填写 NovelAI API Token'
     return
@@ -257,6 +236,8 @@ async function cancel() {
   toast('会在当前这张完成后停止')
 }
 
+usePageShortcuts('generate', { run, cancel, canCancel: () => running.value && !cancelling.value })
+
 /* ---------- 图片操作 ---------- */
 async function saveAs(img: NaiImage) {
   if (await window.api.naiSaveAs(img.name)) toast('已保存')
@@ -264,7 +245,18 @@ async function saveAs(img: NaiImage) {
 async function copyImage(img: NaiImage) {
   if (await window.api.naiCopyImage(img.name)) toast('图片已复制')
 }
+/** 删除需要在 3 秒内再点一次确认，避免和旁边的「下载」误触 */
+const pendingDelete = ref<string | null>(null)
+let pendingTimer: ReturnType<typeof setTimeout> | undefined
 async function remove(img: NaiImage) {
+  if (pendingDelete.value !== img.name) {
+    pendingDelete.value = img.name
+    clearTimeout(pendingTimer)
+    pendingTimer = setTimeout(() => (pendingDelete.value = null), 3000)
+    return
+  }
+  clearTimeout(pendingTimer)
+  pendingDelete.value = null
   try {
     if (!(await window.api.naiDelete(img.name))) return
     toast('已移到回收站')
@@ -316,138 +308,141 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
 
 <template>
   <div class="view generate">
-    <section class="pane left scroll" ref="leftPane">
-      <div :class="['import-zone quota', { warn: freeOnly && check && !check.ok }]">
-        <span class="group-badge pink"><Icon name="key" :size="16" /></span>
-        <div class="import-text">
-          <template v-if="!hasToken">
-            <b>还没有配置 NovelAI Token</b>
-            <span>在「设置 / 数据」里填写 Persistent API Token 后就能直接出图</span>
-          </template>
-          <template v-else-if="subError">
-            <b>查询会员状态失败</b>
-            <span>{{ subError }}</span>
-          </template>
-          <template v-else-if="sub">
-            <b>
-              {{ sub.active ? (sub.tier === 3 ? 'Opus 会员' : `会员等级 ${sub.tier ?? '未知'}`) : '没有有效订阅' }}
-              <span class="quota-sep">·</span>Anlas {{ anlas !== undefined ? anlas.toLocaleString() : '未知' }}
-            </b>
-            <span>
-              <template v-if="sub.usagePercent !== undefined">
-                V5 免费额度约 {{ sub.usagePercent }}%{{ sub.usageNegative ? '（负值）' : '' }}
-                <template v-if="sub.usageNextSeconds"> · {{ fmtHours(sub.usageNextSeconds) }}后恢复 1%</template>
-              </template>
-              <template v-else>接口没有返回 V5 免费额度</template>
-              · {{ freeOnly ? '只用免费额度' : '允许消耗 Anlas' }}
-            </span>
-          </template>
-          <template v-else>
-            <b>正在查询会员状态…</b>
-            <span>&nbsp;</span>
-          </template>
-        </div>
-        <div class="actions">
-          <button v-if="!hasToken" class="btn small primary" @click="state.tab = 'settings'"><Icon name="sliders" :size="14" />去设置</button>
-          <button v-else class="icon-btn" title="刷新余额" @click="refreshSub"><Icon name="swap" :class="{ spin: subLoading }" /></button>
-        </div>
-      </div>
-
-      <WorkspaceBar />
-
-      <PromptEditor char-hint="点「编辑位置」可在画布上拖动角色" />
-
-      <div class="field-head gen-params-head">
-        <label class="field-label">生成参数</label>
-        <button class="btn ghost small ml-auto" :disabled="isDefault" title="步数、Guidance、采样器、画幅等全部恢复默认" @click="resetDefaults">
-          <Icon name="reset" :size="14" />恢复默认
-        </button>
-      </div>
-      <div class="gen-params">
-        <SharedParams :only="['size']" />
-        <div class="param">
-          <span class="side-label">张数（逐张生成）</span>
-          <div class="seg block">
-            <button v-for="n in [1, 2, 4]" :key="n" :class="{ on: gen.count === n }" @click="gen.count = n">{{ n }}</button>
+    <section class="pane left with-foot">
+      <div class="pane-body scroll" ref="leftPane">
+        <div :class="['import-zone quota', { warn: freeOnly && check && !check.ok }]">
+          <span class="group-badge pink"><Icon name="key" :size="16" /></span>
+          <div class="import-text">
+            <template v-if="!hasToken">
+              <b>还没有配置 NovelAI Token</b>
+              <span>在「设置 / 数据」里填写 Persistent API Token 后就能直接出图</span>
+            </template>
+            <template v-else-if="subError">
+              <b>查询会员状态失败</b>
+              <span>{{ subError }}</span>
+            </template>
+            <template v-else-if="sub">
+              <b>
+                {{ sub.active ? (sub.tier === 3 ? 'Opus 会员' : `会员等级 ${sub.tier ?? '未知'}`) : '没有有效订阅' }}
+                <span class="quota-sep">·</span>Anlas {{ anlas !== undefined ? anlas.toLocaleString() : '未知' }}
+              </b>
+              <span>
+                <template v-if="sub.usagePercent !== undefined">
+                  V5 免费额度约 {{ sub.usagePercent }}%{{ sub.usageNegative ? '（负值）' : '' }}
+                  <template v-if="sub.usageNextSeconds"> · {{ fmtHours(sub.usageNextSeconds) }}后恢复 1%</template>
+                </template>
+                <template v-else>接口没有返回 V5 免费额度</template>
+                · {{ freeOnly ? '只用免费额度' : '允许消耗 Anlas' }}
+              </span>
+            </template>
+            <template v-else>
+              <b>正在查询会员状态…</b>
+              <span>&nbsp;</span>
+            </template>
+          </div>
+          <div class="actions">
+            <button v-if="!hasToken" class="btn small primary" @click="state.tab = 'settings'"><Icon name="sliders" :size="14" />去设置</button>
+            <button v-else class="icon-btn" title="刷新余额" @click="refreshSub"><Icon name="swap" :class="{ spin: subLoading }" /></button>
           </div>
         </div>
-        <div class="param">
-          <span class="side-label">步数 · {{ gen.steps }}</span>
-          <input class="range" type="range" min="1" max="50" v-model.number="gen.steps" />
-        </div>
-        <div class="param">
-          <span class="side-label">Prompt Guidance · {{ gen.scale }}</span>
-          <input class="range" type="range" min="0" max="10" step="0.1" v-model.number="gen.scale" />
-        </div>
-        <div class="param">
-          <span class="side-label">种子（留空随机）</span>
-          <div class="pair">
-            <input class="input sm" type="number" min="0" v-model.number="gen.seed" placeholder="随机" />
-            <button class="icon-btn sm" title="改回随机" @click="randomizeSeed"><Icon name="x" :size="14" /></button>
-          </div>
-        </div>
-      </div>
 
-      <details class="gen-advanced">
-        <summary>
-          <Icon name="chevron" :size="14" class="gen-advanced-arrow" />
-          <span class="gen-advanced-title">高级设置</span>
-          <span v-if="advancedChanged" class="gen-advanced-dot" title="有参数改过默认值"></span>
-          <span class="muted gen-advanced-sum">{{ advancedSummary }}</span>
-        </summary>
+        <WorkspaceBar />
+
+        <PromptEditor char-hint="点「编辑位置」可在画布上拖动角色" />
+
+        <div class="field-head gen-params-head">
+          <label class="field-label">生成参数</label>
+          <button class="btn ghost small ml-auto" :disabled="isDefault" title="步数、Guidance、采样器、画幅等全部恢复默认" @click="resetDefaults">
+            <Icon name="reset" :size="14" />恢复默认
+          </button>
+        </div>
         <div class="gen-params">
+          <SharedParams :only="['size']" />
           <div class="param">
-            <span class="side-label">自定义尺寸（64 的倍数）</span>
-            <div class="pair">
-              <input class="input sm" type="number" min="64" step="64" v-model.number="params.width" />
-              <span class="muted">×</span>
-              <input class="input sm" type="number" min="64" step="64" v-model.number="params.height" />
+            <span class="side-label">张数（逐张生成）</span>
+            <div class="seg block">
+              <button v-for="n in [1, 2, 4]" :key="n" :class="{ on: gen.count === n }" @click="gen.count = n">{{ n }}</button>
             </div>
           </div>
           <div class="param">
-            <span class="side-label">Guidance Rescale · {{ gen.cfgRescale }}</span>
-            <input class="range" type="range" min="0" max="1" step="0.02" v-model.number="gen.cfgRescale" />
+            <span class="side-label">步数 · {{ gen.steps }}</span>
+            <input class="range" type="range" min="1" max="50" v-model.number="gen.steps" />
           </div>
           <div class="param">
-            <span class="side-label">采样器</span>
-            <ThemeSelect class="sm" v-model="gen.sampler" :options="SAMPLERS.map(s => ({ value: s.v, label: s.label }))" aria-label="采样器" />
+            <span class="side-label">Prompt Guidance · {{ gen.scale }}</span>
+            <input class="range" type="range" min="0" max="10" step="0.1" v-model.number="gen.scale" />
           </div>
           <div class="param">
-            <span class="side-label">噪声调度</span>
-            <ThemeSelect class="sm" v-model="gen.noiseSchedule" :options="SCHEDULES.map(s => ({ value: s, label: s }))" aria-label="噪声调度" />
+            <span class="side-label">种子（留空随机）</span>
+            <div class="pair">
+              <input class="input sm" type="number" min="0" v-model.number="gen.seed" placeholder="随机" />
+              <button class="icon-btn sm" title="改回随机" @click="randomizeSeed"><Icon name="x" :size="14" /></button>
+            </div>
           </div>
-          <SharedParams :only="['quality', 'uc']" />
         </div>
-      </details>
 
-      <div v-if="hasToken && check" :class="['free-check', check.ok ? 'ok' : freeOnly ? 'bad' : 'warn']">
-        <Icon :name="check.ok ? 'check' : 'warn'" :size="15" :stroke="check.ok ? 2.2 : 1.8" />
-        <div>
-          <b>{{ check.ok ? '满足免费生成条件' : freeOnly ? '不满足免费条件，不会提交' : '可能会消耗 Anlas' }}</b>
-          <div v-for="r in check.reasons" :key="r">{{ r }}</div>
-          <div v-if="check.ok" class="muted">{{ check.notes[0] }}</div>
+        <details class="gen-advanced">
+          <summary>
+            <Icon name="chevron" :size="14" class="gen-advanced-arrow" />
+            <span class="gen-advanced-title">高级设置</span>
+            <span v-if="advancedChanged" class="gen-advanced-dot" title="有参数改过默认值"></span>
+            <span class="muted gen-advanced-sum">{{ advancedSummary }}</span>
+          </summary>
+          <div class="gen-params">
+            <div class="param">
+              <span class="side-label">自定义尺寸（64 的倍数）</span>
+              <div class="pair">
+                <input class="input sm" type="number" min="64" step="64" v-model.number="params.width" />
+                <span class="muted">×</span>
+                <input class="input sm" type="number" min="64" step="64" v-model.number="params.height" />
+              </div>
+            </div>
+            <div class="param">
+              <span class="side-label">Guidance Rescale · {{ gen.cfgRescale }}</span>
+              <input class="range" type="range" min="0" max="1" step="0.02" v-model.number="gen.cfgRescale" />
+            </div>
+            <div class="param">
+              <span class="side-label">采样器</span>
+              <ThemeSelect class="sm" v-model="gen.sampler" :options="SAMPLERS.map(s => ({ value: s.v, label: s.label }))" aria-label="采样器" />
+            </div>
+            <div class="param">
+              <span class="side-label">噪声调度</span>
+              <ThemeSelect class="sm" v-model="gen.noiseSchedule" :options="SCHEDULES.map(s => ({ value: s, label: s }))" aria-label="噪声调度" />
+            </div>
+            <SharedParams :only="['quality', 'uc']" />
+          </div>
+        </details>
+
+        <div v-if="hasToken && check" :class="['free-check', check.ok ? 'ok' : freeOnly ? 'bad' : 'warn']">
+          <Icon :name="check.ok ? 'check' : 'warn'" :size="15" :stroke="check.ok ? 2.2 : 1.8" />
+          <div>
+            <b>{{ check.ok ? '满足免费生成条件' : freeOnly ? '不满足免费条件，不会提交' : '可能会消耗 Anlas' }}</b>
+            <div v-for="r in check.reasons" :key="r">{{ r }}</div>
+            <div v-if="check.ok" class="muted">{{ check.notes[0] }}</div>
+          </div>
+        </div>
+
+        <div class="timeline" v-if="steps.length">
+          <div v-for="(s, i) in steps" :key="i" :class="['tl-item', { live: running && i === steps.length - 1 }]">{{ s }}</div>
         </div>
       </div>
 
-      <div class="row">
-        <button class="btn accent big" :disabled="running || inpaintBusy" @click="run">
-          <Icon name="image" :size="17" :class="{ 'spin-slow': running }" />
-          {{ running ? '正在生成' : gen.count > 1 ? `生成 ${gen.count} 张` : '生成' }}
-        </button>
-        <button v-if="running" class="btn ghost" :disabled="cancelling" @click="cancel"><Icon name="stop" :size="15" />{{ cancelling ? '即将停止' : '停止' }}</button>
-        <span class="pill">{{ version === 'v5' ? 'V5 Full' : 'V4.5 Full' }}</span>
-        <div class="actions ml-auto">
-          <button class="btn ghost small" :title="previewIsCurrent ? '这套提示词已经推测过' : '先让 AI 推测一下会画成什么样'" @click="state.tab = 'preview'">
-            <Icon name="eye" :size="14" />{{ previewIsCurrent ? '查看推测' : '先推测画面' }}
+      <footer class="pane-foot">
+        <div v-if="error" class="error-box"><Icon name="warn" :size="16" />{{ error }}</div>
+        <div class="row run-bar">
+          <button class="btn accent big" :disabled="running || inpaintBusy" :title="`生成（${runKeyLabel}）`" @click="run">
+            <Icon name="image" :size="17" :class="{ 'spin-slow': running }" />
+            {{ running ? '正在生成' : gen.count > 1 ? `生成 ${gen.count} 张` : '生成' }}<span v-if="!running" class="kbd">{{ runKeyShort }}</span>
           </button>
+          <button v-if="running" class="btn ghost" :disabled="cancelling" title="当前这张完成后停止（Esc）" @click="cancel"><Icon name="stop" :size="15" />{{ cancelling ? '即将停止' : '停止' }}</button>
+          <span class="pill">{{ version === 'v5' ? 'V5 Full' : 'V4.5 Full' }}</span>
+          <div class="actions ml-auto">
+            <button class="btn ghost small" :title="previewIsCurrent ? '这套提示词已经推测过' : '先让 AI 推测一下会画成什么样'" @click="state.tab = 'preview'">
+              <Icon name="eye" :size="14" />{{ previewIsCurrent ? '查看推测' : '先推测画面' }}
+            </button>
+          </div>
         </div>
-      </div>
-
-      <div v-if="error" class="error-box"><Icon name="warn" :size="16" />{{ error }}</div>
-
-      <div class="timeline" v-if="steps.length">
-        <div v-for="(s, i) in steps" :key="i" :class="['tl-item', { live: running && i === steps.length - 1 }]">{{ s }}</div>
-      </div>
+      </footer>
     </section>
 
     <section class="pane right scroll">
@@ -540,8 +535,9 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
             >
               <img :src="g.url" loading="lazy" alt="" draggable="false" />
               <div class="thumb-actions">
-                <button class="icon-btn sm" title="下载" @click.stop="saveAs(g)"><Icon name="download" :size="14" /></button>
-                <button class="icon-btn sm" title="删除（移到回收站）" @click.stop="remove(g)"><Icon name="trash" :size="14" /></button>
+                <button class="icon-btn sm" title="下载" aria-label="下载" @click.stop="saveAs(g)"><Icon name="download" :size="14" /></button>
+                <button v-if="pendingDelete === g.name" class="btn small danger-confirm" title="再点一次移到回收站" aria-label="确认删除" @click.stop="remove(g)">确认删除</button>
+                <button v-else class="icon-btn sm" title="删除（移到回收站）" aria-label="删除" @click.stop="remove(g)"><Icon name="trash" :size="14" /></button>
               </div>
             </div>
           </div>

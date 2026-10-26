@@ -1,5 +1,6 @@
 import { app, net } from 'electron'
-import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync, openSync, readSync, closeSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, statSync, openSync, readSync, closeSync, readFileSync } from 'node:fs'
+import { writeFileAtomic as writeFileSync } from '../fs-safe'
 import { join } from 'node:path'
 import type {
   AiCharacter,

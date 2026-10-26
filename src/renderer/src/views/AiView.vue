@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { AiCharacter, AiOptimizeResult, ChangeScope } from '@shared/types'
-import { state, copy, toast, applyWorkspace, undoWorkspace, sectionText, cleanErr, type Tab } from '../store'
+import { state, copy, toast, applyWorkspace, revertTo, sectionText, cleanErr, type Tab, type Snapshot } from '../store'
 import { vAutosize, resizeWithin } from '../autosize'
 import { diffTags, diffSize, type TagDiff } from '../tag-diff'
 import Icon from '../components/Icon.vue'
@@ -12,9 +12,20 @@ import BasisPill from '../components/BasisPill.vue'
 import EvidenceNote from '../components/EvidenceNote.vue'
 import DiffChips from '../components/DiffChips.vue'
 import { activeTask, cancelTask } from '../tasks'
+import { usePageShortcuts, runKeyLabel, runKeyShort } from '../shortcuts'
 
-const mode = ref<'optimize' | 'semantic'>('optimize')
-const instruction = ref('')
+/**
+ * 一个输入框，按当前提示词自动决定做什么：
+ * - 当前提示词为空：把描述生成整套提示词（semantic）
+ * - 已有提示词：在它的基础上按要求修改（optimize，要求可留空 = 只做规范化检查）
+ * - 已有提示词但想推倒重来：勾选「按描述重新生成」，不带当前提示词（semantic）
+ * 以前的两个模式本质是同一流程，「描述转提示词」也会带上当前提示词，和「优化 + 额外要求」几乎重合。
+ */
+const request = ref('')
+const fresh = ref(false)
+const hasPrompt = computed(() => !!state.prompt.trim() || state.characters.some((c) => c.prompt.trim()))
+const mode = computed<'optimize' | 'semantic'>(() => (hasPrompt.value && !fresh.value ? 'optimize' : 'semantic'))
+const runLabel = computed(() => (mode.value === 'optimize' ? '优化提示词' : '生成提示词'))
 const running = ref(false)
 const steps = ref<string[]>([])
 const result = ref<AiOptimizeResult | null>(null)
@@ -25,10 +36,14 @@ let offStep: (() => void) | undefined
 const sent = ref<{ base: string; negative: string; characters: AiCharacter[] } | null>(null)
 /** 结果已经采用到当前提示词 */
 const adopted = ref(false)
+/** 采用前那一份历史，撤销时精确回到它（期间可能有导入、清空、Agent 修改等其他历史） */
+let beforeAdopt: Snapshot | null = null
 
 watch(mode, () => {
   if (!running.value) error.value = ''
 })
+// 提示词被清空后「重新生成」没有意义，复位，避免下次有了内容时意外不带当前提示词
+watch(hasPrompt, (v) => { if (!v) fresh.value = false })
 
 const leftPane = ref<HTMLElement>()
 const resizeAll = () => resizeWithin(leftPane.value)
@@ -54,6 +69,21 @@ watch(
 watch(
   () => state.characters.length,
   () => nextTick(resizeAll)
+)
+
+// 画面推测「带着建议去 AI 优化」：把建议追加到修改要求（保留用户已写的内容，并恢复为保留当前提示词）
+watch(
+  () => state.aiHandoff,
+  (h) => {
+    if (!h) return
+    state.aiHandoff = null
+    fresh.value = false
+    const mine = request.value.trim()
+    if (!mine.includes(h.text)) request.value = mine ? `${mine}\n\n${h.text}` : h.text
+    toast(h.count ? `已带入画面推测的 ${h.count} 条建议，可修改后点「${runLabel.value}」` : `已带入想要的效果，可修改后点「${runLabel.value}」`)
+    nextTick(resizeAll)
+  },
+  { immediate: true }
 )
 
 const charCount = computed(() => state.characters.filter((c) => c.prompt.trim()).length)
@@ -90,15 +120,11 @@ const totalChanges = computed(() =>
 async function run() {
   if (running.value) return
   if (!state.settings?.apiKey) {
-    error.value = '请先在「设置 / 数据」中填写 DeepSeek API Key'
+    error.value = '请先在「设置 / 数据」中填写 AI 服务的 API Key'
     return
   }
-  if (mode.value === 'optimize' && !state.prompt.trim() && !charCount.value) {
-    error.value = '请先输入要优化的提示词'
-    return
-  }
-  if (mode.value === 'semantic' && !instruction.value.trim()) {
-    error.value = '请输入画面描述'
+  if (mode.value === 'semantic' && !request.value.trim()) {
+    error.value = hasPrompt.value ? '重新生成需要画面描述，请在上方写下想要的画面' : '请先描述想要的画面，或在下方粘贴已有的提示词'
     return
   }
   running.value = true
@@ -106,17 +132,21 @@ async function run() {
   steps.value = []
   result.value = null
   adopted.value = false
-  const characters = state.characters
+  // 「按描述重新生成」时不带当前提示词，避免 AI 把旧内容当作要保留的部分
+  const scratch = fresh.value && hasPrompt.value
+  const characters = scratch ? [] : state.characters
     .filter((c) => c.prompt.trim())
     .map((c) => ({ prompt: c.prompt, negative: c.negative, position: c.position }))
-  sent.value = { base: state.prompt, negative: state.negative, characters }
+  const base = scratch ? '' : state.prompt
+  const negative = scratch ? '' : state.negative
+  sent.value = { base, negative, characters }
   try {
     result.value = await window.api.optimize({
       mode: mode.value,
-      prompt: state.prompt,
-      negative: state.negative,
+      prompt: base,
+      negative,
       characters,
-      instruction: instruction.value,
+      instruction: request.value,
       version: state.settings.naiVersion
     })
   } catch (e) {
@@ -131,8 +161,10 @@ function adopt(next?: Tab) {
   const r = result.value
   if (!r) return
   if (!adopted.value) {
-    applyWorkspace({ base: r.positive, negative: r.negative, characters: r.characters }, 'AI 优化前')
+    beforeAdopt = applyWorkspace({ base: r.positive, negative: r.negative, characters: r.characters }, 'AI 优化前')
     adopted.value = true
+    // 采用后当前提示词就是这套新内容，之后继续迭代应该在它基础上改
+    fresh.value = false
     nextTick(resizeAll)
   }
   if (next) state.tab = next
@@ -140,63 +172,69 @@ function adopt(next?: Tab) {
 }
 
 function undoAdopt() {
-  if (undoWorkspace()) adopted.value = false
+  if (revertTo(beforeAdopt, '撤销采用前')) {
+    adopted.value = false
+    beforeAdopt = null
+  }
   nextTick(resizeAll)
 }
 
 const fullText = (r: AiOptimizeResult) => sectionText({ base: r.positive, negative: r.negative, characters: r.characters })
+
+usePageShortcuts('ai', { run, cancel: () => task.value && cancelTask(task.value.id), canCancel: () => running.value && !!task.value })
 </script>
 
 <template>
   <div class="view ai">
-    <section class="pane left scroll" ref="leftPane">
-      <div class="seg block big">
-        <button :class="{ on: mode === 'optimize' }" @click="mode = 'optimize'"><Icon name="wand" :size="15" />优化现有提示词</button>
-        <button :class="{ on: mode === 'semantic' }" @click="mode = 'semantic'"><Icon name="chat" :size="15" />描述转提示词</button>
-      </div>
+    <section class="pane left with-foot">
+      <div class="pane-body scroll" ref="leftPane">
+        <div class="field">
+          <div class="field-head">
+            <label class="field-label">{{ mode === 'optimize' ? '修改要求（可选）' : '画面描述' }}</label>
+            <span class="muted small ml-auto">{{ mode === 'optimize' ? '留空只做规范化检查：修正错误 tag、冲突、顺序' : hasPrompt ? '将不参考下方的当前提示词' : '下方为空，会按描述生成整套提示词' }}</span>
+          </div>
+          <div class="composer short">
+            <textarea
+              v-autosize
+              v-model="request"
+              :placeholder="mode === 'optimize'
+                ? '例如：风格偏厚涂一点；换成夜景；左边的女孩改成在笑'
+                : '例如：樱花树下的长椅上坐着两个女孩。左边是银发红瞳、穿白色连衣裙的少女，正笑着把头靠在右边女孩的肩上；右边是黑色短发、戴眼镜、穿学生制服的女孩，低头看书。午后阳光，柔和的水彩风。'"
+            ></textarea>
+          </div>
+          <label v-if="hasPrompt" class="fresh-toggle">
+            <input type="checkbox" v-model="fresh" />
+            <span>按描述重新生成，不保留当前提示词</span>
+          </label>
+        </div>
 
-      <div class="field" v-if="mode === 'semantic'">
-        <label class="field-label">画面描述</label>
-        <div class="composer short">
-          <textarea
-            v-autosize
-            v-model="instruction"
-            placeholder="例如：樱花树下的长椅上坐着两个女孩。左边是银发红瞳、穿白色连衣裙的少女，正笑着把头靠在右边女孩的肩上；右边是黑色短发、戴眼镜、穿学生制服的女孩，低头看书。午后阳光，柔和的水彩风。"
-          ></textarea>
+        <WorkspaceBar />
+
+        <div :class="['prompt-group', { 'is-ignored': mode === 'semantic' && hasPrompt }]">
+          <PromptEditor
+            char-label="角色提示词（可选）"
+            :char-hint="hasPrompt ? '多人画面时填写' : '留空则由 AI 按描述拆分'"
+            neg-hint="留空则由 AI 按规范生成"
+          />
+        </div>
+
+        <div class="timeline" v-if="steps.length">
+          <div v-for="(s, i) in steps" :key="i" :class="['tl-item', { live: running && i === steps.length - 1 }]">{{ s }}</div>
         </div>
       </div>
 
-      <WorkspaceBar />
-
-      <PromptEditor
-        :base-label="mode === 'optimize' ? '主提示词' : '要保留的主提示词（可选）'"
-        :char-label="mode === 'optimize' ? '角色提示词（可选）' : '要保留的角色（可选）'"
-        :char-hint="mode === 'optimize' ? '多人画面时填写' : '留空则由 AI 按描述拆分'"
-        neg-hint="留空则由 AI 按规范生成"
-      />
-
-      <div class="field" v-if="mode === 'optimize'">
-        <label class="field-label">额外要求（可选）</label>
-        <div class="composer short">
-          <textarea v-autosize v-model="instruction" placeholder="例如：风格偏厚涂一点；换成夜景；表情更生动"></textarea>
+      <footer class="pane-foot">
+        <div v-if="error" class="error-box"><Icon name="warn" :size="16" />{{ error }}</div>
+        <div class="row run-bar">
+          <button class="btn accent big" :disabled="running" :title="`${runLabel}（${runKeyLabel}）`" @click="run">
+            <Icon name="sparkle" :size="17" :class="{ spin: running }" />
+            {{ running ? '正在思考' : runLabel }}<span v-if="!running" class="kbd">{{ runKeyShort }}</span>
+          </button>
+          <button v-if="running && task" class="btn ghost" :disabled="task.status==='cancelling'" title="取消（Esc）" @click="cancelTask(task.id)"><Icon name="stop" :size="15" />{{ task.status==='cancelling' ? '正在取消…' : '取消' }}</button>
+          <span class="pill">目标 {{ state.settings?.naiVersion.toUpperCase() }}</span>
+          <span class="pill nl" v-if="charCount && mode === 'optimize'"><i></i>{{ charCount }} 个角色</span>
         </div>
-      </div>
-
-      <div class="row">
-        <button class="btn accent big" :disabled="running" @click="run">
-          <Icon name="sparkle" :size="17" :class="{ spin: running }" />
-          {{ running ? '正在思考' : '开始' }}
-        </button>
-        <button v-if="running && task" class="btn ghost" :disabled="task.status==='cancelling'" @click="cancelTask(task.id)"><Icon name="stop" :size="15" />{{ task.status==='cancelling' ? '正在取消…' : '取消' }}</button>
-        <span class="pill">目标 {{ state.settings?.naiVersion.toUpperCase() }}</span>
-        <span class="pill nl" v-if="charCount"><i></i>{{ charCount }} 个角色</span>
-      </div>
-
-      <div v-if="error" class="error-box"><Icon name="warn" :size="16" />{{ error }}</div>
-
-      <div class="timeline" v-if="steps.length">
-        <div v-for="(s, i) in steps" :key="i" :class="['tl-item', { live: running && i === steps.length - 1 }]">{{ s }}</div>
-      </div>
+      </footer>
     </section>
 
     <section class="pane right scroll">
@@ -211,10 +249,10 @@ const fullText = (r: AiOptimizeResult) => sectionText({ base: r.positive, negati
       <div v-else-if="!result" class="empty">
         <Mascot mood="chill" :size="230" />
         <p v-if="mode === 'semantic'">
-          用中文把画面讲清楚就好。我会数清画面里有几个人，把共享的画风、构图、背景放进主提示词，每个人的外貌、服装、动作拆成单独的角色提示词并排好位置，再给容易串色的角色加上角色负面，最后配一套负面提示词。
+          用中文把画面讲清楚就好。我会数清画面里有几个人，把共享的画风、构图、背景放进主提示词，每个人的外貌、服装、动作拆成单独的角色提示词并排好位置，再给容易串色的角色加上角色负面，最后配一套负面提示词。已有提示词的话，直接粘贴到左边，我会在它的基础上改。
         </p>
         <p v-else>
-          我会先把画面拆成一个个概念，去本地 Danbooru 库里找真实存在的 tag，按侧栏里启用的 Skill 排好顺序，最后再检查一遍，不存在的 tag 会自动换掉。结果要点「采用」才会写进当前提示词。
+          我会在当前提示词的基础上按你的要求修改：去本地 Danbooru 库里找真实存在的 tag，按侧栏里启用的 Skill 排好顺序，最后再检查一遍，不存在的 tag 会自动换掉，你原有的内容不会被悄悄删掉。结果要点「采用」才会写进当前提示词。
         </p>
       </div>
       <template v-else>

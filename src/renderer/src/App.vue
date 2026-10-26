@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
-import { state, refreshDb, loadSkills, saveSettings, importPrompt, cleanErr, toast, checkUpdate, dismissUpdate, receiveUpdate, flushWorkspace, applyWorkspace, type Tab } from './store'
+import { state, refreshDb, loadSkills, saveSettings, importPrompt, cleanErr, toast, runToastAction, checkUpdate, dismissUpdate, receiveUpdate, flushWorkspace, applyWorkspace, type Tab } from './store'
 import { APP_TABS, type DesktopCommand, type DesktopState, type FrontendRequest, type FrontendContext } from '@shared/desktop'
 import { readPngPrompt } from '@shared/prompt-import'
 import CompareView from './views/CompareView.vue'
@@ -294,9 +294,10 @@ async function onDrop(e: DragEvent) {
     </transition>
 
     <transition name="toast">
-      <div class="toast" v-if="state.toast">
+      <div class="toast" v-if="state.toast" role="status" aria-live="polite">
         <Icon name="paw" :size="16" />
-        {{ state.toast }}
+        <span>{{ state.toast }}</span>
+        <button v-if="state.toastAction" class="toast-action" @click="runToastAction">{{ state.toastAction.label }}</button>
       </div>
     </transition>
   </div>

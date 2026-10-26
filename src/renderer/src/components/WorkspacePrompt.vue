@@ -6,7 +6,7 @@ import type { PageEditorState } from '@shared/page-workspace'
 import { pageChanges } from '@shared/page-workspace'
 import { changeLabel } from '@shared/inpaint-plan'
 import { diffPrompt } from '../prompt-diff'
-import { cleanErr, copy, sectionText } from '../store'
+import { cleanErr, copy, sectionText, toast } from '../store'
 import DiffChips from './DiffChips.vue'
 import Icon from './Icon.vue'
 import PositionEditor from './PositionEditor.vue'
@@ -25,6 +25,16 @@ async function save() {
   saving.value=true; error.value=''
   try { const e=JSON.parse(JSON.stringify(draft.value)); if(e.params.seed==='')e.params.seed=null; await props.save(e); cancel() }
   catch(e) { error.value=cleanErr(e) } finally { saving.value=false }
+}
+function removeCharacter(i: number) {
+  const owner = draft.value
+  const [removed] = owner.draft.characters.splice(i, 1)
+  if (!removed || !(removed.prompt?.trim() || removed.negative?.trim())) return
+  toast(`已删除角色 ${i + 1}（尚未保存）`, { label: '撤销', run: () => {
+    // 编辑已取消或重新开始时不再写回，避免改到另一份草稿
+    if (!editing.value || draft.value !== owner) return toast('编辑已结束，无法撤销')
+    owner.draft.characters.splice(Math.min(i, owner.draft.characters.length), 0, removed)
+  } })
 }
 const fullText = computed(() => sectionText(props.editor.draft))
 defineExpose({ begin, save, cancel, saving, copyPrompt: () => copy(fullText.value) })
@@ -46,7 +56,7 @@ defineExpose({ begin, save, cancel, saving, copyPrompt: () => copy(fullText.valu
             <span class="group-badge nl"><Icon name="user" :size="14"/></span><h3>角色 {{ i+1 }}</h3>
             <input class="input sm" :class="{'pos-bad':invalidPosition(c.position)}" v-model="c.position" :placeholder="model==='v5'?'位置：自动 / 0.3,0.5':'位置：自动 / B3'" :title="invalidPosition(c.position)?'位置格式无效':''" :aria-label="`角色 ${i+1} 位置`" spellcheck="false">
             <button class="icon-btn sm" :aria-label="`编辑角色 ${i+1} 位置`" title="编辑位置" @click="positionIndex=i"><Icon name="frame" :size="15"/></button>
-            <button class="icon-btn sm" :aria-label="`删除角色 ${i+1}`" title="删除角色" @click="draft.draft.characters.splice(i,1)"><Icon name="trash" :size="15"/></button>
+            <button class="icon-btn sm" :aria-label="`删除角色 ${i+1}`" title="删除角色" @click="removeCharacter(i)"><Icon name="trash" :size="15"/></button>
           </div>
           <textarea v-autosize class="input" v-model="c.prompt" :aria-label="`角色 ${i+1} 提示词`" spellcheck="false"/>
           <textarea v-autosize class="input character-negative" v-model="c.negative" :aria-label="`角色 ${i+1} 负面`" placeholder="角色负面（可空）" spellcheck="false"/>

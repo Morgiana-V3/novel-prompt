@@ -12,6 +12,7 @@ import BasisPill from '../components/BasisPill.vue'
 import EvidenceNote from '../components/EvidenceNote.vue'
 import type { IconName } from '../components/icons'
 import { activeTask, cancelTask } from '../tasks'
+import { usePageShortcuts, runKeyLabel, runKeyShort } from '../shortcuts'
 
 const expectation = ref('')
 const running = ref(false)
@@ -187,46 +188,63 @@ function toGenerate() {
   state.tab = 'generate'
 }
 
+/** 把期望、差距和建议整理成 AI 优化的「额外要求」一起带过去，不用手动复制 */
 function toOptimize() {
+  const r = result.value
+  const parts: string[] = []
+  if (expectation.value.trim()) parts.push(`想要的效果：${expectation.value.trim()}`)
+  if (r?.gap) parts.push(`画面推测指出的差距：${r.gap}`)
+  if (r?.suggestions.length) parts.push(`画面推测给出的建议：\n${r.suggestions.map((s, i) => `${i + 1}. ${s.text}`).join('\n')}`)
+  const highRisks = r?.risks.filter((x) => x.level === 'high') ?? []
+  if (highRisks.length) parts.push(`需要处理的高风险：\n${highRisks.map((x) => `- ${x.text}`).join('\n')}`)
+  if (parts.length) {
+    if (stale.value) parts.unshift('（以下推测基于修改前的提示词，仅供参考）')
+    state.aiHandoff = { text: parts.join('\n\n'), count: (r?.suggestions.length ?? 0) + highRisks.length }
+  }
   state.tab = 'ai'
 }
+
+usePageShortcuts('preview', { run, cancel: () => task.value && cancelTask(task.value.id), canCancel: () => running.value && !!task.value })
 </script>
 
 <template>
   <div class="view preview">
-    <section class="pane left scroll" ref="leftPane">
-      <WorkspaceBar />
+    <section class="pane left with-foot">
+      <div class="pane-body scroll" ref="leftPane">
+        <WorkspaceBar />
 
-      <PromptEditor neg-hint="用来判断哪些东西被压掉了" />
+        <PromptEditor neg-hint="用来判断哪些东西被压掉了" />
 
-      <div class="params">
-        <SharedParams />
-      </div>
+        <div class="params">
+          <SharedParams />
+        </div>
 
-      <div class="field">
-        <label class="field-label">想要的效果（可选）<span class="muted"> · 填了会对比差距并给出修改建议</span></label>
-        <div class="composer short mini">
-          <textarea v-autosize v-model="expectation" placeholder="例如：两个女孩在樱花树下并肩坐着，左边的银发女孩在笑，整体是柔和的水彩风"></textarea>
+        <div class="field">
+          <label class="field-label">想要的效果（可选）<span class="muted"> · 填了会对比差距并给出修改建议</span></label>
+          <div class="composer short mini">
+            <textarea v-autosize v-model="expectation" placeholder="例如：两个女孩在樱花树下并肩坐着，左边的银发女孩在笑，整体是柔和的水彩风"></textarea>
+          </div>
+        </div>
+
+        <div class="timeline" v-if="steps.length">
+          <div v-for="(s, i) in steps" :key="i" :class="['tl-item', { live: running && i === steps.length - 1 }]">{{ s }}</div>
         </div>
       </div>
 
-      <div class="row">
-        <button class="btn accent big" :disabled="running" @click="run">
-          <Icon name="eye" :size="17" :class="{ 'spin-slow': running }" />
-          {{ running ? '正在想象' : '开始推测' }}
-        </button>
-        <button v-if="running && task" class="btn ghost" :disabled="task.status==='cancelling'" @click="cancelTask(task.id)"><Icon name="stop" :size="15" />{{ task.status==='cancelling' ? '正在取消…' : '取消' }}</button>
-        <span class="pill">目标 {{ state.settings?.naiVersion.toUpperCase() }}</span>
-        <div class="actions ml-auto">
-          <button class="icon-btn" title="选择推测使用的 Skill" @click="openSkill"><Icon name="layers" /></button>
+      <footer class="pane-foot">
+        <div v-if="error" class="error-box"><Icon name="warn" :size="16" />{{ error }}</div>
+        <div class="row run-bar">
+          <button class="btn accent big" :disabled="running" :title="`开始推测（${runKeyLabel}）`" @click="run">
+            <Icon name="eye" :size="17" :class="{ 'spin-slow': running }" />
+            {{ running ? '正在想象' : '开始推测' }}<span v-if="!running" class="kbd">{{ runKeyShort }}</span>
+          </button>
+          <button v-if="running && task" class="btn ghost" :disabled="task.status==='cancelling'" title="取消（Esc）" @click="cancelTask(task.id)"><Icon name="stop" :size="15" />{{ task.status==='cancelling' ? '正在取消…' : '取消' }}</button>
+          <span class="pill">目标 {{ state.settings?.naiVersion.toUpperCase() }}</span>
+          <div class="actions ml-auto">
+            <button class="icon-btn" title="选择推测使用的 Skill" @click="openSkill"><Icon name="layers" /></button>
+          </div>
         </div>
-      </div>
-
-      <div v-if="error" class="error-box"><Icon name="warn" :size="16" />{{ error }}</div>
-
-      <div class="timeline" v-if="steps.length">
-        <div v-for="(s, i) in steps" :key="i" :class="['tl-item', { live: running && i === steps.length - 1 }]">{{ s }}</div>
-      </div>
+      </footer>
     </section>
 
     <section class="pane right scroll">
@@ -241,7 +259,7 @@ function toOptimize() {
       <div v-else-if="!result" class="empty">
         <Mascot mood="crystal" :size="230" />
         <p>
-          推测用的是「当前提示词」，和其他页面共用。可以在上方粘贴整套提示词，或者把 NovelAI 原图拖进窗口。我会先查一遍每个 tag，再猜猜它会画成什么样、哪里可能和你想的不一样。
+          推测用的是「当前提示词」，和其他页面共用。可以在左侧粘贴整套提示词，或者把 NovelAI 原图拖进窗口。我会先查一遍每个 tag，再猜猜它会画成什么样、哪里可能和你想的不一样。
         </p>
       </div>
       <template v-else>
@@ -355,7 +373,7 @@ function toOptimize() {
           <div class="result-head">
             <span class="group-badge ok"><Icon name="wand" :size="14" /></span>
             <h3>{{ result.gap ? '和想要的效果对比' : '调整建议' }}</h3>
-            <button class="btn small primary ml-auto" @click="toOptimize"><Icon name="sparkle" :size="13" />送去 AI 优化</button>
+            <button class="btn small primary ml-auto" title="把期望、差距和建议带到 AI 优化的「额外要求」" @click="toOptimize"><Icon name="sparkle" :size="13" />带着建议去 AI 优化</button>
           </div>
           <div class="notes" v-if="result.gap">{{ result.gap }}</div>
           <div class="effect-list" v-if="result.suggestions.length">
@@ -392,7 +410,7 @@ function toOptimize() {
 
         <div class="row">
           <button class="btn" @click="copy(resultText(result))"><Icon name="copy" :size="15" />复制推测结果</button>
-          <button class="btn" @click="toOptimize"><Icon name="sparkle" :size="15" />送去 AI 优化</button>
+          <button class="btn" title="把期望、差距和建议带到 AI 优化的「额外要求」" @click="toOptimize"><Icon name="sparkle" :size="15" />带着建议去 AI 优化</button>
           <button class="btn accent" @click="toGenerate"><Icon name="image" :size="15" />去生图验证</button>
         </div>
       </template>

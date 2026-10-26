@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync, statSy
 import { basename, join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { dataDir } from './paths'
+import { writeFileAtomic } from './fs-safe'
 import { imageDir, imagePath, listImages } from './nai/client'
 import { pngSize } from './nai/zip'
 import { PNG } from 'pngjs'
@@ -47,8 +48,7 @@ export function savePage(w: PageWorkspace): PageWorkspace {
   w.updatedAt = Date.now(); w.revision++
   const data = JSON.stringify(w)
   if (Buffer.byteLength(data) > 64 * 1024 * 1024) throw new Error('当前工作区超过 64 MB，请减少不再使用的选区')
-  const dest = file(w.id), tmp = `${dest}.tmp`
-  writeFileSync(tmp, data, 'utf8'); renameSync(tmp, dest)
+  writeFileAtomic(file(w.id), data)
   return w
 }
 export function listPages(): PageWorkspaceSummary[] {

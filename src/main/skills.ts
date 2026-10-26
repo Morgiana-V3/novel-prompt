@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs'
+import { writeFileAtomic as writeFileSync } from './fs-safe'
 import { basename, extname, join } from 'node:path'
 import type {
   NaiVersion,

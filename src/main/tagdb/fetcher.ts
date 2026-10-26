@@ -1,5 +1,5 @@
 import { net } from 'electron'
-import { writeFile } from 'node:fs/promises'
+import { writeFileAtomicAsync } from '../fs-safe'
 import type { UpdateProgress } from '../../shared/types'
 import { dataFile } from '../paths'
 
@@ -167,7 +167,7 @@ async function fetchImplications(valid: Set<string>, onProgress: Progress, signa
 export async function updateImplications(valid: Set<string>, onProgress: Progress, signal?: AbortSignal): Promise<number> {
   const list = await fetchImplications(valid, onProgress, signal)
   checkSignal(signal)
-  await writeFile(dataFile('implications.json'), JSON.stringify(list), 'utf8')
+  await writeFileAtomicAsync(dataFile('implications.json'), JSON.stringify(list))
   return list.length
 }
 
@@ -181,12 +181,8 @@ export async function updateTagDatabase(minCount: number, onProgress: Progress, 
 
   // 异步写，避免几十 MB 的 JSON 阻塞主线程把窗口卡住。
   // tags.json 最后写：它的 fetchedAt 是切换数据层的依据，其余文件先落盘，切过去时才是完整的。
-  await writeFile(dataFile('aliases.json'), JSON.stringify(aliases), 'utf8')
-  await writeFile(dataFile('implications.json'), JSON.stringify(implications), 'utf8')
-  await writeFile(dataFile('zh-community.json'), JSON.stringify(zh), 'utf8')
-  await writeFile(
-    dataFile('tags.json'),
-    JSON.stringify({ fetchedAt: new Date().toISOString(), minCount, tags }),
-    'utf8'
-  )
+  await writeFileAtomicAsync(dataFile('aliases.json'), JSON.stringify(aliases))
+  await writeFileAtomicAsync(dataFile('implications.json'), JSON.stringify(implications))
+  await writeFileAtomicAsync(dataFile('zh-community.json'), JSON.stringify(zh))
+  await writeFileAtomicAsync(dataFile('tags.json'), JSON.stringify({ fetchedAt: new Date().toISOString(), minCount, tags }))
 }

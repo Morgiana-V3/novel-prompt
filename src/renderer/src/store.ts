@@ -1,5 +1,5 @@
 import { reactive, watch } from 'vue'
-import type { AiPreviewResult, DbStatus, NaiImage, Settings, SkillConfigItem, TagCategory, UcPreset, UpdateInfo, UpdateProgress } from '@shared/types'
+import type { AiPreviewResult, DbStatus, NaiGenParams, NaiImage, Settings, SkillConfigItem, TagCategory, UcPreset, UpdateInfo, UpdateProgress } from '@shared/types'
 import type { ImportedPrompt } from '@shared/prompt-import'
 
 export const CAT_CLASS: Record<TagCategory, string> = {
@@ -49,6 +49,30 @@ const MAX_HISTORY = 30
 
 export const DEFAULT_PARAMS: Readonly<WorkParams> = { width: 832, height: 1216, qualityTags: true, ucPreset: 'heavy' }
 
+/** 只属于生图的参数；画幅、质量词、UC 预设与画面推测共用（state.params） */
+export type GenOnly = Omit<NaiGenParams, 'width' | 'height' | 'qualityTags' | 'ucPreset'>
+export const GEN_PARAMS_KEY = 'np-gen-params'
+export const DEFAULT_GEN: Readonly<GenOnly> = {
+  steps: 23,
+  scale: 5,
+  cfgRescale: 0,
+  sampler: 'k_euler_ancestral',
+  noiseSchedule: 'native',
+  seed: null,
+  count: 1
+}
+/** 生图页保存的参数（种子不保存）；新建工作台会话也沿用它们 */
+export function loadGenParams(): GenOnly {
+  try {
+    const saved = JSON.parse(localStorage.getItem(GEN_PARAMS_KEY) ?? '{}') as Partial<GenOnly>
+    const out = { ...DEFAULT_GEN }
+    for (const k of Object.keys(DEFAULT_GEN) as (keyof GenOnly)[]) if (k in saved) (out as Record<string, unknown>)[k] = saved[k]
+    return { ...out, seed: null }
+  } catch {
+    return { ...DEFAULT_GEN }
+  }
+}
+
 interface Persisted {
   prompt?: string
   negative?: string
@@ -85,6 +109,8 @@ export const state = reactive({
   positionReference: { visible: true, opacity: 40 },
   /** 生图预览送入新建会话的图片，只暂存，不自动创建记录。 */
   workspaceImage: null as NaiImage | null,
+  /** 画面推测「带着建议去 AI 优化」时带过去的修改要求，AI 页取走后清空 */
+  aiHandoff: null as { text: string; count: number } | null,
 
   settings: null as Settings | null,
   /** 全部 Skill，按优先级排列，含启用状态 */
@@ -99,8 +125,15 @@ export const state = reactive({
   update: null as UpdateInfo | null,
   /** 用户关掉了这次的更新提示 */
   updateDismissed: false,
-  toast: ''
+  toast: '',
+  /** 提示条上的操作按钮（如「撤销」），提示消失时一起清除 */
+  toastAction: null as ToastAction | null
 })
+
+export interface ToastAction {
+  label: string
+  run: () => void
+}
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 export function flushWorkspace(): void {
@@ -118,10 +151,25 @@ watch(
 )
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined
-export function toast(msg: string): void {
+/** 显示时长随字数增加；带操作按钮时停留更久，给用户反应时间 */
+export function toast(msg: string, action?: ToastAction): void {
   state.toast = msg
+  state.toastAction = action ?? null
   clearTimeout(toastTimer)
-  toastTimer = setTimeout(() => (state.toast = ''), 1800)
+  const ms = Math.min(8000, Math.max(1800, 1200 + msg.length * 60)) + (action ? 3000 : 0)
+  toastTimer = setTimeout(dismissToast, ms)
+}
+
+export function dismissToast(): void {
+  clearTimeout(toastTimer)
+  state.toast = ''
+  state.toastAction = null
+}
+
+export function runToastAction(): void {
+  const a = state.toastAction
+  dismissToast()
+  a?.run()
 }
 
 export async function copy(text: string): Promise<void> {
@@ -217,13 +265,14 @@ function current(label: string): Snapshot {
   return { base: state.prompt, negative: state.negative, characters: state.characters.map((c) => ({ ...c })), label, at: Date.now() }
 }
 
-/** 把当前内容存进历史（空内容、与最近一条相同时跳过） */
-export function pushHistory(label: string): void {
-  if (isEmpty()) return
+/** 把当前内容存进历史（空内容时跳过，与最近一条相同时复用那一条），返回对应的历史条目 */
+export function pushHistory(label: string): Snapshot | null {
+  if (isEmpty()) return null
   const snap = current(label)
-  if (state.history[0] && contentKey(state.history[0]) === contentKey(snap)) return
+  if (state.history[0] && contentKey(state.history[0]) === contentKey(snap)) return state.history[0]
   state.history.unshift(snap)
   if (state.history.length > MAX_HISTORY) state.history.length = MAX_HISTORY
+  return state.history[0]
 }
 
 function setContent(p: { base: string; negative: string; characters: { prompt: string; negative?: string; position?: string }[] }) {
@@ -233,13 +282,55 @@ function setContent(p: { base: string; negative: string; characters: { prompt: s
   if (!validField(state.focus)) state.focus = { kind: 'base' }
 }
 
-/** 整体替换当前提示词，替换前自动存一份历史 */
+/** 整体替换当前提示词，替换前自动存一份历史；返回替换前的历史条目（替换前为空时为 null） */
 export function applyWorkspace(
   p: { base: string; negative: string; characters: { prompt: string; negative?: string; position?: string }[] },
   label: string
-): void {
-  pushHistory(label)
+): Snapshot | null {
+  const before = pushHistory(label)
   setContent(p)
+  return before
+}
+
+/**
+ * 回到指定的历史条目（例如「撤销采用」回到采用前那一份），而不是盲目弹出栈顶。
+ * 当前内容先存进历史，撤销本身也能再找回。before 为 null 表示替换前是空白。
+ */
+export function revertTo(before: Snapshot | null, label: string): boolean {
+  const index = before ? state.history.findIndex((h) => h.at === before.at && h.label === before.label) : -1
+  if (before && index < 0) {
+    toast('替换前的版本已不在历史里（最多保留 30 条），请从「历史版本」中选择')
+    return false
+  }
+  const target = before ? state.history[index] : null
+  pushHistory(label)
+  if (target) {
+    state.history.splice(state.history.indexOf(target), 1)
+    setContent(target)
+    toast(`已恢复到「${target.label}」的版本，撤销前的内容已存进历史`)
+  } else {
+    setContent({ base: '', negative: '', characters: [] })
+    toast('已恢复为空白，撤销前的内容已存进历史')
+  }
+  return true
+}
+
+/** 删除一个角色：有内容时先存历史，并在提示条上提供撤销 */
+export function removeCharacter(i: number): void {
+  const c = state.characters[i]
+  if (!c) return
+  const hasContent = !!(c.prompt.trim() || c.negative.trim() || c.position.trim())
+  if (hasContent) pushHistory('删除角色前')
+  const [removed] = state.characters.splice(i, 1)
+  if (state.focus.kind === 'char') state.focus = { kind: 'base' }
+  if (!hasContent) return
+  toast(`已删除角色 ${i + 1}`, {
+    label: '撤销',
+    run: () => {
+      state.characters.splice(Math.min(i, state.characters.length), 0, removed)
+      toast(`已恢复角色 ${i + 1}`)
+    }
+  })
 }
 
 /** 撤销最近一次整体替换 */
@@ -270,17 +361,32 @@ export function clearWorkspace(): void {
 /** 导入一整套提示词（分节文本 / 元数据 / 原图） */
 export function importPrompt(r: ImportedPrompt, source: string): void {
   applyWorkspace(r, '导入前')
-  if (r.width && r.height) {
+  const before = { ...state.params }
+  const changed: string[] = []
+  if (r.width && r.height && (r.width !== before.width || r.height !== before.height)) {
     state.params.width = r.width
     state.params.height = r.height
+    changed.push(`画幅改为 ${r.width}×${r.height}`)
   }
   // 元数据里的提示词已经包含质量词和 UC 预设，避免重复追加
   if (r.fromMetadata) {
+    if (before.qualityTags) changed.push('关闭质量词')
+    if (before.ucPreset !== 'none') changed.push('UC 预设改为无')
     state.params.qualityTags = false
     state.params.ucPreset = 'none'
   }
   const parts = [r.base && '主提示词', r.characters.length && `${r.characters.length} 个角色`, r.negative && '负面'].filter(Boolean)
-  toast(parts.length ? `${source}：${parts.join(' / ')}` : '没有识别到提示词')
+  const head = parts.length ? `${source}：${parts.join(' / ')}` : '没有识别到提示词'
+  if (!changed.length) return toast(head)
+  // 参数会一直保存下去并影响之后的推测和生图，必须明确告诉用户并允许恢复
+  const reason = r.fromMetadata && (before.qualityTags || before.ucPreset !== 'none') ? '（原图提示词已包含质量词和预设）' : ''
+  toast(`${head}。已${changed.join('、')}${reason}`, {
+    label: '恢复原参数',
+    run: () => {
+      Object.assign(state.params, before)
+      toast('已恢复导入前的画幅、质量词和 UC 预设')
+    }
+  })
 }
 
 /** 当前提示词 + 共用参数 + 模型版本的指纹：用来判断推测结果是否过期、图片对应哪次推测 */

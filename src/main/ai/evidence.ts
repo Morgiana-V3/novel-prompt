@@ -2,6 +2,7 @@ import type { AnalyzedToken, EvidenceInfo, PreviewIssue, TagInfo } from '../../s
 import { CATEGORY_LABEL } from '../../shared/types'
 import { tagStore } from '../tagdb/store'
 import {
+  danbooruOffline,
   fmtItem,
   relatedTags,
   tagWiki,
@@ -157,7 +158,8 @@ export async function gatherEvidence(
     ? `## Danbooru 统计数据（NAI 动漫模型使用的标签体系，可作为常见程度与默认外观的参考；引用这里的内容时 basis 标为 data）\n${parts.join('\n\n')}`
     : ''
   if (info.related.length) onStep(`已获取 ${info.related.length} 个 tag 的统计数据`)
-  else if (info.failed.length) onStep('Danbooru 统计数据获取失败，将仅依据规则和经验判断')
+  else if (info.failed.length)
+    onStep(danbooruOffline() ? 'Danbooru 暂时无法访问，已跳过联网统计（5 分钟后自动重试），将依据本地数据、规则和经验判断' : 'Danbooru 统计数据获取失败，将仅依据规则和经验判断')
   return { block, issues, info }
 }
 

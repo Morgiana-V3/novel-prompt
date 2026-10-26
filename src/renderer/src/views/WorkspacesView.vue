@@ -3,7 +3,7 @@ import { nextTick, onMounted, ref, watch } from 'vue'
 import type { FrontendRequest, FrontendContext } from '@shared/desktop'
 import type { PageWorkspace as Session, PageWorkspaceSummary } from '@shared/page-workspace'
 import type { NaiImage, NaiGenParams } from '@shared/types'
-import { state, cleanErr } from '../store'
+import { state, cleanErr, toast, loadGenParams } from '../store'
 import PageWorkspace from '../components/PageWorkspace.vue'
 import Icon from '../components/Icon.vue'
 import ThemeSelect from '../components/ThemeSelect.vue'
@@ -71,13 +71,20 @@ async function create() {
   if (busy.value || start.value === 'gallery' && !selectedImage.value) return
   busy.value = true; error.value = ''
   try {
-    const params: NaiGenParams = { ...state.params, count:1, seed:null, steps:23, scale:5, cfgRescale:0, sampler:'k_euler_ancestral', noiseSchedule:'native' }
+    // 沿用生图预览里的步数、Guidance、采样器等设置（种子随机、每次一张），不再悄悄换成默认值
+    const params: NaiGenParams = { ...state.params, ...loadGenParams(), count:1, seed:null }
     const draft = start.value === 'current' ? { base:state.prompt, negative:state.negative, characters:state.characters.map(c=>({...c})) } : {base:'',negative:'',characters:[]}
     let doc = start.value === 'import' ? await window.api.pagesImport(params, state.settings?.naiVersion ?? 'v5', draft)
       : await window.api.pagesCreate(start.value === 'gallery' ? selectedImage.value!.name : null, params, state.settings?.naiVersion ?? 'v5', draft)
     if (!doc) return
-    if (title.value.trim()) doc = await window.api.pagesEdit(doc.id, doc.revision, {type:'notes',title:title.value,goal:doc.goal,preserve:doc.preserve,composer:''})
+    // 会话已经建好：改名失败也直接打开，避免用户再点「开始会话」建出重复的会话
+    let renameError = ''
+    if (title.value.trim()) {
+      try { doc = await window.api.pagesEdit(doc.id, doc.revision, {type:'notes',title:title.value,goal:doc.goal,preserve:doc.preserve,composer:''}) }
+      catch (e) { renameError = cleanErr(e) }
+    }
     current.value = doc; creating.value = false; await refresh()
+    if (renameError) toast(`会话已创建，但名称未保存：${renameError}。可在会话顶部点击标题重命名`)
   } catch(e) { error.value = cleanErr(e) } finally { busy.value = false }
 }
 async function remove(id: string) {

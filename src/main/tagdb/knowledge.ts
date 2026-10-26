@@ -1,5 +1,5 @@
 import { net } from 'electron'
-import { writeFileSync } from 'node:fs'
+import { writeFileAtomic as writeFileSync } from '../fs-safe'
 import { dataFile } from '../paths'
 import { readUser } from './layers'
 import { DANBOORU } from './fetcher'
@@ -78,13 +78,29 @@ function scheduleSave(): void {
 
 class NotFound extends Error {}
 
+/**
+ * 连不上 Danbooru（离线、被墙、超时）时短期熔断：之后 5 分钟内直接走缓存 / 降级，
+ * 不再让每次 AI 优化、画面推测都先白等 10 秒以上的超时。
+ */
+const OFFLINE_MS = 5 * 60 * 1000
+let offlineUntil = 0
+export const danbooruOffline = () => Date.now() < offlineUntil
+
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const timeout = AbortSignal.timeout(TIMEOUT)
-  const res = await net.fetch(url, {
-    headers: { 'User-Agent': UA },
-    signal: signal ? AbortSignal.any([signal, timeout]) : timeout
-  })
+  let res: Response
+  try {
+    res = await net.fetch(url, {
+      headers: { 'User-Agent': UA },
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout
+    })
+  } catch (e) {
+    if (!signal?.aborted) offlineUntil = Date.now() + OFFLINE_MS
+    throw e
+  }
   if (res.status === 404) throw new NotFound()
+  // 被拦截（403）或限流（429）同样短期不再请求
+  if (res.status === 403 || res.status === 429) offlineUntil = Date.now() + OFFLINE_MS
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return (await res.json()) as T
 }
@@ -97,6 +113,8 @@ async function cached<K extends keyof Cache>(
   const store = getCache()[kind] as Record<string, CacheEntry<unknown>>
   const hit = store[name]
   if (hit && Date.now() - hit.at < TTL) return { data: hit.data as Cache[K][string]['data'], ok: true }
+  // 熔断期间不联网：有过期缓存先用着，没有就按离线降级
+  if (danbooruOffline()) return { data: (hit?.data ?? null) as Cache[K][string]['data'], ok: !!hit }
   try {
     const data = await load()
     store[name] = { at: Date.now(), data }

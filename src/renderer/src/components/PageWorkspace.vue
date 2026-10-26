@@ -14,6 +14,8 @@ import WorkspacePrompt from './WorkspacePrompt.vue'
 import WorkspaceIterations from './WorkspaceIterations.vue'
 import MarkdownText from './MarkdownText.vue'
 import { vAutosize } from '../autosize'
+import { taskState, cancelTask } from '../tasks'
+import { taskIsActive } from '@shared/tasks'
 
 const props = defineProps<{ workspace: PageWorkspace }>()
 const inpaintEditor = ref<InstanceType<typeof InpaintEditor>>()
@@ -69,6 +71,8 @@ let chain: Promise<unknown> = Promise.resolve()
 let unsubscribe: (() => void) | undefined
 let alive = true
 const busy = computed(() => !!operation.value || editingPrompt.value || remoteBusy.value)
+/** 本会话正在进行的生成任务，用于在执行区直接停止 */
+const generateTask = computed(() => taskState.tasks.find(t => t.kind === 'page-generate' && t.targetId === work.value.id && taskIsActive(t)))
 const notesValue = () => ({ type: 'notes' as const, title: title.value, goal: work.value.goal, preserve: work.value.preserve, composer: composer.value })
 const savedNotes = ref(JSON.stringify(notesValue()))
 const label = (id: string) => work.value.versions.find(v => v.id === id)?.label ?? '历史版本'
@@ -114,15 +118,22 @@ watch([title, composer], () => {
   notesTimer = setTimeout(() => { void flushNotes().catch(e => { error.value = `尚未保存：${cleanErr(e)}` }) }, 500)
 })
 async function saveEditor(editor: PageEditorState) { await mutate({ type: 'editor', versionId: current.value.id, editor }) }
+/** 打开选区编辑器前已有的区域；关闭时据此判断用户是否新画了区域 */
+let regionsBeforeEditor = new Set<string>()
 async function openEditor() {
   if (busy.value) return
   operation.value = 'save'
-  try { await flushNotes(); viewedId.value = current.value.id; editing.value = true } catch (e) { error.value = cleanErr(e) }
+  try { await flushNotes(); viewedId.value = current.value.id; regionsBeforeEditor = new Set(current.value.editor.regions.map(r => r.id)); editing.value = true } catch (e) { error.value = cleanErr(e) }
   finally { operation.value = '' }
 }
 async function closeEditor() {
   editing.value = false
-  if (!regionId.value || !current.value.editor.regions.some(r => r.id === regionId.value)) regionId.value = current.value.editor.regions[0]?.id ?? null
+  const regions = current.value.editor.regions
+  // 只在用户刚新增了区域时自动选中它（下一条消息会附带）；
+  // 原来选「不附加」又没新画区域时保持不附加，避免整图需求被悄悄当成局部需求
+  const added = regions.filter(r => !regionsBeforeEditor.has(r.id))
+  if (added.length) regionId.value = added[added.length - 1].id
+  else if (regionId.value && !regions.some(r => r.id === regionId.value)) regionId.value = null
   overlayMode.value = 'annotation'; await refreshOverlay()
 }
 async function send() {
@@ -356,7 +367,7 @@ onBeforeUnmount(() => { alive = false; clearTimeout(notesTimer); window.removeEv
           <ThemeSelect v-if="proposalOptions.length > 1" :model-value="latestProposal?.id ?? null" :options="proposalOptions" aria-label="历史建议记录" @update:model-value="selectedProposalId=typeof $event === 'string' ? $event : null"/><p v-if="!latestProposal" class="pw-empty-plan">此版本暂无修改建议</p>
           <article v-for="m in latestProposal ? [latestProposal] : []" :key="m.id" class="pw-proposal"><div class="row"><b>{{ m.proposal!.title }}</b><span class="pill ml-auto">{{ status(m.proposal!.status) }}</span></div><p class="pw-plan-kind">建议执行：{{ planLabel(m.proposal!.execution) }}</p><p v-if="m.proposal!.warning" class="pw-warning">{{ m.proposal!.warning }}</p><div v-for="(c,i) in m.proposal!.changes" :key="i" class="pw-change"><label>{{ changeLabel(c) }}</label><DiffChips :diff="diffPrompt(c.before,c.after)"/><p v-if="c.reason">{{ c.reason }}</p><details v-if="c.before||c.after"><summary>完整修改前后</summary><pre>{{ c.before||'（空）' }}</pre><pre>{{ c.after||'（空）' }}</pre></details></div><p v-if="!m.proposal!.changes.length" class="muted small">保持当前提示词，使用上述执行方式继续尝试。</p><p v-if="m.proposal!.status==='pending'&&stale(m)" class="muted small">上下文或执行设置已改变，请基于当前状态重新提出方案。</p><div v-if="m.proposal!.status==='pending'" class="row"><button class="btn small primary" :disabled="busy||stale(m)" @click="proposal(m,'accept')">采纳方案</button><button class="btn ghost small" :disabled="busy" @click="proposal(m,'reject')">不采用</button></div><button v-if="m.proposal!.status==='accepted'" class="btn ghost small" :disabled="busy||m.versionId!==current.id" @click="proposal(m,'undo')">撤销采纳</button></article>
         </div>
-        <div class="pw-execution" :title="work.execution.kind==='generate' ? '使用当前提示词重新生成整张图' : '以当前图片为底图，仅重绘所选遮罩'"><div class="row"><b>本次执行</b><ThemeSelect :model-value="work.execution.kind" :disabled="busy" :options="[{value:'generate',label:'按提示词生成新图'},{value:'inpaint',label:'局部重绘当前图片',disabled:!current.image||!current.editor.regions.length}]" @update:model-value="chooseExecution" /></div><div v-if="work.execution.kind==='inpaint'" class="row"><ThemeSelect :model-value="work.execution.regionId" :disabled="busy" :options="current.editor.regions.map(r=>({value:r.id,label:'遮罩 '+r.label}))" @update:model-value="id=>setExecution({kind:'inpaint',regionId:id})"/><button class="btn small ghost" @click="inspectMask">检查遮罩</button></div><div class="row"><span class="muted small">{{ current.editor.params.width }}×{{ current.editor.params.height }} · {{ current.editor.params.steps }} 步</span><button class="btn accent ml-auto" :disabled="busy || !current.editor.draft.base.trim()&&!current.editor.draft.characters.some(c=>c.prompt.trim())" @click="generate"><Icon name="wand" :size="14"/>{{ operation==='generate'?'正在执行…':work.execution.kind==='generate'?'生成新版本':'执行局部重绘' }}</button></div></div>
+        <div class="pw-execution" :title="work.execution.kind==='generate' ? '使用当前提示词重新生成整张图' : '以当前图片为底图，仅重绘所选遮罩'"><div class="row"><b>本次执行</b><ThemeSelect :model-value="work.execution.kind" :disabled="busy" :options="[{value:'generate',label:'按提示词生成新图'},{value:'inpaint',label:'局部重绘当前图片',disabled:!current.image||!current.editor.regions.length}]" @update:model-value="chooseExecution" /></div><div v-if="work.execution.kind==='inpaint'" class="row"><ThemeSelect :model-value="work.execution.regionId" :disabled="busy" :options="current.editor.regions.map(r=>({value:r.id,label:'遮罩 '+r.label}))" @update:model-value="id=>setExecution({kind:'inpaint',regionId:id})"/><button class="btn small ghost" @click="inspectMask">检查遮罩</button></div><div class="row"><span class="muted small">{{ current.editor.params.width }}×{{ current.editor.params.height }} · {{ current.editor.params.steps }} 步</span><button class="btn accent ml-auto" :disabled="busy || !current.editor.draft.base.trim()&&!current.editor.draft.characters.some(c=>c.prompt.trim())" @click="generate"><Icon name="wand" :size="14"/>{{ operation==='generate'?'正在执行…':work.execution.kind==='generate'?'生成新版本':'执行局部重绘' }}</button></div><div v-if="operation==='generate'" class="row pw-run-progress" role="status"><Icon name="paw" :size="13" class="spin-slow"/><span class="muted small grow">{{ progress || '正在执行…' }}</span><button v-if="generateTask" class="btn small ghost" :disabled="generateTask.status==='cancelling'" title="当前图片完成后停止，已生成的结果会保留" @click="cancelTask(generateTask.id)"><Icon name="stop" :size="13"/>{{ generateTask.status==='cancelling' ? '完成后停止' : '停止' }}</button></div></div>
       </div>
       <aside class="pw-conversation"><div class="pw-thread-header"><div><Icon name="sparkle" :size="17"/><b>对话</b></div><span :title="agentLabel">{{ agentLabel }}</span></div><div class="pw-agent-mode"><ThemeSelect :model-value="work.agentMode ?? 'internal'" :disabled="busy" :options="[{value:'internal',label:'内置 AI'},{value:'external',label:'外部 Agent 接管'}]" aria-label="会话处理方式" @update:model-value="setAgentMode"/><span v-if="external" :class="{connected:agentConnected}">{{ agentConnected ? '已连接' : work.externalAgent ? '连接已断开' : '等待连接' }}</span></div><div class="pw-context"><span class="pw-context-dot"></span>当前采用 <b>{{ current.label }}</b><button v-if="historical" @click="viewedId=current.id">回到当前</button></div>
         <div class="pw-thread scroll" ref="thread" aria-live="polite"><div v-if="!work.messages.some(m=>m.role==='user')&&!pendingText" class="pw-welcome"><p>描述想生成或修改的内容</p></div>

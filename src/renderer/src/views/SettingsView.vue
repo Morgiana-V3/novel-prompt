@@ -87,6 +87,38 @@ async function setMcp(key: 'mcpAllowAi' | 'mcpAllowGenerate', v: boolean) {
   await saveSettings({ [key]: v })
   toast(v ? '已开启，agent 下一次调用时生效' : '已关闭')
 }
+
+/* 开关类设置点了立即生效，和 MCP 开关保持一致；输入框类设置仍需点「保存」 */
+async function setFreeOnly(v: boolean) {
+  if (form.naiFreeOnly === v && state.settings?.naiFreeOnly === v) return
+  form.naiFreeOnly = v
+  await saveSettings({ naiFreeOnly: v })
+  if (v) toast('已开启「只用免费额度」，不满足免费条件时不会提交')
+  else toast('已允许消耗 Anlas，生成前请留意花费', { label: '撤销', run: () => void setFreeOnly(true) })
+}
+async function setEffort(v: ReasoningEffort) {
+  form.reasoningEffort = v
+  await saveSettings({ reasoningEffort: v })
+  toast(`思考模式：${efforts.find((e) => e.v === v)?.label}，已保存`)
+}
+
+/* 各卡片的未保存修改：按钮旁标出，离开设置页时提醒 */
+const differs = (...keys: (keyof typeof form)[]) =>
+  !!state.settings && keys.some((k) => String(form[k]) !== String(state.settings![k]))
+const dirty = computed(() => ({
+  data: differs('minPostCount'),
+  deepseek: differs('apiKey', 'baseUrl', 'model'),
+  nai: differs('naiToken'),
+  translate: differs('translateMinCount')
+}))
+const anyDirty = computed(() => Object.values(dirty.value).some(Boolean))
+watch(
+  () => state.tab,
+  (tab, prev) => {
+    if (prev === 'settings' && tab !== 'settings' && anyDirty.value)
+      toast('设置里还有未保存的修改，尚未生效', { label: '立即保存', run: () => void save() })
+  }
+)
 // TOML 字面量字符串（单引号）不处理反斜杠转义，适合 Windows 路径
 const tomlStr = (s: string) => `'${s.replace(/'/g, "''")}'`
 
@@ -222,7 +254,7 @@ async function translate() {
         <div class="form-field">
           <label>最小引用数</label>
           <input class="input" type="number" v-model="form.minPostCount" min="1" />
-          <span class="help">只收录引用数 ≥ 该值的 tag。10 ≈ 15 万条，1 ≈ 50 万条（更慢）</span>
+          <span class="help">只收录引用数 ≥ 该值的 tag。10 ≈ 15 万条，1 ≈ 50 万条（更慢）。点「下载 / 更新」时自动保存</span>
         </div>
       </div>
 
@@ -275,15 +307,16 @@ async function translate() {
         <div class="form-field full">
           <label>思考模式</label>
           <div class="seg">
-            <button v-for="e in efforts" :key="e.v" :class="{ on: form.reasoningEffort === e.v }" @click="form.reasoningEffort = e.v">
+            <button v-for="e in efforts" :key="e.v" :class="{ on: form.reasoningEffort === e.v }" @click="setEffort(e.v)">
               {{ e.label }}
             </button>
           </div>
-          <span class="help">只影响 AI 优化：思考越深，tag 挑得越准，但也越慢。批量翻译固定关闭思考</span>
+          <span class="help">只影响 AI 优化：思考越深，tag 挑得越准，但也越慢。批量翻译固定关闭思考。点选后立即生效</span>
         </div>
       </div>
       <div class="row">
         <button class="btn primary" @click="save()"><Icon name="check" :size="16" />保存</button>
+        <span v-if="dirty.deepseek" class="pill alias"><i></i>有未保存的修改</span>
       </div>
     </div>
 
@@ -306,17 +339,18 @@ async function translate() {
         <div class="form-field full">
           <label>只用免费额度</label>
           <div class="seg">
-            <button :class="{ on: form.naiFreeOnly }" @click="form.naiFreeOnly = true">开启（推荐）</button>
-            <button :class="{ on: !form.naiFreeOnly }" @click="form.naiFreeOnly = false">允许消耗 Anlas</button>
+            <button :class="{ on: form.naiFreeOnly }" @click="setFreeOnly(true)">开启（推荐）</button>
+            <button :class="{ on: !form.naiFreeOnly }" @click="setFreeOnly(false)">允许消耗 Anlas</button>
           </div>
           <span class="help">
-            开启后：生成前检查 Opus 会员、免费额度、尺寸（≤ 1024×1024 像素）和步数（≤ 28），不满足就不提交；每张生成后核对 Anlas，发现扣除立即停止。这是调用端的检查，不是服务端保证
+            点选后立即生效。开启后：生成前检查 Opus 会员、免费额度、尺寸（≤ 1024×1024 像素）和步数（≤ 28），不满足就不提交；每张生成后核对 Anlas，发现扣除立即停止。这是调用端的检查，不是服务端保证
           </span>
         </div>
       </div>
       <div class="row">
         <button class="btn primary" @click="save()"><Icon name="check" :size="16" />保存</button>
         <button class="btn" :disabled="!form.naiToken" @click="testNai"><Icon name="key" :size="15" />保存并测试连接</button>
+        <span v-if="dirty.nai" class="pill alias"><i></i>Token 未保存</span>
         <span class="muted small" v-if="naiInfo">{{ naiInfo }}</span>
       </div>
     </div>
@@ -415,7 +449,7 @@ async function translate() {
         <div class="form-field">
           <label>最小引用数</label>
           <input class="input" type="number" v-model="form.translateMinCount" min="1" />
-          <span class="help">只翻译引用数 ≥ 该值的 tag，越小越多、越贵</span>
+          <span class="help">只翻译引用数 ≥ 该值的 tag，越小越多、越贵。点「开始 AI 翻译」时自动保存</span>
         </div>
       </div>
       <div class="row">

@@ -244,6 +244,29 @@ kbd {
 .pane.right { gap: 24px; padding: 20px 26px 32px; }
 /* 滚动面板里的子项不允许被 flex 压缩，否则 overflow:hidden 的卡片会被挤扁而不是撑出滚动条 */
 .pane.scroll > * { flex-shrink: 0; }
+/*
+ * 带底栏的左侧面板：内容区单独滚动，底栏在滚动区之外，
+ * 不浮在内容上，也不会有内容从它下方滚过；提示词再长，主操作也始终可见。
+ */
+.pane.left.with-foot { padding: 0; gap: 0; overflow: hidden; }
+.pane-body { flex: 1; min-height: 0; padding: 20px 22px 24px; display: flex; flex-direction: column; gap: 14px; }
+.pane-body > * { flex-shrink: 0; }
+.pane-foot { flex: none; display: flex; flex-direction: column; gap: 10px; padding: 12px 22px; background: var(--panel); border-top: 1px solid var(--line); }
+.pane-foot .error-box { max-height: 132px; overflow: auto; }
+.pane-foot .row { flex-wrap: nowrap; min-width: 0; }
+.pane-foot .pill { flex: none; }
+/* 快捷键提示放进主按钮里，不再单独占一块位置 */
+.btn .kbd {
+  margin-left: 4px; padding: 1px 6px; border-radius: 6px; font-size: 11px; font-weight: 500; letter-spacing: 0;
+  background: rgba(255, 255, 255, 0.22); line-height: 16px;
+}
+.fresh-toggle { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; color: var(--text2); cursor: pointer; user-select: none; }
+.fresh-toggle input { accent-color: var(--pink); margin: 0; }
+/* 「按描述重新生成」时当前提示词不会发送，淡化提示 */
+.prompt-group { display: flex; flex-direction: column; gap: 14px; }
+.prompt-group > * { flex-shrink: 0; }
+.is-ignored { opacity: 0.45; transition: opacity 0.2s; }
+.is-ignored:focus-within { opacity: 1; }
 
 .empty {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
@@ -557,7 +580,8 @@ select.input:focus { border-color: var(--pink-line); box-shadow: 0 0 0 3px var(-
 .thumb:hover { transform: translateY(-2px); box-shadow: 0 8px 18px rgba(20, 20, 30, 0.12); }
 .thumb.on { border-color: var(--pink); box-shadow: 0 0 0 3px var(--pink-soft); }
 .thumb-actions { position: absolute; right: 4px; bottom: 4px; display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; }
-.thumb:hover .thumb-actions { opacity: 1; }
+.thumb:hover .thumb-actions, .thumb:focus-within .thumb-actions, .thumb-actions:has(.danger-confirm) { opacity: 1; }
+.thumb-actions .danger-confirm { height: 26px; padding: 0 9px; font-size: 11.5px; background: #e5484d; color: #fff; border-color: transparent; box-shadow: var(--shadow-sm); }
 .thumb-actions .icon-btn { background: rgba(255, 255, 255, 0.92); color: var(--text); box-shadow: var(--shadow-sm); }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
@@ -695,7 +719,13 @@ input.input:not(.sm), select.input:not(.sm) { min-height: 36px; }
   background: var(--ink); color: #fff; padding: 9px 18px 9px 13px; border-radius: 999px; font-size: 13px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
 }
-.toast .icon { color: #ff9fc0; animation: wiggle 0.6s ease 0.1s; }
+.toast .icon { color: #ff9fc0; animation: wiggle 0.6s ease 0.1s; flex: none; }
+.toast { max-width: min(720px, calc(100vw - 48px)); line-height: 1.45; }
+.toast-action {
+  flex: none; margin-left: 6px; padding: 3px 11px; border-radius: 999px; border: 1px solid rgba(255, 159, 192, 0.6);
+  background: transparent; color: #ff9fc0; font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.toast-action:hover, .toast-action:focus-visible { background: rgba(255, 159, 192, 0.16); outline: none; }
 .toast-enter-active { animation: toast-in 0.45s var(--bounce); }
 .toast-leave-active { animation: toast-in 0.22s ease-in reverse; }
 
