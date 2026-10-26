@@ -33,7 +33,7 @@ function analysis(text) {
 const handlers = {
   'agents:list': () => [],
   'tasks:list': () => ({ revision: 0, tasks: [] }),
-  'settings:get': () => getSettings(), 'settings:save': (_, p) => saveSettings(p),
+  'images:cleanup-status':()=>({pending:0,message:''}), 'settings:get': () => getSettings(), 'settings:save': (_, p) => saveSettings(p),
   'window:dark-titlebar': () => {}, 'skills:list': () => [], 'mcp:info': () => null, 'update:check': () => null, 'update:state': () => null,
   'db:status': () => ({ loaded: true, tagCount: 3, aliasCount: 1, zhCount: 0, implicationCount: 0 }),
   'nai:list': () => [], 'nai:freeCheck': () => ({ ok: false, reasons: [], notes: [] }),

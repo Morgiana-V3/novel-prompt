@@ -63,14 +63,15 @@ export function desktopTools(desktop: DesktopBridge, tasks: TaskManager, appStat
         if (!action || !['proposal', 'switch'].includes(action.type) || action.type === 'proposal' && !['accept', 'reject', 'undo'].includes(action.decision)) throw new Error('仅支持建议处理或版本切换')
         return desktop.withWorkspace(string(a.id), () => json(workspaceResult(editPage(string(a.id), revision(a.revision), action))))
       } },
-    { name: 'generate_workspace', title: '生成会话新版本', description: '使用会话已采纳的当前提示词生成新版本，或按已有区域重绘，保留完整历史并显示在工作台。需用户生图授权、confirm:true 和开启允许生图；强制检查免费条件。', inputSchema: { type: 'object', properties: { id: ID, revision: REV, confirm: { type: 'boolean' }, region_id: { type: 'string', description: '提供时对会话内该区域重绘；省略时按提示词生成' } }, required: ['id', 'revision', 'confirm'] }, annotations: { ...WRITE, openWorldHint: true },
+    { name: 'generate_workspace', title: '生成会话候选', description: '使用当前草稿生成候选或按已有区域重绘；同配置归入同方案。latestGeneratedVersionId 是新结果，currentVersionId 是已采用结果，除首张外不会自动采用。需用户生图授权、confirm:true 和开启允许生图；强制检查免费条件。', inputSchema: { type: 'object', properties: { id: ID, revision: REV, confirm: { type: 'boolean' }, region_id: { type: 'string', description: '提供时对会话内该区域重绘；省略时按提示词生成' } }, required: ['id', 'revision', 'confirm'] }, annotations: { ...WRITE, openWorldHint: true },
       gate: () => !getSettings().mcpAllowGenerate ? '请先开启允许 Agent 生图' : !getSettings().naiToken ? '请先配置 NovelAI Token' : null,
       run: async (a, signal, progress) => {
         if (a.confirm !== true) throw new Error('必须获得用户生图授权并提供 confirm:true')
         return desktop.withWorkspace(string(a.id), async () => {
           let stopped: string | null = null
           const w = await renderPage(string(a.id), revision(a.revision), { kind: a.region_id ? 'inpaint' : 'generate', regionId: string(a.region_id) || null }, progress ?? (() => {}), () => signal.aborted, { freeOnly: true, onResult: result => { stopped = result.stopped ?? null } })
-          return json({ workspace: workspaceResult(w), image: pageCurrent(w).image, stopped })
+          return json({ workspace: workspaceResult(w), image: w.versions.find(v => v.id === w.latestGeneratedVersionId)?.image,
+            adoptedVersionId: w.currentVersionId, generatedVersionId: w.latestGeneratedVersionId, stopped })
         })
       } },
     { name: 'read_image', title: '查看图片或选区预览', description: '直接向支持图片的 MCP 客户端返回图像，供视觉检查。传图库 name 或 prepare_inpaint 返回的 preview_path；最长边最多 1280，不改原文件。', inputSchema: { type: 'object', properties: { name: { type: 'string' }, preview_path: { type: 'string' } } }, annotations: READ,

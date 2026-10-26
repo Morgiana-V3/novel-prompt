@@ -8,7 +8,7 @@ import { planInpaint } from '../ai/inpaint-planner'
 import { getSettings } from '../settings'
 import { composeSkills } from '../skills'
 import { dataDir } from '../paths'
-import { imagePath, imageDir, generateImages } from '../nai/client'
+import { imagePath, generateImages } from '../nai/client'
 import { pngSize } from '../nai/zip'
 import { prepareInpaint } from '../nai/inpaint'
 import type { McpTool } from './server'
@@ -157,7 +157,7 @@ export function inpaintTools(): McpTool[] {
         const params: NaiGenParams = { width: s.width, height: s.height, count: 1, steps: number(a.steps, 23, 1, 28, true), scale: number(a.scale, 5, 0, 10), cfgRescale: number(a.cfg_rescale, 0, 0, 1), seed: a.seed === undefined ? null : number(a.seed, 0, 0, 4294967295, true), sampler: sampler as NaiGenParams['sampler'], noiseSchedule: 'karras', qualityTags: false, ucPreset: 'none' }
         const result = await generateImages({ ...prompts, params, version: version(a.version), inpaint: { imageName: s.name, mask: encoded, strength: number(a.strength, 1, .01, 1) } }, progress ?? (() => {}), () => signal.aborted, { freeOnly: true })
         if (signal.aborted) result.stopped ??= '已停止，已完成的图片已保留'
-        return json({ images: result.images.map(i => ({ ...i, path: join(imageDir(), i.name) })), anlasChange: result.anlasDelta ?? '未知', stopped: result.stopped ?? null, source: s.name })
+        return json({ images: result.images.map(i => ({ ...i, path: imagePath(i.name) })), anlasChange: result.anlasDelta ?? '未知', stopped: result.stopped ?? null, source: s.name })
       }
     }
   ]

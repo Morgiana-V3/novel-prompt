@@ -1,5 +1,4 @@
 import { readFileSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import type { AiCharacter, NaiGenParams, NaiNoiseSchedule, NaiSampler, NaiVersion, UcPreset } from '../../shared/types'
 import { readPngPrompt } from '../../shared/prompt-import'
@@ -20,7 +19,7 @@ import {
 } from '../skills'
 import { tagTool, TAG_TOOL_DEFS, optimizePrompt } from '../ai/optimizer'
 import { previewPrompt, reviewPrompt } from '../ai/previewer'
-import { freeCheck, generateImages, getSubscription, imageDir, imagePath, listImages, FREE_MAX_PIXELS, FREE_MAX_STEPS } from '../nai/client'
+import { freeCheck, generateImages, getSubscription, imagePath, listImages, FREE_MAX_PIXELS, FREE_MAX_STEPS } from '../nai/client'
 import type { McpTool } from './server'
 import { inpaintTools } from './inpaint-tools'
 import { AGENT_ENTRY, AGENT_GUIDE_TOPICS, agentGuide } from './agent-guide'
@@ -533,7 +532,7 @@ export function buildTools(): McpTool[] {
         )
         if (signal.aborted) r.stopped ??= '已停止，已完成的图片已保留'
         return json({
-          images: r.images.map((img) => ({ path: join(imageDir(), img.name), name: img.name, seed: img.seed, width: img.width, height: img.height })),
+          images: r.images.map((img) => ({ path: imagePath(img.name), name: img.name, storage: img.storage, seed: img.seed, width: img.width, height: img.height })),
           anlasChange: r.anlasDelta ?? '未知',
           stopped: r.stopped ?? null
         })
@@ -548,8 +547,8 @@ export function buildTools(): McpTool[] {
       run: async (a) =>
         json(
           listImages(Math.round(num(a.limit, 20, 1, 100))).map((img) => ({
-            path: join(imageDir(), img.name),
-            name: img.name,
+            path: imagePath(img.name),
+            name: img.name, storage: img.storage,
             seed: img.seed,
             width: img.width,
             height: img.height,

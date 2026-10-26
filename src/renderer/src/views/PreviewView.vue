@@ -234,14 +234,13 @@ usePageShortcuts('preview', { run, cancel: () => task.value && cancelTask(task.v
       <footer class="pane-foot">
         <div v-if="error" class="error-box"><Icon name="warn" :size="16" />{{ error }}</div>
         <div class="row run-bar">
-          <button class="btn accent big" :disabled="running" :title="`开始推测（${runKeyLabel}）`" @click="run">
-            <Icon name="eye" :size="17" :class="{ 'spin-slow': running }" />
-            {{ running ? '正在想象' : '开始推测' }}<span v-if="!running" class="kbd">{{ runKeyShort }}</span>
-          </button>
-          <button v-if="running && task" class="btn ghost" :disabled="task.status==='cancelling'" title="取消（Esc）" @click="cancelTask(task.id)"><Icon name="stop" :size="15" />{{ task.status==='cancelling' ? '正在取消…' : '取消' }}</button>
-          <span class="pill">目标 {{ state.settings?.naiVersion.toUpperCase() }}</span>
-          <div class="actions ml-auto">
-            <button class="icon-btn" title="选择推测使用的 Skill" @click="openSkill"><Icon name="layers" /></button>
+          <button class="icon-btn" title="选择推测使用的 Skill" @click="openSkill"><Icon name="layers" /></button>
+          <div class="run-actions">
+            <button v-if="running && task" class="btn ghost" :disabled="task.status==='cancelling'" title="取消（Esc）" @click="cancelTask(task.id)">{{ task.status==='cancelling' ? '正在取消…' : '取消' }}</button>
+            <button class="btn accent" :disabled="running" :title="`开始推测（${runKeyLabel}）`" @click="run">
+              <Icon name="eye" :size="17" :class="{ 'spin-slow': running }" />
+              {{ running ? '正在想象' : '开始推测' }}<span v-if="!running" class="kbd">{{ runKeyShort }}</span>
+            </button>
           </div>
         </div>
       </footer>

@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { DesktopCommand, DesktopReply, DesktopState } from '../shared/desktop'
 import type { AiStep, NaiStep, TaskSnapshot } from '../shared/tasks'
 import type { PageExecution, PageAction, PageWorkspace, PageWorkspaceSummary, PageExternalReply, PageAgentIdentity } from '../shared/page-workspace'
-import type { InpaintDraft } from '../shared/types'
+import type { InpaintDraft, ImageRecipe, SavedRecipe } from '../shared/types'
 import type {
   AiInpaintRequest,
   AiInpaintResult,
@@ -51,6 +51,19 @@ const api = {
   tasksClear: (): Promise<void> => ipcRenderer.invoke('tasks:clear'),
   onTasks: (cb: (snapshot: TaskSnapshot) => void) => on('tasks:changed', cb),
   pagesList: (): Promise<PageWorkspaceSummary[]> => ipcRenderer.invoke('pages:list'),
+  pagesRemoved: (): Promise<{ token: string; title: string; removedAt: number }[]> => ipcRenderer.invoke('pages:removed'),
+  pagesRestore: (token: string): Promise<PageWorkspace> => ipcRenderer.invoke('pages:restore', token),
+  pagesRecoverImage: (id: string, revision: number, versionId: string): Promise<PageWorkspace | null> => ipcRenderer.invoke('pages:recover-image', id, revision, versionId),
+  recipesList: (): Promise<SavedRecipe[]> => ipcRenderer.invoke('recipes:list'),
+  recipesCreate: (name: string): Promise<SavedRecipe> => ipcRenderer.invoke('recipes:create', name),
+  recipesCreateConfig: (request: import('../shared/types').NaiGenRequest): Promise<SavedRecipe> => ipcRenderer.invoke('recipes:config', request),
+  recipesCreateWorkspace: (id: string, versionId: string): Promise<SavedRecipe> => ipcRenderer.invoke('recipes:workspace', id, versionId),
+  imagesCleanupStatus: (): Promise<{pending: number; message: string}> => ipcRenderer.invoke('images:cleanup-status'),
+  imagesCleanupRetry: (): Promise<{pending: number; message: string}> => ipcRenderer.invoke('images:cleanup-retry'),
+  recipesUpdate: (id: string, patch: Pick<SavedRecipe, 'name' | 'note' | 'tags'>): Promise<SavedRecipe> => ipcRenderer.invoke('recipes:update', id, patch),
+  recipesDelete: (id: string): Promise<void> => ipcRenderer.invoke('recipes:delete', id),
+  naiRetain: (name: string): Promise<NaiImage> => ipcRenderer.invoke('nai:retain', name),
+  naiRecipe: (name: string): Promise<ImageRecipe | null> => ipcRenderer.invoke('nai:recipe', name),
   agentConnections: (): Promise<PageAgentIdentity[]> => ipcRenderer.invoke('agents:list'),
   onAgentConnections: (cb: (agents: PageAgentIdentity[]) => void) => on('agents:changed', cb),
   pagesAgent: (id: string, revision: number, mode: 'internal' | 'external', actionId?: string): Promise<PageWorkspace> => ipcRenderer.invoke('pages:agent', id, revision, mode, actionId),

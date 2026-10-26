@@ -226,13 +226,14 @@ usePageShortcuts('ai', { run, cancel: () => task.value && cancelTask(task.value.
       <footer class="pane-foot">
         <div v-if="error" class="error-box"><Icon name="warn" :size="16" />{{ error }}</div>
         <div class="row run-bar">
-          <button class="btn accent big" :disabled="running" :title="`${runLabel}（${runKeyLabel}）`" @click="run">
-            <Icon name="sparkle" :size="17" :class="{ spin: running }" />
-            {{ running ? '正在思考' : runLabel }}<span v-if="!running" class="kbd">{{ runKeyShort }}</span>
-          </button>
-          <button v-if="running && task" class="btn ghost" :disabled="task.status==='cancelling'" title="取消（Esc）" @click="cancelTask(task.id)"><Icon name="stop" :size="15" />{{ task.status==='cancelling' ? '正在取消…' : '取消' }}</button>
-          <span class="pill">目标 {{ state.settings?.naiVersion.toUpperCase() }}</span>
           <span class="pill nl" v-if="charCount && mode === 'optimize'"><i></i>{{ charCount }} 个角色</span>
+          <div class="run-actions">
+            <button v-if="running && task" class="btn ghost" :disabled="task.status==='cancelling'" title="取消（Esc）" @click="cancelTask(task.id)">{{ task.status==='cancelling' ? '正在取消…' : '取消' }}</button>
+            <button class="btn accent" :disabled="running" :title="`${runLabel}（${runKeyLabel}）`" @click="run">
+              <Icon name="sparkle" :size="17" :class="{ spin: running }" />
+              {{ running ? '正在思考' : runLabel }}<span v-if="!running" class="kbd">{{ runKeyShort }}</span>
+            </button>
+          </div>
         </div>
       </footer>
     </section>

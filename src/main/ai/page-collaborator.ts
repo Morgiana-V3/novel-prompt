@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 import { nativeImage } from 'electron'
 import { PNG } from 'pngjs'
 import { chat, extractJson, type ChatPart, type ChatInputMessage } from './deepseek'
@@ -10,6 +10,7 @@ import { composeSkills } from '../skills'
 import { analyzePrompt } from '../prompt/analyzer'
 import { tagStore } from '../tagdb/store'
 import { generateImages, imagePath } from '../nai/client'
+import { readImageRecipe } from '../image-library'
 import { prepareInpaint } from '../nai/inpaint'
 import { checkDraft, checkPageParams, validateExecution, pageEvent, pageLocks, pageMessage, readPage, savePage } from '../page-workspaces'
 import { pageContextKey, pageCurrent, pageDraft, type PageWorkspace } from '../../shared/page-workspace'
@@ -31,7 +32,6 @@ export async function discussPage(id: string, revision: number, text: string, re
   if (regionId && !region) throw new Error('选区已不存在')
   const refs = referenceIds.map(ref => { const r = w.versions.find(v => v.id === ref); if (!r) throw new Error('引用版本不存在'); return r })
   const src = v.image ? imagePath(v.image.name) : null
-  if (v.image && !src) throw new Error('当前图片不存在')
   const visual: ChatPart[] = src ? [{ type: 'text', text: `当前采用图片：${v.label}，versionId=${v.id}。` }, picture(readFileSync(src))] : []
   let bounds: { x: number; y: number; width: number; height: number } | null = null
   if (region && src) {
@@ -49,7 +49,8 @@ export async function discussPage(id: string, revision: number, text: string, re
     visual.push({ type: 'text', text: `当前讨论区域 ${region.label}。粉色仅标记选区，原始颜色请看整页。` }, picture(crop.toPNG()))
   }
   for (const r of refs) {
-    const p = r.image ? imagePath(r.image.name) : null; if (!p) throw new Error(`引用版本「${r.label}」的图片不存在`)
+    const p = r.image ? imagePath(r.image.name) : null
+    if (!p) { visual.push({ type: 'text', text: `引用版本「${r.label}」图片缺失，仅提供文字记录，不能声称看过画面。` }); continue }
     visual.push({ type: 'text', text: `用户引用的历史图片「${r.label}」，versionId=${r.id}，仅参考，当前采用版本未切换。` }, picture(readFileSync(p)))
   }
   const ctrl = new AbortController(); pageLocks.set(id, ctrl)
@@ -65,11 +66,12 @@ export async function discussPage(id: string, revision: number, text: string, re
     const input = { goal: w.goal, preserve: w.preserve, currentVersion: { id: v.id, label: v.label, parentId: v.parentId }, model: w.model,
       draft, params: v.editor.params, inpaintStrength: v.editor.strength, imageSize: v.image ? { width: v.image.width, height: v.image.height } : null,
       capabilities: { maxCharacters: MAX_CHARACTERS[w.model], position: w.model === 'v5' ? '归一化 x,y（0–1，原点左上），或 A1–E5 网格，留空为自动' : 'A1–E5 网格，留空为自动' },
-      execution: w.execution, hasImage: !!v.image, currentRegion: region ? { id: region.id, label: region.label, instruction: region.instruction, target: region.target, bounds } : null,
+      execution: w.execution, hasImage: !!src, imageMissing: !!v.image && !src, currentRegion: region ? { id: region.id, label: region.label, instruction: region.instruction, target: region.target, bounds } : null,
       availableRegions: v.editor.regions.map(r => ({ id: r.id, label: r.label, instruction: r.instruction, target: r.target, accepted: !!r.accepted })),
-      versions: w.versions.map(r => ({ id: r.id, label: r.label, parentId: r.parentId })), earlier, recent,
+      latestGeneratedVersionId: w.latestGeneratedVersionId,
+      versions: w.versions.map(r => ({ id: r.id, label: r.label, parentId: r.parentId, groupId: r.groupId, candidateNumber: r.candidateNumber, adopted: r.id === w.currentVersionId, imageMissing: r.image?.missing })), earlier, recent,
       historyNote: w.messages.length > 74 ? '更早的历史未全部提供；不确定时请用户引用具体版本或补充要求。' : '',
-      referencedVersions: refs.map(r => ({ id: r.id, label: r.label, draft: r.editor.draft })) }
+      referencedVersions: refs.map(r => ({ id: r.id, label: r.label, draft: r.generated?.draft ?? r.initial?.draft, params: r.generated?.params ?? r.initial?.params, imageMissing: r.image?.missing })) }
     const system = skills.text + '\n' + [
       '程序协议：你是 NovelAI 创作会话的助手。创作方法只依据本次启用的 Skill；按各 Skill 的 scope 及当前任务选择适用条款，尊重用户要求和优先级，不预设题材。',
       '当前草稿、当前采用版本和用户明确目标是当前状态。历史建议、拒绝方案与实际生成事件应区分；不要把未执行方案描述为已完成。',
@@ -141,7 +143,7 @@ export async function renderPage(id: string, revision: number, execution: import
   if (pageLocks.has(id)) throw new Error('当前页面正在处理')
   const w = readPage(id), v = pageCurrent(w)
   if (w.revision !== revision) throw new Error('工作区状态已更新')
-  if (w.versions.length >= 100) throw new Error('此工作区已保留 100 个版本，请从选定图片新建工作区')
+  if (w.versions.length >= 1000) throw new Error('此工作区已保留 1000 张候选，请从选定图片新建工作区')
   const selectedExecution = validateExecution(w, execution)
   const region = v.editor.regions.find(r => r.id === selectedExecution.regionId)
   pageLocks.set(id, new AbortController())
@@ -151,16 +153,26 @@ export async function renderPage(id: string, revision: number, execution: import
     const params = { ...v.editor.params, count: 1, qualityTags: false, ucPreset: 'none' as const }
     checkPageParams(params)
     const request = { ...draft, params, version: w.model, ...(selectedExecution.kind === 'inpaint' ? { inpaint: { imageName: v.image!.name, mask: region!.mask, strength: v.editor.strength } } : {}) }
-    const result = await generateImages(request, progress, cancelled, options)
+    const effectiveParams = { ...params, noiseSchedule: selectedExecution.kind === 'inpaint' && (w.model === 'v5' || params.noiseSchedule === 'native') ? 'karras' as const : params.noiseSchedule }
+    const schemeKey = createHash('sha256').update(JSON.stringify({ ...request, params: { ...effectiveParams, seed: null, count: 1 } })).digest('hex')
+    const latest = w.versions.at(-1)
+    const same = latest?.schemeKey === schemeKey && (latest.parentId === v.id || latest.groupId === v.groupId)
+    const groupId = same ? latest!.groupId! : randomUUID()
+    const groupNumber = same ? latest!.groupNumber! : Math.max(0, ...w.versions.map((r, i) => r.groupNumber ?? (r.generated ? i : 0))) + 1
+    const candidateNumber = same ? (latest!.candidateNumber ?? 1) + 1 : 1
+    const result = await generateImages(request, progress, cancelled, { ...options, workspaceId: id })
     if (cancelled()) result.stopped ??= '已停止，已完成的图片已保留'
     options.onResult?.(result)
     if (!result.images.length) throw new Error(result.stopped ?? '没有返回图片')
-    const next = { id: randomUUID(), parentId: v.id, label: `版本 ${w.versions.length}`, image: result.images[0], createdAt: Date.now(),
-      generated: { draft: structuredClone(draft), params: { ...params, seed: result.images[0].seed ?? params.seed }, execution: selectedExecution, sourceVersionId: v.id,
+    const actual = readImageRecipe(result.images[0].name)!.request
+    const next = { id: randomUUID(), parentId: v.id, groupId, groupNumber, candidateNumber, schemeKey, label: `方案 V${groupNumber} · 候选 ${candidateNumber}`, image: result.images[0], createdAt: Date.now(),
+      generated: { model: w.model, draft: { base: actual.base, negative: actual.negative, characters: actual.characters }, params: actual.params, execution: selectedExecution, sourceVersionId: v.id,
         ...(selectedExecution.kind === 'inpaint' ? { inpaint: { mask: region!.mask, strength: v.editor.strength, label: region!.label, instruction: region!.instruction, target: region!.target } } : {}) },
       editor: { ...structuredClone(v.editor), draft, regions: selectedExecution.kind === 'inpaint' ? v.editor.regions.map(r => ({ ...r, accepted: null })) : [] } }
-    w.versions.push(next); w.currentVersionId = next.id; w.execution = selectedExecution
-    pageEvent(w, `从「${v.label}」${region ? `局部重绘 ${region.label}` : '按提示词生成'}，得到「${next.label}」并设为当前版本。${result.stopped ? ` ${result.stopped}` : ''}请查看画面后继续反馈。`)
+    w.versions.push(next); w.latestGeneratedVersionId = next.id; w.execution = selectedExecution
+    const first = !v.image
+    if (first) w.currentVersionId = next.id
+    pageEvent(w, `从「${v.label}」${region ? `局部重绘 ${region.label}` : '按提示词生成'}，得到「${next.label}」。${first ? '首张结果已采用。' : '已存为候选，当前采用图片未改变。'}${result.stopped ?? ''}`, next.id)
     return savePage(w)
   } catch (e) { pageEvent(w, `本次重绘未完成：${e instanceof Error ? e.message : String(e)}。当前版本未替换。`); savePage(w); throw e }
   finally { pageLocks.delete(id) }

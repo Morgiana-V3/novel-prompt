@@ -43,11 +43,11 @@ const send = (channel,payload) => { if(win&&!win.isDestroyed())win.webContents.s
 const { registerTaskIpc } = require('../src/main/task-ipc.ts')
 const tasks = registerTaskIpc(send)
 for(const [name,handler] of Object.entries({
-  'settings:get':()=>settings.getSettings(), 'settings:save':(_,p)=>settings.saveSettings(p), 'db:status':()=>tagStore.status(),
+  'images:cleanup-status':()=>({pending:0,message:''}), 'settings:get':()=>settings.getSettings(), 'settings:save':(_,p)=>settings.saveSettings(p), 'db:status':()=>tagStore.status(),
   'window:dark-titlebar':()=>{}, 'skills:list':()=>[], 'mcp:info':()=>null,'update:check':()=>null,'update:state':()=>null,
   'nai:list':()=>client.listImages(), 'nai:freeCheck':()=>({ok:true,reasons:[],notes:[]}),
   'nai:readImage':(_,name)=>new Uint8Array(readFileSync(client.imagePath(name))),
-  'pages:list':()=>pages.listPages(), 'pages:read':(_,id)=>pages.readPage(id), 'pages:edit':(_,id,rev,action)=>pages.editPage(id,rev,action),
+  'pages:removed':()=>pages.listRemovedPages(), 'pages:list':()=>pages.listPages(), 'pages:read':(_,id)=>pages.readPage(id), 'pages:edit':(_,id,rev,action)=>pages.editPage(id,rev,action),
   'pages:create':(_,image,params,model,draft)=>pages.createPage(image,params,model,draft),
   'prompt:analyze':()=>({tokens:[],stats:{total:0,valid:0,alias:0,unknown:0,natural:0,text:0}})
 }))ipcMain.handle(name,handler)
@@ -165,7 +165,7 @@ app.whenReady().then(async()=>{
     autoGenerate=true
     const produced=await b.data('generate_workspace',{id:w.id,revision:w.revision,confirm:true})
     assert.equal(produced.workspace.versions.length,2)
-    await ui(`document.querySelector('.pw-header').textContent.includes('历史 2')`)
+    await ui(`document.querySelector('.pw-header').textContent.includes('图片 1')`)
     await b.tool('navigate_app',{tab:'workspace',workspace_id:w.id})
     await pause(250);writeFileSync(join(profile,'desktop-agent-workspace.png'),(await win.webContents.capturePage()).toPNG())
     win.setSize(1100,760);await pause(250);writeFileSync(join(profile,'desktop-agent-compact.png'),(await win.webContents.capturePage()).toPNG())
@@ -249,8 +249,8 @@ app.whenReady().then(async()=>{
     front=await act('ui_add_workspace_region',{rectangles:[{x:80,y:90,width:20,height:20}],instruction:'第二个区域'})
     assert.equal(front.workspace.regions.length,2)
     front=await act('ui_generate_workspace',{kind:'inpaint',region_id:regionId,confirm:true})
-    assert.equal(generationInputs.at(-1).action,'infill')
-    const resultPage=pages.readPage(frontId), resultVersion=resultPage.versions.find(v=>v.id===resultPage.currentVersionId)
+    assert.equal(generationInputs.at(-1).action,'infill');assert.equal(front.workspace.versionId,generatedVersion);assert.notEqual(front.workspace.viewedVersionId,generatedVersion)
+    const resultPage=pages.readPage(frontId), resultVersion=resultPage.versions.find(v=>v.id===resultPage.latestGeneratedVersionId)
     const outputPng=PNG.sync.read(readFileSync(client.imagePath(resultVersion.image.name)))
     let changed=0
     for(let i=0;i<originalPng.data.length;i+=4) {

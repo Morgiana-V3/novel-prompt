@@ -17,7 +17,9 @@ import type {
 import { tagStore } from './tagdb/store'
 import { analyzePrompt } from './prompt/analyzer'
 import { getSettings, saveSettings } from './settings'
-import { createPage, deletePage, editPage, importPage, listPages, pageUsesImage, readPage } from './page-workspaces'
+import { createPage, deletePage, editPage, importPage, listPages, pageUsesImage, readPage, listRemovedPages, restorePage, recoverPageImage } from './page-workspaces'
+import { clearTemporaryImages, retainImage, readImageRecipe, imageLibraryDir, temporaryCleanupStatus } from './image-library'
+import { createRecipe, createConfigRecipe, createWorkspaceRecipe, listRecipes, updateRecipe, deleteRecipe } from './recipes'
 import type { PageAction } from '../shared/page-workspace'
 import type { InpaintDraft } from '../shared/types'
 import { userSkillDir } from './paths'
@@ -33,7 +35,7 @@ import {
   skillFilePath,
   updateSkill
 } from './skills'
-import { IMAGE_SCHEME, freeCheck, getSubscription, imageDir, imagePath, listImages } from './nai/client'
+import { IMAGE_SCHEME, freeCheck, getSubscription, imagePath, listImages } from './nai/client'
 import { readStdinLines, readLog } from './mcp/server'
 import { buildTools, MCP_INSTRUCTIONS } from './mcp/tools'
 import { createAppUpdater, UPDATE_REPO } from './update'
@@ -203,7 +205,24 @@ function registerIpc(): void {
   ipcMain.handle('nai:freeCheck', (_e, params: NaiGenParams, version: NaiVersion, sub?: NaiSubscription) =>
     freeCheck(params, version, sub)
   )
-  ipcMain.handle('nai:list', () => listImages())
+  ipcMain.handle('nai:list', () => listImages(10000))
+  ipcMain.handle('nai:retain', (_e, name: string) => retainImage(name))
+  ipcMain.handle('nai:recipe', (_e, name: string) => readImageRecipe(name))
+  ipcMain.handle('recipes:list', () => listRecipes())
+  ipcMain.handle('recipes:create', (_e, name: string) => createRecipe(name))
+  ipcMain.handle('recipes:config', (_e, request) => createConfigRecipe(request))
+  ipcMain.handle('recipes:workspace', (_e, id: string, versionId: string) => createWorkspaceRecipe(id, versionId))
+  ipcMain.handle('images:cleanup-status', () => temporaryCleanupStatus())
+  ipcMain.handle('images:cleanup-retry', () => { const status = clearTemporaryImages(false); send('gallery:changed', null); return status })
+  ipcMain.handle('recipes:update', (_e, id, patch) => updateRecipe(id, patch))
+  ipcMain.handle('recipes:delete', (_e, id: string) => deleteRecipe(id))
+  ipcMain.handle('pages:removed', () => listRemovedPages())
+  ipcMain.handle('pages:restore', (_e, token: string) => restorePage(token))
+  ipcMain.handle('pages:recover-image', async (_e, id: string, revision: number, versionId: string) => {
+    if (!win) return null
+    const result = await dialog.showOpenDialog(win, { title: '恢复原始图片', filters: [{ name: 'PNG 图片', extensions: ['png'] }], properties: ['openFile'] })
+    return result.canceled || !result.filePaths[0] ? null : recoverPageImage(id, revision, versionId, result.filePaths[0])
+  })
   ipcMain.handle('pages:list', () => listPages())
   ipcMain.handle('pages:delete', (_e, id: string, revision: number) => deletePage(id, revision))
   ipcMain.handle('pages:read', (_e, id: string) => readPage(id))
@@ -238,7 +257,7 @@ function registerIpc(): void {
   ipcMain.handle('nai:reveal', (_e, name?: string) => {
     const src = name ? imagePath(name) : null
     if (src) shell.showItemInFolder(src)
-    else shell.openPath(imageDir())
+    else shell.openPath(imageLibraryDir())
   })
   ipcMain.handle('nai:delete', async (_e, name: string) => {
     if (pageUsesImage(name)) throw new Error('这张图片被 AI 工作台的会话引用，为保留版本记录暂不能从图库删除')
@@ -286,6 +305,7 @@ if (MCP_MODE) {
     if (!argv.includes('--mcp-host')) void app.whenReady().then(createWindow)
   })
   app.whenReady().then(async () => {
+    clearTemporaryImages(false)
     // 让 Windows 任务栏 / Alt+Tab 使用窗口图标，而不是 electron.exe 的默认图标
     if (process.platform === 'win32') app.setAppUserModelId(APP_ID)
     tagStore.load()
@@ -321,5 +341,6 @@ if (MCP_MODE) {
     if (process.platform !== 'darwin' && !bridge?.clients() && !tasks?.snapshot().tasks.some(taskIsActive)) app.quit()
   })
   app.on('before-quit', () => bridge?.close())
+  app.on('will-quit', () => { try { clearTemporaryImages() } catch (e) { console.error('临时图片清理失败，将在下次启动重试', e) } })
   }
 }

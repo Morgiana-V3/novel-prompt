@@ -1,18 +1,32 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { pageIteration, type PageWorkspace } from '@shared/page-workspace'
+import { computed, ref, watch } from 'vue'
+import { pageGroups, pageChanges, pageIteration, type PageWorkspace } from '@shared/page-workspace'
 import type { NaiGenParams } from '@shared/types'
 import { changeLabel } from '@shared/inpaint-plan'
 import { diffPrompt } from '../prompt-diff'
+import ThemeSelect from './ThemeSelect.vue'
 import DiffChips from './DiffChips.vue'
 
 const props = defineProps<{ work: PageWorkspace; versionId: string }>()
 const emit = defineEmits<{ select: [id: string] }>()
-const iteration = computed(() => pageIteration(props.work, props.versionId))
+const compareId = ref('')
+watch(() => props.versionId, () => { compareId.value = '' })
+const iteration = computed(() => {
+  const original = pageIteration(props.work, props.versionId)
+  if (!compareId.value) return original
+  const source = props.work.versions.find(v => v.id === compareId.value)
+  const before = source?.generated ?? source?.initial
+  return { ...original, source, before, changes: original.result && before ? pageChanges(before.draft, original.result.draft) : [] }
+})
 const records = computed(() => props.work.versions.filter(v => v.generated || !v.parentId).slice().reverse())
+const groups = computed(() => pageGroups(props.work).slice().reverse())
+const selectedGroup = computed(() => groups.value.find(g => g.versions.some(v => v.id === props.versionId)))
+function selectGroup(group: ReturnType<typeof pageGroups>[number]) {
+  emit('select', (group.versions.find(v => v.id === props.versionId) ?? group.versions.find(v => v.id === props.work.currentVersionId) ?? group.versions[group.versions.length - 1]).id)
+}
 function name(id: string) {
   const i = props.work.versions.findIndex(v => v.id === id)
-  return i === 0 ? (props.work.versions[0].image ? '原稿' : '起点') : `版本 ${i}`
+  return props.work.versions[i]?.label ?? '历史版本'
 }
 const fields: [keyof NaiGenParams, string][] = [
   ['width', '宽度'], ['height', '高度'], ['steps', '步数'], ['scale', '提示词引导'],
@@ -37,15 +51,17 @@ const maskUrl = computed(() => {
 <template>
   <section class="wi">
     <nav class="wi-timeline" aria-label="迭代记录">
-      <button v-for="v in records" :key="v.id" :class="{on:v.id===versionId}" @click="emit('select',v.id)">
-        <b>{{ name(v.id) }}</b><span>{{ v.generated ? (v.generated.execution.kind==='inpaint'?'局部重绘':'提示词生图') : '会话起点' }}</span><span v-if="v.id===work.currentVersionId" class="wi-current">当前</span>
+      <button v-for="g in groups" :key="g.id" :class="{on:g.id===selectedGroup?.id}" @click="selectGroup(g)">
+        <b>{{ g.label.replace('方案 ', '版本 ') }}</b><span>{{ g.versions.length }} 张记录</span><span v-if="g.versions.some(v=>v.id===work.currentVersionId)" class="wi-current">当前</span>
       </button>
     </nav>
     <article v-if="iteration.result" class="wi-record">
+      <label v-if="selectedGroup && selectedGroup.versions.length>1" class="small">本版本生成图 <ThemeSelect :model-value="versionId" :options="selectedGroup.versions.map((v,i)=>({value:v.id,label:`第 ${i+1} 张${v.id===work.currentVersionId?' · 已采用':''}`}))" aria-label="本版本生成图" @update:model-value="emit('select',String($event))" /></label>
+      <label class="small">对比对象 <ThemeSelect v-model="compareId" :options="[{value:'',label:'实际生成来源'},...records.filter(v=>v.id!==versionId).map(v=>({value:v.id,label:name(v.id)}))]" aria-label="对比对象" /></label>
       <div class="wi-heading"><b>{{ iteration.source ? name(iteration.source.id) : '来源版本' }} → {{ name(versionId) }}</b><span>{{ iteration.result.execution.kind==='inpaint'?'局部重绘':'提示词生图' }}</span><time>{{ new Date(iteration.version!.createdAt).toLocaleString('zh-CN') }}</time></div>
       <div class="wi-images">
-        <figure><img v-if="iteration.source?.image" :src="iteration.source.image.url" alt="上一版"><div v-else class="wi-no-image">无基础图片</div><figcaption>修改前</figcaption></figure>
-        <figure><img v-if="iteration.version?.image" :src="iteration.version.image.url" alt="本轮结果"><figcaption>本轮结果</figcaption></figure>
+        <figure><img v-if="iteration.source?.image && !iteration.source.image.missing" :src="iteration.source.image.url" @error="iteration.source.image.missing=true" alt="对比图片"><div v-else class="wi-no-image">{{ iteration.source?.image ? '图片缺失 · 文字记录保留' : '无基础图片' }}</div><figcaption>对比对象</figcaption></figure>
+        <figure><img v-if="iteration.version?.image && !iteration.version.image.missing" :src="iteration.version.image.url" @error="iteration.version.image.missing=true" alt="本轮结果"><div v-else class="wi-no-image">图片缺失 · 文字记录保留</div><figcaption>本轮结果</figcaption></figure>
       </div>
       <p v-if="!iteration.before" class="muted small">旧版本未保存来源快照，无法可靠还原本轮差异。</p>
       <p v-else-if="!iteration.source?.generated" class="muted small">相对会话初始草稿与设置对比。</p>

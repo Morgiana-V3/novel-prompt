@@ -1,9 +1,11 @@
-import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync, statSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync, statSync, existsSync, unlinkSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { dataDir } from './paths'
 import { writeFileAtomic } from './fs-safe'
-import { imageDir, imagePath, listImages } from './nai/client'
+import { imageDir, imagePath } from './nai/client'
+import { imageInfo, ownWorkspaceImage, restoreImageFile, readImageRecipe } from './image-library'
+import { workspaceImageNames } from './workspace-image-references'
 import { pngSize } from './nai/zip'
 import { PNG } from 'pngjs'
 import { prepareInpaint } from './nai/inpaint'
@@ -41,6 +43,12 @@ export function readPage(id: string): PageWorkspace {
     pageEvent(w, '已升级为通用创作会话。旧版区域独立草稿保留在历史版本；请选择要继续使用的草稿。')
     savePage(w)
   }
+  for (const v of w.versions) if (v.image) {
+    const path = imagePath(v.image.name)
+    v.image.missing = !path
+    v.image.storage = 'workspace'
+    if (path && !v.image.contentHash) v.image.contentHash = createHash('sha256').update(readFileSync(path)).digest('hex')
+  }
   return w
 }
 export function savePage(w: PageWorkspace): PageWorkspace {
@@ -62,7 +70,8 @@ export function listPages(): PageWorkspaceSummary[] {
   return entries.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 export function pageUsesImage(name: string): boolean {
-  return listPages().some(p => readPage(p.id).versions.some(v => v.image?.name === name))
+  if (imageInfo(name)?.storage === 'workspace') return true
+  return workspaceImageNames().has(name)
 }
 export function checkDraft(d: InpaintDraft, model: NaiVersion = 'v5') {
   if (!d || typeof d.base !== 'string' || typeof d.negative !== 'string' || !Array.isArray(d.characters) || d.characters.length > MAX_CHARACTERS[model]
@@ -74,18 +83,18 @@ export function checkPageParams(p: NaiGenParams) {
     || !Number.isInteger(p.steps) || p.steps < 1 || p.steps > 50 || !Number.isFinite(p.scale) || p.scale < 0 || p.scale > 10
     || p.seed !== null && (!Number.isInteger(p.seed) || p.seed < 0 || p.seed > 4294967295)) throw new Error('生成参数无效：尺寸需为 64 的倍数，步数为 1–50，种子留空或为有效整数')
 }
-function checkEditor(editor: PageEditorState, imageName: string | undefined) {
+function checkEditor(editor: PageEditorState, imageName: string | undefined, allowMissingRegions = false) {
   checkDraft(editor.draft)
   if (!Array.isArray(editor.regions) || editor.regions.length > 16 || !Number.isFinite(editor.strength) || editor.strength < .01 || editor.strength > 1) throw new Error('选区或重绘强度无效')
   const image = imageName ? imagePath(imageName) : null
-  if (!image && editor.regions.length) throw new Error('工作区图片不存在')
+  if (!image && editor.regions.length && !allowMissingRegions) throw new Error('工作区图片不存在，不能修改遮罩；可加载历史设置后重新生成')
   const ids = new Set<string>()
   for (const r of editor.regions) {
     if (!r.id || ids.has(r.id) || typeof r.mask !== 'string' || r.mask.length > 8 * 1024 * 1024 || typeof r.instruction !== 'string' || r.instruction.length > 6000
       || !/^[A-Z]{2,16}$/.test(r.label) || (r.target !== null && (!Number.isInteger(r.target) || !editor.draft.characters[r.target]))) throw new Error('批注格式无效')
     ids.add(r.id)
     if (r.accepted) checkDraft(r.accepted)
-    prepareInpaint(readFileSync(image!), r.mask, editor.params.width, editor.params.height)
+    if (image) prepareInpaint(readFileSync(image), r.mask, editor.params.width, editor.params.height)
   }
 }
 export function pageEvent(w: PageWorkspace, text: string, versionId = w.currentVersionId): void {
@@ -93,17 +102,27 @@ export function pageEvent(w: PageWorkspace, text: string, versionId = w.currentV
 }
 export async function createPage(imageName: string | null, params: NaiGenParams, model: NaiVersion, fallback: InpaintDraft): Promise<PageWorkspace> {
   if (!['v4.5', 'v5'].includes(model)) throw new Error('不支持的生图模型')
-  const image = imageName ? listImages().find(i => i.name === imageName) ?? null : null, src = imageName ? imagePath(imageName) : null
+  let image = imageName ? imageInfo(imageName) : null
+  const src = imageName ? imagePath(imageName) : null
   if (imageName && (!image || !src)) throw new Error('请选择仍在图库中的图片')
   let draft = fallback
   let imported = false
   if (src) try { draft = await readPngPrompt(new Blob([Uint8Array.from(readFileSync(src))], { type: 'image/png' })); imported = true } catch { /* Explicit fallback from current prompt. */ }
+  const recorded = imageName ? readImageRecipe(imageName) : null
+  if (recorded) {
+    const r = recorded.request
+    draft = { base: r.base, negative: r.negative, characters: r.characters }
+    params = r.params; model = r.version; imported = true
+  }
   checkDraft(draft, model)
-  const now = Date.now(), versionId = randomUUID()
-  const w: PageWorkspace = { schema: 2, id: randomUUID(), title: '新会话', goal: '', preserve: '', model, createdAt: now, updatedAt: now, revision: 0,
+  checkPageParams(params)
+  const now = Date.now(), versionId = randomUUID(), id = randomUUID()
+  if (imageName) image = ownWorkspaceImage(imageName, id)
+  const w: PageWorkspace = { schema: 2, id, title: '新会话', goal: '', preserve: '', model, createdAt: now, updatedAt: now, revision: 0,
     currentVersionId: versionId, composer: '', execution: { kind: 'generate', regionId: null }, versions: [{ id: versionId, parentId: null, label: image ? '原稿' : '起点', image, createdAt: now,
       editor: { draft: clone(draft), regions: [], params: { ...params, width: image?.width ?? params.width, height: image?.height ?? params.height, count: 1, qualityTags: false, ucPreset: 'none' }, strength: 1 } }], messages: [] }
-  w.versions[0].initial = { draft: clone(draft), params: clone(w.versions[0].editor.params) }
+  w.versions[0].editor.model = model
+  w.versions[0].initial = { model, draft: clone(draft), params: clone(w.versions[0].editor.params) }
   pageEvent(w, imported ? '会话已建立，已读取原图提示词。' : image ? '会话已建立。图片没有可读取的提示词，初始草稿请核对。' : '会话已建立。')
   return savePage(w)
 }
@@ -115,7 +134,8 @@ export async function importPage(path: string, params: NaiGenParams, model: NaiV
   PNG.sync.read(bytes)
   const name = `page-import-${randomUUID()}.png`
   writeFileSync(join(imageDir(), name), bytes)
-  const w = await createPage(name, params, model, fallback)
+  let w: PageWorkspace
+  try { w = await createPage(name, params, model, fallback) } finally { unlinkSync(join(imageDir(), name)) }
   w.title = basename(path).replace(/\.png$/i, '').slice(0, 100) || '未命名会话'
   return savePage(w)
 }
@@ -124,27 +144,39 @@ export function editPage(id: string, revision: number, action: PageAction): Page
   const w = readPage(id)
   if (w.revision !== revision) throw new Error('工作区已在别处更新，请重新打开后继续')
   const v = pageCurrent(w)
-  if (action.type === 'notes') {
+  if (action.type === 'recipe') {
+    const r = clone(action.request)
+    if (!['v4.5', 'v5'].includes(r.version)) throw new Error('不支持的模型')
+    checkDraft(r, r.version); checkPageParams(r.params)
+    w.model = r.version
+    v.editor.model = r.version
+    v.editor.draft = { base: r.base, negative: r.negative, characters: r.characters }
+    v.editor.params = { ...r.params, count: 1 }; v.editor.regions = []
+    w.execution = { kind: 'generate', regionId: null }
+    pageEvent(w, '已加载收藏配方，替换提示词、模型和生成设置，清除旧选区；尚未生成图片。')
+  } else if (action.type === 'notes') {
     for (const t of [action.title, action.goal, action.preserve, action.composer]) if (typeof t !== 'string' || t.length > 6000) throw new Error('文本过长')
     w.title = action.title.trim().slice(0, 100) || '未命名会话'; w.goal = action.goal; w.preserve = action.preserve; w.composer = action.composer
   } else if (action.type === 'editor') {
     if (action.versionId !== v.id) throw new Error('编辑器对应的版本已切换')
     const updated = clone(action.editor)
     if (updated.draft.characters.length !== v.editor.draft.characters.length) updated.regions.forEach(r => { r.target = null })
-    checkEditor(updated, v.image?.name)
+    const unchangedMasks = updated.params.width === v.editor.params.width && updated.params.height === v.editor.params.height &&
+      updated.regions.every(r => v.editor.regions.some(old => old.id === r.id && old.mask === r.mask))
+    checkEditor(updated, v.image?.name, !!v.image?.missing && unchangedMasks)
     checkDraft(action.editor.draft, w.model)
     if (JSON.stringify(v.editor.draft) !== JSON.stringify(action.editor.draft)) {
       const m = pageMessage('event', '手动修改了当前提示词。', v.id)
       m.draftBefore = clone(v.editor.draft); m.draftAfter = clone(action.editor.draft); w.messages.push(m)
     }
-    v.editor = updated; v.editor.regions.forEach(r => { r.accepted = null })
+    updated.model = w.model; v.editor = updated; v.editor.regions.forEach(r => { r.accepted = null })
     if (w.execution.regionId && !v.editor.regions.some(r => r.id === w.execution.regionId)) w.execution = { kind: 'generate', regionId: null }
   } else if (action.type === 'execution') {
     w.execution = validateExecution(w, action.execution)
   } else if (action.type === 'switch') {
     const next = w.versions.find(v => v.id === action.versionId)
     if (!next || (next.image && !imagePath(next.image.name))) throw new Error('该版本图片已不存在')
-    if (next.id !== v.id) { w.currentVersionId = next.id; w.execution = { kind: 'generate', regionId: null }; pageEvent(w, `当前采用版本切换为「${next.label}」。之后从此版本继续，其他结果保留为历史。`) }
+    if (next.id !== v.id) { w.currentVersionId = next.id; w.model = next.editor.model ?? next.generated?.model ?? next.initial?.model ?? w.model; w.execution = { kind: 'generate', regionId: null }; pageEvent(w, `当前采用版本切换为「${next.label}」。之后从此版本继续，其他结果保留为历史。`) }
   } else if (action.type === 'proposal') {
     const m = w.messages.find(m => m.id === action.messageId), p = m?.proposal
     if (!m || !p) throw new Error('建议不存在')
@@ -279,7 +311,7 @@ export function validateExecution(w: PageWorkspace, e: import('../shared/page-wo
   if (!e || !['generate', 'inpaint'].includes(e.kind)) throw new Error('请选择执行方式')
   if (e.kind === 'generate') return { kind: 'generate' as const, regionId: null }
   const v = pageCurrent(w)
-  if (!v.image || !v.editor.regions.some(r => r.id === e.regionId)) throw new Error('局部重绘需要底图和明确的遮罩')
+  if (!v.image || !imagePath(v.image.name) || !v.editor.regions.some(r => r.id === e.regionId)) throw new Error('局部重绘需要可读取的底图和明确的遮罩')
   return { kind: 'inpaint' as const, regionId: e.regionId }
 }
 export function deletePage(id: string, revision: number): void {
@@ -288,4 +320,30 @@ export function deletePage(id: string, revision: number): void {
   if (w.revision !== revision) throw new Error('会话已更新，请刷新后删除')
   const removed = join(directory(), 'removed'); mkdirSync(removed, { recursive: true })
   renameSync(file(id), join(removed, id + '-' + Date.now() + '.json'))
+}
+
+export function listRemovedPages(): { token: string; title: string; removedAt: number }[] {
+  const dir = join(directory(), 'removed')
+  if (!existsSync(dir)) return []
+  return readdirSync(dir).filter(n => /^[a-f0-9-]{36}-\d+\.json$/.test(n)).flatMap(token => {
+    try { const w = JSON.parse(readFileSync(join(dir, token), 'utf8')); return [{ token, title: String(w.title), removedAt: Number(token.slice(37, -5)) }] } catch { return [] }
+  }).sort((a, b) => b.removedAt - a.removedAt)
+}
+export function restorePage(token: string): PageWorkspace {
+  if (!listRemovedPages().some(p => p.token === token)) throw new Error('回收站中的会话不存在')
+  const id = token.slice(0, 36)
+  if (existsSync(file(id))) throw new Error('同名会话已经存在，不能覆盖')
+  renameSync(join(directory(), 'removed', token), file(id))
+  return readPage(id)
+}
+export function recoverPageImage(id: string, revision: number, versionId: string, path: string): PageWorkspace {
+  const w = writablePage(id, revision), v = w.versions.find(v => v.id === versionId)
+  if (!v?.image || imagePath(v.image.name)) throw new Error('仅可恢复缺失的历史图片')
+  if (!v.image.contentHash) throw new Error('旧记录没有原图校验信息，请将图片导入新会话，避免误替换历史结果')
+  if (statSync(path).size > 40 * 1024 * 1024) throw new Error('图片不能超过 40 MB')
+  const bytes = readFileSync(path)
+  if (createHash('sha256').update(bytes).digest('hex') !== v.image.contentHash) throw new Error('所选文件与原图不同，请选择当时导出的原始 PNG')
+  restoreImageFile(v.image.name, bytes); v.image.missing = false
+  pageEvent(w, `已恢复「${v.label}」的原始图片。`)
+  return savePage(w)
 }

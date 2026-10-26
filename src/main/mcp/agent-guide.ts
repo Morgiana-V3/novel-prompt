@@ -82,7 +82,7 @@ ${AGENT_ENTRY}
 前台打开会话 → ui_set_workspace_agent(mode:internal) → 填写/提交 → 查看回复 → 按授权采纳/生成。切回 internal 会取消待处理的外部需求，不要无意切换。后台 optimize_prompt/preview_prompt/plan_inpaint 也调用内置 AI，不代表由你完成了分析。
 
 ## D. 只查看当前内容与历史
-“现在窗口是什么”：get_app_state，视觉细节用 ui_capture_app；“右侧完整对话/修改记录”：get_workspace；“此前生成图”：read_image。ui_view_workspace(version_id,pane:history) 仅查看历史；ui_review_workspace(decision:switch,version_id) 才切换当前采用版本，二者不可混淆。`,
+“现在窗口是什么”：get_app_state，视觉细节用 ui_capture_app；“右侧完整对话/修改记录”：get_workspace；“此前生成图”：read_image。ui_view_workspace(version_id,pane:history) 仅查看历史；ui_review_workspace(decision:switch,version_id) 才切换当前采用版本，二者不可混淆。工作台相同配置重复生成会加入同一方案的候选；首张以外不会自动采用。latestGeneratedVersionId 指向最新结果，currentVersionId 是已采用版本。图片 missing=true 时只能使用文字记录，不能声称已查看画面。普通生图的 storage=temporary 表示退出软件后会清理，saved/workspace 表示已留存。`,
   recovery: `# 冲突、取消与恢复
 
 - token/revision 冲突、用户正在编辑：重新读取状态和原需求，保留用户新改动；不能只拿新 token 原样重放旧写入，也不能绕过前台保护用后台强写。

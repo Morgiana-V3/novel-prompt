@@ -17,6 +17,7 @@ const DEFAULTS: Settings = {
   translateMinCount: 50,
   naiToken: '',
   naiFreeOnly: true,
+  naiAutoSave: false,
   mcpAllowAi: false,
   mcpAllowGenerate: false
 }

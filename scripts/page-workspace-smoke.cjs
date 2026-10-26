@@ -63,13 +63,20 @@ const handlers = {
   'agents:list': () => [],
   'tasks:list': () => ({ revision: 0, tasks: [] }),
   'web:open':(_,url)=>{assert.ok(isWebUrl(url));openedLinks.push(url)},
-  'settings:get':()=>getSettings(), 'settings:save':(_,v)=>saveSettings(v),
+  'images:cleanup-status':()=>({pending:1,message:'测试：上次临时文件清理失败'}), 'images:cleanup-retry':()=>({pending:0,message:''}), 'settings:get':()=>getSettings(), 'settings:save':(_,v)=>saveSettings(v),
   'window:dark-titlebar':()=>{}, 'db:status':()=>({loaded:true,tagCount:0,aliasCount:0,zhCount:0,implicationCount:0}),
   'skills:list':()=>skills.getConfig(), 'mcp:info':()=>null, 'update:check':()=>null, 'update:state':()=>null,
   'prompt:analyze':()=>({tokens:[],stats:{total:0,valid:0,alias:0,unknown:0,natural:0,text:0}}),
   'nai:subscription':()=>client.getSubscription(), 'nai:freeCheck':(_, ...args)=>client.freeCheck(...args),
+  'nai:generate':(_,req)=>client.generateImages(req,()=>{},()=>false),
+  'nai:retain':(_,name)=>require('../src/main/image-library.ts').retainImage(name), 'nai:recipe':(_,name)=>require('../src/main/image-library.ts').readImageRecipe(name),
   'nai:list':()=>client.listImages(), 'nai:readImage':(_,name)=>new Uint8Array(readFileSync(client.imagePath(name))),
   'pages:delete':(_,id,rev)=>pages.deletePage(id,rev),
+  'pages:removed':()=>pages.listRemovedPages(), 'pages:restore':(_,token)=>pages.restorePage(token),
+  'recipes:workspace':(_,id,versionId)=>require('../src/main/recipes.ts').createWorkspaceRecipe(id,versionId),
+  'recipes:config':(_,request)=>require('../src/main/recipes.ts').createConfigRecipe(request),
+  'recipes:list':()=>require('../src/main/recipes.ts').listRecipes(), 'recipes:create':(_,name)=>require('../src/main/recipes.ts').createRecipe(name),
+  'recipes:update':(_,id,patch)=>require('../src/main/recipes.ts').updateRecipe(id,patch),
   'pages:list':()=>pages.listPages(), 'pages:read':(_,id)=>pages.readPage(id),
   'pages:create':(_, ...args)=>pages.createPage(...args), 'pages:edit':(_, ...args)=>pages.editPage(...args),
   'pages:chat':(_, ...args)=>collaborator.discussPage(...args), 'pages:cancel':(_,id)=>pages.pageLocks.get(id)?.abort(),
@@ -144,6 +151,7 @@ app.whenReady().then(async()=>{
     mode='inpaint';await talk('这次只重绘这个遮罩内的部位',region.id);decide('accept')
     const before=PNG.sync.read(readFileSync(client.imagePath(pageCurrent(w).image.name)))
     w=await collaborator.renderPage(id,w.revision,w.execution,()=>{},()=>false)
+    assert.equal(w.currentVersionId,generated,'reroll does not implicitly adopt');edit({type:'switch',versionId:w.latestGeneratedVersionId});
     assert.equal(generationInputs.at(-1).action,'infill');assert.match(generationInputs.at(-1).input,/black shirt/)
     const result=PNG.sync.read(readFileSync(client.imagePath(pageCurrent(w).image.name)))
     for(let i=0;i<before.data.length;i+=4)if(!mask.data[i])assert.ok(before.data.subarray(i,i+4).equals(result.data.subarray(i,i+4)))
@@ -194,7 +202,37 @@ app.whenReady().then(async()=>{
     const input=(selector,value)=>run(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.value=${JSON.stringify(value)};e.dispatchEvent(new Event('input',{bubbles:true}))})()`)
     const shot=async name=>{await pause(300);writeFileSync(join(artifacts,name),(await win.webContents.capturePage()).toPNG())}
     await win.loadFile(join(__dirname,'../out/renderer/index.html'));await pause(600)
+    assert.ok(await js(`document.body.textContent.includes('测试：上次临时文件清理失败')`));await click('.frontend-status button','重试清理');assert.ok(!await js(`document.body.textContent.includes('测试：上次临时文件清理失败')`))
     await click('.nav-item','生图预览');assert.equal(await js(`document.querySelectorAll('.page-library').length`),0)
+    await run(`document.querySelector('.pane-foot input[type=checkbox]').click()`);assert.equal(getSettings().naiAutoSave,true)
+    await run(`document.querySelector('.pane-foot input[type=checkbox]').click()`);assert.equal(getSettings().naiAutoSave,false)
+    await click('.gen-params-head button','配置收藏');await wait(`!!document.querySelector('.recipe-dialog')`)
+    await click('.recipe-save-current button','收藏当前配置')
+    const savedConfig=require('../src/main/recipes.ts').listRecipes()[0]
+    assert.equal(savedConfig.sourceImage,'');assert.equal(savedConfig.thumbnail,'')
+    assert.ok(await js(`document.querySelector('.recipe-load input').checked`),'loading defaults to exact saved seed')
+    assert.ok(await js(`(()=>{const d=document.querySelector('.recipe-dialog'),a=document.querySelector('.recipe-columns article'),f=document.querySelector('.recipe-load');return getComputedStyle(d).overflow==='hidden'&&a.getBoundingClientRect().right<d.getBoundingClientRect().right-16&&f.getBoundingClientRect().bottom<d.getBoundingClientRect().bottom})()`),'scrollbars stay inset; load action remains visible')
+    await click('.recipe-load button','加载配置');await wait(`!document.querySelector('.recipe-dialog')`)
+    const ordinary=await client.generateImages({...draft,version:'v5',params},()=>{},()=>false)
+    win.webContents.send('gallery:changed');await pause(250)
+    await run(`[...document.querySelectorAll('.gallery .thumb')].find(e=>e.querySelector('img').src.includes('${ordinary.images[0].name}')).click()`)
+    await click('.viewer button','收藏此图配置');await wait(`!!document.querySelector('.recipe-dialog')`)
+    await click('.recipe-item','grey shirt');await input('.recipe-columns article input','可复用的灰衣配方');await click('.recipe-columns article button','保存修改')
+    assert.equal(require('../src/main/recipes.ts').listRecipes()[0].name,'可复用的灰衣配方')
+    await input('.recipe-columns aside input','不存在的配方');assert.equal(await js(`document.querySelectorAll('.recipe-item').length`),0)
+    await input('.recipe-columns aside input','灰衣');assert.equal(await js(`document.querySelectorAll('.recipe-item').length`),1)
+    await shot('13-recipe-library.png');await click('.recipe-dialog button','加载配置');await wait(`!document.querySelector('.recipe-dialog')`)
+    assert.equal(require('../src/main/image-library.ts').imageInfo(ordinary.images[0].name).storage,'temporary','favorite does not retain full image')
+    await click('.viewer button','留存图片');assert.equal(require('../src/main/image-library.ts').imageInfo(ordinary.images[0].name).storage,'saved')
+    await shot('14-retained-gallery.png')
+    const earlierTemp=(await client.generateImages({...draft,version:'v5',params},()=>{},()=>false)).images[0]
+    await click('.run-bar button','生成');await wait(`document.querySelector('.viewer')?.textContent.includes('留存最近一批剩余 1 张')`)
+    const newest=await js(`document.querySelector('.viewer-stage img').getAttribute('src')`)
+    await run(`[...document.querySelectorAll('.gallery .thumb')].find(e=>e.querySelector('img').src.includes('${earlierTemp.name}')).click()`)
+    assert.ok(!await js(`document.querySelector('.viewer').textContent.includes('留存最近一批')`),'earlier image cannot retain an unrelated latest batch')
+    await run(`[...document.querySelectorAll('.gallery .thumb')].find(e=>e.querySelector('img').getAttribute('src')===${JSON.stringify(newest)}).click()`)
+    await click('.viewer button','留存最近一批');assert.equal(require('../src/main/image-library.ts').imageInfo(earlierTemp.name).storage,'temporary')
+    console.log('PASS retention toggle, independent recipe creation, rename, search, reviewed apply and manual retain UI')
     const beforeImageStart=pages.listPages().length, apiBefore=[aiInputs.length,generationInputs.length]
     await run(`document.querySelector('.gallery .thumb').click()`)
     const chosenUrl=await js(`document.querySelector('.viewer-stage img').getAttribute('src')`)
@@ -205,7 +243,7 @@ app.whenReady().then(async()=>{
     await click('.session-image button','重新选择');await click('.viewer button','用于新会话');await wait(`!!document.querySelector('.session-image img')`)
     assert.equal(await js(`document.querySelector('.session-create input').value`),'图库起点测试','reselect preserves session name')
     await click('.session-create button','开始会话');await wait(`!!document.querySelector('.pw-shell')`)
-    const fromImage=pages.listPages().find(p=>p.title==='图库起点测试');assert.ok(fromImage);assert.equal(fromImage.image.url,chosenUrl)
+    const fromImage=pages.listPages().find(p=>p.title==='图库起点测试');assert.ok(fromImage);assert.notEqual(fromImage.image.url,chosenUrl);assert.ok(readFileSync(client.imagePath(fromImage.image.name)).equals(readFileSync(client.imagePath(decodeURIComponent(chosenUrl.split('/').at(-1))))))
     assert.deepEqual([aiInputs.length,generationInputs.length],apiBefore,'starting from an image makes no model calls')
     await click('.pw-header button','返回会话');await click('.nav-item','生图预览');await click('.viewer button','用于新会话');await wait(`!!document.querySelector('.session-image img')`)
     await run(`document.querySelector('.session-create [title="取消新建"]').click()`);assert.equal(pages.listPages().length,beforeImageStart+1,'cancel creates no extra record')
@@ -230,7 +268,7 @@ app.whenReady().then(async()=>{
     await click('.pw-suggestion-board button','采纳方案')
     await click('.pw-view-tabs button','当前提示词');assert.ok(await js(`document.querySelector('.workspace-prompt').textContent.includes('grey object')`))
     await shot('02-current-prompt.png')
-    await click('.pw-execution button','生成新版本');await wait(`document.querySelector('.pw-canvas-bar b')?.textContent==='版本 1'`)
+    await click('.pw-execution button','生成候选');await wait(`document.querySelector('.pw-canvas-bar b')?.textContent==='方案 V1 · 候选 1'`)
     await click('.pw-canvas-actions button','区域批注');await wait(`document.querySelector('.ip-active-mask')?.getBoundingClientRect().width>100`);await pause(300)
     const bounds=await js(`(()=>{const r=document.querySelector('.ip-active-mask').getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}})()`)
     const point=(x,y)=>({x:Math.round(bounds.x+bounds.w*x),y:Math.round(bounds.y+bounds.h*y)})
@@ -255,17 +293,17 @@ app.whenReady().then(async()=>{
     await click('.pw-suggestion-board button','采纳方案');assert.equal(pages.readPage(ui.id).execution.kind,'inpaint')
     await shot('03-proposal-and-execution.png')
     await click('.pw-execution button','检查遮罩');await shot('04-mask-review.png')
-    await click('.pw-execution button','执行局部重绘');await wait(`document.querySelector('.pw-canvas-bar b')?.textContent==='版本 2'`)
+    await click('.pw-execution button','执行局部重绘');await wait(`document.querySelector('.pw-canvas-bar b')?.textContent==='方案 V2 · 候选 1'`);assert.equal(pages.readPage(ui.id).currentVersionId,pages.readPage(ui.id).versions[1].id);await click('.pw-history-banner button','采用这张');await wait(`!document.querySelector('.pw-history-banner')`)
     await click('.pw-plan-link','调整主体明暗');assert.ok(await js(`document.querySelector('.pw-suggestion-heading').textContent.includes('起点')`));assert.ok(await js(`document.querySelector('.pw-canvas-bar')===null`))
     await click('.pw-suggestion-board button','回到当前版本');assert.ok(await js(`document.querySelector('.pw-suggestion-board').textContent.includes('此版本暂无修改建议')`))
     await click('.pw-view-tabs button','修改对比');assert.ok(await js(`!document.querySelector('.pw-change-board article.pw-proposal')`),'AI suggestions are separate from iteration history')
-    assert.ok(await js(`document.querySelector('.wi-heading').textContent.includes('版本 1 → 版本 2')&&document.querySelector('.wi-heading').textContent.includes('局部重绘')`))
+    assert.ok(await js(`document.querySelector('.wi-heading').textContent.includes('方案 V1 · 候选 1 → 方案 V2 · 候选 1')&&document.querySelector('.wi-heading').textContent.includes('局部重绘')`))
     assert.equal(await js(`document.querySelectorAll('.wi-images img').length`),2)
     assert.ok(await js(`(()=>{const rows=[...document.querySelectorAll('.wi-timeline button')];return rows.every(b=>Math.abs(b.getBoundingClientRect().top-rows[0].getBoundingClientRect().top)<1)})()`),'iteration navigation stays in one horizontal row')
     await run(`document.querySelector('.wi-mask').open=true`);await shot('11-iteration-history.png')
-    await click('.wi-timeline button','版本 1');assert.ok(await js(`document.querySelector('.wi-heading').textContent.includes('起点 → 版本 1')`))
+    await click('.wi-timeline button','版本 V1');assert.ok(await js(`document.querySelector('.wi-heading').textContent.includes('起点 → 方案 V1 · 候选 1')`))
     assert.equal(pages.readPage(ui.id).currentVersionId,pages.readPage(ui.id).versions[2].id,'review does not switch current version')
-    await click('.wi-timeline button','版本 2')
+    await click('.wi-timeline button','版本 V2')
     await click('.pw-view-tabs button','当前提示词');await click('.pw-prompt-actions button','编辑');
     const sharedValues=await js(`[...document.querySelectorAll('.view textarea,.view .char-head input')].map(e=>e.value)`)
     const moveCharacter=async(x,y)=>{
@@ -321,20 +359,47 @@ app.whenReady().then(async()=>{
     assert.ok(latest.messages.filter(m=>m.proposal&&m.versionId===latest.currentVersionId).length>=2)
     await run(`[...document.querySelectorAll('.pw-plan-link')].at(-1).click()`)
     assert.equal(await js(`document.querySelectorAll('.pw-suggestion-board article.pw-proposal').length`),1)
-    assert.ok(await js(`document.querySelector('.pw-suggestion-heading').textContent.includes('版本 2')`))
+    assert.ok(await js(`document.querySelector('.pw-suggestion-heading').textContent.includes('方案 V2 · 候选 1')`))
     await shot('13-latest-suggestion.png')
-    await click('.pw-header button','历史');assert.ok(await js(`!document.querySelector('.pw-history').textContent.includes('种子')&&!document.querySelector('.pw-history').textContent.includes('点击查看')`));await click('.pw-version b','版本 1');await wait(`!!document.querySelector('.pw-history-banner')`)
+    await click('.pw-header button','版本');assert.ok(await js(`!document.querySelector('.pw-history').textContent.includes('种子')&&!document.querySelector('.pw-history').textContent.includes('点击查看')`));await click('.pw-version b','版本 V1');await wait(`!!document.querySelector('.pw-history-banner')`)
     await click('.pw-history-banner button','引用此版');mode='discuss';await input('.pw-input-wrap textarea','参考这版，先讨论');await run(`document.querySelector('.pw-send').click()`);await wait(`!document.querySelector('.pw-thinking')`)
-    assert.equal(aiInputs.at(-1).input.currentVersion.label,'版本 2');assert.equal(aiInputs.at(-1).input.referencedVersions[0].label,'版本 1')
-    await click('.pw-history-banner button','从此版继续');await wait(`!document.querySelector('.pw-history-banner')`)
+    assert.equal(aiInputs.at(-1).input.currentVersion.label,'方案 V2 · 候选 1');assert.equal(aiInputs.at(-1).input.referencedVersions[0].label,'方案 V1 · 候选 1')
+    await click('.pw-history-banner button','采用这张 / 从此继续');await wait(`!document.querySelector('.pw-history-banner')`)
     await input('.pw-input-wrap textarea','下次继续调整');await click('.pw-header button','返回会话');await wait(`!document.querySelector('.pw-shell')`)
     await click('.session-open','通用创作会话测试');await wait(`!!document.querySelector('.pw-shell')`);assert.equal(await js(`document.querySelector('.pw-input-wrap textarea').value`),'下次继续调整')
-    assert.equal(await js(`document.querySelector('.pw-canvas-bar b').textContent`),'版本 1')
+    assert.equal(await js(`document.querySelector('.pw-canvas-bar b').textContent`),'方案 V1 · 候选 1')
     win.setSize(1100,760);await pause(300);await shot('05-compact-session.png')
     assert.ok(await js(`document.querySelector('.pw-shell').scrollWidth<=document.querySelector('.pw-shell').clientWidth+1`))
     await click('.pw-header button','返回会话');await wait(`!document.querySelector('.pw-shell')`)
+    const missingDoc=pages.readPage(ui.id), missingVersion=pageCurrent(missingDoc), missingPath=client.imagePath(missingVersion.image.name)
+    const missingBytes=readFileSync(missingPath), missingMetadata=readFileSync(missingPath+'.json')
+    require('node:fs').unlinkSync(missingPath);require('node:fs').unlinkSync(missingPath+'.json')
+    await click('.session-open','通用创作会话测试');await wait(`document.querySelector('.pw-blank')?.textContent.includes('图片文件缺失')`)
+    const recipesBefore=require('../src/main/recipes.ts').listRecipes().length
+    await click('.pw-canvas-actions button','收藏此图配置');await wait(`!!document.querySelector('.recipe-dialog')`)
+    const missingFavorite=require('../src/main/recipes.ts').listRecipes()[0]
+    assert.equal(require('../src/main/recipes.ts').listRecipes().length,recipesBefore+1);assert.equal(missingFavorite.thumbnail,'');assert.equal(missingFavorite.recipe.request.base,missingVersion.generated.draft.base)
+    await shot('15-missing-image-recipe.png');await click('.recipe-dialog button','关闭');await click('.pw-header button','返回会话')
+    writeFileSync(missingPath,missingBytes);writeFileSync(missingPath+'.json',missingMetadata)
+    const beforeRolls=pages.readPage(ui.id)
+    pages.editPage(ui.id,beforeRolls.revision,{type:'execution',execution:{kind:'generate',regionId:null}})
+    await click('.session-open','通用创作会话测试');await wait(`!!document.querySelector('.pw-shell')`)
+    for(let i=0;i<2;i++) { await click('.pw-execution button','生成候选');await wait(`!document.querySelector('.pw-run-progress')`);await pause(200) }
+    const rolled=pages.readPage(ui.id), latestGroup=require('../src/shared/page-workspace.ts').pageGroups(rolled).at(-1)
+    assert.equal(latestGroup.versions.length,2,'unchanged configuration stays in one version')
+    await click('.pw-header button','版本')
+    assert.equal(await js(`document.querySelectorAll('.pw-version').length`),require('../src/shared/page-workspace.ts').pageGroups(rolled).length,'sidebar shows one entry per version')
+    await click('.pw-candidates > button','查看本版本')
+    assert.equal(await js(`document.querySelectorAll('.pw-candidate-list button').length`),2)
+    await run(`document.querySelector('.pw-candidate-list button').click()`)
+    assert.equal(pages.readPage(ui.id).currentVersionId,rolled.currentVersionId,'previewing another roll does not adopt it')
+    await shot('16-version-candidates.png')
+    await click('.pw-history-banner button','采用这张');await wait(`!document.querySelector('.pw-history-banner')`)
+    assert.equal(pages.readPage(ui.id).currentVersionId,latestGroup.versions[0].id)
+    await click('.pw-header button','返回会话');await wait(`!document.querySelector('.pw-shell')`)
     await run(`(()=>{const card=[...document.querySelectorAll('.session-card')].find(e=>e.textContent.includes('通用创作会话测试'));card.querySelector('.session-delete').click()})()`)
     await click('.session-remove button','确认删除');assert.ok(!pages.listPages().some(s=>s.id===ui.id));assert.ok(client.imagePath(pageCurrent(saved).image.name))
+    await click('.sessions-home > button','会话回收站');await click('.session-create button','恢复会话');assert.ok(pages.listPages().length>0)
     console.log('PASS compact Skill count, 46px header, explicit rename, growing textareas, pinned save/cancel, resize and hidden-pane recovery; independent UI, intentional creation, conversation-derived goals, final prompt, review panel, annotation/mode separation, generation, manual history, reference/restore, reopen and deletion at 1440/1100 widths')
     console.log('Artifacts:',artifacts)
   } catch(e) { console.error(e);process.exitCode=1;if(win){writeFileSync(join(artifacts,'failure.png'),(await win.webContents.capturePage()).toPNG());writeFileSync(join(artifacts,'failure.txt'),await win.webContents.executeJavaScript('document.body.innerText'))} }

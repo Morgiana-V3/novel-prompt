@@ -119,6 +119,8 @@ export interface Settings {
   naiToken: string
   /** 只允许不消耗 Anlas 的生成：生成前检查免费条件，生成后核对余额 */
   naiFreeOnly: boolean
+  /** 普通生图按提交时的设置决定整批是否长期留存。 */
+  naiAutoSave?: boolean
   /** 允许外部 agent（MCP）调用会消耗 DeepSeek 额度的工具 */
   mcpAllowAi: boolean
   /** 允许外部 agent（MCP）调用 NovelAI 生图（强制只用免费额度） */
@@ -284,6 +286,28 @@ export interface NaiImage {
   width?: number
   height?: number
   createdAt: number
+  storage?: 'temporary' | 'saved' | 'workspace'
+  missing?: boolean
+  contentHash?: string
+}
+
+export interface ImageRecipe {
+  schema: 1
+  request: NaiGenRequest
+  createdAt: number
+  /** 重绘收藏只复用提示词和设置；完整重绘依赖工作台中的底图与遮罩。 */
+  sourceKind: 'generate' | 'inpaint' | 'legacy'
+}
+
+export interface SavedRecipe {
+  id: string
+  name: string
+  note: string
+  tags: string[]
+  createdAt: number
+  sourceImage: string
+  thumbnail: string
+  recipe: ImageRecipe
 }
 
 export interface NaiGenResult {

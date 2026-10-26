@@ -30,11 +30,12 @@ export function externalWorkspaceTools(desktop: DesktopBridge): McpTool[] {
         const w = readPage(String(a.id)), v = pageCurrent(w), request = pendingExternalRequest(w)
         const region = v.editor.regions.find(r => r.id === request?.regionId)
         const prepare = inpaintTools().find(t => t.name === 'prepare_inpaint')!
-        const preview = region && v.image ? JSON.parse(await prepare.run({ image_name: v.image.name, mask_base64: region.mask }, signal) as string) : null
+        const preview = region && v.image && !v.image.missing ? JSON.parse(await prepare.run({ image_name: v.image.name, mask_base64: region.mask }, signal) as string) : null
         return JSON.stringify({ id: w.id, revision: w.revision, mode: w.agentMode ?? 'internal', agent: w.externalAgent,
           connected: agentIsConnected(w.externalAgent?.sessionId), request: request ? { id: request.id, text: request.text, versionId: request.versionId, regionId: request.regionId, referenceIds: request.referenceIds,
             stale: request.versionId !== v.id || request.externalRequest!.contextKey !== pageContextKey(v, request.regionId ?? null, w) } : null,
           goal: w.goal, preserve: w.preserve, model: w.model, currentVersionId: v.id, image: v.image, draft: v.editor.draft, params: v.editor.params, strength: v.editor.strength,
+          latestGeneratedVersionId: w.latestGeneratedVersionId, candidates: w.versions.map(r => ({ id: r.id, groupId: r.groupId, label: r.label, adopted: r.id === w.currentVersionId, image: r.image })),
           execution: w.execution, regions: v.editor.regions.map(({ mask: _mask, accepted: _accepted, ...r }) => r), preview,
           references: w.versions.filter(v => request?.referenceIds?.includes(v.id)).map(v => ({ id: v.id, label: v.label, image: v.image, draft: v.generated?.draft ?? v.editor.draft })),
           skills: request?.skillSnapshot ?? null, skillNames: request?.skills ?? [],

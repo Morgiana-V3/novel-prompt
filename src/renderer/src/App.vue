@@ -31,6 +31,13 @@ const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: bool
   { key: 'settings', label: '设置 / 数据', icon: 'sliders', desc: 'Danbooru 数据、DeepSeek 与 NovelAI 配置', tool: true }
 ]
 const current = computed(() => tabs.find((t) => t.key === state.tab)!)
+const cleanup = ref({ pending: 0, message: '' }), cleanupBusy = ref(false)
+async function retryCleanup() {
+  cleanupBusy.value = true
+  try { cleanup.value = await window.api.imagesCleanupRetry(); if (!cleanup.value.message) toast('上次运行的临时文件已清理') }
+  catch (e) { cleanup.value.message = `清理未完成：${cleanErr(e)}` }
+  finally { cleanupBusy.value = false }
+}
 let offTasks: (() => void) | undefined
 let offUpdate: (() => void) | undefined
 let offDesktop: (() => void) | undefined
@@ -147,6 +154,7 @@ provide(prepareUpdateKey, async () => {
 onBeforeUnmount(() => { offTasks?.(); offUpdate?.(); offDesktop?.(); offSkills?.(); offFrontend?.(); frontendController?.abort(); clearTimeout(updateTimer); endCapture() })
 
 onMounted(async () => {
+  void window.api.imagesCleanupStatus().then(value => { cleanup.value = value }).catch(() => {})
   offTasks = connectTasks()
   offSkills = window.api.onSkillsChanged(() => { void loadSkills().catch(e => toast(cleanErr(e))) })
   let commands = Promise.resolve()
@@ -267,6 +275,7 @@ async function onDrop(e: DragEvent) {
         </div>
         <TaskCenter />
       </header>
+      <div v-if="cleanup.message" class="frontend-status" role="status"><span>{{ cleanup.message }} 本次新生成的临时图片会保留到退出。</span><button class="btn small" :disabled="cleanupBusy" @click="retryCleanup">{{ cleanupBusy ? '正在清理' : '重试清理' }}</button></div>
       <div v-if="frontend" class="frontend-status" role="status" aria-live="polite">
         <span><b>Agent 前台 · {{ frontend.label }}</b> {{ frontend.stage }}</span>
         <button v-if="frontend.status === 'running'" class="btn small" @click="stopFrontend">停止操作</button>

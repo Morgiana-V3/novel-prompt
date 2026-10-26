@@ -8,6 +8,8 @@ import PageWorkspace from '../components/PageWorkspace.vue'
 import Icon from '../components/Icon.vue'
 import ThemeSelect from '../components/ThemeSelect.vue'
 
+const removed = ref<{token:string;title:string;removedAt:number}[]>([]), recycleOpen = ref(false)
+async function restore(token: string) { busy.value=true; try { await window.api.pagesRestore(token); await refresh() } catch(e) {error.value=cleanErr(e)} finally {busy.value=false} }
 const sessions = ref<PageWorkspaceSummary[]>([]), current = ref<Session | null>(null)
 const creating = ref(false), busy = ref(false), error = ref(''), deleting = ref<string | null>(null)
 const start = ref('blank'), title = ref(''), selectedImage = ref<NaiImage | null>(null)
@@ -48,7 +50,7 @@ async function frontendAction(a: FrontendRequest, ctx: FrontendContext) {
   }
 }
 defineExpose({ prepareUpdate, agentOpen, beginRemote, endRemote, desktopState, isCreating, frontendAction })
-async function refresh() { try { sessions.value = await window.api.pagesList() } catch(e) { error.value = cleanErr(e) } }
+async function refresh() { try { sessions.value = await window.api.pagesList(); removed.value = await window.api.pagesRemoved() } catch(e) { error.value = cleanErr(e) } }
 watch(() => state.tab, t => { if(t === 'workspace' && !current.value) void refresh() })
 onMounted(refresh)
 async function open(id: string) {
@@ -101,6 +103,7 @@ async function close() { current.value = null; await refresh() }
     <section v-else class="sessions-home scroll">
       <header><div><h1>会话 <span class="pill">{{ sessions.length }}</span></h1></div><button class="btn accent" :disabled="busy" @click="newSession()"><Icon name="plus" />新建会话</button></header>
       <div v-if="error" class="error-box" role="alert">{{ error }}</div>
+      <button class="btn small" @click="recycleOpen=!recycleOpen">会话回收站（{{ removed.length }}）</button><section v-if="recycleOpen" class="session-create"><p>会话记录和图片一起保留，可随时恢复。</p><div v-for="r in removed" :key="r.token" class="row"><span>{{ r.title }}</span><button class="btn small ml-auto" :disabled="busy" @click="restore(r.token)">恢复会话</button></div></section>
       <section v-if="creating" class="session-create">
         <div class="row"><h3>新建会话</h3><button class="icon-btn ml-auto" :disabled="busy" title="取消新建" @click="creating=false"><Icon name="x" /></button></div>
         <label>会话名称（可选）<input v-model="title" class="input" maxlength="100" placeholder="给这次尝试起个名字" :disabled="busy"></label>
@@ -114,8 +117,8 @@ async function close() { current.value = null; await refresh() }
       <div v-if="!sessions.length && !creating" class="session-empty"><Icon name="chat" :size="36" /><p>暂无会话</p><button class="btn primary" @click="newSession()">创建第一个会话</button></div>
       <div class="session-grid">
         <article v-for="s in sessions" :key="s.id" class="session-card">
-          <button class="session-open" :disabled="busy" @click="open(s.id)"><img v-if="s.image" :src="s.image.url" alt="" loading="lazy"><span v-else class="session-placeholder"><Icon name="chat" :size="26" /></span><span><b>{{ s.title }}</b><small>{{ s.versions }} 个状态 · {{ s.messages }} 次输入</small><small>{{ new Date(s.updatedAt).toLocaleString('zh-CN') }}</small></span><Icon name="arrow" /></button>
-          <div v-if="deleting===s.id" class="session-remove"><span>删除此会话记录？图库图片会保留。</span><button class="btn small" :disabled="busy" @click="deleting=null">取消</button><button class="btn small primary" :disabled="busy" @click="remove(s.id)">确认删除</button></div>
+          <button class="session-open" :disabled="busy" @click="open(s.id)"><img v-if="s.image && !s.image.missing" :src="s.image.url" alt="" loading="lazy"><span v-else class="session-placeholder"><Icon name="chat" :size="26" /></span><span><b>{{ s.title }}</b><small>{{ s.versions }} 个状态 · {{ s.messages }} 次输入</small><small>{{ new Date(s.updatedAt).toLocaleString('zh-CN') }}</small></span><Icon name="arrow" /></button>
+          <div v-if="deleting===s.id" class="session-remove"><span>将此会话移入回收站？历史记录和图片会保留，可恢复。</span><button class="btn small" :disabled="busy" @click="deleting=null">取消</button><button class="btn small primary" :disabled="busy" @click="remove(s.id)">确认删除</button></div>
           <button v-else class="session-delete" :disabled="busy" title="删除会话" @click="deleting=s.id"><Icon name="trash" :size="14" />删除</button>
         </article>
       </div>

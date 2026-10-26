@@ -67,10 +67,10 @@ const pushUpdate = patch => {
 const { registerTaskIpc } = require('../src/main/task-ipc.ts')
 const manager = registerTaskIpc((channel, payload) => { if (win && !win.isDestroyed()) win.webContents.send(channel, payload) })
 for (const [name, handler] of Object.entries({
-  'settings:get': () => getSettings(), 'settings:save': (_, p) => saveSettings(p), 'db:status': () => tagStore.status(),
+  'images:cleanup-status':()=>({pending:0,message:''}), 'settings:get': () => getSettings(), 'settings:save': (_, p) => saveSettings(p), 'db:status': () => tagStore.status(),
   'window:dark-titlebar': () => {}, 'skills:list': () => [], 'mcp:info': () => null, 'update:check': () => updateInfo,
   'update:state': () => updateInfo, 'update:download': () => { downloadRequests++ }, 'update:install': () => { installRequests++ },
-  'nai:list': () => [], 'nai:freeCheck': () => ({ ok: false, reasons: [], notes: [] }), 'pages:list': () => [],
+  'nai:list': () => [], 'nai:freeCheck': () => ({ ok: false, reasons: [], notes: [] }), 'pages:removed': () => [], 'pages:list': () => [],
   'prompt:analyze': () => ({ tokens: [], stats: { total: 0, valid: 0, alias: 0, unknown: 0, natural: 0, text: 0 } })
 })) ipcMain.handle(name, handler)
 

@@ -11,6 +11,7 @@ export interface PageRegion {
   accepted: InpaintDraft | null
 }
 export interface PageEditorState {
+  model?: NaiVersion
   draft: InpaintDraft
   regions: PageRegion[]
   params: NaiGenParams
@@ -22,10 +23,15 @@ export interface PageVersion {
   label: string
   image: NaiImage | null
   createdAt: number
+  /** Each candidate keeps its stable id; groupId identifies a generation scheme. */
+  groupId?: string
+  groupNumber?: number
+  candidateNumber?: number
+  schemeKey?: string
   editor: PageEditorState
   /** Immutable starting draft/settings; not a claim about imported image generation parameters. */
-  initial?: { draft: InpaintDraft; params: NaiGenParams }
-  generated?: { draft: InpaintDraft; params: NaiGenParams; execution: PageExecution; sourceVersionId: string; inpaint?: { mask: string; strength: number; label?: string; instruction?: string; target?: number | null } }
+  initial?: { model?: NaiVersion; draft: InpaintDraft; params: NaiGenParams }
+  generated?: { model?: NaiVersion; draft: InpaintDraft; params: NaiGenParams; execution: PageExecution; sourceVersionId: string; inpaint?: { mask: string; strength: number; label?: string; instruction?: string; target?: number | null } }
 }
 export interface PageExecution { kind: 'generate' | 'inpaint'; regionId: string | null }
 export interface PageAgentIdentity { sessionId: string; name: string }
@@ -84,6 +90,7 @@ export interface PageWorkspace {
   updatedAt: number
   revision: number
   currentVersionId: string
+  latestGeneratedVersionId?: string
   versions: PageVersion[]
   messages: PageMessage[]
   composer: string
@@ -91,10 +98,22 @@ export interface PageWorkspace {
   agentMode?: 'internal' | 'external'
   externalAgent?: PageAgentIdentity | null
 }
+
+export function pageGroups(w: PageWorkspace) {
+  const groups: { id: string; label: string; versions: PageVersion[] }[] = []
+  for (const v of w.versions) {
+    const id = v.groupId ?? v.id
+    let group = groups.find(g => g.id === id)
+    if (!group) { group = { id, label: v.groupNumber ? `方案 V${v.groupNumber}` : v.label, versions: [] }; groups.push(group) }
+    group.versions.push(v)
+  }
+  return groups
+}
 export interface PageWorkspaceSummary {
   id: string; title: string; updatedAt: number; image: NaiImage | null; versions: number; messages: number
 }
 export type PageAction =
+  | { type: 'recipe'; request: import('./types').NaiGenRequest }
   | { type: 'notes'; title: string; goal: string; preserve: string; composer: string }
   | { type: 'editor'; versionId: string; editor: PageEditorState }
   | { type: 'switch'; versionId: string }
@@ -133,8 +152,8 @@ export function pageDraft(v: PageVersion, regionId: string | null): InpaintDraft
   return v.editor.draft
 }
 /** Serializable on both sides; no model-generated digest is trusted. */
-export function pageContextKey(v: PageVersion, regionId: string | null, notes?: Pick<PageWorkspace, 'goal' | 'preserve'> & { execution?: PageExecution }): string {
-  return JSON.stringify([v.id, pageDraft(v, regionId), v.editor.params, v.editor.strength, v.editor.regions.map(r => [r.id, r.mask, r.instruction, r.target]), notes?.goal, notes?.preserve, notes?.execution])
+export function pageContextKey(v: PageVersion, regionId: string | null, notes?: Pick<PageWorkspace, 'goal' | 'preserve'> & { execution?: PageExecution; model?: NaiVersion }): string {
+  return JSON.stringify([v.id, pageDraft(v, regionId), v.editor.params, v.editor.strength, v.editor.regions.map(r => [r.id, r.mask, r.instruction, r.target]), notes?.goal, notes?.preserve, notes?.execution, notes?.model])
 }
 
 export function pageChanges(before: InpaintDraft, after: InpaintDraft): InpaintChange[] {

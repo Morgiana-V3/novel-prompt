@@ -4,6 +4,9 @@ import type { NaiFreeCheck, NaiGenParams, NaiGenResult, NaiImage, NaiNoiseSchedu
 import { state, copy, toast, importPrompt, workKey, cleanErr, DEFAULT_PARAMS, DEFAULT_GEN, GEN_PARAMS_KEY, loadGenParams, type GenOnly } from '../store'
 import { resizeWithin } from '../autosize'
 import { readPngPrompt, type ImportedPrompt } from '@shared/prompt-import'
+import RecipeLibrary from '../components/RecipeLibrary.vue'
+import type { NaiGenRequest } from '@shared/types'
+import { applyWorkspace, saveSettings } from '../store'
 import Icon from '../components/Icon.vue'
 import Mascot from '../components/Mascot.vue'
 import PromptEditor from '../components/PromptEditor.vue'
@@ -80,9 +83,40 @@ const steps = ref<string[]>([])
 const error = ref('')
 const last = ref<NaiGenResult | null>(null)
 const gallery = ref<NaiImage[]>([])
+const recipeOpen = ref(false), retentionSaving = ref(false)
+const favoriteId = ref('')
+const currentRecipe = computed<NaiGenRequest>(() => ({ base: state.prompt, negative: state.negative,
+  characters: state.characters.filter(c => c.prompt.trim()).map(c => ({ ...c })),
+  version: version.value, params: { ...gen, ...params, seed: gen.seed === null || (gen.seed as unknown) === '' ? null : Number(gen.seed) } }))
+const galleryFilter = ref('all')
+const visibleGallery = computed(() => gallery.value.filter(g => galleryFilter.value === 'all' || g.storage === galleryFilter.value))
+const galleryHint = computed(() => ({ all: '临时未留存：退出软件后清理；已留存与工作台归档：持续保留。', temporary: '仅临时保存，软件完全退出后清理。满意的图片可点击「留存图片」。', saved: '手动留存或开启自动留存后的图片，退出软件后仍保留。', workspace: '工作台的版本图片，随会话保留。' }[galleryFilter.value]))
+async function toggleRetention(event: Event) {
+  retentionSaving.value = true
+  try { await saveSettings({ naiAutoSave: (event.target as HTMLInputElement).checked }) } catch(e) { toast(cleanErr(e)); (event.target as HTMLInputElement).checked = !!state.settings?.naiAutoSave } finally { retentionSaving.value = false }
+}
+async function retain(images: NaiImage[]) {
+  try { for (const img of images) await window.api.naiRetain(img.name); await refreshGallery(); toast('已留存到图库') } catch(e) { toast(cleanErr(e)) }
+}
+async function favorite(img: NaiImage) {
+  try { favoriteId.value = (await window.api.recipesCreate(img.name)).id; toast('已收藏此图的完整生成配置'); recipeOpen.value = true } catch(e) { toast(cleanErr(e)) }
+}
+async function applyRecipe(r: NaiGenRequest) {
+  try {
+    await saveSettings({naiVersion:r.version}); applyWorkspace(r, '加载收藏配置前')
+    for (const k of Object.keys(params) as (keyof typeof params)[]) (params as Record<string, unknown>)[k] = r.params[k]
+    for (const k of Object.keys(gen) as (keyof GenOnly)[]) (gen as unknown as Record<string, unknown>)[k] = r.params[k]
+    recipeOpen.value = false; toast('配置已加载，可调整后生成')
+  } catch(e) { toast(cleanErr(e)) }
+}
 const current = computed({
   get: () => state.currentImage,
   set: (image: NaiImage | null) => { state.currentImage = image }
+})
+const latestBatchTemporary = computed(() => {
+  if (!current.value || !last.value?.images.some(i => i.name === current.value!.name)) return []
+  const names = new Set(last.value.images.map(i => i.name))
+  return gallery.value.filter(g => names.has(g.name) && g.storage === 'temporary')
 })
 const lightbox = ref(false)
 const posEditing = ref(false)
@@ -115,7 +149,6 @@ const matchedPreview = computed(() => {
   if (!lp || !current.value) return null
   return state.imageKeys[current.value.name] === lp.key ? lp.result : null
 })
-const previewIsCurrent = computed(() => !!state.lastPreview && state.lastPreview.key === workKey())
 
 async function refreshSub() {
   if (!hasToken.value) return
@@ -132,7 +165,7 @@ async function refreshSub() {
 
 async function refreshGallery() {
   gallery.value = await window.api.naiList()
-  if (current.value && !gallery.value.some((g) => g.name === current.value!.name)) current.value = null
+  if (current.value) current.value = gallery.value.find(g => g.name === current.value!.name) ?? null
 }
 
 let checkTimer: ReturnType<typeof setTimeout> | undefined
@@ -275,6 +308,9 @@ const openFolder = () => window.api.naiReveal()
 
 async function readMeta(img: NaiImage): Promise<ImportedPrompt | null> {
   try {
+    const recipe = await window.api.naiRecipe(img.name)
+    if (recipe) return { base: recipe.request.base, negative: recipe.request.negative, characters: recipe.request.characters,
+      width: recipe.request.params.width, height: recipe.request.params.height, structured: true, fromMetadata: true }
     const bytes = await window.api.naiReadImage(img.name)
     return await readPngPrompt(new Blob([new Uint8Array(bytes)], { type: 'image/png' }))
   } catch (e) {
@@ -294,9 +330,9 @@ async function previewImage(img: NaiImage) {
   state.tab = 'preview'
 }
 
-const galleryIndex = computed(() => gallery.value.findIndex(g => g.name === current.value?.name))
+const galleryIndex = computed(() => visibleGallery.value.findIndex(g => g.name === current.value?.name))
 function changeImage(delta: number) {
-  const next = gallery.value[galleryIndex.value + delta]
+  const next = visibleGallery.value[galleryIndex.value + delta]
   if (next) current.value = next
 }
 
@@ -352,7 +388,8 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
 
         <div class="field-head gen-params-head">
           <label class="field-label">生成参数</label>
-          <button class="btn ghost small ml-auto" :disabled="isDefault" title="步数、Guidance、采样器、画幅等全部恢复默认" @click="resetDefaults">
+          <button class="btn ghost small ml-auto" @click="recipeOpen = true">配置收藏</button>
+          <button class="btn ghost small" :disabled="isDefault" title="步数、Guidance、采样器、画幅等全部恢复默认" @click="resetDefaults">
             <Icon name="reset" :size="14" />恢复默认
           </button>
         </div>
@@ -430,15 +467,15 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
       <footer class="pane-foot">
         <div v-if="error" class="error-box"><Icon name="warn" :size="16" />{{ error }}</div>
         <div class="row run-bar">
-          <button class="btn accent big" :disabled="running || inpaintBusy" :title="`生成（${runKeyLabel}）`" @click="run">
-            <Icon name="image" :size="17" :class="{ 'spin-slow': running }" />
-            {{ running ? '正在生成' : gen.count > 1 ? `生成 ${gen.count} 张` : '生成' }}<span v-if="!running" class="kbd">{{ runKeyShort }}</span>
-          </button>
-          <button v-if="running" class="btn ghost" :disabled="cancelling" title="当前这张完成后停止（Esc）" @click="cancel"><Icon name="stop" :size="15" />{{ cancelling ? '即将停止' : '停止' }}</button>
-          <span class="pill">{{ version === 'v5' ? 'V5 Full' : 'V4.5 Full' }}</span>
-          <div class="actions ml-auto">
-            <button class="btn ghost small" :title="previewIsCurrent ? '这套提示词已经推测过' : '先让 AI 推测一下会画成什么样'" @click="state.tab = 'preview'">
-              <Icon name="eye" :size="14" />{{ previewIsCurrent ? '查看推测' : '先推测画面' }}
+          <label class="retention-toggle" title="自动留存普通生图，开关从下一批生效。关闭时，临时图在软件完全退出后清理；后台任务或 Agent 连接期间仍保留。工作台图片始终归档。">
+            <input type="checkbox" :checked="!!state.settings?.naiAutoSave" :disabled="retentionSaving" @change="toggleRetention">
+            自动留存
+          </label>
+          <div class="run-actions">
+            <button v-if="running" class="btn ghost" :disabled="cancelling" title="当前这张完成后停止（Esc）" @click="cancel">{{ cancelling ? '即将停止' : '停止' }}</button>
+            <button class="btn accent" :disabled="running || inpaintBusy" :title="`生成（${runKeyLabel}）`" @click="run">
+              <Icon name="image" :size="17" :class="{ 'spin-slow': running }" />
+              {{ running ? '正在生成' : gen.count > 1 ? `生成 ${gen.count} 张` : '生成' }}<span v-if="!running" class="kbd">{{ runKeyShort }}</span>
             </button>
           </div>
         </div>
@@ -452,7 +489,7 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
       </div>
       <div v-else-if="!current && !gallery.length" class="empty">
         <Mascot :mood="hasToken ? 'idle' : 'key'" :size="230" />
-        <p v-if="hasToken">生图用的是「当前提示词」，和 AI 优化、画面推测是同一份。点「生成」就能直接看到效果，图会保存在本机图库，可以预览、下载，也能读回图里的提示词。</p>
+        <p v-if="hasToken">生图用的是「当前提示词」，和 AI 优化、画面推测是同一份。点「生成」就能直接看到效果，图片默认临时保存，满意后可留存到图库，或开启自动留存。</p>
         <p v-else>要先在「设置 / 数据」里填写 NovelAI 的 Persistent API Token 才能出图哦</p>
         <button v-if="!hasToken" class="btn primary" @click="state.tab = 'settings'"><Icon name="sliders" :size="16" />去设置</button>
       </div>
@@ -474,7 +511,7 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
         <div class="result-card viewer" v-if="current">
           <div class="result-head">
             <span class="group-badge pink"><Icon name="image" :size="14" /></span>
-            <h3>{{ current.width && current.height ? `${current.width}×${current.height}` : '图片' }}</h3>
+            <span class="pill">{{ current.storage === 'temporary' ? '临时' : current.storage === 'workspace' ? '工作台存档' : '已留存' }}</span><h3>{{ current.width && current.height ? `${current.width}×${current.height}` : '图片' }}</h3>
             <button v-if="current.seed !== undefined" class="pill seed" title="复制种子" @click="copy(String(current.seed))">种子 {{ current.seed }}</button>
             <div class="actions ml-auto">
               <button class="icon-btn sm" title="固定这个种子" @click="useSeed(current)"><Icon name="paw" :size="15" /></button>
@@ -489,7 +526,9 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
             <img :src="current.url" :key="current.url" alt="生成结果" draggable="false" />
             <div v-if="running" class="viewer-busy"><Icon name="image" :size="16" class="spin-slow" />下一张生成中…</div>
           </div>
+          <div v-if="current.storage === 'temporary'" class="row" style="padding:10px 12px"><span class="muted small">满意这张？留存后下次启动仍可查看。</span><button class="btn small primary" @click="retain([current])">留存图片</button><button v-if="latestBatchTemporary.length" class="btn small" @click="retain(latestBatchTemporary)">留存最近一批剩余 {{ latestBatchTemporary.length }} 张</button></div>
           <div class="row" style="padding: 10px 12px; flex-wrap: wrap">
+            <button class="btn small" @click="favorite(current)">收藏此图配置</button>
             <button class="btn small accent" :disabled="running || inpaintBusy" @click="inpaintSource = current">
               <Icon name="edit" :size="14" />局部重绘
             </button>
@@ -520,13 +559,14 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
         <div class="group" v-if="gallery.length">
           <div class="group-head">
             <span class="group-badge nl"><Icon name="image" :size="14" /></span>
-            <h3>本机图库</h3>
-            <span class="group-count">{{ gallery.length }}</span>
+            <h3>图片</h3><ThemeSelect v-model="galleryFilter" :options="[{value:'all',label:'全部'},{value:'temporary',label:'临时未留存'},{value:'saved',label:'已留存'},{value:'workspace',label:'工作台归档'}]" aria-label="图库筛选" />
+            <span class="group-count">{{ visibleGallery.length }}</span>
             <button class="btn ghost small ml-auto" @click="openFolder"><Icon name="book" :size="14" />打开文件夹</button>
           </div>
+          <p class="muted small">{{ galleryHint }}</p>
           <div class="gallery">
             <div
-              v-for="(g, i) in gallery"
+              v-for="(g, i) in visibleGallery"
               :key="g.name"
               :class="['thumb', { on: current?.name === g.name }]"
               :style="{ '--i': Math.min(i, 20) }"
@@ -537,7 +577,7 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
               <div class="thumb-actions">
                 <button class="icon-btn sm" title="下载" aria-label="下载" @click.stop="saveAs(g)"><Icon name="download" :size="14" /></button>
                 <button v-if="pendingDelete === g.name" class="btn small danger-confirm" title="再点一次移到回收站" aria-label="确认删除" @click.stop="remove(g)">确认删除</button>
-                <button v-else class="icon-btn sm" title="删除（移到回收站）" aria-label="删除" @click.stop="remove(g)"><Icon name="trash" :size="14" /></button>
+                <button v-else-if="g.storage !== 'workspace'" class="icon-btn sm" title="删除（移到回收站）" aria-label="删除" @click.stop="remove(g)"><Icon name="trash" :size="14" /></button>
               </div>
             </div>
           </div>
@@ -545,10 +585,16 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
       </template>
     </section>
 
-    <ImageViewer v-if="lightbox && current" :image="current" :can-previous="galleryIndex > 0" :can-next="galleryIndex >= 0 && galleryIndex < gallery.length - 1"
+    <RecipeLibrary v-if="recipeOpen" :current-request="currentRecipe" :initial-id="favoriteId" @close="recipeOpen=false;favoriteId=''" @apply="applyRecipe" />
+    <ImageViewer v-if="lightbox && current" :image="current" :can-previous="galleryIndex > 0" :can-next="galleryIndex >= 0 && galleryIndex < visibleGallery.length - 1"
       @close="lightbox = false" @previous="changeImage(-1)" @next="changeImage(1)" />
     <PositionEditor v-if="posEditing" @close="posEditing = false" />
     <InpaintEditor v-if="inpaintSource" :image="inpaintSource" :params="{ ...gen, ...params }"
       @close="inpaintSource = null" @busy="inpaintBusy = $event" @generated="onInpaintGenerated" />
   </div>
 </template>
+
+<style scoped>
+.retention-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); white-space: nowrap; cursor: pointer; }
+.retention-toggle input { margin: 0; accent-color: var(--pink); }
+</style>

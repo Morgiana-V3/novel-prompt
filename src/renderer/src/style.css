@@ -251,10 +251,18 @@ kbd {
 .pane.left.with-foot { padding: 0; gap: 0; overflow: hidden; }
 .pane-body { flex: 1; min-height: 0; padding: 20px 22px 24px; display: flex; flex-direction: column; gap: 14px; }
 .pane-body > * { flex-shrink: 0; }
-.pane-foot { flex: none; display: flex; flex-direction: column; gap: 10px; padding: 12px 22px; background: var(--panel); border-top: 1px solid var(--line); }
+/* 各页常态底栏统一为 54px；报错时允许展开，避免遮住操作按钮。 */
+.pane-foot { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 10px 16px 11px; background: var(--panel); border-top: 1px solid var(--line); container-type: inline-size; }
 .pane-foot .error-box { max-height: 132px; overflow: auto; }
 .pane-foot .row { flex-wrap: nowrap; min-width: 0; }
 .pane-foot .pill { flex: none; }
+.pane-foot .run-bar { gap: 8px; min-height: 32px; }
+.pane-foot .run-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-shrink: 0; }
+.pane-foot .run-actions > .btn { flex-shrink: 0; }
+@container (max-width: 360px) {
+  .pane-foot .run-bar .kbd { display: none; }
+  .pane-foot .run-actions > .btn { padding: 0 10px; }
+}
 /* 快捷键提示放进主按钮里，不再单独占一块位置 */
 .btn .kbd {
   margin-left: 4px; padding: 1px 6px; border-radius: 6px; font-size: 11px; font-weight: 500; letter-spacing: 0;

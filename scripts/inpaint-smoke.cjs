@@ -76,10 +76,10 @@ net.fetch = async (url, init) => {
 const handlers = {
   'tasks:list': () => ({ revision: 0, tasks: [] }),
   'window:dark-titlebar': (event, dark) => BrowserWindow.fromWebContents(event.sender)?.setTitleBarOverlay({color:'#00000000',symbolColor:dark?'#f7f7f9':'#6b6c75'}),
-  'settings:get': () => getSettings(), 'settings:save': (_, p) => saveSettings(p),
+  'images:cleanup-status':()=>({pending:0,message:''}), 'settings:get': () => getSettings(), 'settings:save': (_, p) => saveSettings(p),
   'db:status': () => ({loaded:true, tagCount:0, aliasCount:0, zhCount:0, implicationCount:0}),
   'skills:list': () => skillService.getConfig(), 'mcp:info': () => null, 'update:check': () => null, 'update:state': () => null,
-  'pages:list': () => [],
+  'pages:removed': () => [], 'pages:list': () => [],
   'ai:inpaint-plan': async (_, req) => { lastPlanRequest=req; planController=new AbortController(); try{return await planInpaint(req,planController.signal)}finally{planController=null} },
   'ai:inpaint-plan-cancel': () => planController?.abort(),
   'prompt:analyze': () => ({tokens:[],stats:{total:0,valid:0,alias:0,unknown:0,natural:0,text:0}}),

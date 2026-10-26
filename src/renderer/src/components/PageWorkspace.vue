@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { PageExecution, PageAction, PageEditorState, PageMessage, PageWorkspace, PageAgentIdentity } from '@shared/page-workspace'
-import { pageChanges, pageContextKey, pageCurrent, pageLatestProposal } from '@shared/page-workspace'
+import { pageGroups, pageChanges, pageContextKey, pageCurrent, pageLatestProposal } from '@shared/page-workspace'
 import { changeLabel } from '@shared/inpaint-plan'
 import { cleanErr, state } from '../store'
 import { diffPrompt } from '../prompt-diff'
+import RecipeLibrary from './RecipeLibrary.vue'
+import type { NaiGenRequest } from '@shared/types'
 import Icon from './Icon.vue'
 import ImageViewport from './ImageViewport.vue'
 import InpaintEditor from './InpaintEditor.vue'
@@ -25,6 +27,35 @@ const work = ref<PageWorkspace>(props.workspace)
 const current = computed(() => pageCurrent(work.value))
 const viewedId = ref(work.value.currentVersionId)
 const viewed = computed(() => work.value.versions.find(v => v.id === viewedId.value) ?? current.value)
+const groups = computed(() => pageGroups(work.value).slice().reverse())
+const viewedGroup = computed(() => groups.value.find(g => g.versions.some(v => v.id === viewed.value.id))!)
+const groupCards = computed(() => groups.value.map(g => ({ ...g,
+  cover: g.versions.find(v => v.id === viewedId.value) ?? g.versions.find(v => v.id === current.value.id) ?? g.versions[g.versions.length - 1],
+  adopted: g.versions.some(v => v.id === current.value.id)
+})))
+const candidatesOpen = ref(false)
+watch(() => viewedGroup.value.id, () => { candidatesOpen.value = false })
+const recipeOpen = ref(false)
+const favoriteId = ref('')
+const currentRecipe = computed<NaiGenRequest>(() => ({ ...current.value.editor.draft, params: current.value.editor.params, version: work.value.model }))
+async function favorite() {
+  try { favoriteId.value = (await window.api.recipesCreateWorkspace(work.value.id, viewed.value.id)).id; recipeOpen.value = true } catch(e) { error.value = cleanErr(e) }
+}
+async function applyRecipe(request: NaiGenRequest) {
+  if (busy.value) return
+  operation.value = 'save'
+  try { await flushNotes(); await mutate({type:'recipe',request}); recipeOpen.value=false; pane.value='prompt' } catch(e) { error.value=cleanErr(e) } finally { operation.value='' }
+}
+async function recoverImage() {
+  if(busy.value)return
+  operation.value='save'
+  try { await flushNotes(); const w = await window.api.pagesRecoverImage(work.value.id, work.value.revision, viewed.value.id); if(w) { work.value=w; emit('updated') } } catch(e) {error.value=cleanErr(e)} finally {operation.value=''}
+}
+async function reuseSnapshot() {
+  const v=viewed.value, snapshot=v.generated??v.initial
+  if (!snapshot) return
+  await applyRecipe({...snapshot.draft,params:snapshot.params,version:snapshot.model??work.value.model})
+}
 const historical = computed(() => viewed.value.id !== current.value.id)
 const regionId = ref<string | null>(null)
 const region = computed(() => current.value.editor.regions.find(r => r.id === regionId.value))
@@ -76,7 +107,7 @@ const generateTask = computed(() => taskState.tasks.find(t => t.kind === 'page-g
 const notesValue = () => ({ type: 'notes' as const, title: title.value, goal: work.value.goal, preserve: work.value.preserve, composer: composer.value })
 const savedNotes = ref(JSON.stringify(notesValue()))
 const label = (id: string) => work.value.versions.find(v => v.id === id)?.label ?? '历史版本'
-function shortVersion(id: string) { const v=work.value.versions.find(v=>v.id===id); if(!v)return '历史'; const index=work.value.versions.indexOf(v); return index===0 ? (v.image?'原稿':'起点') : `版本 ${index}` }
+function shortVersion(id: string) { const v=work.value.versions.find(v=>v.id===id); if(!v)return '历史'; if(v.groupId)return v.label; const index=work.value.versions.indexOf(v); return index===0 ? (v.image?'原稿':'起点') : `版本 ${index}` }
 function versionDetail(v: PageWorkspace['versions'][number]) { return [v.label,v.parentId?`来源：${label(v.parentId)}`:'',v.generated?`${v.generated.execution.kind==='inpaint'?'局部重绘':'提示词生成'} · 种子 ${v.generated.params.seed}`:''].filter(Boolean).join('\n') }
 const time = (at: number) => new Date(at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 const status = (s: string) => ({ pending: '待采纳', accepted: '已采纳', rejected: '未采纳', withdrawn: '已撤销' }[s] ?? s)
@@ -179,7 +210,7 @@ async function generate() {
   try {
     await flushNotes()
     work.value = await window.api.pagesGenerate(work.value.id, work.value.revision, JSON.parse(JSON.stringify(work.value.execution)), frontendContext?.actionId)
-    viewedId.value = current.value.id; pane.value = 'canvas'; if(!current.value.editor.regions.some(r=>r.id===regionId.value))regionId.value=null; emit('updated')
+    await nextTick(); viewedId.value = work.value.latestGeneratedVersionId ?? current.value.id; pane.value = 'canvas'; if(!current.value.editor.regions.some(r=>r.id===regionId.value))regionId.value=null; emit('updated')
   } catch (e) { error.value = cleanErr(e); try { work.value = await window.api.pagesRead(work.value.id) } catch { /* Keep existing state. */ } }
   finally { operation.value = ''; progress.value = ''; await scrollEnd() }
 }
@@ -213,13 +244,13 @@ async function refreshOverlay() {
 watch([displayRegion, viewedId, () => current.value.id], refreshOverlay)
 watch(viewedId, async () => { zoom.value = 100; await nextTick(); viewport.value?.reset() })
 async function prepareLeave(): Promise<boolean> {
-  if (busy.value || editing.value || renaming.value) { error.value='请先保存或完成当前编辑，再继续操作。'; return false }
+  if (busy.value || editing.value || renaming.value || recipeOpen.value) { error.value='请先保存或完成当前编辑，再继续操作。'; return false }
   try { await flushNotes(); return true } catch(e) { error.value=cleanErr(e); return false }
 }
 function desktopState() {
   const latest = pageLatestProposal(work.value, current.value.id)
   return { id: work.value.id, revision: work.value.revision, title: title.value, versionId: current.value.id,
-    regionId: regionId.value, pane: pane.value, editing: !!operation.value || editingPrompt.value || editing.value || renaming.value, composer: composer.value,
+    regionId: regionId.value, pane: pane.value, editing: !!operation.value || editingPrompt.value || editing.value || renaming.value || recipeOpen.value, composer: composer.value,
     viewedVersionId: viewed.value.id, historyOpen: historyOpen.value, references: [...references.value], image: viewed.value.image ? { ...viewed.value.image } : null,
     regions: current.value.editor.regions.map(r => ({ id:r.id, label:r.label, instruction:r.instruction, target:r.target })),
     latestProposal: latest?.proposal ? { id:latest.id, title:latest.proposal.title, status:latest.proposal.status } : null,
@@ -307,10 +338,12 @@ async function endRemote(lease: string) {
   if (remoteLease !== lease) return
   try {
     const oldVersion = current.value.id
+    const oldGenerated = work.value.latestGeneratedVersionId
     const oldProposal = pageLatestProposal(work.value, oldVersion)?.id
     work.value = await window.api.pagesRead(work.value.id)
     title.value = work.value.title; composer.value = work.value.composer; savedNotes.value = JSON.stringify(notesValue())
-    if (oldVersion !== current.value.id) { viewedId.value = current.value.id; pane.value = 'canvas' }
+    if (oldGenerated !== work.value.latestGeneratedVersionId && work.value.latestGeneratedVersionId) { viewedId.value = work.value.latestGeneratedVersionId; pane.value = 'canvas' }
+    else if (oldVersion !== current.value.id) { viewedId.value = current.value.id; pane.value = 'canvas' }
     else if (pageLatestProposal(work.value, current.value.id)?.id !== oldProposal && pageLatestProposal(work.value, current.value.id)?.proposal?.status === 'pending') { suggestionVersionId.value = current.value.id; pane.value = 'suggestions' }
     await refreshOverlay(); await scrollEnd(); emit('updated')
   } finally { remoteLease = ''; remoteBusy.value = false }
@@ -321,7 +354,7 @@ async function close() {
   try { await flushNotes(); emit('close') } catch (e) { error.value = `保存失败，窗口暂未关闭：${cleanErr(e)}` }
 }
 function key(e: KeyboardEvent) {
-  if (editing.value || state.tab !== 'workspace' || document.querySelector('.pos-mask')) return
+  if (editing.value || state.tab !== 'workspace' || document.querySelector('.pos-mask, .recipe-backdrop')) return
   if (e.key === 'Escape') { e.preventDefault(); if(historyOpen.value)historyOpen.value=false }
 
 }
@@ -338,10 +371,15 @@ onBeforeUnmount(() => { alive = false; clearTimeout(notesTimer); window.removeEv
         <button v-else class="pw-rename" :disabled="busy" title="重命名会话" @click="startRename"><b>{{ title }}</b><Icon name="edit" :size="14" /></button>
       </div>
       <span class="pill">{{ work.model.toUpperCase() }}</span>
-      <button class="btn ghost small" @click="historyOpen=!historyOpen"><Icon name="layers" :size="14"/>历史 {{ work.versions.length }}</button>
+      <button class="btn ghost small" @click="historyOpen=!historyOpen"><Icon name="layers" :size="14"/>版本 {{ groups.filter(g=>g.versions.some(v=>v.parentId)).length }} · 图片 {{ work.versions.filter(v=>v.image).length }}</button>
     </header>
     <div class="pw-main">
-      <aside v-if="historyOpen" class="pw-history scroll"><div class="pw-section-title">历史</div><button v-for="v in work.versions.slice().reverse()" :key="v.id" class="pw-version" :disabled="editingPrompt" :class="{selected:viewedId===v.id}" :title="versionDetail(v)" @click="viewedId=v.id;pane='canvas'"><img v-if="v.image" :src="v.image.url" alt="" loading="lazy"><div v-else class="pw-version-empty"><Icon name="chat"/></div><div><b :title="v.label">{{ shortVersion(v.id) }}</b><span v-if="v.id===current.id" class="pw-current">当前采用</span></div></button></aside>
+      <aside v-if="historyOpen" class="pw-history scroll" aria-label="配置版本">
+        <button v-for="group in groupCards" :key="group.id" class="pw-version" :disabled="editingPrompt" :class="{selected:viewedGroup.id===group.id}" @click="viewedId=group.cover.id;pane='canvas'">
+          <img v-if="group.cover.image && !group.cover.image.missing" :src="group.cover.image.url" @error="group.cover.image.missing=true" alt="" loading="lazy"><div v-else class="pw-version-empty"><Icon name="chat"/></div>
+          <div><b>{{ group.label.replace('方案 ', '版本 ') }}</b><span v-if="group.adopted" class="pw-current">当前采用</span><small>{{ group.versions.filter(v=>v.image).length }} 张图片</small></div>
+        </button>
+      </aside>
       <div class="pw-canvas-column">
         <div class="pw-toolbar"><div class="pw-view-tabs seg"><button :class="{on:pane==='canvas'}" :disabled="editingPrompt" @click="pane='canvas'">画布</button><button :class="{on:pane==='prompt'}" @click="pane='prompt'">当前提示词</button><button :class="{on:pane==='changes'}" :disabled="editingPrompt" @click="review(current.id)">修改对比</button><button :class="{on:pane==='suggestions'}" :disabled="editingPrompt" @click="showSuggestions(viewedId)">AI 建议 <span v-if="pendingCount" class="pw-suggestion-dot" aria-label="有待采纳建议"></span></button></div><div v-if="pane==='prompt'" class="pw-prompt-actions">
           <template v-if="editingPrompt"><button class="btn ghost small" :disabled="promptEditor?.saving" @click="promptEditor?.cancel()">取消编辑</button><button class="btn primary small" :disabled="promptEditor?.saving" @click="promptEditor?.save()">{{ promptEditor?.saving?'保存中…':'保存草稿' }}</button></template>
@@ -349,10 +387,19 @@ onBeforeUnmount(() => { alive = false; clearTimeout(notesTimer); window.removeEv
         </div></div>
         <template v-if="pane==='canvas'">
           <div class="pw-canvas-bar"><div><b>{{ viewed.label }}</b><span v-if="viewed.image" class="muted small">{{ viewed.image.width }} × {{ viewed.image.height }}</span></div><button v-if="viewed.image" class="btn ghost small" @click="viewport?.reset()">{{ zoom }}% · 适应画布</button></div>
-          <div v-if="historical" class="pw-history-banner"><span>查看历史 · 当前采用「{{ current.label }}」</span><div><button v-if="viewed.image" class="btn small" :disabled="busy" @click="reference(viewed.id)">引用此版</button><button class="btn small primary" :disabled="busy" @click="continueVersion(viewed.id)">从此版继续</button></div></div>
-          <ImageViewport v-if="viewed.image" ref="viewport" class="pw-viewport" :width="viewed.image.width||1" :height="viewed.image.height||1" v-model:zoom="zoom" label="创作画布"><img :src="viewed.image.url" :alt="viewed.label" draggable="false"><img v-if="overlay && showMask && !historical" class="pw-overlay" :src="overlay" alt="区域标记" draggable="false"></ImageViewport>
-          <div v-else class="pw-blank"><Icon name="image" :size="40"/><span>暂无图片</span></div>
-          <div v-if="current.image" class="pw-canvas-actions"><button class="btn accent small" :disabled="busy" @click="openEditor"><Icon name="edit" :size="14"/>区域批注 / 遮罩</button><button v-if="overlay&&!historical" class="btn ghost small" @click="showMask=!showMask">{{ showMask?'隐藏标记':'显示标记' }}</button><span v-if="displayRegion&&!historical" class="muted small">{{ overlayMode==='execution'?'执行遮罩':'说明区域' }} {{ displayRegion.label }}</span></div>
+          <div v-if="viewed.groupId" class="pw-candidates">
+            <button class="btn ghost small" :aria-expanded="candidatesOpen" @click="candidatesOpen=!candidatesOpen">{{ candidatesOpen ? '收起' : '查看' }}本版本的 {{ viewedGroup.versions.length }} 张生成图</button>
+            <div v-if="candidatesOpen" class="pw-candidate-list" aria-label="同配置生成结果">
+              <button v-for="(v,i) in viewedGroup.versions" :key="v.id" :class="{selected:v.id===viewedId}" :title="versionDetail(v)" @click="viewedId=v.id;candidatesOpen=false">
+                <img v-if="v.image && !v.image.missing" :src="v.image.url" @error="v.image.missing=true" alt="" loading="lazy"><span v-else class="pw-candidate-missing">图片缺失</span>
+                <span>第 {{ i+1 }} 张{{ v.id===current.id ? ' · 已采用' : '' }}</span>
+              </button>
+            </div>
+          </div>
+          <div v-if="historical" class="pw-history-banner"><span>预览候选 / 历史 · 当前采用「{{ current.label }}」</span><div><button v-if="viewed.image" class="btn small" :disabled="busy" @click="reference(viewed.id)">引用此版</button><button class="btn small primary" :disabled="busy || viewed.image?.missing" @click="continueVersion(viewed.id)">采用这张 / 从此继续</button></div></div>
+          <ImageViewport v-if="viewed.image && !viewed.image.missing" ref="viewport" class="pw-viewport" :width="viewed.image.width||1" :height="viewed.image.height||1" v-model:zoom="zoom" label="创作画布"><img :src="viewed.image.url" @error="viewed.image.missing=true" :alt="viewed.label" draggable="false"><img v-if="overlay && showMask && !historical" class="pw-overlay" :src="overlay" alt="区域标记" draggable="false"></ImageViewport>
+          <div v-else class="pw-blank"><Icon name="image" :size="40"/><span>{{ viewed.image?.missing ? '图片文件缺失，生成记录仍保留' : '暂无图片' }}</span><button v-if="viewed.image?.missing" class="btn small" :disabled="busy" @click="recoverImage">恢复原图</button></div>
+          <div class="pw-canvas-actions"><button class="btn small" :disabled="busy" @click="recipeOpen=true">配置收藏</button><button v-if="viewed.image || viewed.generated" class="btn small" :disabled="busy" @click="favorite">收藏此图配置</button><button v-if="viewed.generated || viewed.initial" class="btn small" :disabled="busy" @click="reuseSnapshot">{{ viewed.generated ? '加载此图设置' : '加载起点草稿' }}</button></div><div v-if="current.image && !current.image.missing" class="pw-canvas-actions"><button class="btn accent small" :disabled="busy" @click="openEditor"><Icon name="edit" :size="14"/>区域批注 / 遮罩</button><button v-if="overlay&&!historical" class="btn ghost small" @click="showMask=!showMask">{{ showMask?'隐藏标记':'显示标记' }}</button><span v-if="displayRegion&&!historical" class="muted small">{{ overlayMode==='execution'?'执行遮罩':'说明区域' }} {{ displayRegion.label }}</span></div>
 
           <details v-if="historical" class="pw-historical-prompt scroll"><summary>此版本的提示词与参数</summary><pre>{{ JSON.stringify(viewed.generated ?? viewed.editor, (k,v)=>k==='regions'||k==='mask'?undefined:v, 2) }}</pre></details>
         </template>
@@ -367,7 +414,7 @@ onBeforeUnmount(() => { alive = false; clearTimeout(notesTimer); window.removeEv
           <ThemeSelect v-if="proposalOptions.length > 1" :model-value="latestProposal?.id ?? null" :options="proposalOptions" aria-label="历史建议记录" @update:model-value="selectedProposalId=typeof $event === 'string' ? $event : null"/><p v-if="!latestProposal" class="pw-empty-plan">此版本暂无修改建议</p>
           <article v-for="m in latestProposal ? [latestProposal] : []" :key="m.id" class="pw-proposal"><div class="row"><b>{{ m.proposal!.title }}</b><span class="pill ml-auto">{{ status(m.proposal!.status) }}</span></div><p class="pw-plan-kind">建议执行：{{ planLabel(m.proposal!.execution) }}</p><p v-if="m.proposal!.warning" class="pw-warning">{{ m.proposal!.warning }}</p><div v-for="(c,i) in m.proposal!.changes" :key="i" class="pw-change"><label>{{ changeLabel(c) }}</label><DiffChips :diff="diffPrompt(c.before,c.after)"/><p v-if="c.reason">{{ c.reason }}</p><details v-if="c.before||c.after"><summary>完整修改前后</summary><pre>{{ c.before||'（空）' }}</pre><pre>{{ c.after||'（空）' }}</pre></details></div><p v-if="!m.proposal!.changes.length" class="muted small">保持当前提示词，使用上述执行方式继续尝试。</p><p v-if="m.proposal!.status==='pending'&&stale(m)" class="muted small">上下文或执行设置已改变，请基于当前状态重新提出方案。</p><div v-if="m.proposal!.status==='pending'" class="row"><button class="btn small primary" :disabled="busy||stale(m)" @click="proposal(m,'accept')">采纳方案</button><button class="btn ghost small" :disabled="busy" @click="proposal(m,'reject')">不采用</button></div><button v-if="m.proposal!.status==='accepted'" class="btn ghost small" :disabled="busy||m.versionId!==current.id" @click="proposal(m,'undo')">撤销采纳</button></article>
         </div>
-        <div class="pw-execution" :title="work.execution.kind==='generate' ? '使用当前提示词重新生成整张图' : '以当前图片为底图，仅重绘所选遮罩'"><div class="row"><b>本次执行</b><ThemeSelect :model-value="work.execution.kind" :disabled="busy" :options="[{value:'generate',label:'按提示词生成新图'},{value:'inpaint',label:'局部重绘当前图片',disabled:!current.image||!current.editor.regions.length}]" @update:model-value="chooseExecution" /></div><div v-if="work.execution.kind==='inpaint'" class="row"><ThemeSelect :model-value="work.execution.regionId" :disabled="busy" :options="current.editor.regions.map(r=>({value:r.id,label:'遮罩 '+r.label}))" @update:model-value="id=>setExecution({kind:'inpaint',regionId:id})"/><button class="btn small ghost" @click="inspectMask">检查遮罩</button></div><div class="row"><span class="muted small">{{ current.editor.params.width }}×{{ current.editor.params.height }} · {{ current.editor.params.steps }} 步</span><button class="btn accent ml-auto" :disabled="busy || !current.editor.draft.base.trim()&&!current.editor.draft.characters.some(c=>c.prompt.trim())" @click="generate"><Icon name="wand" :size="14"/>{{ operation==='generate'?'正在执行…':work.execution.kind==='generate'?'生成新版本':'执行局部重绘' }}</button></div><div v-if="operation==='generate'" class="row pw-run-progress" role="status"><Icon name="paw" :size="13" class="spin-slow"/><span class="muted small grow">{{ progress || '正在执行…' }}</span><button v-if="generateTask" class="btn small ghost" :disabled="generateTask.status==='cancelling'" title="当前图片完成后停止，已生成的结果会保留" @click="cancelTask(generateTask.id)"><Icon name="stop" :size="13"/>{{ generateTask.status==='cancelling' ? '完成后停止' : '停止' }}</button></div></div>
+        <div class="pw-execution" :title="work.execution.kind==='generate' ? '使用当前提示词重新生成整张图' : '以当前图片为底图，仅重绘所选遮罩'"><div class="row"><b>本次执行</b><ThemeSelect :model-value="work.execution.kind" :disabled="busy" :options="[{value:'generate',label:'按提示词生成新图'},{value:'inpaint',label:'局部重绘当前图片',disabled:!current.image||current.image.missing||!current.editor.regions.length}]" @update:model-value="chooseExecution" /></div><div v-if="work.execution.kind==='inpaint'" class="row"><ThemeSelect :model-value="work.execution.regionId" :disabled="busy" :options="current.editor.regions.map(r=>({value:r.id,label:'遮罩 '+r.label}))" @update:model-value="id=>setExecution({kind:'inpaint',regionId:id})"/><button class="btn small ghost" @click="inspectMask">检查遮罩</button></div><div class="row"><span class="muted small">{{ current.editor.params.width }}×{{ current.editor.params.height }} · {{ current.editor.params.steps }} 步</span><button class="btn accent ml-auto" :disabled="busy || !current.editor.draft.base.trim()&&!current.editor.draft.characters.some(c=>c.prompt.trim())" @click="generate"><Icon name="wand" :size="14"/>{{ operation==='generate'?'正在执行…':work.execution.kind==='generate'?'生成候选':'执行局部重绘' }}</button></div><div v-if="operation==='generate'" class="row pw-run-progress" role="status"><Icon name="paw" :size="13" class="spin-slow"/><span class="muted small grow">{{ progress || '正在执行…' }}</span><button v-if="generateTask" class="btn small ghost" :disabled="generateTask.status==='cancelling'" title="当前图片完成后停止，已生成的结果会保留" @click="cancelTask(generateTask.id)">{{ generateTask.status==='cancelling' ? '完成后停止' : '停止' }}</button></div></div>
       </div>
       <aside class="pw-conversation"><div class="pw-thread-header"><div><Icon name="sparkle" :size="17"/><b>对话</b></div><span :title="agentLabel">{{ agentLabel }}</span></div><div class="pw-agent-mode"><ThemeSelect :model-value="work.agentMode ?? 'internal'" :disabled="busy" :options="[{value:'internal',label:'内置 AI'},{value:'external',label:'外部 Agent 接管'}]" aria-label="会话处理方式" @update:model-value="setAgentMode"/><span v-if="external" :class="{connected:agentConnected}">{{ agentConnected ? '已连接' : work.externalAgent ? '连接已断开' : '等待连接' }}</span></div><div class="pw-context"><span class="pw-context-dot"></span>当前采用 <b>{{ current.label }}</b><button v-if="historical" @click="viewedId=current.id">回到当前</button></div>
         <div class="pw-thread scroll" ref="thread" aria-live="polite"><div v-if="!work.messages.some(m=>m.role==='user')&&!pendingText" class="pw-welcome"><p>描述想生成或修改的内容</p></div>
@@ -377,6 +424,7 @@ onBeforeUnmount(() => { alive = false; clearTimeout(notesTimer); window.removeEv
         <div class="pw-compose"><div v-if="error" class="pw-error" role="alert">{{ error }}<button @click="error=''">×</button></div><div v-if="references.length" class="pw-reference-chips"><button v-for="id in references" :key="id" :disabled="busy" @click="reference(id)">引用 {{ label(id) }} ×</button></div><div v-if="current.editor.regions.length" class="pw-target"><ThemeSelect v-model="regionId" :options="regionOptions" :disabled="busy" aria-label="附加区域批注" @update:model-value="overlayMode='annotation'"/></div><div class="pw-input-wrap"><textarea v-autosize ref="input" v-model="composer" :disabled="busy" maxlength="6000" aria-label="持续讨论输入" placeholder="描述目标，或接着上次的结果继续说…" @keydown.enter.exact.prevent="!$event.isComposing&&send()"></textarea><button class="pw-send" :disabled="busy||!composer.trim()||external&&!!pendingRequest" :title="external ? '保存需求，等待外部 Agent 回复' : '发送'" @click="send"><Icon name="arrow" :size="18"/></button></div></div>
       </aside>
     </div>
+    <RecipeLibrary v-if="recipeOpen" workspace :current-request="currentRecipe" :initial-id="favoriteId" @close="recipeOpen=false;favoriteId=''" @apply="applyRecipe" />
     <InpaintEditor ref="inpaintEditor" v-if="editing&&current.image" :image="current.image" :params="current.editor.params" :initial-editor="current.editor" :initial-model="work.model" :initial-region-id="regionId" :save-editor="saveEditor" selection-only @close="closeEditor"/>
   </section>
 </template>
@@ -401,4 +449,5 @@ onBeforeUnmount(() => { alive = false; clearTimeout(notesTimer); window.removeEv
 @media(max-width:800px){.pw-history{position:absolute;left:0;top:46px;bottom:0;z-index:4;box-shadow:var(--shadow);width:170px}.pw-conversation{width:340px;max-width:52%;min-width:280px}.pw-header>.pill{display:none}.pw-header .btn{font-size:11px}.pw-thread{padding:6px 12px 15px}.pw-notes{padding:12px}}
 .pw-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0;min-height:52px;padding:8px 0;flex-wrap:wrap}.pw-view-tabs{margin:0;flex-shrink:0}.pw-prompt-actions{display:flex;align-items:center;gap:6px;margin-left:auto}.pw-execution>.row:last-child{margin-top:10px}.pw-execution{padding:14px 0;border-top:1px solid var(--line);flex-shrink:0}.pw-execution>.row{gap:10px;flex-wrap:wrap}.pw-execution>.row+.row{margin-top:8px}.pw-execution b{font-size:12px}.pw-execution p{font-size:11px;color:var(--text2);line-height:1.7;margin:8px 0}.pw-execution :deep(.theme-select){min-width:160px;flex:1}.pw-blank{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;color:var(--muted);gap:15px;text-align:center;padding:20px}.pw-blank p{font-size:12px;line-height:1.8}.pw-change-board{flex:1;min-height:0;padding:16px 0}.pw-change-board>h3{font-size:14px}.pw-change-board>.pw-proposal{margin:15px 0}.pw-plan-kind{font-size:12px;color:var(--pink-deep)}.pw-empty-plan{margin:50px 10px;color:var(--muted);font-size:13px}.pw-plan-link{display:block;padding:10px 12px;margin-top:10px;border:1px solid var(--pink-line);border-radius:10px;text-align:left;font-size:11px;color:var(--pink-deep)}.pw-locator-help{font-size:10px;color:var(--muted);margin:0 0 12px}.pw-understanding{padding:14px 24px;background:var(--panel);border-bottom:1px solid var(--line);display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px;max-height:180px;overflow:auto;flex-shrink:0}.pw-understanding p{white-space:pre-wrap;line-height:1.7;margin:5px 0}.pw-understanding>span{grid-column:1/-1;color:var(--muted);font-size:11px}.pw-used-skills{font-size:10px;color:var(--muted);margin-top:8px}.pw-version-empty{height:70px;display:grid;place-items:center;color:var(--pink)}.pw-historical-prompt{max-height:160px;font-size:11px;margin-bottom:10px;flex-shrink:0}.pw-historical-prompt pre,.pw-change-board pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px}.pw-history{max-width:18%}
 .pw-change>label{display:block;margin-bottom:8px}.pw-change :deep(.diff-row){padding:0;margin:0 0 10px}.pw-change :deep(.diff-prose){margin:10px 0}.pw-version b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pw-current{flex-shrink:0}.pw-version>div{min-width:0}
+.pw-candidates{position:relative;flex-shrink:0;margin-bottom:8px}.pw-candidate-list{position:absolute;top:100%;left:0;right:0;z-index:20;background:var(--bg);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 24px #0002;display:flex;gap:8px;overflow:auto;max-height:145px;padding:8px 4px;scrollbar-gutter:stable}.pw-candidate-list button{flex-shrink:0;display:flex;flex-direction:column;gap:5px;width:94px;padding:6px;border:1px solid var(--line);border-radius:10px;font-size:10px}.pw-candidate-list button.selected{border-color:var(--pink);background:var(--pink-soft)}.pw-candidate-list img,.pw-candidate-missing{height:74px;width:80px;object-fit:contain}.pw-candidate-missing{display:grid;place-items:center;color:var(--muted)}
 </style>

@@ -9,7 +9,7 @@ export const TASK_LABELS = {
   'page-chat': '工作台讨论',
   generate: '生成图片',
   inpaint: '局部重绘',
-  'page-generate': '生成会话新版本'
+  'page-generate': '生成会话候选'
 } as const
 
 export type TaskKind = keyof typeof TASK_LABELS

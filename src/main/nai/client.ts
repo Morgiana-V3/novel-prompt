@@ -1,7 +1,6 @@
-import { app, net } from 'electron'
-import { existsSync, mkdirSync, readdirSync, statSync, openSync, readSync, closeSync, readFileSync } from 'node:fs'
-import { writeFileAtomic as writeFileSync } from '../fs-safe'
-import { join } from 'node:path'
+import { net } from 'electron'
+import { statSync, readFileSync } from 'node:fs'
+import { legacyImageDir, libraryImagePath, listLibraryImages, storeGeneratedImage } from '../image-library'
 import type {
   AiCharacter,
   NaiFreeCheck,
@@ -15,7 +14,7 @@ import type {
 } from '../../shared/types'
 import { UC_PRESETS, joinPrompt, parsePosition, withQualityTags } from '../../shared/nai-presets'
 import { getSettings } from '../settings'
-import { isPng, pngSize, readZip } from './zip'
+import { isPng, readZip } from './zip'
 import { prepareInpaint, compositeInpaint, type PreparedInpaint } from './inpaint'
 
 /**
@@ -40,19 +39,14 @@ export const MODEL_ID: Record<NaiVersion, string> = {
 export const IMAGE_SCHEME = 'np-img'
 
 export function imageDir(): string {
-  const dir = join(app.getPath('userData'), 'images')
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-  return dir
+  return legacyImageDir()
 }
 
 /** 只接受图库目录下的 png 文件名，防止路径穿越 */
 export function imagePath(name: string): string | null {
-  if (!/^[\w.-]+\.png$/i.test(name)) return null
-  const p = join(imageDir(), name)
-  return existsSync(p) ? p : null
+  return libraryImagePath(name)
 }
 
-const urlOf = (name: string) => `${IMAGE_SCHEME}://img/${encodeURIComponent(name)}`
 
 function token(): string {
   const t = getSettings().naiToken.trim()
@@ -242,52 +236,7 @@ export function buildInpaintBody(req: NaiInpaintRequest, seed: number, prepared:
 
 /* ---------- 图库 ---------- */
 
-function stamp(d = new Date()): string {
-  const z = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`
-}
-
-function saveImage(png: Buffer, seed: number): NaiImage {
-  let name = `${stamp()}-${seed}.png`
-  for (let i = 2; existsSync(join(imageDir(), name)); i++) name = `${stamp()}-${seed}-${i}.png`
-  writeFileSync(join(imageDir(), name), png)
-  const size = pngSize(png)
-  return { name, url: urlOf(name), seed, width: size?.width, height: size?.height, createdAt: Date.now() }
-}
-
-function readHeader(path: string): Buffer {
-  const fd = openSync(path, 'r')
-  try {
-    const b = Buffer.alloc(24)
-    readSync(fd, b, 0, 24, 0)
-    return b
-  } finally {
-    closeSync(fd)
-  }
-}
-
-export function listImages(limit = 120): NaiImage[] {
-  const dir = imageDir()
-  return readdirSync(dir)
-    .filter((f) => /\.png$/i.test(f))
-    .map((name) => ({ name, at: statSync(join(dir, name)).mtimeMs }))
-    .sort((a, b) => b.at - a.at)
-    .slice(0, limit)
-    .map(({ name, at }) => {
-      const size = (() => {
-        try {
-          return pngSize(readHeader(join(dir, name)))
-        } catch {
-          return undefined
-        }
-      })()
-      // 文件名格式：日期-时分秒-种子[-序号].png（见 saveImage），种子在时间之后
-      const seed = /^\d{8}-\d{6}-(\d+)(?:-\d+)?\.png$/i.exec(name)?.[1]
-      return { name, url: urlOf(name), seed: seed ? Number(seed) : undefined, width: size?.width, height: size?.height, createdAt: at }
-    })
-}
-
-/* ---------- 生成 ---------- */
+export function listImages(limit = 120): NaiImage[] { return listLibraryImages(limit) }
 
 const randomSeed = () => Math.floor(Math.random() * 4_294_967_295)
 
@@ -317,8 +266,11 @@ export async function generateImages(
   req: NaiGenRequest | NaiInpaintRequest,
   onStep: (s: string) => void,
   isCancelled: () => boolean,
-  opts: { freeOnly?: boolean } = {}
+  opts: { freeOnly?: boolean; workspaceId?: string } = {}
 ): Promise<NaiGenResult> {
+  // Snapshot both request and retention once, before the first asynchronous operation.
+  req = structuredClone(req)
+  const storage = opts.workspaceId ? 'workspace' : getSettings().naiAutoSave ? 'saved' : 'temporary'
   let prepared: PreparedInpaint | undefined
   if ('inpaint' in req) {
     if (!req.inpaint || !Number.isFinite(req.inpaint.strength) || req.inpaint.strength < 0.01 || req.inpaint.strength > 1)
@@ -369,7 +321,15 @@ export async function generateImages(
       stopped = `第 ${i + 1} 张失败：${(e as Error).message}`
       break
     }
-    images.push(saveImage(png, seed))
+    const actual = buildBody(req, seed)
+    const actualParams = actual.parameters as { negative_prompt: string }
+    images.push(storeGeneratedImage(png, {
+      schema: 1, createdAt: Date.now(), sourceKind: prepared ? 'inpaint' : 'generate',
+      request: { base: actual.input as string, negative: actualParams.negative_prompt,
+        characters: req.characters.filter(c => c.prompt?.trim()).map(c => ({ ...c, prompt: c.prompt.trim(), negative: c.negative?.trim() ?? '' })), version: req.version,
+        params: { ...req.params, seed, count: 1, qualityTags: false, ucPreset: 'none',
+          noiseSchedule: prepared && (req.version === 'v5' || req.params.noiseSchedule === 'native') ? 'karras' : req.params.noiseSchedule } }
+    }, storage, opts.workspaceId))
 
     // 事后核验：分别比较订阅 Anlas 与购买 Anlas，只看总和可能掩盖分项变化
     let after: NaiSubscription | undefined
