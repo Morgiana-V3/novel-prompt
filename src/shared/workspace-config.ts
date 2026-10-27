@@ -33,3 +33,6 @@ export function patchWorkspaceConfig(editor:PageEditorState, patch:WorkspaceConf
   if(patch.strength!==undefined){if(typeof patch.strength!=='number'||!Number.isFinite(patch.strength)||patch.strength<.01||patch.strength>1)throw new Error('重绘强度无效');next.strength=patch.strength}
   return next
 }
+
+/** Shared MCP schema for the same configuration form and background patch. */
+export const WORKSPACE_CONFIG_SCHEMA = {type:'object',additionalProperties:false,properties:{draft:{type:'object',additionalProperties:false,properties:{base:{type:'string'},negative:{type:'string'},characters:{type:'array',maxItems:6,items:{type:'object',properties:{prompt:{type:'string'},negative:{type:'string'},position:{type:'string'}},required:['prompt','negative'],additionalProperties:false}}}},params:{type:'object',additionalProperties:false,properties:{count:{type:'integer',enum:[1,2,4]},qualityTags:{type:'boolean'},ucPreset:{type:'string',enum:['heavy','light','human','none']},width:{type:'integer'},height:{type:'integer'},steps:{type:'integer'},scale:{type:'number'},seed:{type:['integer','null']},cfgRescale:{type:'number'},sampler:{type:'string'},noiseSchedule:{type:'string'}}},strength:{type:'number'}}}

@@ -7,10 +7,15 @@ import { runFrontend } from '../frontend-operations'
 import { readPage } from '../page-workspaces'
 import { requireAgent } from '../agent-sessions'
 import { EXTERNAL_RESPONSE_SCHEMA } from './external-workspace-tools'
+import { WORKSPACE_CONFIG_SCHEMA } from '../../shared/workspace-config'
 
 const ID = { type: 'string', description: '当前已打开工作台的 id；先用 ui_open_workspace 打开' }
 const TOKEN = { type: 'string', description: '最新 get_app_state.desktop.token，界面变化时拒绝覆盖' }
 const WRITE = { readOnlyHint: false, destructiveHint: false, openWorldHint: false }
+const REGION_FIELDS = { instruction: { type: 'string', minLength: 1, maxLength: 6000 }, target: { type: ['integer', 'null'], minimum: 0 },
+  rectangles: { type: 'array', minItems: 1, maxItems: 32, items: { type: 'object', additionalProperties: false, properties: {
+    x: { type: 'integer', minimum: 0 }, y: { type: 'integer', minimum: 0 }, width: { type: 'integer', minimum: 1 }, height: { type: 'integer', minimum: 1 }
+  }, required: ['x', 'y', 'width', 'height'] } } }
 const nonempty = (v: unknown, label: string) => { if (typeof v !== 'string' || !v.trim()) throw new Error(`缺少${label}`); return v }
 export function frontendTools(desktop: DesktopBridge): McpTool[] {
   function tool(name: string, label: string, action: FrontendAction, description: string, properties: Record<string, unknown>, required: string[],
@@ -18,11 +23,15 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
     const guarded = !['open', 'create'].includes(action)
     return { name, title: `前台 · ${label}`, description: `【前台可视化】${description} 操作会在应用窗口中执行并等待界面反馈；可穿插后台读取，不要混用后台写入。首次操作先读 agent_guide(topic=workflows)。`,
       inputSchema: { type: 'object', properties: { ...(guarded ? { id: ID, expected_token: TOKEN } : {}), step_delay_ms: { type: 'integer', minimum: 0, maximum: 5000, description: '每个可见步骤的停留时间，默认 300 毫秒；演示可设为 2000' }, ...properties }, required: [...(guarded ? ['id', 'expected_token'] : []), ...required] },
-      annotations: { ...WRITE, openWorldHint: !!gate }, gate,
+      annotations: { ...WRITE, destructiveHint: ['delete-image', 'delete-project', 'region-delete'].includes(action), openWorldHint: !!gate }, gate,
       run: async (a, signal, report = () => {}) => {
         if (guarded) { nonempty(a.id, '会话 id'); nonempty(a.expected_token, '界面 token') }
         if (a.step_delay_ms !== undefined && (!Number.isInteger(a.step_delay_ms) || Number(a.step_delay_ms) < 0 || Number(a.step_delay_ms) > 5000)) throw new Error('步骤停留时间须为 0～5000 毫秒的整数')
         validate(a)
+        if (['rename', 'delete-image', 'delete-project', 'region', 'region-update', 'region-delete'].includes(action)) {
+          const w = readPage(String(a.id))
+          if (w.agentMode === 'external' && w.externalAgent?.sessionId !== requireAgent().sessionId) throw new Error('当前 Agent 未接管此会话')
+        }
         if (action === 'send' && readPage(String(a.id)).agentMode !== 'external') {
           if (!getSettings().mcpAllowAi || !getSettings().apiKey) throw new Error('请开启允许 Agent 调用 AI 并配置 AI 服务')
         }
@@ -44,8 +53,21 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
       } }
   }
   return [
+    tool('ui_update_workspace_region', '修改已有区域', 'region-update', '在选区编辑器中定位已采用候选的指定区域，修改批注、目标角色或替换遮罩并保存。保留区域 id 与其他区域；省略字段保持原值。取消保存前的步骤不写入。不会生成图片。version_id 必须是已采用候选。',
+      { version_id: { type: 'string' }, region_id: { type: 'string' }, ...REGION_FIELDS }, ['version_id', 'region_id'], a => {
+        nonempty(a.version_id, '候选 id'); nonempty(a.region_id, '区域 id')
+        if (![a.instruction, a.target, a.rectangles].some(v => v !== undefined)) throw new Error('请提供要修改的区域字段')
+        if (a.instruction !== undefined) nonempty(a.instruction, '区域批注')
+      }),
+    tool('ui_delete_workspace_region', '删除已有区域', 'region-delete', '在选区编辑器中定位指定区域并展示删除步骤，然后删除该区域的遮罩与批注。保留其他区域、图片和历史；不生成。须已获用户授权且 confirm:true，version_id 必须是已采用候选。',
+      { version_id: { type: 'string' }, region_id: { type: 'string' }, confirm: { type: 'boolean' } }, ['version_id', 'region_id', 'confirm'], a => {
+        nonempty(a.version_id, '候选 id'); nonempty(a.region_id, '区域 id'); if (a.confirm !== true) throw new Error('删除区域须有用户授权并传 confirm:true')
+      }),
+    tool('ui_rename_workspace', '重命名项目', 'rename', '在项目标题处展示并保存新名称，不改变提示词。', { title: { type: 'string', minLength: 1, maxLength: 100 } }, ['title'], a => { if (typeof a.title !== 'string' || !a.title.trim() || a.title.length > 100) throw new Error('项目名称须为 1～100 字符') }),
+    tool('ui_delete_workspace_image', '删除指定候选图片', 'delete-image', '在工作台图库定位指定候选，展示删除提示后清理图片。保留提示词和历史，其他项目引用的文件保留。须先获用户删除授权。', { version_id: { type: 'string' }, confirm: { type: 'boolean' } }, ['version_id', 'confirm'], a => { nonempty(a.version_id, '候选 id'); if (a.confirm !== true) throw new Error('删除须有用户授权并传 confirm:true') }),
+    tool('ui_delete_workspace', '删除项目', 'delete-project', '在项目列表展示目标及删除提示，然后归档记录、清理所属图片。共享文件保留。须先获用户删除授权。', { confirm: { type: 'boolean' } }, ['confirm'], a => { if (a.confirm !== true) throw new Error('删除须有用户授权并传 confirm:true') }),
     tool('ui_edit_workspace_config', '编辑下一版生图配置', 'config', '从底部入口打开独立的下一版配置。config_action=begin 开始；update 修改同一表单的提示词或参数；save 保存并返回原查看面板；cancel 放弃本次未保存修改并返回。无需 AI 建议，不生成图片，也不改变查看、采用版本或图片快照。操作前读取最新 token；只能继续本连接打开的编辑，用户手动操作后拒绝覆盖。get_app_state.workspace.config 返回当前表单和禁用原因。',
-      {config_action:{type:'string',enum:['begin','update','save','cancel']},patch:{type:'object',additionalProperties:false,properties:{draft:{type:'object',additionalProperties:false,properties:{base:{type:'string'},negative:{type:'string'},characters:{type:'array',maxItems:6,items:{type:'object',properties:{prompt:{type:'string'},negative:{type:'string'},position:{type:'string'}},required:['prompt','negative'],additionalProperties:false}}}},params:{type:'object',additionalProperties:false,properties:{count:{type:'integer',enum:[1,2,4]},qualityTags:{type:'boolean'},ucPreset:{type:'string',enum:['heavy','light','human','none']},width:{type:'integer'},height:{type:'integer'},steps:{type:'integer'},scale:{type:'number'},seed:{type:['integer','null']},cfgRescale:{type:'number'},sampler:{type:'string'},noiseSchedule:{type:'string'}}},strength:{type:'number'}}}},['config_action'],a=>{
+      {config_action:{type:'string',enum:['begin','update','save','cancel']},patch:WORKSPACE_CONFIG_SCHEMA},['config_action'],a=>{
         if(!['begin','update','save','cancel'].includes(String(a.config_action)))throw new Error('未知配置操作')
         if(a.config_action==='update'&&(!a.patch||typeof a.patch!=='object'||Array.isArray(a.patch)))throw new Error('修改配置需要 patch')
         if(a.config_action!=='update'&&a.patch!==undefined)throw new Error('仅 update 可传 patch')

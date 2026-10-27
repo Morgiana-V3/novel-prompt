@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { PageExecution, PageAction, PageEditorState, PageMessage, PageWorkspace, PageAgentIdentity } from '@shared/page-workspace'
 import { pageComparison, pageGroups, pageContextKey, pageCurrent, pageLatestProposal } from '@shared/page-workspace'
 import { changeLabel } from '@shared/inpaint-plan'
-import { cleanErr, state } from '../store'
+import { cleanErr, state, copy } from '../store'
 import { diffPrompt } from '../prompt-diff'
 import Icon from './Icon.vue'
 import ImageViewport from './ImageViewport.vue'
@@ -66,6 +66,8 @@ let offAgents: (() => void) | undefined
 const external = computed(() => work.value.agentMode === 'external')
 const agentConnected = computed(() => connections.value.some(a => a.sessionId === work.value.externalAgent?.sessionId))
 const pendingRequest = computed(() => work.value.messages.find(m => m.externalRequest?.status === 'pending'))
+const agentActivity = computed(() => pendingRequest.value ? connections.value.find(a => a.sessionId === work.value.externalAgent?.sessionId)?.activity?.find(a => a.workspaceId === work.value.id && a.requestId === pendingRequest.value!.id) : undefined)
+const agentStatus = computed(() => !agentConnected.value ? (work.value.externalAgent ? '连接已断开' : '等待连接') : agentActivity.value ? 'Agent 正在处理' : pendingRequest.value ? '等待 Agent 处理' : '已连接 · 待命')
 const discussionContext = computed(() => {
   const request = pendingRequest.value
   const versionId = request ? request.discussion?.versionId ?? request.versionId : discussionVersion.value.id
@@ -103,11 +105,16 @@ const thread = ref<HTMLElement>(), dialog = ref<HTMLElement>(), viewport = ref<I
 const input = ref<HTMLTextAreaElement>()
 const promptEditor = ref<InstanceType<typeof WorkspacePrompt>>()
 const renaming = ref(false), nameInput = ref<HTMLInputElement>(), nameDraft = ref('')
+const renameSaving = ref(false), renameButton = ref<HTMLButtonElement>()
 async function startRename() { nameDraft.value=title.value; renaming.value=true; await nextTick(); nameInput.value?.focus(); nameInput.value?.select() }
+async function cancelRename() { if(renameSaving.value)return;renaming.value=false;await nextTick();renameButton.value?.focus() }
 async function rename() {
-  if (!renaming.value) return
-  title.value=nameDraft.value.trim() || title.value; renaming.value=false
-  try { await flushNotes() } catch(e) { error.value=cleanErr(e) }
+  if (!renaming.value || renameSaving.value) return
+  const previous = title.value
+  title.value=nameDraft.value.trim() || title.value; renameSaving.value=true
+  try { await flushNotes();renaming.value=false;await nextTick();renameButton.value?.focus() }
+  catch(e) { title.value=previous;error.value=cleanErr(e) }
+  finally { renameSaving.value=false }
 }
 const previousFocus = document.activeElement as HTMLElement | null
 let notesTimer: ReturnType<typeof setTimeout> | undefined
@@ -303,7 +310,7 @@ function desktopState() {
     regions: current.value.editor.regions.map(r => ({ id:r.id, label:r.label, instruction:r.instruction, target:r.target })),
     latestProposal: latest?.proposal ? { id:latest.id, title:latest.proposal.title, status:latest.proposal.status } : null,
     lastMessage: work.value.messages.at(-1)?.text ?? '', agentMode: work.value.agentMode ?? 'internal', agentName: agentLabel.value,
-    agentConnected: agentConnected.value, pendingRequestId: pendingRequest.value?.id ?? null }
+    agentConnected: agentConnected.value, agentStatus: agentStatus.value, agentActivity: agentActivity.value ? { ...agentActivity.value } : null, pendingRequestId: pendingRequest.value?.id ?? null }
 }
 async function frontendAction(a: import('@shared/desktop').FrontendRequest, ctx: import('@shared/desktop').FrontendContext) {
   if (operation.value || remoteBusy.value || editing.value || renaming.value || frontendContext || editingPrompt.value&&a.action!=='config') throw new Error('工作台正在编辑或执行任务，请先完成当前操作')
@@ -317,7 +324,17 @@ async function frontendAction(a: import('@shared/desktop').FrontendRequest, ctx:
   }
   try {
     await flushNotes(); check()
-    if(a.action==='config') {
+    if (a.action === 'rename') {
+      await startRename(); nameDraft.value = a.title!; await ctx.step('已在项目标题处填写新名称')
+      await rename(); check(); await ctx.step('项目名称已保存')
+    } else if (a.action === 'delete-image') {
+      if (a.confirm !== true) throw new Error('缺少删除授权')
+      const v = version(a.version_id)
+      if (!v.image) throw new Error('此版本没有可删除的图片')
+      viewedId.value = v.id; pane.value = 'images'; await nextTick()
+      clearingImage.value = v.id; await ctx.step('已定位指定候选并展示删除提示')
+      await clearImage(v.id); check(); await ctx.step('图片已清理，提示词和讨论记录保留')
+    } else if(a.action==='config') {
       if(a.config_action==='begin') { if(editingPrompt.value)throw new Error('配置编辑已打开');await beginConfig(ctx.agentSession!);await ctx.step('已打开下一版配置，可手动或通过 MCP 微调') }
       else {
         if(!editingPrompt.value||!configDraft.value)throw new Error('请先开始配置编辑')
@@ -363,13 +380,21 @@ async function frontendAction(a: import('@shared/desktop').FrontendRequest, ctx:
       await send(); check()
       if (pageLatestProposal(work.value, current.value.id)?.proposal?.status === 'pending') await showSuggestions(current.value.id)
       await ctx.step(external.value ? '需求已保存，等待外部 Agent 读取并回复' : 'AI 回复已显示，可查看建议后决定是否采纳')
-    } else if (a.action === 'region') {
-      if (!current.value.image) throw new Error('当前版本没有图片，无法绘制选区')
-      pane.value = 'canvas'; await openEditor(); check(); await nextTick()
-      if (!inpaintEditor.value) throw new Error('选区编辑器未打开')
-      const id = await inpaintEditor.value.frontendRegion(a, ctx)
-      await closeEditor(); regionId.value = id; await refreshOverlay()
-      await ctx.step('区域与批注已保存到工作台')
+    } else if (['region', 'region-update', 'region-delete'].includes(a.action)) {
+      if (a.action !== 'region') {
+        if (a.version_id !== current.value.id) throw new Error('区域只能修改已采用候选，请重新读取状态')
+        if (!current.value.editor.regions.some(r => r.id === a.region_id)) throw new Error('区域不存在')
+      }
+      if (!current.value.image || current.value.image.missing) throw new Error('当前版本没有可读取的图片，无法打开选区编辑器')
+      pane.value = 'canvas'
+      let id: string
+      try {
+        await openEditor(); check(); await nextTick()
+        if (!inpaintEditor.value) throw new Error('选区编辑器未打开')
+        id = await inpaintEditor.value.frontendRegion(a, ctx)
+      } finally { if (editing.value) await closeEditor() }
+      regionId.value = a.action === 'region-delete' ? null : id; await refreshOverlay()
+      await ctx.step(a.action === 'region-delete' ? '指定区域已从工作台删除' : '区域与批注已保存到工作台')
     } else if (a.action === 'review') {
       if (a.decision === 'switch') {
         const v = version(a.version_id); historyOpen.value = true; viewedId.value = v.id; pane.value = 'canvas'
@@ -435,8 +460,12 @@ onBeforeUnmount(() => { alive = false; clearTimeout(notesTimer); window.removeEv
         </div>
       </div>
       <div class="pw-heading">
-        <input v-if="renaming" ref="nameInput" v-model="nameDraft" class="input sm" maxlength="100" aria-label="项目名称" @keydown.enter.prevent="rename" @keydown.esc.stop="renaming=false" @blur="rename">
-        <button v-else class="pw-rename" :disabled="busy" :title="title+' · 重命名项目'" @click="startRename"><b>{{ title }}</b><Icon name="edit" :size="14" /></button>
+        <form v-if="renaming" class="pw-name-form" @submit.prevent="rename" @keydown.esc.stop.prevent="cancelRename">
+          <input ref="nameInput" v-model="nameDraft" class="pw-name-input" :disabled="renameSaving" maxlength="100" aria-label="项目名称" @keydown.enter.prevent="!$event.isComposing&&rename()">
+          <button type="submit" class="icon-btn sm pw-name-save" :disabled="renameSaving" title="保存名称（Enter）" aria-label="保存项目名称"><Icon name="check" :size="14"/></button>
+          <button type="button" class="icon-btn sm" :disabled="renameSaving" title="取消（Esc）" aria-label="取消重命名" @click="cancelRename"><Icon name="x" :size="14"/></button>
+        </form>
+        <button v-else ref="renameButton" class="pw-rename" :disabled="busy" :title="title+' · 重命名项目'" @click="startRename"><b>{{ title }}</b><Icon name="edit" :size="14" /></button>
       </div>
 
     </header>
@@ -500,10 +529,10 @@ onBeforeUnmount(() => { alive = false; clearTimeout(notesTimer); window.removeEv
           <div v-if="operation==='generate'" class="row pw-run-progress" role="status"><Icon name="paw" :size="13" class="spin-slow"/><span class="muted small grow">{{ progress || '正在执行…' }}</span><button v-if="generateTask" class="btn small ghost" :disabled="generateTask.status==='cancelling'" @click="cancelTask(generateTask.id)">{{ generateTask.status==='cancelling' ? '完成后停止' : '停止' }}</button></div>
         </div>
       </div>
-      <aside class="pw-conversation"><div class="pw-thread-header"><div><Icon name="sparkle" :size="17"/><b>对话</b></div><span :title="agentLabel">{{ agentLabel }}</span></div><div class="pw-agent-mode"><ThemeSelect :model-value="work.agentMode ?? 'internal'" :disabled="busy" :options="[{value:'internal',label:'内置 AI'},{value:'external',label:'外部 Agent 接管'}]" aria-label="会话处理方式" @update:model-value="setAgentMode"/><span v-if="external" :class="{connected:agentConnected}">{{ agentConnected ? '已连接' : work.externalAgent ? '连接已断开' : '等待连接' }}</span></div><div class="pw-context"><span class="pw-context-dot"></span>当前蓝本 <b>{{ current.label }}</b><button v-if="historical" :disabled="busy" @click="viewedId=current.id">回到当前</button></div>
+      <aside class="pw-conversation"><div class="pw-thread-header"><div><Icon name="sparkle" :size="17"/><b>对话</b></div><span :title="agentLabel">{{ agentLabel }}</span></div><div class="pw-agent-mode"><ThemeSelect :model-value="work.agentMode ?? 'internal'" :disabled="busy" :options="[{value:'internal',label:'内置 AI'},{value:'external',label:'外部 Agent 接管'}]" aria-label="会话处理方式" @update:model-value="setAgentMode"/><span v-if="external" :class="{connected:agentConnected}">{{ agentStatus }}</span></div><div class="pw-context"><span class="pw-context-dot"></span>当前蓝本 <b>{{ current.label }}</b><button v-if="historical" :disabled="busy" @click="viewedId=current.id">回到当前</button></div>
         <div class="pw-thread scroll" ref="thread" aria-live="polite"><div v-if="!work.messages.some(m=>m.role==='user')&&!pendingText" class="pw-welcome"><p>描述想生成或修改的内容</p></div>
           <div v-for="m in work.messages" :key="m.id" :class="['pw-message',m.role,{failed:m.error}]"><template v-if="m.role==='event'"><span>{{ m.text }}</span></template><template v-else><div class="pw-message-meta"><b>{{ m.role==='user'?'你':m.author?.name || 'AI' }}</b><button :disabled="editingPrompt" @click="viewedId=m.versionId;pane='canvas'">{{ label(m.versionId) }}</button><time>{{ time(m.createdAt) }}</time></div><MarkdownText v-if="m.role==='assistant'" :text="m.text"/><div v-else class="pw-message-text">{{ m.text }}</div><div v-if="m.discussion && m.discussion.versionId !== m.versionId" class="pw-citations"><button :disabled="editingPrompt" @click="viewedId=m.discussion.versionId;pane='canvas'">讨论 {{ m.discussion.label }}</button><span>建议修改 {{ label(m.versionId) }}</span></div><div v-if="m.referenceIds?.length" class="pw-citations"><button v-for="id in m.referenceIds" :key="id" :disabled="editingPrompt" @click="viewedId=id;pane='canvas'">引用 {{ label(id) }}</button></div><details v-if="m.proposal" class="pw-proposal" :id="`proposal-${m.id}`" :open="selectedProposalId===m.id || m.proposal.status==='pending'&&!m.proposal.superseded"><summary><b>{{ m.proposal.title }}</b><span class="pill">{{ status(m.proposal.status) }}</span></summary><div class="pw-proposal-body"><p class="pw-plan-kind">建议执行：{{ planLabel(m.proposal!.execution,m.versionId) }}</p><p v-if="m.proposal!.warning" class="pw-warning">{{ m.proposal!.warning }}</p><div v-for="(c,i) in m.proposal!.changes" :key="i" class="pw-change"><label>{{ changeLabel(c) }}</label><DiffChips :diff="diffPrompt(c.before,c.after)"/><p v-if="c.reason">{{ c.reason }}</p><details v-if="c.before||c.after"><summary>完整修改前后</summary><pre>{{ c.before||'（空）' }}</pre><pre>{{ c.after||'（空）' }}</pre></details></div><p v-if="!m.proposal!.changes.length" class="muted small">保持当前提示词，使用上述执行方式继续尝试。</p><p v-if="m.proposal!.status==='pending'&&stale(m)" class="muted small">上下文或执行设置已改变，请基于当前状态重新提出方案。</p><div v-if="m.proposal!.status==='pending'" class="row"><button class="btn small primary" :disabled="busy||stale(m)" @click="proposal(m,'accept')">采纳方案</button><button class="btn ghost small" :disabled="busy" @click="proposal(m,'reject')">不采用</button></div><button v-if="m.proposal!.status==='accepted'" class="btn ghost small" :disabled="busy||m.versionId!==current.id" @click="proposal(m,'undo')">撤销采纳</button></div></details><details v-if="m.skills" class="pw-used-skills"><summary>本轮 Skill · {{ m.skills.length }}</summary>{{ m.skills.join('、') || '未启用 Skill' }}</details></template></div>
-          <div v-if="pendingRequest" class="pw-external-wait" role="status"><span>{{ agentConnected ? '需求已保存，等待外部 Agent 回复' : '需求已保存，等待外部 Agent 连接并回复' }}</span><small>请在 Agent 对话中让它继续处理此会话。</small><button class="btn ghost small" :disabled="busy" @click="cancelExternal">取消本轮需求</button></div><div v-if="pendingText" class="pw-message user"><div class="pw-message-text">{{ pendingText }}</div></div><div v-if="operation==='chat'" class="pw-thinking"><Icon name="sparkle" :size="16" class="spin-slow"/>正在分析上下文…<button @click="cancelChat">停止</button></div><div v-if="operation==='generate'" class="pw-thinking">{{ progress }}</div>
+          <div v-if="pendingRequest" class="pw-external-wait" role="status"><span>{{ agentActivity ? agentActivity.message || 'Agent 正在处理本轮需求' : agentConnected ? '需求已保存，等待 Agent 开始处理' : '需求已保存，等待重新接管' }}</span><small>{{ agentActivity ? '处理状态由 Agent 报告；长时间没有更新会回到等待状态。' : '连接不会自动启动处理。复制接续指令到 Agent 对话中继续。' }}</small><button class="btn ghost small" @click="copy(`请继续处理 NovelPrompt 项目 ${work.id}（${work.title}）的待处理需求。先读取 get_workspace_context；如连接已更换，请重新接管后处理，不要重复提交需求。`)">复制接续指令</button><button class="btn ghost small" :disabled="busy" @click="cancelExternal">取消本轮需求</button></div><div v-if="pendingText" class="pw-message user"><div class="pw-message-text">{{ pendingText }}</div></div><div v-if="operation==='chat'" class="pw-thinking"><Icon name="sparkle" :size="16" class="spin-slow"/>正在分析上下文…<button @click="cancelChat">停止</button></div><div v-if="operation==='generate'" class="pw-thinking">{{ progress }}</div>
         </div>
         <div class="pw-compose">
           <div class="pw-discussion-context" aria-label="本轮讨论对象">
@@ -556,8 +585,12 @@ onBeforeUnmount(() => { alive = false; clearTimeout(notesTimer); window.removeEv
 .pw-header-actions [aria-pressed=true]{background:var(--pink-soft);color:var(--pink-deep)}
 .pw-back-arrow{transform:rotate(180deg)}
 .pw-header .pw-heading{width:100%;min-width:0;height:100%;padding:0 20px;border-left:1px solid var(--line);display:flex;align-items:center}
-.pw-heading .pw-rename{width:100%;min-width:0;padding:5px 0;gap:8px}
-.pw-heading .pw-rename b{min-width:0;flex:1;text-align:left;text-overflow:ellipsis;overflow:hidden;white-space:nowrap}
+.pw-heading .pw-rename{width:100%;min-width:0;padding:5px 0;gap:8px;border:0;border-radius:0;background:transparent}
+.pw-heading .pw-rename:hover,.pw-heading .pw-rename:focus-visible{background:transparent}
+.pw-heading .pw-rename b{min-width:0;flex:0 1 auto;text-align:left;text-overflow:ellipsis;overflow:hidden;white-space:nowrap}
+.pw-heading .pw-rename .icon{opacity:0;transition:opacity .15s,color .15s}.pw-heading .pw-rename:hover .icon,.pw-heading .pw-rename:focus-visible .icon{opacity:1;color:var(--text2)}
+.pw-name-form{display:flex;align-items:center;gap:3px;width:100%;min-width:0;height:32px;padding:3px 4px 3px 10px;border:1px solid var(--pink-line);border-radius:9px;background:var(--bg);box-shadow:0 0 0 3px var(--pink-soft)}
+.pw-name-form .pw-name-input{flex:1;min-width:0;width:0;padding:0;border:0;background:transparent;outline:none;font-size:12px;font-weight:600}.pw-name-form .icon-btn{flex-shrink:0;width:24px;height:24px}.pw-name-save{color:var(--pink-deep)}
 .pw-heading input{max-width:none}
 .pw-conversation{width:var(--pw-chat-width);min-width:var(--pw-chat-width);max-width:none;flex:0 0 var(--pw-chat-width)}
 .pw-generation-actions{display:flex;align-items:center;gap:8px;margin-left:auto;flex-shrink:0}

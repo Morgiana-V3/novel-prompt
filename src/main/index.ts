@@ -17,8 +17,8 @@ import type {
 import { tagStore } from './tagdb/store'
 import { analyzePrompt } from './prompt/analyzer'
 import { getSettings, saveSettings } from './settings'
-import { createPage, editPage, importPage, listPages, pageUsesImage, readPage, listRemovedPages, restorePage, recoverPageImage } from './page-workspaces'
-import { clearPageImage, deletePageWithImages, cleanRemovedPageImages } from './workspace-cleanup'
+import { createPage, editPage, importPage, listPages, readPage, listRemovedPages, restorePage, recoverPageImage } from './page-workspaces'
+import { clearPageImage, deletePageWithImages, cleanRemovedPageImages, deleteUnreferencedImage } from './workspace-cleanup'
 import { clearTemporaryImages, retainImage, readImageRecipe, imageLibraryDir, temporaryCleanupStatus } from './image-library'
 import { createRecipe, createConfigRecipe, createWorkspaceRecipe, listRecipes, updateRecipe, deleteRecipe } from './recipes'
 import type { PageAction } from '../shared/page-workspace'
@@ -279,10 +279,7 @@ function registerIpc(): void {
     else shell.openPath(imageLibraryDir())
   })
   ipcMain.handle('nai:delete', async (_e, name: string) => {
-    if (pageUsesImage(name)) throw new Error('这张图片被 AI 工作台的会话引用，为保留版本记录暂不能从图库删除')
-    const src = imagePath(name)
-    if (src) await shell.trashItem(src)
-    return !!src
+    try { return await deleteUnreferencedImage(name) } finally { send('gallery:changed', null); notifyAppChanged() }
   })
 }
 

@@ -51,6 +51,10 @@ try {
   child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n')
   const list = await call('tools/list')
   console.log('tools →', list.result.tools.map((t) => t.name).join(', '))
+  if (list.result.tools.length !== 6) throw new Error('新连接应仅展示 6 个核心工具')
+  await tool('configure_tools', { groups: ['tags', 'images'] })
+  const loaded = await call('tools/list')
+  if (!loaded.result.tools.some(t => t.name === 'validate_tags')) throw new Error('未加载标签工具组')
   await tool('validate_tags', { tags: ['twin tails', 'silver hair', 'blue_eyez'] })
   await tool('search_tags', { queries: ['双马尾'] })
   await tool('analyze_prompt', {

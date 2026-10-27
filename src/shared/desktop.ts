@@ -3,7 +3,7 @@ import type { PageExternalReply } from './page-workspace'
 
 export const APP_TABS = ['compare', 'ai', 'preview', 'generate', 'workspace', 'search', 'settings'] as const
 export type AppTab = typeof APP_TABS[number]
-export type FrontendAction = 'open' | 'create' | 'view' | 'compose' | 'send' | 'region' | 'review' | 'generate' | 'agent' | 'reply' | 'external-cancel' | 'config'
+export type FrontendAction = 'open' | 'create' | 'view' | 'compose' | 'send' | 'region' | 'region-update' | 'region-delete' | 'review' | 'generate' | 'agent' | 'reply' | 'external-cancel' | 'config' | 'rename' | 'delete-image' | 'delete-project'
 export interface FrontendRequest {
   action: FrontendAction
   actionId: string
@@ -12,6 +12,7 @@ export interface FrontendRequest {
   id?: string
   expected_token?: string
   title?: string
+  confirm?: boolean
   source?: 'blank' | 'current' | 'image'
   image?: NaiImage
   pane?: 'canvas' | 'prompt' | 'changes' | 'images' | 'suggestions' | 'history'
@@ -45,7 +46,7 @@ export interface DesktopState {
     latestProposal?: { id: string; title: string; status: string } | null; lastMessage?: string;
     focusedProposalId?: string | null;
     config?: { open: boolean; sourceVersionId: string; owner: string | null; dirty: boolean; draft: InpaintDraft; params: import('./types').NaiGenParams; strength: number; disabledFields: Record<string,string> };
-    agentMode?: 'internal' | 'external'; agentName?: string; agentConnected?: boolean; pendingRequestId?: string | null } | null
+    agentMode?: 'internal' | 'external'; agentName?: string; agentConnected?: boolean; agentStatus?: string; agentActivity?: import('./page-workspace').PageAgentActivity | null; pendingRequestId?: string | null } | null
   frontend?: { label: string; stage: string; status: 'running' | 'completed' | 'error' } | null
   blockers: string[]
 }

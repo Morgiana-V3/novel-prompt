@@ -2,7 +2,7 @@
 const { spawn } = require('node:child_process')
 const { createConnection } = require('node:net')
 const { createHash } = require('node:crypto')
-const { readFileSync } = require('node:fs')
+const { readFileSync, statSync } = require('node:fs')
 const { resolve, dirname, join } = require('node:path')
 const { homedir, tmpdir } = require('node:os')
 const { resolveRuntimeProfile } = require('./runtime-profile.cjs')
@@ -20,6 +20,19 @@ try {
 const key = createHash('sha256').update([root.toLowerCase(), homedir(), profile].join('|')).digest('hex').slice(0, 24)
 const descriptor = join(tmpdir(), `novelprompt-${key}`, 'bridge.json')
 let connected, starting = false, stopped = false
+// A development build can be absent on a clean checkout or briefly incomplete.
+// Never ask Electron to load a missing package entry (it opens a native error box).
+function developmentBuildReady() {
+  if (!args[0]) return true
+  try {
+    const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+    if (typeof manifest.main !== 'string' || !manifest.main) return false
+    return [manifest.main, 'out/preload/index.js', 'out/renderer/index.html'].every(file => {
+      const stat = statSync(resolve(root, file))
+      return stat.isFile() && stat.size > 0
+    })
+  } catch { return false }
+}
 process.stdin.pause()
 function connect() {
   return new Promise((resolve, reject) => {
@@ -51,7 +64,7 @@ async function main() {
   const deadline = Date.now() + 30000
   while (!stopped && Date.now() < deadline) {
     try { connected = await connect(); break } catch {}
-    if (!starting) {
+    if (!starting && developmentBuildReady()) {
       starting = true
       const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE
       const host = spawn(process.execPath, [...args, '--mcp-host'], { env, detached: true, windowsHide: true, stdio: 'ignore' })
@@ -59,7 +72,9 @@ async function main() {
     }
     await new Promise(r => setTimeout(r, 150))
   }
-  if (!connected) throw Error('无法连接 NovelPrompt，请退出旧版本并重新打开应用后重试')
+  if (!connected) throw Error(!starting && args[0] && !developmentBuildReady()
+    ? '开发版构建文件尚未就绪。请在项目目录运行 npm run build，完成后重新连接；本次未启动不完整的应用。'
+    : '无法连接 NovelPrompt，请检查应用是否正常启动后重试')
   process.stdin.pipe(connected)
 }
 process.stdin.on('end', () => { stopped = true; connected?.end() })

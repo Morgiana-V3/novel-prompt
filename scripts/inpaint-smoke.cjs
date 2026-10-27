@@ -195,6 +195,23 @@ app.whenReady().then(async () => {
     await check(`document.querySelector('#ip-prompt').value==='1girl, red dress, outdoors' && document.querySelector('.ip-foot button').disabled`, 'metadata initializes local draft; empty mask blocks submit')
     await check(`document.querySelector('.ip-mask').getBoundingClientRect().top===0 && document.elementFromPoint(10,10).classList.contains('ip-mask')`, 'backdrop covers the app header while dialog keeps titlebar clearance')
     await check(`document.querySelector('#ip-strength').value==='1'`, 'inpaint defaults to full redraw strength')
+    const initialPrompts=await js(`[document.querySelector('#ip-prompt').value,document.querySelector('#ip-negative').value]`)
+    await input('#ip-prompt',Array(24).fill('Use fine regular screentones for flat tones and selected shadows while keeping the deepest shadows solid black.').join(' '))
+    await input('#ip-negative',Array(8).fill('lowres, blurry, worst quality, unfinished sketch, watermark, signature').join(', '))
+    await pause(250)
+    const promptStability=await js(`(async()=>{
+      const panel=document.querySelector('.ip-settings'),prompt=document.querySelector('#ip-prompt'),range=document.querySelector('#ip-strength');
+      panel.scrollTop=panel.scrollHeight;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+      const samples=[];
+      for(let i=0;i<20;i++){
+        samples.push([panel.scrollTop,prompt.clientWidth,prompt.clientHeight]);
+        range.value=i%2?'1':'0.99';range.dispatchEvent(new Event('input',{bubbles:true}));
+        await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+      }
+      range.value='1';range.dispatchEvent(new Event('input',{bubbles:true}));return samples;
+    })()`)
+    for(let column=0;column<3;column++)assert.ok(Math.max(...promptStability.map(s=>s[column]))-Math.min(...promptStability.map(s=>s[column]))<=1,'long inpaint prompts keep scroll/width/height stable on reactive updates: '+JSON.stringify(promptStability))
+    await input('#ip-prompt',initialPrompts[0]);await input('#ip-negative',initialPrompts[1]);await run(`document.querySelector('.ip-settings').scrollTop=0`)
     await zoomAtPointer('.ip-viewport')
     await check(`(()=>{const c=document.querySelector('.brush-cursor'),s=document.querySelector('.ip-viewport canvas.ip-active-mask');return c && Math.abs(c.getBoundingClientRect().width-48*s.getBoundingClientRect().width/832)<1})()`, 'brush circle matches source-pixel diameter at current zoom')
     await input('input[aria-label="笔刷大小"]',96)

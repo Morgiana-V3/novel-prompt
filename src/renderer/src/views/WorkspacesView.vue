@@ -37,8 +37,11 @@ async function beginRemote(id: string, lease: string) {
   if (current.value?.id === id) await workspace.value?.beginRemote(lease)
 }
 async function endRemote(id: string, lease: string) {
-  if (current.value?.id === id) await workspace.value?.endRemote(lease)
   await refresh()
+  if (current.value?.id === id) {
+    if (!sessions.value.some(s => s.id === id)) current.value = null
+    else await workspace.value?.endRemote(lease)
+  }
 }
 const desktopState = () => workspace.value?.desktopState() ?? null
 const isCreating = () => creating.value
@@ -55,7 +58,22 @@ async function frontendAction(a: FrontendRequest, ctx: FrontendContext) {
     await nextTick(); await ctx.step('项目已创建并显示')
   } else {
     if (creating.value || busy.value || !workspace.value || current.value?.id !== a.id) throw new Error('目标项目未在前台打开，请先使用 ui_open_workspace')
-    await workspace.value.frontendAction(a, ctx)
+    if (a.action === 'delete-project') {
+      if (a.confirm !== true) throw new Error('缺少删除授权')
+      if (!(await prepareUpdate())) throw new Error('请先完成当前编辑')
+      const doc = await window.api.pagesRead(a.id!)
+      current.value = null; await refresh(); await nextTick()
+      const index = sessions.value.findIndex(s => s.id === a.id)
+      const button = document.querySelectorAll<HTMLButtonElement>('.session-delete')[index]
+      if (!button) throw new Error('项目未在列表中显示，请重新读取状态')
+      await confirmDelete(a.id!, { currentTarget: button } as unknown as MouseEvent)
+      try {
+        await ctx.step('已显示目标项目与图片清理提示')
+        busy.value = true
+        await window.api.pagesDelete(doc.id, doc.revision)
+        dismissDelete(false); await refresh(); await ctx.step('项目已归档，所属图片已清理')
+      } finally { busy.value = false; dismissDelete(false) }
+    } else await workspace.value.frontendAction(a, ctx)
   }
 }
 defineExpose({ prepareUpdate, agentOpen, beginRemote, endRemote, desktopState, isCreating, frontendAction })

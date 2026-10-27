@@ -1,4 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import type { PageSkillSnapshot, PageSkillSection } from '../shared/page-workspace'
 import { writeFileAtomic as writeFileSync } from './fs-safe'
 import { basename, extname, join } from 'node:path'
 import type {
@@ -334,7 +336,7 @@ const FEATURE_LABEL: Record<SkillFeature, string> = { optimize: 'AI 优化 / 描
  * 组装「总则 + 启用的 Skill 清单 + 按优先级排列的正文」。
  * 调用方在后面追加程序约定（输出格式等）。
  */
-export function composeSkills(feature: SkillFeature, version: NaiVersion): { text: string; skills: SkillDoc[] } {
+export function composeSkills(feature: SkillFeature, version: NaiVersion): { text: string; skills: SkillDoc[]; snapshot: PageSkillSnapshot } {
   const skills = activeSkills(feature, version)
   const v = version === 'v5' ? 'V5' : 'V4.5'
   const table = skills.length
@@ -344,12 +346,18 @@ export function composeSkills(feature: SkillFeature, version: NaiVersion): { tex
         ...skills.map((s, i) => `| ${i + 1} | ${s.name} | ${oneLine(s.description) || '—'} | ${MODEL_LABEL[s.model]} |`)
       ].join('\n')
     : '（本次没有启用任何 Skill：按你对 NovelAI 与 Danbooru 的通用知识工作）'
-  const bodies = skills.map((s, i) => {
-    const body = s.content
-    return `<skill priority="${i + 1}" scope="${s.scope}" name="${s.name.replace(/"/g, "'")}">\n${body}\n</skill>`
-  })
-  const text = [coreText(), `---\n# 已启用的 Skill\n功能：${FEATURE_LABEL[feature]}；目标模型：${v}。\n\n${table}`, ...bodies].join('\n\n')
-  return { text, skills }
+  const hash = (text: string) => createHash('sha256').update(text).digest('hex')
+  const core = coreText()
+  let text = core + `\n\n---\n# 已启用的 Skill\n功能：${FEATURE_LABEL[feature]}；目标模型：${v}。\n\n${table}`
+  const sections: PageSkillSection[] = [{ id: 'builtin:core', name: 'Skill 使用总则', description: '必读的选择、优先级和引用规则', scope: 'core', model: 'all', priority: 0, start: 0, end: core.length, digest: hash(core) }]
+  for (const [i, s] of skills.entries()) {
+    text += `\n\n<skill priority="${i + 1}" scope="${s.scope}" name="${s.name.replace(/"/g, "'")}">\n`
+    const start = text.length
+    text += s.content
+    sections.push({ id: s.id, name: s.name, description: s.description, scope: s.scope, model: s.model, priority: i + 1, start, end: text.length, digest: hash(s.content) })
+    text += '\n</skill>'
+  }
+  return { text, skills, snapshot: { text, digest: hash(text), sections } }
 }
 
 /* ---------- 旧版迁移 ---------- */

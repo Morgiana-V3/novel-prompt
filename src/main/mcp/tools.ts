@@ -189,7 +189,7 @@ function skillTools(): McpTool[] {
           list.splice(Math.max(0, Math.min(at, list.length)), 0, { ...self, enabled: typeof a.enabled === 'boolean' ? a.enabled : self.enabled })
           setConfig(list)
         }
-        return `已创建 Skill「${doc.name}」（id: ${doc.id}）。\n\n当前列表：\n${skillList()}`
+        return json({ id: doc.id, name: doc.name, outcome: 'created', items: JSON.parse(skillList()) })
       }
     },
     {
@@ -206,7 +206,7 @@ function skillTools(): McpTool[] {
           model: a.model as never,
           content: typeof a.content === 'string' ? a.content : undefined
         })
-        return `已更新 Skill「${doc.name}」（${doc.chars} 字）。`
+        return json({ id: doc.id, name: doc.name, chars: doc.chars, outcome: 'updated' })
       }
     },
     {
@@ -218,7 +218,7 @@ function skillTools(): McpTool[] {
       run: async (a) => {
         const s = getSkill(str(a.id))
         deleteSkill(str(a.id))
-        return `已删除 Skill「${s?.name ?? str(a.id)}」。\n\n当前列表：\n${skillList()}`
+        return json({ id: str(a.id), name: s?.name, outcome: 'deleted', items: JSON.parse(skillList()) })
       }
     },
     {
@@ -249,7 +249,7 @@ function skillTools(): McpTool[] {
           const patch = new Map(list.map((x) => [x.id, x.enabled]))
           setConfig(current.map((c) => ({ id: c.id, enabled: patch.get(c.id) ?? c.enabled })))
         }
-        return `已保存。\n\n当前列表：\n${skillList()}`
+        return json({ outcome: 'updated', items: JSON.parse(skillList()) })
       }
     }
   ]
@@ -541,20 +541,24 @@ export function buildTools(): McpTool[] {
     {
       name: 'list_images',
       title: '本机图库',
-      description: '列出 NovelPrompt 本机图库中最近生成的图片（文件路径、种子、尺寸、时间），新的在前。',
-      inputSchema: { type: 'object', properties: { limit: { type: 'integer', description: '默认 20；小于 1 按 1，大于 100 按 100' } } },
+      description: '按时间从新到旧列出图库。支持 storage 分类、query 文件名检索和 before_name 游标翻页。返回 items、hasMore、nextBeforeName。',
+      inputSchema: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 100, description: '默认 20' }, storage: { type: 'string', enum: ['temporary', 'saved', 'workspace'] }, query: { type: 'string', maxLength: 200 }, before_name: { type: 'string' } } },
       annotations: READ_ONLY,
-      run: async (a) =>
-        json(
-          listImages(Math.round(num(a.limit, 20, 1, 100))).map((img) => ({
+      run: async (a) => {
+        const all = listImages(Number.MAX_SAFE_INTEGER).filter(img => (!a.storage || img.storage === a.storage) && (!a.query || img.name.toLowerCase().includes(String(a.query).toLowerCase())))
+        const cursor = a.before_name === undefined ? -1 : all.findIndex(img => img.name === a.before_name)
+        if (a.before_name !== undefined && cursor < 0) throw new Error('图库游标不存在或筛选已改变，请重新读取')
+        const page = all.slice(cursor + 1, cursor + 1 + num(a.limit, 20, 1, 100))
+        const hasMore = cursor + 1 + page.length < all.length
+        return json({ items: page.map((img) => ({
             path: imagePath(img.name),
             name: img.name, storage: img.storage,
             seed: img.seed,
             width: img.width,
             height: img.height,
             createdAt: new Date(img.createdAt).toISOString()
-          }))
-        )
+          })), total: all.length, hasMore, nextBeforeName: hasMore ? page.at(-1)!.name : null })
+      }
     },
     {
       name: 'read_image_prompt',

@@ -8,6 +8,11 @@ import { pageCurrent, type PageWorkspace } from '../shared/page-workspace'
 
 let cleaning = false
 const namesIn = (w: PageWorkspace) => new Set([...w.versions.map(v => v.image?.name), ...w.messages.map(m => m.discussion?.image?.name)].filter((n): n is string => !!n))
+/** Shared by the gallery and MCP; never remove a referenced image or leave its recipe behind. */
+export async function deleteUnreferencedImage(name: string): Promise<boolean> {
+  if (workspaceImageNames({ strict: true }).has(name)) throw new Error('这张图片被 AI 工作台引用，请在对应项目中删除指定图片')
+  return trashLibraryImage(name)
+}
 function writable(id: string, revision: number) {
   if (cleaning || pageLocks.has(id)) throw new Error('请等待当前操作完成后清理')
   const w = readPage(id)

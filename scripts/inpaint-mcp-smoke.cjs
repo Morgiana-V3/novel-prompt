@@ -8,6 +8,8 @@ const ts = require('typescript'), { PNG } = require('pngjs')
 app.setPath('userData', mkdtempSync(join(tmpdir(), 'np-inpaint-mcp-')))
 app.getAppPath = () => join(__dirname, '..')
 require.extensions['.ts'] = (m, f) => m._compile(ts.transpileModule(readFileSync(f, 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, esModuleInterop: true } }).outputText, f)
+const { toolOutputSchema } = require('../src/main/mcp/output-schemas.ts')
+const { validateArguments } = require('../src/main/mcp/contract.ts')
 const { buildTools } = require('../src/main/mcp/tools.ts')
 const { imageDir, imagePath } = require('../src/main/nai/client.ts')
 const { saveSettings } = require('../src/main/settings.ts')
@@ -22,6 +24,7 @@ net.fetch = async (url, init) => {
   if(url.endsWith('/user/subscription'))return Response.json({active:true,tier:3,trainingStepsLeft:{fixedTrainingStepsLeft:1000,purchasedTrainingSteps:0},usage:{percent:80,isNegative:false}})
   if(url.endsWith('/chat/completions')) {
     aiCalls++; const body=JSON.parse(init.body), content=body.messages[1].content
+    if(!Array.isArray(content)) return Response.json({choices:[{message:{content:JSON.stringify({positive:'',negative:'',characters:[],summary:'测试画面'})}}]})
     assert.ok(Array.isArray(content)); assert.equal(content.filter(p=>p.type==='image_url').length,2)
     const input=JSON.parse(content[0].text)
     return Response.json({choices:[{message:{content:JSON.stringify({plans:input.regions.map(r=>({id:r.id,summary:'修改',warning:'',changes:[{field:'base',after:'red apple',reason:'颜色'}]}))})}}]})
@@ -36,7 +39,9 @@ app.whenReady().then(async()=>{
   try {
     const tools=buildTools(), controller=new AbortController()
     const find=n=>{const t=tools.find(t=>t.name===n);assert.ok(t);return t}
-    const call=async(n,a)=>{const t=find(n);const denied=t.gate?.();if(denied)throw new Error(denied);return t.run(a,controller.signal)}
+    const call=async(n,a)=>{const t=find(n);const denied=t.gate?.();if(denied)throw new Error(denied);const value=await t.run(a,controller.signal);let structured
+      try{const parsed=JSON.parse(value);structured=Array.isArray(parsed)?{items:parsed}:parsed}catch{structured={text:value}}
+      validateArguments(structured,toolOutputSchema(n),'result');return value}
     for(const n of ['inpaint_guide','prepare_inpaint','plan_inpaint','inpaint_image']) find(n)
     assert.ok((await call('inpaint_guide',{version:'v5'})).includes('局部重绘提示词优化'))
     const args={image_name:'test.png',rectangles:[{x:93,y:35,width:23,height:17}]}
@@ -80,6 +85,16 @@ app.whenReady().then(async()=>{
       assert.equal(stopped.images.length,1); assert.match(stopped.stopped,/已停止/)
     }
     cancelOnGenerate = undefined
+    for(const n of ['search_tags','validate_tags','related_tags','tag_wiki'])await call(n,{queries:[],tags:[]})
+    await call('prompt_guide',{detail:'summary'});await call('prompt_guide',{detail:'full'})
+    await call('analyze_prompt',{base:''})
+    await call('optimize_prompt',{base:'',mode:'semantic'});await call('preview_prompt',{base:''})
+    await call('nai_subscription',{});await call('list_images',{})
+    await call('list_skills',{});await call('get_skill',{id:'core'})
+    const skill=JSON.parse(await call('create_skill',{name:'Contract fixture',content:'fixture'}))
+    await call('get_skill',{id:skill.id});await call('update_skill',{id:skill.id,content:'changed'})
+    await call('set_skill_config',{skills:[{id:skill.id,enabled:false}]});await call('delete_skill',{id:skill.id})
+    console.log('PASS actual output contracts for tag reports, guides, skills, AI analysis, preview, masks and image generation with mocked providers')
     saveSettings({mcpAllowAi:false,mcpAllowGenerate:false})
     await assert.rejects(call('plan_inpaint',{}),/开启/);await assert.rejects(call('inpaint_image',{}),/开启/)
     const diff=diffTags('girl, black hair, 1.2::smile::, short hair','girl, black hair, 1.4::smile::, long hair')

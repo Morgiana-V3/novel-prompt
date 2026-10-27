@@ -298,7 +298,7 @@ async function persistEditor() {
   finally { if (savingSnapshot === request) savingSnapshot = null }
 }
 watch([regions, draft, settings], () => {
-  if (!props.saveEditor || loading.value) return
+  if (!props.saveEditor || loading.value || frontendBusy.value) return
   clearTimeout(snapshotTimer)
   snapshotTimer = setTimeout(() => { void persistEditor().catch(e => { error.value = `选区保存失败：${cleanErr(e)}` }) }, 800)
 }, { deep: true })
@@ -581,26 +581,42 @@ async function frontendRegion(a: import('@shared/desktop').FrontendRequest, ctx:
   try {
     await sourceReady
     if (loading.value || error.value || !sourceUrl.value || !props.selectionOnly || !props.saveEditor) throw new Error(error.value || '选区编辑器尚未就绪')
-    if (regions.value.filter(r => r.hasPixels).length >= 16) throw new Error('最多保留 16 个区域')
+    const existing = a.action !== 'region'
+    const removing = a.action === 'region-delete'
+    if (!existing && regions.value.filter(r => r.hasPixels).length >= 16) throw new Error('最多保留 16 个区域')
     if (a.target != null && a.target >= draft.characters.length) throw new Error('角色索引超出当前角色数量')
-    const rectangles = a.rectangles!
+    const rectangles = a.rectangles ?? []
     if (rectangles.some(r => r.x + r.width > width.value || r.y + r.height > height.value)) throw new Error('选区超出原图边界')
+    let r = existing ? regions.value.find(r => r.id === a.region_id && r.hasPixels) : undefined
+    if (existing && !r) throw new Error('区域不存在')
+    if (removing && a.confirm !== true) throw new Error('缺少删除区域授权')
     await ctx.step('已打开原图选区编辑器')
-    regions.value.push(makeRegion()); const r = regions.value[regions.value.length - 1]
+    if (!r) { r = makeRegion(); regions.value.push(r) }
     chooseRegion(r); tool.value = 'rect'; panel.value = 'regions'
-    for (const rect of rectangles) {
-      r.strokes.push({ tool:'rect', radius:brush.value, points:[{x:rect.x,y:rect.y},{x:rect.x+rect.width,y:rect.y+rect.height}] })
+    await nextTick(); renderMask(); measureMask()
+    if (existing) await ctx.step(`已定位区域 ${r.label}`)
+    if (removing) {
+      await ctx.step(`即将删除区域 ${r.label} 的遮罩与批注`)
+      removeRegion()
+    } else {
+      if (a.rectangles !== undefined) {
+        r.baseMask = null; r.strokes = []
+        for (const rect of rectangles) r.strokes.push({ tool:'rect', radius:brush.value, points:[{x:rect.x,y:rect.y},{x:rect.x+rect.width,y:rect.y+rect.height}] })
+        r.anchor = { x:rectangles[0].x + rectangles[0].width / 2, y:rectangles[0].y + rectangles[0].height / 2 }
+      }
+      invalidateRegion(r); await nextTick(); renderMask(); measureMask()
+      if (a.rectangles !== undefined) await ctx.step(existing ? '已更新区域遮罩，尚未保存' : '已在原图上绘制遮罩')
+      if (a.instruction !== undefined) r.instruction = a.instruction
+      if (a.target !== undefined) r.target = a.target
+      r.annotated = true; if (!r.number) r.number = ++regionNumber
+      await ctx.step(existing ? '区域批注已更新，尚未保存' : '已填写区域批注')
     }
-    layerCache.delete(r.id); await nextTick(); renderMask(); measureMask()
-    await ctx.step('已在原图上绘制遮罩')
-    r.instruction = a.instruction!; r.target = a.target ?? null; r.annotated = true; r.number = ++regionNumber
-    r.anchor = { x:rectangles[0].x + rectangles[0].width / 2, y:rectangles[0].y + rectangles[0].height / 2 }
-    await ctx.step('已填写区域批注')
+    if (ctx.signal.aborted) throw new Error('已停止，未保存区域修改')
     clearTimeout(snapshotTimer); await persistEditor()
-    await ctx.step('区域批注已保存')
+    await ctx.step(removing ? '区域已删除' : '区域批注已保存')
     opened.value = false
     return r.id
-  } finally { frontendBusy.value = false }
+  } finally { await nextTick(); clearTimeout(snapshotTimer); frontendBusy.value = false }
 }
 defineExpose({ frontendRegion })
 onBeforeUnmount(() => {
@@ -827,7 +843,7 @@ onBeforeUnmount(() => {
 .ip-viewport canvas.locked { pointer-events: none; }
 .ip-canvas-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 30px; font-size: 11.5px; color: var(--text2); }
 .ip-canvas-foot i { display: inline-block; width: 8px; height: 8px; background: var(--pink); border-radius: 3px; margin-right: 4px; }
-.ip-settings { padding: 16px; min-width: 0; }
+.ip-settings { padding: 16px; min-width: 0; scrollbar-gutter: stable; }
 .ip-note { display: flex; align-items: flex-start; gap: 8px; padding: 10px; background: var(--pink-soft); border: 1px solid var(--pink-line); border-radius: 10px; font-size: 11.5px; line-height: 1.6; color: var(--text2); margin-bottom: 14px; }
 .ip-note .icon { flex-shrink: 0; margin-top: 2px; color: var(--pink-deep); }
 .ip-note span { display: block; color: var(--muted); }

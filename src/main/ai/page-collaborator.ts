@@ -65,7 +65,7 @@ export async function discussPage(id: string, revision: number, text: string, re
   const user = pageMessage('user', text.trim(), v.id)
   user.discussion = discussion
   user.skills = skills.skills.map(s => s.name)
-  user.skillSnapshot = { digest: createHash('sha256').update(skills.text).digest('hex'), text: skills.text }
+  user.skillSnapshot = skills.snapshot
   user.regionId = regionId; user.referenceIds = referenceIds; w.messages.push(user); w.composer = ''
   try {
     savePage(w)

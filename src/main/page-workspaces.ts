@@ -25,8 +25,63 @@ function file(id: string) {
 }
 export const pageLocks = new Map<string, AbortController>()
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v))
+type PendingPageSummary = { id: string; title: string; revision: number; requestId: string; agent: PageWorkspace['externalAgent']; discussionVersionId: string; editVersionId: string | null; stale: boolean }
+type PageIndexEntry = { signature: string; stamp: string; summary: PageWorkspaceSummary; pending: PendingPageSummary | null; images: [string, string | null][] }
+// Derived, bounded metadata only. Files remain authoritative; no masks or history bodies are retained.
+const pageIndex = new Map<string, PageIndexEntry>()
+const readIndexes = new WeakMap<PageWorkspace, PageIndexEntry>()
+function fileSignature(path: string) {
+  const s = statSync(path, { bigint: true })
+  return [s.dev, s.ino, s.size, s.mtimeNs, s.ctimeNs].join(':')
+}
+function imageSignature(name: string): string | null {
+  const path = imagePath(name)
+  return path ? path + ':' + fileSignature(path) : null
+}
+function rememberPage(w: PageWorkspace, signature: string) {
+  const path = file(w.id)
+  const v = pageCurrent(w), request = pendingExternalRequest(w)
+  const images: [string, string | null][] = [...new Set(w.versions.flatMap(v => v.image ? [v.image.name] : []))].map(name => [name, imageSignature(name)])
+  const summary = clone({ id: w.id, title: w.title, updatedAt: w.updatedAt, image: v.image, versions: w.versions.length, messages: w.messages.filter(m => m.role === 'user').length })
+  const pending = request ? clone({ id: w.id, title: w.title, revision: w.revision, requestId: request.id, agent: w.externalAgent,
+    discussionVersionId: request.discussion?.versionId ?? request.versionId, editVersionId: request.versionId,
+    stale: request.versionId !== v.id || request.externalRequest!.contextKey !== pageContextKey(v, request.regionId ?? null, w) || discussionIsStale(w, request.discussion) }) : null
+  pageIndex.delete(path)
+  const entry = { signature, stamp: signature + JSON.stringify(images), summary, pending, images }
+  readIndexes.set(w, entry)
+  if (fileSignature(path) !== signature) return
+  pageIndex.set(path, entry)
+  while (pageIndex.size > 512) pageIndex.delete(pageIndex.keys().next().value!)
+}
+function cachedPageIndex(id: string) {
+  const path = file(id), entry = pageIndex.get(path)
+  if (!entry) return undefined
+  try {
+    if (fileSignature(path) === entry.signature && entry.images.every(([name, signature]) => imageSignature(name) === signature)) return entry
+  } catch { /* Deleted/unreadable files must take the normal read/error path. */ }
+  pageIndex.delete(path)
+  return undefined
+}
+/** Only usable for a snapshot actually read from this unchanged file and image state. */
+export function pageReadStamp(id: string): string | undefined { return cachedPageIndex(id)?.stamp }
+function indexedPages(): PageIndexEntry[] {
+  const dir = directory(), names = readdirSync(dir).filter(n => n.endsWith('.json')), present = new Set(names.map(n => join(dir, n)))
+  for (const path of pageIndex.keys()) if (!present.has(path)) pageIndex.delete(path)
+  const entries: PageIndexEntry[] = []
+  for (const name of names) {
+    try {
+      const id = name.slice(0, -5)
+      let entry = cachedPageIndex(id)
+      if (!entry) entry = readIndexes.get(readPage(id))
+      if (entry) entries.push(entry)
+    } catch (e) { console.error('读取创作会话失败', name, String(e)) }
+  }
+  return entries.sort((a, b) => b.summary.updatedAt - a.summary.updatedAt)
+}
+export function listPendingPageRequests(): PendingPageSummary[] { return indexedPages().flatMap(e => e.pending ? [clone(e.pending)] : []) }
 export function readPage(id: string): PageWorkspace {
-  const w = JSON.parse(readFileSync(file(id), 'utf8')) as PageWorkspace
+  const path = file(id), signature = fileSignature(path)
+  const w = JSON.parse(readFileSync(path, 'utf8')) as PageWorkspace
   if (![1, 2].includes(w.schema) || w.id !== id || !Array.isArray(w.versions) || !Array.isArray(w.messages)) throw new Error('工作区文件格式不受支持')
   pageCurrent(w)
   if (w.schema === 1) {
@@ -49,6 +104,7 @@ export function readPage(id: string): PageWorkspace {
     v.image.storage = 'workspace'
     if (path && !v.image.contentHash) v.image.contentHash = createHash('sha256').update(readFileSync(path)).digest('hex')
   }
+  rememberPage(w, signature)
   return w
 }
 export function savePage(w: PageWorkspace): PageWorkspace {
@@ -57,17 +113,11 @@ export function savePage(w: PageWorkspace): PageWorkspace {
   const data = JSON.stringify(w)
   if (Buffer.byteLength(data) > 64 * 1024 * 1024) throw new Error('当前工作区超过 64 MB，请减少不再使用的选区')
   writeFileAtomic(file(w.id), data)
+  pageIndex.delete(file(w.id))
   return w
 }
 export function listPages(): PageWorkspaceSummary[] {
-  const entries: PageWorkspaceSummary[] = []
-  for (const name of readdirSync(directory()).filter(n => n.endsWith('.json'))) {
-    try {
-      const w = readPage(name.slice(0, -5)), v = pageCurrent(w)
-      entries.push({ id: w.id, title: w.title, updatedAt: w.updatedAt, image: v.image, versions: w.versions.length, messages: w.messages.filter(m => m.role === 'user').length })
-    } catch (e) { console.error('读取创作会话失败', name, String(e)) }
-  }
-  return entries.sort((a, b) => b.updatedAt - a.updatedAt)
+  return indexedPages().map(e => clone(e.summary))
 }
 export function pageUsesImage(name: string): boolean {
   if (imageInfo(name)?.storage === 'workspace') return true
@@ -282,7 +332,7 @@ export function queueExternalRequest(id: string, revision: number, text: string,
   m.regionId = regionId; m.referenceIds = [...referenceIds]
   m.externalRequest = { status: 'pending', contextKey: pageContextKey(v, regionId, w) }
   m.skills = skills.skills.map(s => s.name)
-  m.skillSnapshot = { digest: createHash('sha256').update(skills.text).digest('hex'), text: skills.text }
+  m.skillSnapshot = skills.snapshot
   w.messages.push(m); w.composer = ''
   return savePage(w)
 }
@@ -342,6 +392,7 @@ export function deletePage(id: string, revision: number): void {
   if (w.revision !== revision) throw new Error('会话已更新，请刷新后删除')
   const removed = join(directory(), 'removed'); mkdirSync(removed, { recursive: true })
   renameSync(file(id), join(removed, id + '-' + Date.now() + '.json'))
+  pageIndex.delete(file(id))
 }
 
 export function listRemovedPages(): { token: string; title: string; removedAt: number }[] {

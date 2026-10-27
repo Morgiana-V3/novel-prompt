@@ -1,16 +1,21 @@
 // Two real stdio clients -> authenticated local bridge -> real task/workspace services -> built Vue UI.
 // All provider traffic is intercepted; profiles, images and screenshots are isolated.
-const { app, BrowserWindow, ipcMain, net, protocol } = require('electron')
+const { app, BrowserWindow, ipcMain, net, protocol, shell } = require('electron')
 const { spawn } = require('node:child_process')
 const { createInterface } = require('node:readline')
-const { mkdtempSync, readFileSync, writeFileSync } = require('node:fs')
-const { join } = require('node:path')
+const { mkdtempSync, readFileSync, writeFileSync, mkdirSync, renameSync, existsSync } = require('node:fs')
+const { join, resolve, sep, basename } = require('node:path')
 const { tmpdir } = require('node:os')
 const { pathToFileURL } = require('node:url')
 const assert = require('node:assert/strict')
 const ts = require('typescript'), { PNG } = require('pngjs')
 const root = join(__dirname, '..'), profile = mkdtempSync(join(tmpdir(), 'np-desktop-mcp-'))
 app.setPath('userData', profile); app.getAppPath = () => root; app.disableHardwareAcceleration()
+const recycle = join(profile, 'recycle'); mkdirSync(recycle)
+shell.trashItem = async path => {
+  assert.ok(resolve(path).startsWith(resolve(profile) + sep), 'only isolated fixture files may be recycled')
+  renameSync(path, join(recycle, require('node:crypto').randomUUID() + '-' + basename(path)))
+}
 protocol.registerSchemesAsPrivileged([{ scheme: 'np-img', privileges: { standard: true, secure: true, supportFetchAPI: true } }])
 require.extensions['.ts'] = (m,f) => m._compile(ts.transpileModule(readFileSync(f,'utf8'), { compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,esModuleInterop:true} }).outputText,f)
 const settings = require('../src/main/settings.ts'), pages = require('../src/main/page-workspaces.ts'), client = require('../src/main/nai/client.ts')
@@ -42,6 +47,7 @@ let win, bridge, desktop
 const send = (channel,payload) => { if(win&&!win.isDestroyed())win.webContents.send(channel,payload);bridge?.changed() }
 const { registerTaskIpc } = require('../src/main/task-ipc.ts')
 const tasks = registerTaskIpc(send)
+const cleanup = require('../src/main/workspace-cleanup.ts')
 for(const [name,handler] of Object.entries({
   'images:cleanup-status':()=>({pending:0,message:''}), 'settings:get':()=>settings.getSettings(), 'settings:save':(_,p)=>settings.saveSettings(p), 'db:status':()=>tagStore.status(),
   'window:dark-titlebar':()=>{}, 'skills:list':()=>[], 'mcp:info':()=>null,'update:check':()=>null,'update:state':()=>null,
@@ -49,6 +55,8 @@ for(const [name,handler] of Object.entries({
   'nai:readImage':(_,name)=>new Uint8Array(readFileSync(client.imagePath(name))),
   'pages:removed':()=>pages.listRemovedPages(), 'pages:list':()=>pages.listPages(), 'pages:read':(_,id)=>pages.readPage(id), 'pages:edit':(_,id,rev,action)=>pages.editPage(id,rev,action),
   'pages:create':(_,image,params,model,draft)=>pages.createPage(image,params,model,draft),
+  'pages:delete':(_,id,revision)=>cleanup.deletePageWithImages(id,revision),
+  'pages:clear-image':(_,id,revision,version)=>cleanup.clearPageImage(id,revision,version),
   'prompt:analyze':()=>({tokens:[],stats:{total:0,valid:0,alias:0,unknown:0,natural:0,text:0}})
 }))ipcMain.handle(name,handler)
 const clients=[]
@@ -77,9 +85,14 @@ app.whenReady().then(async()=>{
     const { frontendTools }=require('../src/main/mcp/frontend-tools.ts')
     const { agentExecutor }=require('../src/main/mcp/runtime.ts')
     const { buildTools,MCP_INSTRUCTIONS }=require('../src/main/mcp/tools.ts')
-    win=new BrowserWindow({show:false,width:1440,height:960,webPreferences:{preload:join(root,'out/preload/index.js'),sandbox:false,offscreen:true,backgroundThrottling:false}})
+    // Foreground tools call show()/focus(): an offscreen BrowserWindow would expose
+    // Electron's "No content under offscreen mode" placeholder on the real desktop.
+    const testTitle='NovelPrompt · 自动化测试（独立数据）'
+    win=new BrowserWindow({show:false,width:1440,height:960,title:testTitle,autoHideMenuBar:true,webPreferences:{preload:join(root,'out/preload/index.js'),sandbox:false,backgroundThrottling:false}})
+    win.on('page-title-updated',event=>{event.preventDefault();win.setTitle(testTitle)})
+    assert.equal(win.webContents.isOffscreen(),false,'foreground tests must use a normally rendered native window')
     desktop=new DesktopBridge(()=>win,()=>{});desktop.onChange=()=>bridge?.changed()
-    const state=()=>({hostPid:process.pid,visible:false,desktop:desktop.state,tasks:tasks.snapshot()})
+    const state=()=>({hostPid:process.pid,visible:win.isVisible(),desktop:desktop.state,tasks:tasks.snapshot()})
     bridge=await startMcpBridge(root,profile,[...buildTools(),...desktopTools(desktop,tasks,state),...frontendTools(desktop)],{name:'novel-prompt',version:'0.5.0',instructions:MCP_INSTRUCTIONS},{state,execute:agentExecutor(tasks,desktop,send)})
     protocol.handle('np-img',req=>new Response(readFileSync(client.imagePath(decodeURIComponent(new URL(req.url).pathname.slice(1))))))
     await win.loadFile(join(root,'out/renderer/index.html'))
@@ -90,7 +103,16 @@ app.whenReady().then(async()=>{
     const a=connectAgent(),b=connectAgent()
     for(const c of [a,b])await c.request('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'fixture-agent',version:'1'}})
     assert.equal((await a.data('get_app_state')).hostPid,(await b.data('get_app_state')).hostPid)
-    assert.equal((await a.request('tools/list')).result.tools.length,56)
+    assert.equal((await a.request('tools/list')).result.tools.length,6)
+    const grouped=await a.data('configure_tools',{groups:['tags','skills']})
+    const groupedNames=grouped.groups.flatMap(g=>g.tools)
+    assert.equal(new Set(groupedNames).size,69);assert.equal(groupedNames.length,69)
+    assert.ok(grouped.exposedToolCount<25)
+    assert.equal((await b.request('tools/list')).result.tools.length,6)
+    for(const c of [a,b])await c.data('configure_tools',{groups:grouped.groups.map(g=>g.id)})
+    const schemas=(await a.request('tools/list')).result.tools
+    assert.equal(schemas.length,69)
+    for(const tool of schemas)assert.equal(tool.outputSchema.title,`${tool.name}.result`,'every production tool has a specific output contract')
     await assert.rejects(a.tool('ui_capture_app'),/隐藏|最小化/)
     await assert.rejects(a.tool('ui_capture_app',{max_edge:99999}),/512/)
     assert.equal((await a.request('initialize',null)).error.code,-32600)
@@ -108,6 +130,8 @@ app.whenReady().then(async()=>{
     await ui(`document.querySelector('.compare textarea').value==='1girl, outdoors'`)
     assert.ok(await js(`JSON.parse(localStorage.getItem('np-workspace-v1')).history.some(h=>h.base==='1girl, glasses')`))
     await a.tool('navigate_app',{tab:'ai'});await ui(`document.querySelector('.nav-item.active').textContent.includes('AI 优化')`)
+    assert.equal(win.isVisible(),true,'foreground navigation reveals the normally rendered test window')
+    assert.equal((await a.data('get_app_state')).visible,true)
     await js(`(()=>{const el=document.createElement('div');el.id='capture-private-fixture';el.dataset.mcpPrivate='';el.textContent='PRIVATE_FIXTURE';el.style.cssText='position:fixed;left:250px;top:10px;width:100px;height:40px;z-index:2147483647;background:rgb(250,0,250);color:white';document.body.append(el)})()`)
     await pause(150)
     const magenta=buffer=>{const p=PNG.sync.read(buffer);let n=0;for(let i=0;i<p.data.length;i+=4)if(p.data[i]===250&&p.data[i+1]===0&&p.data[i+2]===250)n++;return n}
@@ -143,7 +167,7 @@ app.whenReady().then(async()=>{
     await js(`document.querySelector('.task-trigger').click()`)
     console.log('PASS MCP/UI generation exclusion, real progress, shared cancellation, saved results and direct MCP image content')
 
-    let w=await a.data('create_workspace',{title:'Agent 联动测试',draft:{base:'1girl, green eyes',negative:'blurry',characters:[]}})
+    let w=await a.data('create_workspace',{title:'Agent 联动测试',show:true,draft:{base:'1girl, green eyes',negative:'blurry',characters:[]}})
     await ui(`document.querySelector('.pw-heading').textContent.includes('Agent 联动测试')`)
     w=await b.data('get_workspace',{id:w.id})
     const oldRevision=w.revision
@@ -155,7 +179,7 @@ app.whenReady().then(async()=>{
     await assert.rejects(b.tool('apply_workspace_action',{id:w.id,revision:oldRevision,action:{type:'proposal',messageId:proposal.id,decision:'accept'}}),/更新/)
     w=await b.data('get_workspace',{id:w.id})
     w=await b.data('apply_workspace_action',{id:w.id,revision:w.revision,action:{type:'proposal',messageId:proposal.id,decision:'accept'}})
-    assert.equal(w.versions.find(v=>v.id===w.currentVersionId).editor.draft.base,'1girl, blue eyes')
+    assert.equal((await b.data('get_workspace',{id:w.id,detail:'full',version_ids:[w.currentVersionId]})).versions[0].editor.draft.base,'1girl, blue eyes')
     await click('.pw-view-tabs button','生图配置');await click('.pw-execution button','编辑配置')
     await assert.rejects(a.tool('propose_workspace_edit',{id:w.id,revision:w.revision,title:'冲突修改',draft:{base:'wrong',negative:'',characters:[]}}),/正在编辑/)
     await ui(`!!document.querySelector('.pw-config-back')`)
@@ -275,7 +299,12 @@ app.whenReady().then(async()=>{
     await assert.rejects(act('ui_generate_workspace',{kind:'generate',confirm:true}),/免费/)
     assert.equal(generationInputs.length,countBeforeDenied,'foreground forces free check even with manual paid setting')
     freeTier=true;settings.saveSettings({naiFreeOnly:true})
-    front=await act('ui_generate_workspace',{kind:'generate',confirm:true})
+    const generationIntent={id:frontId,expected_token:(await a.data('get_app_state')).desktop.token,kind:'generate',confirm:true,operation_id:'desktop-generate-once-0001'}
+    front=await a.data('ui_generate_workspace',generationIntent)
+    const generatedCount=generationInputs.length
+    const repeatedGeneration=await b.data('ui_generate_workspace',generationIntent)
+    assert.equal(repeatedGeneration.operation.replayed,true)
+    assert.equal(generationInputs.length,generatedCount,'cached frontend generation must not call provider again despite stale token and different connection')
     assert.notEqual(front.workspace.versionId,firstVersion);assert.equal(front.workspace.historyOpen,true)
     const generatedVersion=front.workspace.versionId
     const beforeRegion=pages.readPage(frontId).versions.find(v=>v.id===generatedVersion)
@@ -289,13 +318,60 @@ app.whenReady().then(async()=>{
     writeFileSync(join(profile,'frontend-region.png'),(await win.webContents.capturePage()).toPNG())
     front=await regionPromise
     assert.equal(front.workspace.regions.length,1);assert.equal(front.workspace.regions[0].instruction,'仅修改这里的颜色')
-    assert.equal(await js('!!document.querySelector(".ip-dialog")'),false)
+    // A visible window runs the real leave transition before removing the dialog.
+    await ui('!document.querySelector(".ip-dialog")')
     const regionId=front.workspace.regionId
     const savedRegion=pages.readPage(frontId).versions.find(v=>v.id===generatedVersion).editor.regions[0]
     const savedMask=PNG.sync.read(Buffer.from(savedRegion.mask,'base64'))
     assert.equal([...savedMask.data].filter((x,i)=>i%4===0&&x>0).length,40*50)
     front=await act('ui_add_workspace_region',{rectangles:[{x:80,y:90,width:20,height:20}],instruction:'第二个区域'})
     assert.equal(front.workspace.regions.length,2)
+    // Existing-region UI edits must be visible, cancellable, and isolated from autosave.
+    const regionSnapshot=()=>structuredClone(pages.readPage(frontId).versions.find(v=>v.id===generatedVersion).editor.regions)
+    const twoRegions=regionSnapshot(), secondRegionId=twoRegions[1].id
+    const frontRegionArgs={version_id:generatedVersion,region_id:secondRegionId}
+    const stoppedOpening=act('ui_update_workspace_region',{...frontRegionArgs,instruction:'未开始的修改',step_delay_ms:1200}).then(()=>null,e=>e)
+    await wait(()=>desktop.state?.frontend?.stage==='已打开原图选区编辑器')
+    await js('window.api.cancelFrontend()')
+    assert.match(String(await stoppedOpening),/停止/)
+    assert.deepEqual(regionSnapshot(),twoRegions)
+    await ui('!document.querySelector(".ip-dialog")')
+    front=await act('ui_update_workspace_region',{...frontRegionArgs,instruction:'更新第二个区域',target:null})
+    assert.equal(front.workspace.regionId,secondRegionId)
+    assert.equal(regionSnapshot()[1].instruction,'更新第二个区域')
+    assert.equal(regionSnapshot()[1].mask,twoRegions[1].mask,'metadata-only edits preserve mask')
+    assert.deepEqual(regionSnapshot()[0],twoRegions[0],'other regions remain unchanged')
+    front=await act('ui_update_workspace_region',{...frontRegionArgs,rectangles:[{x:100,y:110,width:10,height:15}]})
+    const replaced=regionSnapshot()[1],replacedMask=PNG.sync.read(Buffer.from(replaced.mask,'base64'))
+    assert.equal(replaced.id,secondRegionId)
+    assert.equal(replaced.instruction,'更新第二个区域')
+    assert.equal([...replacedMask.data].filter((x,i)=>i%4===0&&x>0).length,150)
+    assert.ok(replacedMask.data[(110*replacedMask.width+100)*4])
+    assert.equal(replacedMask.data[(90*replacedMask.width+80)*4],0)
+    const unchanged=regionSnapshot()
+    await assert.rejects(act('ui_update_workspace_region',{...frontRegionArgs,version_id:firstVersion,instruction:'不应写入'}),/已采用/)
+    await assert.rejects(act('ui_update_workspace_region',{...frontRegionArgs,region_id:'missing',instruction:'不应写入'}),/不存在/)
+    await assert.rejects(act('ui_update_workspace_region',{...frontRegionArgs,rectangles:[{x:99999,y:0,width:1,height:1}]}),/边界/)
+    await assert.rejects(act('ui_update_workspace_region',{...frontRegionArgs,target:99}),/角色/)
+    await assert.rejects(act('ui_delete_workspace_region',{...frontRegionArgs,confirm:false}),/授权/)
+    const cancelledRegion=act('ui_update_workspace_region',{...frontRegionArgs,instruction:'取消的批注',step_delay_ms:1500}).then(()=>null,e=>e)
+    await wait(()=>desktop.state?.frontend?.stage==='区域批注已更新，尚未保存')
+    await pause(1000) // Exceeds the normal 800 ms autosave delay.
+    assert.deepEqual(regionSnapshot(),unchanged,'visible preview must not autosave before commit')
+    await js('window.api.cancelFrontend()')
+    assert.match(String(await cancelledRegion),/停止/)
+    assert.deepEqual(regionSnapshot(),unchanged)
+    await ui('!document.querySelector(".ip-dialog")')
+    const cancelledDeletion=act('ui_delete_workspace_region',{...frontRegionArgs,confirm:true,step_delay_ms:1200}).then(()=>null,e=>e)
+    await wait(()=>desktop.state?.frontend?.stage?.startsWith('即将删除区域'))
+    await js('window.api.cancelFrontend()')
+    assert.match(String(await cancelledDeletion),/停止/)
+    assert.deepEqual(regionSnapshot(),unchanged)
+    front=await act('ui_delete_workspace_region',{...frontRegionArgs,confirm:true})
+    assert.equal(front.workspace.regionId,null)
+    assert.deepEqual(regionSnapshot(),[twoRegions[0]])
+    await ui('!document.querySelector(".ip-dialog")')
+    console.log('PASS visible existing-region update/delete, stable IDs, mask preservation/replacement, invalid targets and cancellation beyond autosave delay')
     front=await act('ui_generate_workspace',{kind:'inpaint',region_id:regionId,confirm:true})
     assert.equal(generationInputs.at(-1).action,'infill');assert.equal(front.workspace.versionId,generatedVersion);assert.notEqual(front.workspace.viewedVersionId,generatedVersion)
     const resultPage=pages.readPage(frontId), resultVersion=resultPage.versions.find(v=>v.id===resultPage.latestGeneratedVersionId)
@@ -326,7 +402,7 @@ app.whenReady().then(async()=>{
     assert.match(String(await stoppedGeneration),/停止/)
     assert.equal(pages.readPage(frontId).versions.length,countBeforeCancel+1,'cancelled foreground generation preserves completed image')
     assert.ok(stages.some(s=>s.frontend.stage==='已在原图上绘制遮罩'))
-    console.log('PASS all 8 foreground MCP tools through real Vue handlers: visible form/input/chat/review/editor/masks/generation/history, permissions, stale state, cancellation, concurrency and unchanged pixels outside mask')
+    console.log('PASS foreground MCP workflows through real Vue handlers: visible form/input/chat/review/editor/masks/generation/history, permissions, stale state, cancellation, concurrency and unchanged pixels outside mask')
     // External takeover uses the real MCP connection identity and renderer flow;
     // disabling the model key makes any accidental internal AI call fail the test.
     const aiBeforeExternal=aiStarted
@@ -334,6 +410,11 @@ app.whenReady().then(async()=>{
     settings.saveSettings({apiKey:'',mcpAllowAi:false})
     front=await act('ui_set_workspace_agent',{mode:'external'})
     assert.equal(front.workspace.agentMode,'external');assert.equal(front.workspace.agentConnected,true)
+    for(const name of ['ui_update_workspace_region','ui_delete_workspace_region']) {
+      const args={id:frontId,expected_token:(await a.data('get_app_state')).desktop.token,version_id:generatedVersion,region_id:regionId,
+        ...(name==='ui_update_workspace_region'?{instruction:'拒绝其他连接'}:{confirm:true})}
+      await assert.rejects(b.data(name,args),/未接管/)
+    }
     // Version scope and comparison are independent of adoption, on every pane.
     const scopeRevision=pages.readPage(frontId).revision
     for(const pane of ['canvas','prompt','changes','images','suggestions']) {
@@ -379,7 +460,7 @@ app.whenReady().then(async()=>{
     assert.equal(backendRegion.id,annotated.addedRegionId)
     const backendMask=PNG.sync.read(Buffer.from(backendRegion.mask,'base64'))
     assert.equal(backendMask.data[(6*backendMask.width+5)*4],255);assert.equal(backendMask.data[0],0)
-    assert.equal(pages.readPage(frontId).versions.find(v=>v.id===generatedVersion).editor.regions.length,3)
+    assert.equal(pages.readPage(frontId).versions.find(v=>v.id===generatedVersion).editor.regions.length,2)
     await assert.rejects(a.data('add_workspace_region',regionArgs),/已变化/)
     await act('ui_set_workspace_input',{text:'保留未发送草稿'})
     await assert.rejects(a.data('submit_workspace_request',{id:frontId,revision:pages.readPage(frontId).revision,text:'不应覆盖'}),/未发送草稿/)
@@ -392,7 +473,7 @@ app.whenReady().then(async()=>{
     assert.ok(requestIndex.items.some(r=>r.id===frontId&&r.discussionVersionId===resultVersion.id&&!r.stale))
     await assert.rejects(a.data('submit_workspace_request',{...requestArgs,revision:queued.revision}),/已有待处理/)
     const backendContext=await a.data('get_workspace_context',{id:frontId})
-    assert.ok(backendContext.skills.text);assert.equal(backendContext.discussion.versionId,resultVersion.id)
+    assert.ok(backendContext.skills.sections[0]?.text);assert.equal(backendContext.discussion.versionId,resultVersion.id)
     await a.data('reply_workspace_request',{id:frontId,revision:backendContext.revision,response:{requestId:backendContext.request.id,reply:'后台纯讨论已完成。'}})
     assert.ok(!(await a.data('list_workspace_requests')).items.some(r=>r.id===frontId))
     assert.equal(aiStarted,aiBeforeExternal)
@@ -405,8 +486,8 @@ app.whenReady().then(async()=>{
     const tokenBeforeRead=(await a.data('get_app_state')).desktop.token
     await a.data('get_workspace',{id:frontId})
     assert.equal((await a.data('get_app_state')).desktop.token,tokenBeforeRead,'read-only synchronization does not invalidate frontend tokens')
-    let context=await a.data('get_workspace_context',{id:frontId})
-    assert.ok(context.preview.preview_path);assert.ok(context.skills.text);assert.equal(context.capabilities.strength.max,1)
+    let context=await a.data('get_workspace_context',{id:frontId,skills_mode:'full'})
+    assert.ok(context.preview.preview_path);assert.ok(context.skills.sections[0]?.text);assert.equal(context.capabilities.strength.max,1)
     const frozenSkills=context.skills.digest
     await assert.rejects(require('../src/main/ai/page-collaborator.ts').discussPage(frontId,context.revision,'绕过接管',null,[]),/外部 Agent/)
     const pureReply={requestId:context.request.id,reply:'外部 Agent 已读取选区。这是纯讨论，未生成图片。'}
@@ -478,7 +559,7 @@ app.whenReady().then(async()=>{
     pages.editPage(frontId,changedPage.revision,{type:'notes',title:changedPage.title,goal:'用户已改变目标',preserve:changedPage.preserve,composer:''})
     await assert.rejects(a.data('reply_workspace_request',{id:frontId,revision:pages.readPage(frontId).revision,response:{requestId:context.request.id,reply:'旧上下文'}}),/需求发出后/)
     await a.data('get_workspace',{id:frontId})
-    await ui(`document.querySelector('.pw-agent-mode').textContent.includes('已连接')`)
+    await ui(`document.querySelector('.pw-agent-mode').textContent.includes('等待 Agent 处理')`)
     a.child.stdin.end()
     await ui(`document.querySelector('.pw-agent-mode').textContent.includes('连接已断开')`)
     const fresh=(await b.data('get_app_state')).desktop
@@ -488,6 +569,99 @@ app.whenReady().then(async()=>{
     assert.equal(aiStarted,aiBeforeExternal,'external discussion, proposals, cancellation and reconnect never invoke internal AI')
     writeFileSync(join(profile,'external-agent.png'),(await win.webContents.capturePage()).toPNG())
     console.log('PASS external takeover without AI key: live connection ownership, pure replies, region proposals, frozen Skills, full proposal history, cancellation, duplicates, stale context and reconnect; zero internal AI calls')
+
+    // Lifecycle and contract regressions, through the same real MCP transport.
+    const schemaTools=(await b.request('tools/list')).result.tools
+    assert.ok(schemaTools.every(t=>t.outputSchema?.type==='object'))
+    const malformed=await b.request('tools/call',{name:'tag_wiki',arguments:{tag:'smile'}})
+    assert.equal(malformed.result.isError,true)
+    assert.equal(malformed.result.structuredContent.error.code,'INVALID_ARGUMENTS')
+    assert.equal((await b.data('cancel_task',{id:'missing-fixture-task'})).cancellation,'not_found')
+    const skill=await b.data('create_skill',{name:'Lifecycle fixture',content:'Fixture only',enabled:false})
+    assert.ok(skill.id);assert.equal(skill.outcome,'created')
+    assert.equal((await b.data('update_skill',{id:skill.id,content:'Updated fixture'})).outcome,'updated')
+    await b.data('delete_skill',{id:skill.id})
+    const beforeCreate=(await b.data('get_app_state')).desktop
+    let managed=await b.data('create_workspace',{title:'管理测试',draft:{base:'cat',negative:'',characters:[]}})
+    assert.equal((await b.data('get_app_state')).desktop.workspace.id,beforeCreate.workspace.id,'default creation stays in background')
+    const initialRecipe=(await b.data('get_workspace',{id:managed.id,detail:'full',version_ids:[managed.currentVersionId]})).versions[0].initial
+    await assert.rejects(b.data('update_workspace',{id:managed.id,revision:managed.revision-1,title:'stale'}),/变化/)
+    managed=await b.data('update_workspace',{id:managed.id,revision:managed.revision,title:'后台重命名'})
+    managed=await b.data('update_workspace',{id:managed.id,revision:managed.revision,version_id:managed.currentVersionId,patch:{params:{steps:22,scale:4.5},draft:{base:'cat, outdoors'}}})
+    const editedConfig=(await b.data('get_workspace',{id:managed.id,detail:'full',version_ids:[managed.currentVersionId]})).versions[0]
+    assert.equal(editedConfig.editor.params.steps,22)
+    assert.deepEqual(editedConfig.initial,initialRecipe,'editing never rewrites the original snapshot')
+    const invalidRev=managed.revision
+    await assert.rejects(b.data('update_workspace',{id:managed.id,revision:managed.revision,version_id:managed.currentVersionId,patch:{params:{steps:0}}}),/参数/)
+    assert.equal(pages.readPage(managed.id).revision,invalidRev)
+    managed=await b.data('set_workspace_agent',{id:managed.id,revision:managed.revision,mode:'external'})
+    managed=await b.data('submit_workspace_request',{id:managed.id,revision:managed.revision,text:'缓存测试'})
+    const fullContext=await b.data('get_workspace_context',{id:managed.id,skills_mode:'full'})
+    await b.data('ui_open_workspace',{id:managed.id,step_delay_ms:0})
+    const reported=await b.data('report_workspace_progress',{id:managed.id,revision:managed.revision,request_id:fullContext.request.id,phase:'processing',message:'正在核对图片与提示词'})
+    assert.ok(reported.activity.expiresAt>Date.now())
+    await ui(`document.querySelector('.pw-agent-mode').textContent.includes('Agent 正在处理')`)
+    assert.equal((await b.data('get_workspace_context',{id:managed.id})).processing.state,'processing')
+    const sessionHelpers=require('../src/main/agent-sessions.ts'), realNow=Date.now
+    try { Date.now=()=>realNow()+120001;assert.equal(sessionHelpers.agentActivity(managed.externalAgent.sessionId,managed.id,fullContext.request.id),null);assert.equal(sessionHelpers.agentConnections().find(a=>a.sessionId===managed.externalAgent.sessionId).activity.length,0) } finally { Date.now=realNow }
+    await b.data('report_workspace_progress',{id:managed.id,revision:managed.revision,request_id:fullContext.request.id,phase:'waiting'})
+    await ui(`document.querySelector('.pw-agent-mode').textContent.includes('等待 Agent 处理')`)
+    const cachedContext=await b.data('get_workspace_context',{id:managed.id,skills_digests:Object.fromEntries(fullContext.skills.sections.map(s=>[s.id,s.digest]))})
+    assert.equal(cachedContext.skills.bodiesNotModified,true);assert.equal(cachedContext.skills.sections[0]?.text,undefined)
+    assert.ok((await b.data('get_workspace_context',{id:managed.id,skills_digests:{}})).skills.sections[0]?.text)
+    managed=await b.data('cancel_workspace_request',{id:managed.id,revision:managed.revision})
+    await assert.rejects(b.data('report_workspace_progress',{id:managed.id,revision:managed.revision,request_id:fullContext.request.id,phase:'processing'}),/已完成|已取消/)
+    const firstHistory=await b.data('get_workspace',{id:managed.id,message_limit:2})
+    assert.equal(firstHistory.messages.length,2);assert.ok(firstHistory.history.hasMore)
+    const oldHistory=await b.data('get_workspace',{id:managed.id,message_limit:2,before_message_id:firstHistory.history.nextBeforeMessageId,history_revision:firstHistory.history.revision})
+    assert.ok(oldHistory.messages.every(m=>!firstHistory.messages.some(n=>n.id===m.id)))
+    assert.equal((await b.data('get_workspace',{id:managed.id,since_revision:managed.revision})).notModified,true)
+    managed=await b.data('set_workspace_agent',{id:managed.id,revision:managed.revision,mode:'internal'})
+    let manageUi=await b.data('ui_open_workspace',{id:managed.id,step_delay_ms:0})
+    const manageAct=async(name,args={})=>{manageUi=await b.data(name,{id:managed.id,expected_token:manageUi.token,step_delay_ms:0,...args});return manageUi}
+    await manageAct('ui_rename_workspace',{title:'前台重命名'})
+    assert.equal(manageUi.workspace.title,'前台重命名');assert.equal(manageUi.workspace.editing,false)
+    await manageAct('ui_delete_workspace',{confirm:true})
+    assert.equal(manageUi.workspace,null);assert.ok(!pages.listPages().some(w=>w.id===managed.id))
+
+    const library=require('../src/main/image-library.ts')
+    const params={width:64,height:64,steps:1,scale:5,cfgRescale:0,sampler:'k_euler',noiseSchedule:'native',seed:1,count:1,qualityTags:false,ucPreset:'none'}
+    const fixtureDraft={base:'cat',negative:'',characters:[]}
+    const fixturePng=new PNG({width:64,height:64});fixturePng.data.fill(255)
+    const fixtureRecipe={schema:1,request:{...fixtureDraft,version:'v5',params},sourceKind:'generate'}
+    const source=library.storeGeneratedImage(PNG.sync.write(fixturePng),fixtureRecipe,'temporary')
+    managed=await b.data('create_workspace',{title:'图片管理',draft:fixtureDraft,image_name:source.name})
+    const owned=managed.versions[0].image.name
+    const added=await b.data('add_workspace_region',{id:managed.id,revision:managed.revision,version_id:managed.currentVersionId,instruction:'原区域',rectangles:[{x:0,y:0,width:12,height:12}]})
+    managed=await b.data('update_workspace_region',{id:managed.id,revision:added.revision,version_id:managed.currentVersionId,region_id:added.addedRegionId,action:'update',instruction:'更新批注',rectangles:[{x:10,y:10,width:16,height:16}]})
+    assert.equal((await b.data('get_workspace',{id:managed.id,detail:'full',version_ids:[managed.currentVersionId]})).versions[0].editor.regions[0].instruction,'更新批注')
+    await assert.rejects(b.data('update_workspace',{id:managed.id,revision:managed.revision,version_id:managed.currentVersionId,patch:{params:{width:128}}}),/尺寸/)
+    managed=await b.data('update_workspace_region',{id:managed.id,revision:managed.revision,version_id:managed.currentVersionId,region_id:added.addedRegionId,action:'delete',confirm:true})
+    assert.equal(managed.versions[0].regionCount,0)
+    await assert.rejects(b.data('delete_image',{name:owned,confirm:true}),/引用/)
+    let shared=await b.data('create_workspace',{title:'共享保护',draft:fixtureDraft})
+    const sharedDoc=pages.readPage(shared.id);sharedDoc.versions[0].image={...managed.versions[0].image};pages.savePage(sharedDoc)
+    managed=await b.data('delete_workspace_image',{id:managed.id,revision:managed.revision,version_id:managed.currentVersionId,confirm:true})
+    assert.equal(managed.versions[0].image,null);assert.ok(client.imagePath(owned),'shared file survives')
+    await b.data('delete_workspace',{id:managed.id,revision:managed.revision,confirm:true})
+    assert.ok(client.imagePath(owned))
+    managed=await b.data('get_workspace',{id:shared.id})
+    manageUi=await b.data('ui_open_workspace',{id:managed.id,step_delay_ms:0})
+    await manageAct('ui_delete_workspace_image',{version_id:managed.currentVersionId,confirm:true})
+    assert.equal(manageUi.workspace.image,null);assert.equal(client.imagePath(owned),null)
+    assert.ok(pages.readPage(managed.id).messages.length)
+    const openBeforeDelete=(await b.data('get_app_state')).desktop.workspace.id
+    await b.data('delete_workspace',{id:managed.id,revision:pages.readPage(managed.id).revision,confirm:true})
+    assert.equal(openBeforeDelete,managed.id);assert.equal((await b.data('get_app_state')).desktop.workspace,null,'deleting open project closes its stale view')
+    const page1=await b.data('list_images',{limit:1,storage:'temporary'})
+    assert.equal(page1.items.length,1)
+    if(page1.hasMore){const page2=await b.data('list_images',{limit:1,storage:'temporary',before_name:page1.nextBeforeName});assert.notEqual(page2.items[0].name,page1.items[0].name)}
+    const originalPath=client.imagePath(source.name)
+    assert.equal((await b.data('delete_image',{name:source.name,confirm:true})).outcome,'deleted')
+    assert.equal(existsSync(originalPath+'.json'),false)
+    assert.equal((await b.data('delete_image',{name:source.name,confirm:true})).outcome,'not_found')
+    console.log('PASS structured contracts/errors, default background creation, config guards, cached Skills, history/gallery pagination, frontend rename/delete, shared-image protection and gallery recipe cleanup')
+
     console.log('Artifacts:',profile)
     for(const c of clients)c.child.stdin.end()
     await pause(100);bridge.close();app.exit(0)

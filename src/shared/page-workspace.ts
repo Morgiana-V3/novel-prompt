@@ -42,7 +42,8 @@ export interface PageDiscussion {
   image: NaiImage | null
   recipe: { source: 'generated' | 'initial'; draft: InpaintDraft; params: NaiGenParams } | null
 }
-export interface PageAgentIdentity { sessionId: string; name: string }
+export interface PageAgentActivity { workspaceId: string; requestId: string; message: string; expiresAt: number }
+export interface PageAgentIdentity { sessionId: string; name: string; activity?: PageAgentActivity[] }
 export interface PageExternalReply {
   requestId: string
   reply: string
@@ -67,6 +68,11 @@ export interface PageProposal {
   previousExecution?: PageExecution
   previousTargets?: { id: string; target: number | null }[]
 }
+export interface PageSkillSection {
+  id: string; name: string; description: string; scope: 'core' | 'all' | 'optimize' | 'preview' | 'inpaint'
+  model: 'all' | 'v4.5' | 'v5'; priority: number; start: number; end: number; digest: string
+}
+export interface PageSkillSnapshot { digest: string; text: string; sections?: PageSkillSection[] }
 export interface PageMessage {
   id: string
   role: 'user' | 'assistant' | 'event'
@@ -86,7 +92,7 @@ export interface PageMessage {
   author?: { kind: 'internal' | 'external'; name: string }
   requestId?: string
   externalRequest?: { status: 'pending' | 'completed' | 'cancelled'; contextKey: string }
-  skillSnapshot?: { digest: string; text: string }
+  skillSnapshot?: PageSkillSnapshot
 }
 export interface PageWorkspace {
   schema: 1 | 2

@@ -8,54 +8,66 @@ import { cancelFrontend, frontendActive } from './frontend-operations'
 export class DesktopBridge {
   state: DesktopState | null = null
   private capturing = false
-  private pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>()
+  private pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; cleanup: () => void }>()
   onChange = () => {}
+  private liveWindow() {
+    const w = this.window()
+    return w && !w.isDestroyed() && !w.webContents.isDestroyed() ? w : null
+  }
   constructor(private window: () => BrowserWindow | null, private show: () => void) {
-    ipcMain.on('desktop:cancel-frontend', event => { if (event.sender === this.window()?.webContents) cancelFrontend() })
+    ipcMain.on('desktop:cancel-frontend', event => { if (event.sender === this.liveWindow()?.webContents) cancelFrontend() })
     ipcMain.on('desktop:state', (event, value: DesktopState) => {
-      if (event.sender !== this.window()?.webContents) return
+      if (event.sender !== this.liveWindow()?.webContents) return
       this.state = value; this.onChange()
     })
     ipcMain.on('desktop:reply', (event, reply: DesktopReply) => {
-      if (event.sender !== this.window()?.webContents) return
+      if (event.sender !== this.liveWindow()?.webContents) return
       const item = this.pending.get(reply.id)
       if (!item) return
-      clearTimeout(item.timer); this.pending.delete(reply.id)
+      item.cleanup(); this.pending.delete(reply.id)
       if (reply.error) item.reject(new Error(reply.error)); else item.resolve(reply.result)
     })
   }
-  connected() { const w = this.window(); return !!w && !w.isDestroyed() }
-  visible() { return this.connected() && this.window()!.isVisible() }
+  connected() { return !!this.liveWindow() }
+  visible() { return this.liveWindow()?.isVisible() ?? false }
   disconnected() {
     cancelFrontend()
     this.state = null
-    for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error('应用窗口已关闭，请重新读取状态')) }
+    for (const p of this.pending.values()) { p.cleanup(); p.reject(new Error('应用窗口已关闭，请重新读取状态')) }
     this.pending.clear(); this.onChange()
   }
-  cancelVisibleAction(actionId: string) { this.window()?.webContents.send('desktop:frontend-cancel', actionId) }
+  cancelVisibleAction(actionId: string) { this.liveWindow()?.webContents.send('desktop:frontend-cancel', actionId) }
   async request(type: DesktopCommand['type'], args: Record<string, unknown> = {}, reveal = false, signal?: AbortSignal): Promise<unknown> {
     if (frontendActive() && !['frontend', 'snapshot', 'capture-prepare', 'capture-end', 'workspace-release'].includes(type)) throw new Error('前台操作仍在执行，请等待完成后再操作界面')
     if (reveal) this.show()
-    const w = this.window()
-    if (!w || w.isDestroyed()) throw new Error('桌面窗口尚未打开，请先调用 navigate_app 打开应用')
-    if (w.webContents.isLoading()) await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('界面加载超时')), 15000)
-      w.webContents.once('did-finish-load', () => { clearTimeout(timer); resolve() })
+    const w = this.liveWindow()
+    if (!w) throw new Error('桌面窗口尚未打开，请先调用 navigate_app 打开应用')
+    const contents = w.webContents
+    if (contents.isLoading()) await new Promise<void>((resolve, reject) => {
+      const cleanup = () => { clearTimeout(timer); contents.removeListener('did-finish-load', loaded); contents.removeListener('destroyed', destroyed) }
+      const loaded = () => { cleanup(); resolve() }
+      const destroyed = () => { cleanup(); reject(new Error('应用窗口已关闭，请重新读取状态')) }
+      const timer = setTimeout(() => { cleanup(); reject(new Error('界面加载超时')) }, 15000)
+      contents.once('did-finish-load', loaded); contents.once('destroyed', destroyed)
     })
+    if (this.liveWindow() !== w) throw new Error('应用窗口已关闭或更换，请重新读取状态')
     if (signal?.aborted) throw new Error('前台操作已停止')
     // A Windows host spawned with windowsHide can suppress its first window's
     // default visibility. Reveal explicitly after load, including minimized apps.
     if (reveal) { if (w.isMinimized()) w.restore(); w.show(); w.focus() }
     const id = randomUUID()
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); if (type === 'frontend') { cancelFrontend(); this.cancelVisibleAction(String(args.actionId)) }; reject(new Error('界面操作未确认完成，请读取最新状态后再决定是否重试')) }, type === 'frontend' ? 300000 : 20000)
-      this.pending.set(id, { resolve, reject, timer })
-      w.webContents.send('desktop:command', { id, type, args } satisfies DesktopCommand)
+      const cleanup = () => { clearTimeout(timer); contents.removeListener('destroyed', destroyed) }
+      const destroyed = () => { cleanup(); this.pending.delete(id); reject(new Error('应用窗口已关闭，请重新读取状态')) }
+      const timer = setTimeout(() => { cleanup(); this.pending.delete(id); if (type === 'frontend') { cancelFrontend(); this.cancelVisibleAction(String(args.actionId)) }; reject(new Error('界面操作未确认完成，请读取最新状态后再决定是否重试')) }, type === 'frontend' ? 300000 : 20000)
+      this.pending.set(id, { resolve, reject, cleanup }); contents.once('destroyed', destroyed)
+      try { contents.send('desktop:command', { id, type, args } satisfies DesktopCommand) }
+      catch (e) { cleanup(); this.pending.delete(id); reject(e) }
     })
   }
   async capture(maxEdge: number, signal: AbortSignal) {
-    const w = this.window()
-    if (!w || w.isDestroyed()) throw new Error('应用窗口未打开，请先使用 navigate_app 或 ui_open_workspace')
+    const w = this.liveWindow()
+    if (!w) throw new Error('应用窗口未打开，请先使用 navigate_app 或 ui_open_workspace')
     if (!w.isVisible() || w.isMinimized()) throw new Error('应用窗口已隐藏或最小化，请先显示窗口后截图')
     if (this.capturing) throw new Error('正在获取另一张应用截图，请稍后重试')
     if (signal.aborted) throw new Error('已取消')
@@ -65,6 +77,7 @@ export class DesktopBridge {
     try {
       const before = await this.request('capture-prepare', { lease }) as DesktopCaptureReady
       if (signal.aborted) throw new Error('已取消')
+      if (this.liveWindow() !== w) throw new Error('截图期间窗口已关闭或更换，请重新读取状态')
       let image = await Promise.race([
         w.webContents.capturePage(),
         new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('应用截图超时，请重试')), 5000) })

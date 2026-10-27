@@ -70,6 +70,13 @@ input, textarea, select { font: inherit; color: var(--text); }
 .ok { color: var(--ok); }
 .bad { color: var(--bad); }
 .scroll { overflow: auto; }
+.app-tooltip{position:fixed;inset:auto;margin:0;max-width:min(260px,calc(100vw - 24px));padding:4px 7px;border:1px solid #ffffff14;border-radius:6px;background:#292a31;color:#fafafd;font-size:11px;font-weight:400;line-height:1.45;white-space:pre-line;overflow:visible;overflow-wrap:anywhere;box-shadow:0 3px 10px #17171f20;pointer-events:none;user-select:none;animation:tooltip-in .12s ease-out}
+.app-tooltip::before{content:'';position:absolute;left:var(--tooltip-arrow-x,50%);width:6px;height:6px;background:inherit;transform:translateX(-50%) rotate(45deg)}
+.app-tooltip[data-side='bottom']::before{top:-4px;border-top:1px solid #ffffff14;border-left:1px solid #ffffff14}
+.app-tooltip[data-side='top']::before{bottom:-4px;border-bottom:1px solid #ffffff14;border-right:1px solid #ffffff14}
+.app-tooltip::backdrop{background:transparent;pointer-events:none}
+@keyframes tooltip-in{from{opacity:0}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){.app-tooltip{animation:none}}
 .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .actions { display: flex; align-items: center; gap: 4px; }
 .ml-auto { margin-left: auto; }

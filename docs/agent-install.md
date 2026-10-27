@@ -118,7 +118,7 @@ npm install; npm run build
 
 ### 后台模式：处理数据，按需同步结果
 
-原有工具与调用方式保持兼容。适合查词、检查提示词、生成图片，或由外部 Agent 自己整理建议，再同步到工作台。界面可以显示最终结果，但不代表走过前台每一步操作。
+前后台共享同一套项目数据。后台 create_workspace 默认不打开窗口，需要显示时传 show:true；list_images 返回带分页信息的对象（items/hasMore/nextBeforeName）。适合查词、检查提示词、生成图片，或由外部 Agent 自己整理建议，再同步到工作台。界面可以显示最终结果，但不代表走过前台每一步操作。
 
 调用流程：
 
@@ -202,3 +202,70 @@ npm install; npm run build
 连接断开后保留外部模式和待处理消息，界面显示断开 / 等待状态，不回退 DeepSeek。重新连接必须显式接管后继续。来源名称来自 MCP 初始化信息，是客户端声明的显示名称；连接标识用于区分会话所有者，不代表身份认证。
 
 新记录保留每条方案的完整 before / after / 差异与处理状态；同版本的新建议使旧建议成为历史，旧的待采纳方案不可再次采纳。右侧点击某条方案会打开当时那条方案，建议页也可切换历史记录。旧版本已经删掉的方案正文无法恢复，仍显示旧版摘要。MCP 会话结果省略大遮罩和内部校验字段；完整本轮 Skill 从 `get_workspace_context` 读取。
+
+
+## 项目维护、状态和增量读取
+
+- 后台 `update_workspace` 修改名称/目标或下一版配置；配置使用 `patch` 和已采用候选的 `version_id`，冻结的图片生成记录保持不变。
+- `update_workspace_region` 修改或删除已有区域。`delete_workspace_image` 删除指定候选的图片，`delete_workspace` 归档项目并清理图片，`delete_image` 仅删除未被项目引用的图库图片。删除必须取得用户授权并传 `confirm:true`，项目操作还必须传最新 `revision`。
+- 前台有 `ui_rename_workspace`、`ui_delete_workspace_image`、`ui_delete_workspace`，会在真实窗口定位目标、展示操作并执行。同一清理服务保留共享图片，独占图片和对应生成文件移入回收站。
+- 外部连接不会自动唤醒模型。处理前调用 `report_workspace_progress` 报告 `processing`，可附简短进度，120 秒内续报；`waiting` 结束处理状态。断线或进度过期自动回到等待，不能用“已连接”推断模型正在执行。
+- `get_workspace_context` 默认 `skills_task:overview`：首次只发总则正文和冻结目录；按任务选择 `prompt`（编写提示词）、`preview`（画面分析）、`inpaint`（重绘及提示词规则）或 `all`，也可用 `skills_ids` 补读目录中的指定篇目。具体任务自动包含 `scope=all` 用户规则。`missingRequiredIds` 为空且正文实际保留在 Agent 当前上下文中，才表示已具备本轮必读规则。
+- 每篇正文有独立指纹。`sections` 仅返回所选篇目中未读或变化的正文；`manifest` 始终携带名称、说明、范围、优先级、长度和指纹。重排不重复发正文，禁用/删除通过最新目录及 `removedIds` 表达。`bodiesNotModified` 不代表目录没变化，仍需检查 `manifestChanged`。设置修改不改变当前待处理需求已经冻结的内容，只影响新需求。
+- `skills_digests` 是客户端实际保留的正文指纹表 `{id:digest}`，提供后取代连接缓存判断。只能从实际读取的 `sections` 建立，不能把整个目录当成已读。`skills_mode:metadata` 只读目录、不记为已读；`full` 强制重读所选篇目（全部正文需配合 `skills_task:all`）。上下文压缩或回复丢失后用此方式恢复。每个连接独立缓存，不能将另一个 Agent 的读取视为自己已读。
+- `rules_only:true` 只返回项目、请求标识、模型和规则，省略图片/参数/候选；先读完整任务上下文，再按需补读正文。返回 `requestId` 改变时须重新读取任务上下文。冻结文件保存一份原文及分段索引，不复制多份正文；没有索引的已保存冻结文档保持原文完整读取，不推测分界或拿今天的设置替换。
+- `get_workspace` 默认返回最近 10 个候选摘要和最近 5 条消息摘要，每条正文最多 400 字符并标记 `textTruncated`。`detail:full` 返回完整内容（仍分页），`message_ids` / `version_ids` 可精确取得特定消息/候选的全文；精确读取返回 `partial:true`，不夹带无关历史或其他候选。后台修改接口也返回摘要，避免每次写入重发历史。
+- 候选通过 `version_limit`（默认 10、最多 100）、`before_version_id` 分页；`get_workspace` 返回 `versionsPage`，`get_workspace_context` 返回 `candidatesPage`。游标是 `nextBeforeVersionId`，翻页带 `history_revision`。当前蓝本 id 和任务当前稿始终单独返回，候选页只描述该页；上下文中的 `groups` 也仅列本页 id，用 `partial/totalCandidates` 标记未读部分。
+- 历史页使用 `message_limit`（1～100）、`before_message_id`，翻页必须附上一页的 `history.revision` 作为 `history_revision`；变化时拒绝混合分页。默认摘要省略方案前后稿、历史生成参数和规则正文，原始项目文件保持完整。
+- `since_revision` 比较本连接最近缓存的对应 `detail` 快照。未变返回 `notModified`；变化返回 `delta:true`、新增/变更的消息和候选，以及删除 id 列表。旧消息的采纳/撤销、旧候选配置变化也会被发现。按 id 合并，摘要/全文分别缓存；增量需要翻页时保持原 `since_revision`，携带当前 `history_revision`，读完消息与候选两类增量的所有页后再推进本地版本。单独翻页时另一列表不重复返回，分页信息的 `included:false` 表示未读取，不能理解为空集合。重新连接、首次请求某种 detail 或基线超过最近 32 个快照时，返回 `resetRequired:true` 和当前分页快照，须重建缓存。切勿把分页/局部详情中缺失的条目当成删除。
+- `list_images` 支持 `storage`、`query`、`limit`、`before_name`，返回 `items/hasMore/nextBeforeName`。
+
+`npm run mcp:context-smoke` 使用独立临时数据验证规则目录与任务选篇、按篇变化、禁用/重排、强制补读、冻结快照、缓存隔离、摘要/详情、历史/候选分页、旧消息与候选更新及增量恢复。加 `-- --measure-dev` 可只读测量开发目录的现有项目返回大小；不迁移、不保存真实项目。字符数按单份业务 JSON 统计，不代表特定客户端实际计入模型的 token 数。
+- 工具保留文本内容并返回对象形式的 `structuredContent`。普通文本报告在 `text` 字段，列表在 `items`。参数错误、权限关闭和执行错误提供 `error.code/message/retryable/nextAction`。取消任务的 `cancellation` 明确区分受理、正在停止、已结束与不存在。
+
+这些接口不涉及收藏或配置收藏的设计变更。旧宿主须重新启动、MCP 客户端须重新连接才能读取更新后的工具清单。
+
+## 按任务精简工具列表
+
+`configure_tools()` 返回分组清单、组内工具名和当前选中组。传 `groups` 替换本连接的可见组：
+
+- 查词：`["tags", "skills"]`。
+- 后台工作台：`["workspace", "images", "skills"]`。
+- 前台工作台：`["frontend", "workspace", "images", "skills"]`。
+- 需要委托内置 AI 时增加 `"ai"`。
+
+新连接默认只展示 `core` 的 6 个入口：指南、应用状态、任务查询/取消、分组设置和操作恢复。Agent 根据任务选择分组，再读取 `tools/list` 获取已加载工具的参数定义。`groups:[]` 回到核心工具；需要查看全部 69 个工具时传清单中的所有组名。分组只影响本连接的工具发现，不改变权限或其他连接。客户端须处理 `notifications/tools/list_changed` 刷新工具列表；当前开发版本统一采用这一接入方式，不保留默认全量列表的旧行为。
+
+## 超时后查询结果，避免重复执行
+
+写入、前台操作和内置 AI 调用支持可选的 `operation_id`。每个新意图在第一次调用前生成一个 UUID；超时、断线后先调用 `get_operation(operation_id)`。不传编号时程序会自动生成，并放在 `structuredContent.operation.id`；回复丢失时也可用 `get_operation()` 查看最近 20 条，但预先指定编号更可靠。进度心跳和工具分组切换不写入操作记录。
+
+- `running`：仍在执行，继续查询，不重复提交。
+- `succeeded`：工具已返回结果。它不是对图片质量、业务目标或整批生成完成度的保证，需要读取结果和当前状态。
+- `failed`：工具报错，可能已有部分成果；先核对状态。
+- `interrupted`：连接取消或软件退出使结果不确定。不得推断操作已回滚，先核对工作台、图库和任务。
+
+同编号、同工具和相同参数再次调用只返回原结果/进度，不再次执行。同编号换参数或换工具会返回 `OPERATION_ID_CONFLICT`。失败和中断也不会自动重试；检查后确定需要新的操作时，使用最新 token/revision 和新编号。重复调用返回的是历史证据，不会重新接管工作台、续租或恢复编辑器；断线后继续操作仍须遵守原有接管规则。
+
+记录与当前应用的数据目录绑定，跨 MCP 连接和软件重启可读。保留期为 7 天，最多 10000 条；单份结果超过 64 KiB 或结果缓存累计超过 8 MiB 时只保留执行摘要，不因此允许重放。结果中的 `resultOmitted` 表示需再读取对应业务对象。记录只保存参数指纹，不保存原始参数；结果保存在本地。查不到记录不保证操作从未执行，需确认是否连接错环境或记录已过期。文件无法读取或无法保存操作开始记录时，会在执行前拒绝写入，避免失去重复保护。
+
+`npm run mcp:recovery-smoke` 验证分组隔离、并发去重、失败/取消、断线、记录损坏和大结果；`npm run mcp:host-smoke` 进一步验证真实宿主退出后恢复结果与重复调用不会再次创建项目。测试使用独立临时数据，不访问真实 AI/生图服务。
+
+
+## 已有区域的前台操作
+
+`ui_update_workspace_region` 和 `ui_delete_workspace_region` 与创建选区一样使用真实编辑器，逐步展示定位、遮罩与批注。操作前读取最新 `desktop.token`，传工作台 `id`、已采用候选 `version_id` 和已有 `region_id`；外部模式只允许当前接管连接写入。
+
+修改时只传需要改变的 `instruction`、`target`、`rectangles`。只改批注或角色不改变遮罩；`rectangles` 会整体替换该区域遮罩，保留区域编号与其他区域。删除需 `confirm:true`，只删除该选区和批注，不删原图。展示过程中取消不会触发自动保存；保存完成后再停止不能推断已回滚，应重新读取状态。
+
+## 工具返回字段
+
+69 个工具均声明各自的 `outputSchema`，包括工作台摘要/完整读取/增量/未变化回执、规则目录与正文、前台状态、图库、任务与操作记录。文本报告仍是 `{text}`，列表仍是 `{items}`，并保留原有文本内容。
+
+服务端在返回前验证字段。若出现 `OUTPUT_CONTRACT_VIOLATION`，`observedResult` 保留原始结果，`retryable:false`；操作可能已经写入，先读实际状态或 `get_operation`，不要自动重试。同一操作编号只回放已记录结果，不重复执行。
+
+## 开发版启动时缺少构建文件
+
+项目刚检出或构建尚未结束时，先运行 `npm run build`，完成后再启动或连接 MCP；开发调试使用 `npm run dev`。MCP 冷启动会检查主程序、预加载与页面文件，构建未齐时在连接期限内等待，不启动缺少入口的 Electron。超时会说明需要构建。重新构建主进程时保留原入口，避免清空目录造成短暂缺失。已运行宿主仍需完整退出后重开才能加载新主进程代码。
+
+`npm run mcp:launch-smoke` 检查文件缺失、构建中、已有宿主和安装版启动路径；前台回归还覆盖区域修改/删除、错误目标与超过自动保存间隔的取消。所有这些回归使用临时数据或模拟环境，不触碰真实项目。

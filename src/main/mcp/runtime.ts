@@ -36,7 +36,10 @@ export function agentExecutor(tasks: TaskManager, desktop: DesktopBridge, send: 
         }
         if (tool.name.includes('skill')) send('skills:changed', null)
         return result
-      } finally { signal.removeEventListener('abort', cancel) }
+      } finally {
+        signal.removeEventListener('abort', cancel)
+        if (['delete_image', 'delete_workspace', 'delete_workspace_image'].includes(tool.name)) send('gallery:changed', null)
+      }
     }, { key: kind === 'agent' ? randomUUID() : kind, resource: generation ? 'generation' : undefined,
       cancelMode: generation ? 'after-current' : 'abort', origin: 'agent', label: tool.title ?? tool.name, targetId: typeof args.id === 'string' ? args.id : undefined })
   }

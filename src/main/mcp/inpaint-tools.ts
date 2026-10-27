@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, isAbsolute } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { PNG } from 'pngjs'
 import type { AiCharacter, InpaintDraft, NaiGenParams, NaiVersion } from '../../shared/types'
 import { readPngPrompt } from '../../shared/prompt-import'
@@ -67,6 +67,36 @@ function mask(a: Args, s: ReturnType<typeof source>): string {
 /** Reuse source bounds and binary-mask validation for workspace annotations. */
 export function workspaceRectangleMask(imageName: string, rectangles: unknown): string {
   return mask({ rectangles }, source({ image_name: imageName }))
+}
+
+// Context polling should not decode, tint and encode an unchanged image each time.
+// Retain only small receipts/hashes; never retain decoded images or mask bodies.
+const workspacePreviews = new Map<string, { result: string; files: { path: string; size: number; digest: string }[] }>()
+const previewDigest = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex')
+export async function workspaceInpaintPreview(imageName: string, encoded: string, signal: AbortSignal): Promise<string> {
+  const s = source({ image_name: imageName })
+  const key = JSON.stringify([dataDir(), s.name, previewDigest(s.bytes), previewDigest(encoded)])
+  const cached = workspacePreviews.get(key)
+  if (cached) {
+    // Recheck artifacts too: a removed, edited or replaced preview must regenerate.
+    // Content hashes also catch same-size replacements with restored timestamps.
+    const intact = cached.files.every(file => {
+      try { return statSync(file.path).size === file.size && previewDigest(readFileSync(file.path)) === file.digest }
+      catch { return false }
+    })
+    workspacePreviews.delete(key)
+    if (intact) { workspacePreviews.set(key, cached); return cached.result }
+  }
+  const prepare = inpaintTools().find(tool => tool.name === 'prepare_inpaint')!
+  const result = await prepare.run({ image_name: imageName, mask_base64: encoded }, signal) as string
+  const receipt = JSON.parse(result)
+  const files = [receipt.mask_path, receipt.preview_path].map((path: string) => {
+    const bytes = readFileSync(path)
+    return { path, size: bytes.length, digest: previewDigest(bytes) }
+  })
+  workspacePreviews.set(key, { result, files })
+  while (workspacePreviews.size > 64) workspacePreviews.delete(workspacePreviews.keys().next().value!)
+  return result
 }
 async function draft(a: Args, s: ReturnType<typeof source>): Promise<InpaintDraft> {
   let original: InpaintDraft = { base: '', negative: '', characters: [] }
