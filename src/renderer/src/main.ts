@@ -1,7 +1,7 @@
 import { createApp } from 'vue'
-import App from './App.vue'
+import App from './app/App.vue'
+import { installTooltips } from './shared/lib/tooltips'
 import './style.css'
-import { installTooltips } from './tooltips'
 
 createApp(App).mount('#app')
 const disposeTooltips = installTooltips()

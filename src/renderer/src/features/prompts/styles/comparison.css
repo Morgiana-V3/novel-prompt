@@ -1,0 +1,124 @@
+/* ---------- 比对结果项 ---------- */
+.unknown-item {
+  background: #fff;
+  border: 1px solid #ffdede;
+  border-radius: 14px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: pop 0.36s var(--bounce) backwards;
+  animation-delay: calc(var(--i, 0) * 30ms);
+}
+
+.unknown-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.tag-raw {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.unknown-item .tag-raw {
+  color: var(--bad);
+}
+
+.wavy {
+  text-decoration: underline wavy rgb(229 72 77 / 45%);
+  text-underline-offset: 4px;
+}
+
+.suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.suggest.center {
+  justify-content: center;
+}
+
+.suggest .chip {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.alias-item {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) auto minmax(180px, 1.4fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 8px 6px 14px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid #f8e7c4;
+  cursor: pointer;
+  animation: pop 0.36s var(--bounce) backwards;
+  animation-delay: calc(var(--i, 0) * 30ms);
+}
+
+.alias-item .tag-raw {
+  color: var(--alias);
+  text-decoration: line-through rgb(201 127 0 / 45%);
+}
+
+.alias-item .tag-card {
+  animation: none;
+}
+
+.arrow {
+  color: var(--muted);
+  display: inline-grid;
+  animation: nudge 1.6s ease-in-out infinite;
+}
+
+.nl-item {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  cursor: pointer;
+  line-height: 1.7;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  animation: pop 0.36s var(--bounce) backwards;
+  animation-delay: calc(var(--i, 0) * 30ms);
+}
+
+.badge {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  margin-right: 8px;
+  background: var(--nl-soft);
+  color: var(--nl);
+}
+
+.badge.text {
+  background: #f4efff;
+  color: #7c3aed;
+}
+
+.warn-line {
+  display: flex;
+  gap: 4px;
+  align-items: flex-start;
+  font-size: 11.5px;
+  color: var(--alias);
+  padding-left: 4px;
+  overflow-wrap: anywhere;
+}
+
+.warn-line .icon {
+  margin-top: 2px;
+}

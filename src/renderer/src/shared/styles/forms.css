@@ -1,0 +1,206 @@
+/* ---------- 设置 ---------- */
+.settings {
+  padding: 22px 28px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: auto;
+}
+
+.settings > .card {
+  width: 100%;
+  max-width: 900px;
+  flex-shrink: 0;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: fade-up 0.42s var(--bounce) backwards;
+  animation-delay: var(--d, 0ms);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.card-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--pink-soft);
+  color: var(--pink);
+  flex-shrink: 0;
+}
+
+.card-icon.blue {
+  background: var(--nl-soft);
+  color: var(--nl);
+}
+
+.card-icon.green {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.card:hover .card-icon .icon {
+  animation: wiggle 0.5s ease;
+}
+
+.card-desc {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.tile {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  transition: transform 0.3s var(--bounce);
+}
+
+.tile:hover {
+  transform: translateY(-2px);
+}
+
+.tile-num {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.tile-num.sm {
+  font-size: 14px;
+  line-height: 27px;
+}
+
+.tile-label {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 16px;
+}
+
+.form-field {
+  flex-shrink: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.form-field .input {
+  align-self: stretch;
+}
+
+.form-field.full {
+  grid-column: 1 / -1;
+}
+
+.form-field label {
+  font-size: 12px;
+  color: var(--text2);
+  font-weight: 500;
+}
+
+.help {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.input {
+  flex-shrink: 0;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line2);
+  background: #fff;
+  outline: none;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.25s;
+}
+
+textarea.input {
+  height: auto;
+  min-height: 80px;
+  padding: 10px 12px;
+  line-height: 1.7;
+}
+
+textarea.autosize {
+  flex-shrink: 0;
+  resize: none;
+}
+
+input.input:not(.sm),
+select.input:not(.sm) {
+  min-height: 36px;
+}
+
+.input:focus {
+  border-color: var(--pink-line);
+  box-shadow: 0 0 0 3px var(--pink-soft);
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress-msg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text2);
+}
+
+.bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--hover);
+  overflow: hidden;
+  position: relative;
+}
+
+.bar-in {
+  height: 100%;
+  border-radius: 999px;
+  min-width: 8px;
+  background: repeating-linear-gradient(-45deg, var(--pink) 0 8px, #ff95b8 8px 16px);
+  background-size: 22.6px 22.6px;
+  animation: stripes 0.8s linear infinite;
+  transition: width 0.45s var(--bounce);
+}
+
+.bar.indeterminate .bar-in {
+  position: absolute;
+  width: 35%;
+  animation:
+    stripes 0.8s linear infinite,
+    slide 1.4s ease-in-out infinite;
+}

@@ -490,16 +490,19 @@ Electron 44 · Vue 3 · TypeScript · Vite（electron-vite）· 内存索引搜�
 ```
 src/main/tagdb      数据抓取（fetcher）、两层数据读取（layers）、内存索引与包含关系（store）、Danbooru 共现与 wiki（knowledge）
 src/main/prompt     提示词解析器
-src/main/ai         DeepSeek 客户端、优化器（工具调用 + 校验循环）、画面推测、统计数据收集（evidence）、批量翻译
-src/main/skills.ts  Skill 读写、启用与优先级、按功能和模型组装系统提示词、旧版迁移
-src/main/nai        NovelAI 图像接口、免费额度检查、图库、ZIP 解析
-src/main/mcp        MCP 服务端（server）、工具定义（tools）、安装到 Codex / Claude Code（install）
-src/shared          主进程与界面共用的类型、NAI 预设、提示词导入解析（分节文本 / JSON / PNG 元数据）
-src/renderer        Vue3 界面（store.ts 当前提示词与历史，components/ 共用组件，Mascot.vue 猫娘）
-skills/             内置 Skill：使用总则（core.md）、提示词编排（nai-prompt.md）、画面推测（nai-preview.md）、局部重绘（nai-inpaint.md）
-docs/               README 截图、agent 自助安装说明（agent-install.md）
+src/main/app        启动、窗口、生命周期与应用协议
+src/main/modules    工作台、生成、图片、提示词、标签、规则、设置、任务与更新用例
+src/main/providers  NovelAI / 聊天服务的 HTTP、请求与响应协议
+src/main/adapters   IPC / MCP / 桌面窗口适配
+src/preload/api     按领域暴露受限跨进程 API
+src/shared          跨进程契约、领域模型与平台无关纯规则
+src/renderer/src    app 装配、features 业务组件/状态、shared 通用 UI 与样式
+src/runtime         独立 Node MCP 代理与运行目录解析
+skills/             内置规则
+scripts/            开发、构建、验收安装包、数据与资源处理命令
+tests/              unit / integration / e2e / support；运行产物在项目外
+docs/               使用、Agent 接入、架构、验证与代码规范
 default-data/       随安装包分发的内置数据
-scripts/            数据导出、MCP 代理与冒烟测试、吉祥物生成
 ```
 
 ### 常用脚本
@@ -604,8 +607,9 @@ python scripts/process-mascot.py [名称...] # 抠底、裁边、输出到 src/r
 
 ```powershell
 # 基线源码应事先从本轮改造前的 Git 提交导出到该目录，并提供依赖。
-node scripts/build-acceptance-packages.mjs release-acceptance/baseline-source
-node scripts/installed-retention-smoke.mjs release-acceptance/baseline-local/NovelPrompt-Acceptance-baseline.exe release-acceptance/current/NovelPrompt-Acceptance-current.exe
+$acceptance = Join-Path $env:TEMP "novel-prompt-acceptance"
+node scripts/build-acceptance-packages.mjs "$acceptance/baseline-source"
+node tests/e2e/installed-retention-smoke.mjs "$acceptance/baseline-local/NovelPrompt-Acceptance-baseline.exe" "$acceptance/current/NovelPrompt-Acceptance-current.exe"
 ```
 
 安装验收使用测试版本 `0.6.0 → 0.6.1-acceptance.1`，检查真实覆盖安装、旧数据兼容、文件占用、正常退出重启、异常退出恢复，测试结束卸载独立验收程序。仓库的正式版本号不因此改变，也不发布更新。

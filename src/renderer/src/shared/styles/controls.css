@@ -1,0 +1,285 @@
+/* ---------- 基础控件 ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line2);
+  background: #fff;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    transform 0.3s var(--bounce),
+    background 0.15s,
+    border-color 0.15s,
+    box-shadow 0.2s;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--hover);
+  transform: translateY(-1px);
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/*
+ * 深色底的按钮：Windows 下 Chromium 默认用 ClearType 子像素渲染，白字压在深色底上会出现彩边、笔画发虚，
+ * 而且悬停时的 transform 会让渲染方式来回切换。固定为独立合成层（灰度抗锯齿），
+ * 中文字体（微软雅黑）没有 500 字重，统一用 600 让笔画饱满。
+ */
+.btn.primary,
+.btn.accent {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
+.btn.primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: #000;
+  box-shadow: 0 6px 16px rgb(0 0 0 / 16%);
+}
+
+.btn.accent {
+  background: var(--pink);
+  border-color: var(--pink);
+  color: #fff;
+  box-shadow: 0 4px 12px rgb(255 107 154 / 30%);
+}
+
+.btn.accent:hover:not(:disabled) {
+  background: var(--pink-deep);
+  box-shadow: 0 8px 20px rgb(255 107 154 / 38%);
+}
+
+.btn.accent:hover:not(:disabled) .icon {
+  animation: twinkle 0.6s var(--bounce);
+}
+
+.btn.ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text2);
+}
+
+.btn.ghost:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.btn.small {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  gap: 4px;
+}
+
+.btn.big {
+  height: 40px;
+  padding: 0 22px;
+  font-size: 14px;
+}
+
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--text2);
+  transition:
+    background 0.15s,
+    color 0.15s,
+    transform 0.3s var(--bounce);
+}
+
+.icon-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.icon-btn:hover .icon {
+  transform: rotate(-8deg) scale(1.08);
+  transition: transform 0.3s var(--bounce);
+}
+
+.icon-btn:active {
+  transform: scale(0.86);
+}
+
+.icon-btn.sm {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+}
+
+.seg {
+  display: inline-flex;
+  background: var(--hover);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.seg button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  color: var(--text2);
+  font-size: 12.5px;
+  transition:
+    background 0.2s,
+    color 0.2s,
+    box-shadow 0.2s,
+    transform 0.3s var(--bounce);
+}
+
+.seg button:active {
+  transform: scale(0.94);
+}
+
+.seg button.on {
+  background: #fff;
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+  font-weight: 600;
+}
+
+.seg button.on .icon {
+  color: var(--pink);
+}
+
+.seg.block {
+  display: flex;
+}
+
+.seg.block button {
+  flex: 1;
+}
+
+.seg.big button {
+  padding: 7px 14px;
+  font-size: 13px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line2);
+  background: #fff;
+  font-size: 12.5px;
+  color: var(--text2);
+  transition:
+    transform 0.3s var(--bounce),
+    border-color 0.15s,
+    background 0.15s,
+    color 0.15s;
+}
+
+.chip:hover {
+  border-color: var(--c, var(--pink-line));
+  color: var(--c, var(--text));
+  transform: translateY(-1px);
+}
+
+.chip:active {
+  transform: scale(0.92);
+}
+
+.chip.on {
+  background: var(--cb, var(--pink-soft));
+  border-color: var(--c, var(--pink));
+  color: var(--c, var(--pink));
+  font-weight: 600;
+}
+
+.chip-zh {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.cat-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c);
+  display: inline-block;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  background: var(--hover);
+  color: var(--text2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pill i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentcolor;
+  opacity: 0.7;
+}
+
+.pill.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.pill.bad {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.pill.alias {
+  background: var(--alias-soft);
+  color: var(--alias);
+}
+
+.pill.nl {
+  background: var(--nl-soft);
+  color: var(--nl);
+}
+
+kbd {
+  font-family: inherit;
+  font-size: 11px;
+  background: #fff;
+  border: 1px solid var(--line2);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  padding: 0 5px;
+  margin-right: 4px;
+  color: var(--text2);
+}

@@ -1,0 +1,79 @@
+/* ---------- 输入框（composer） ---------- */
+.composer {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid var(--line2);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.25s;
+}
+
+.composer:focus-within {
+  border-color: var(--pink-line);
+  box-shadow:
+    0 0 0 4px var(--pink-soft),
+    var(--shadow);
+}
+
+.composer textarea {
+  flex: 1;
+  min-height: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  padding: 16px 18px;
+  line-height: 1.75;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.composer textarea::placeholder {
+  color: #b9bac2;
+}
+
+.composer textarea::selection {
+  background: #ffc4d8;
+}
+
+.composer.short {
+  flex: none;
+}
+
+/* 高度由脚本按内容设置，这里只给最小高度，避免出现框内滚动条 */
+.composer.short textarea {
+  flex: none;
+  height: auto;
+  min-height: 128px;
+  overflow: hidden;
+}
+
+.composer.short.neg textarea {
+  min-height: 96px;
+}
+
+/* 滚动条轨道上下留白，避免滑块顶到圆角边框外 */
+.composer textarea::-webkit-scrollbar-track {
+  margin: 12px 0;
+}
+
+.composer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 10px 14px;
+  border-top: 1px dashed var(--line);
+}
+
+.stats {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}

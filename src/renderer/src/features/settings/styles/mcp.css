@@ -1,0 +1,79 @@
+/* ---------- Agent 接入 ---------- */
+.code-box {
+  position: relative;
+  align-self: stretch;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.code-box pre {
+  margin: 0;
+  padding: 12px 44px 12px 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+}
+
+.code-box .icon-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.mcp-log {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px dashed var(--line);
+  padding-top: 12px;
+}
+
+.mcp-log-head {
+  display: flex;
+  align-items: center;
+}
+
+.mcp-log-head b {
+  font-size: 13px;
+}
+
+.mcp-log .effect-row {
+  padding: 6px 4px;
+  align-items: center;
+}
+
+.mcp-log .effect-row .grow {
+  color: var(--text2);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+details.manual {
+  gap: 8px;
+}
+
+details.manual summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text2);
+  padding: 2px 0;
+}
+
+details.manual summary:hover {
+  color: var(--text);
+}
+
+details.manual[open] summary {
+  margin-bottom: 4px;
+}

@@ -1,0 +1,36 @@
+:root {
+  --titlebar-safe-height: max(40px, env(titlebar-area-height, 40px));
+  --bg: #fff;
+  --side: #f7f7f8;
+  --panel: #fafafb;
+  --hover: #f1f1f3;
+  --line: #ededf0;
+  --line2: #e2e2e7;
+  --text: #1f1f24;
+  --text2: #5b5c66;
+  --muted: #9b9ca5;
+  --ink: #202125;
+  --pink: #ff6b9a;
+  --pink-deep: #f0518a;
+  --pink-soft: #fff0f5;
+  --pink-line: #ffc6d9;
+  --ok: #1f9d68;
+  --ok-soft: #e9f9f1;
+  --bad: #e5484d;
+  --bad-soft: #fff1f1;
+  --alias: #c97f00;
+  --alias-soft: #fff7e5;
+  --nl: #3b82f6;
+  --nl-soft: #edf4ff;
+  --shadow-sm: 0 1px 2px rgb(20 20 30 / 4%), 0 1px 3px rgb(20 20 30 / 6%);
+  --shadow: 0 6px 24px rgb(20 20 30 / 6%);
+  --bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --mono: 'Cascadia Code', 'JetBrains Mono', consolas, 'Microsoft YaHei UI', monospace;
+
+  font-family:
+    'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', system-ui, sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}

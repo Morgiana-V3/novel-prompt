@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { Api } from '../../preload/index'
+import type { Api } from '../../shared/contracts/api'
 
 declare module '*.vue' {
   import type { DefineComponent } from 'vue'

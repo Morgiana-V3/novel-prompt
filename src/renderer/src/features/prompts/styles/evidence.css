@@ -1,0 +1,72 @@
+/* ---------- 依据 ---------- */
+.pill.basis {
+  height: 20px;
+  padding: 0 8px;
+  font-size: 11px;
+  cursor: help;
+  flex-shrink: 0;
+}
+
+.pill.taste {
+  background: #f4efff;
+  color: #7c3aed;
+}
+
+.evidence {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.effect-row .meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.change-group + .change-group {
+  border-top: 1px solid var(--line);
+}
+
+.change-group-title {
+  padding: 10px 16px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+}
+
+.evidence-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--nl);
+  background: var(--nl-soft);
+  animation: fade-up 0.42s var(--bounce) backwards;
+}
+
+.evidence-note .icon {
+  margin-top: 3px;
+}
+
+.evidence-note.warn {
+  color: var(--alias);
+  background: var(--alias-soft);
+}
+
+.evidence-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.evidence-tags {
+  font-family: var(--mono);
+  font-weight: 500;
+}

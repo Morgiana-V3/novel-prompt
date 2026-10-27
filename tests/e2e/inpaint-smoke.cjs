@@ -1,0 +1,1355 @@
+const { temporaryProfile, artifactDirectory } = require('../support/fixtures.cjs')
+// Runs against the built renderer and real inpaint pipeline in an isolated profile.
+// All NovelAI network calls are replaced with fixtures; no credentials or credits used.
+const { app, BrowserWindow, ipcMain, net, protocol } = require('electron')
+const { mkdtempSync, readFileSync, writeFileSync } = require('node:fs')
+const { join } = require('node:path')
+const { tmpdir } = require('node:os')
+const { pathToFileURL } = require('node:url')
+const assert = require('node:assert/strict')
+const ts = require('typescript')
+const { PNG } = require('pngjs')
+const { crc32 } = require('node:zlib')
+const profile = temporaryProfile('np-inpaint-smoke-')
+app.setPath('userData', profile)
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'np-img', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+])
+require('../support/register-typescript.cjs')
+const client = require('../../src/main/modules/generation/index.ts')
+app.getAppPath = () => join(__dirname, '../..')
+const { planInpaint, normalizePlans } = require('../../src/main/modules/prompts/inpaint-planner.ts')
+const { applyInpaintChanges } = require('../../src/shared/prompts/inpaint-plan.ts')
+const skillService = require('../../src/main/modules/skills/service.ts')
+const { prepareInpaint, compositeInpaint } = require('../../src/main/modules/generation/inpaint.ts')
+const { splitMaskComponent } = require('../../src/renderer/src/features/inpaint/mask-components.ts')
+const { getSettings, saveSettings } = require('../../src/main/modules/settings/service.ts')
+const width = 832
+const height = 1216
+function png(color, w = width, h = height) {
+  const image = new PNG({ width: w, height: h })
+  for (let i = 0; i < image.data.length; i += 4) {
+    image.data.set(color, i)
+  }
+  return image
+}
+function metadata(image, data) {
+  const text = Buffer.from('Comment\0' + JSON.stringify(data))
+  const chunk = Buffer.alloc(text.length + 12)
+  chunk.writeUInt32BE(text.length)
+  chunk.write('tEXt', 4)
+  text.copy(chunk, 8)
+  chunk.writeUInt32BE(crc32(chunk.subarray(4, -4)), chunk.length - 4)
+  return Buffer.concat([image.subarray(0, -12), chunk, image.subarray(-12)])
+}
+const original = png([228, 237, 229, 255])
+for (let y = 0; y < height; y++) {
+  for (let x = 0; x < width; x++) {
+    const i = (y * width + x) * 4
+    if ((x - 416) ** 2 + (y - 320) ** 2 < 100 ** 2) {
+      original.data.set([241, 208, 186, 255], i)
+    }
+    if (x > 275 && x < 557 && y > 420 && y < 930) {
+      original.data.set([201, 113, 142, 255], i)
+    }
+  }
+}
+const originalBytes = metadata(PNG.sync.write(original), {
+  prompt: '1girl, red dress, outdoors',
+  uc: 'blurry',
+  width,
+  height,
+  v4_prompt: {
+    caption: {
+      base_caption: '1girl, red dress, outdoors',
+      char_captions: [{ char_caption: 'girl, silver hair', centers: [{ x: 0.5, y: 0.5 }] }],
+    },
+    use_coords: true,
+  },
+})
+const sourceName = 'smoke-source.png'
+writeFileSync(join(client.imageDir(), sourceName), originalBytes)
+saveSettings({
+  naiToken: 'fixture-token',
+  naiVersion: 'v5',
+  naiFreeOnly: true,
+  apiKey: 'fixture-ai',
+  baseUrl: 'https://fixture.test/v1',
+  model: 'fixture-text',
+  inpaintVision: {
+    apiKey: 'fixture-vision',
+    baseUrl: 'https://vision.test/v1',
+    model: 'fixture-vision',
+  },
+})
+let balance = 1000
+let percent = 80
+let generatedCalls = 0
+let lastBody
+let lastRequest
+let lastPlanRequest
+let aiBody
+let aiUrl
+let aiAuth
+let aiCalls = 0
+let aiMalformed = false
+let aiRejectImages = false
+let failAt = 0
+let generationRequests = []
+let planController
+let failGeneration = false
+let charge = false
+const originalFetch = net.fetch
+net.fetch = async (url, init) => {
+  if (url.endsWith('/chat/completions')) {
+    aiBody = JSON.parse(init.body)
+    aiUrl = url
+    aiAuth = init.headers.Authorization
+    aiCalls++
+    if (aiRejectImages && Array.isArray(aiBody.messages[1].content)) {
+      return Response.json({ message: '模型不支持图片输入' }, { status: 400 })
+    }
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, 180)
+      init.signal?.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer)
+          reject(new Error('已取消分析'))
+        },
+        { once: true },
+      )
+    })
+    const content = aiBody.messages[1].content
+    const request = JSON.parse(Array.isArray(content) ? content[0].text : content)
+    const plans = request.regions.map((r, i) => ({
+      id: r.id,
+      summary: `区域 ${r.label ?? r.id} 的修改方案`,
+      warning: '',
+      changes: [
+        {
+          field: i === 0 ? 'base' : 'character',
+          ...(i ? { characterIndex: 0 } : {}),
+          after: i === 0 ? '1girl, white shirt, long sleeves, outdoors' : 'girl, black hair',
+          reason: i === 0 ? '按批注替换衣服，保留构图' : '按批注修改发色',
+        },
+      ],
+    }))
+    return Response.json({
+      choices: [{ message: { content: JSON.stringify(aiMalformed ? { plans: [] } : { plans }) } }],
+    })
+  }
+  if (url.endsWith('/user/subscription')) {
+    return Response.json({
+      active: true,
+      tier: 3,
+      trainingStepsLeft: { fixedTrainingStepsLeft: balance, purchasedTrainingSteps: 0 },
+      usage: { percent, isNegative: false },
+    })
+  }
+  assert.equal(url, 'https://image.novelai.net/ai/generate-image', 'unexpected network call')
+  if (failGeneration || (failAt && generatedCalls + 1 === failAt)) {
+    return Response.json({ message: 'fixture failure' }, { status: 400 })
+  }
+  lastBody = JSON.parse(init.body)
+  generatedCalls++
+  if (charge) {
+    balance--
+  }
+  const generated = metadata(PNG.sync.write(png([102, 141, 202, 255])), {
+    ...lastBody.parameters,
+    prompt: lastBody.input,
+  })
+  return new Response(generated, { headers: { 'content-type': 'image/png' } })
+}
+const handlers = {
+  'tasks:list': () => ({ revision: 0, tasks: [] }),
+  'window:dark-titlebar': (event, dark) =>
+    BrowserWindow.fromWebContents(event.sender)?.setTitleBarOverlay({
+      color: '#00000000',
+      symbolColor: dark ? '#f7f7f9' : '#6b6c75',
+    }),
+  'images:cleanup-status': () => ({ pending: 0, message: '' }),
+  'settings:get': () => getSettings(),
+  'settings:save': (_, p) => saveSettings(p),
+  'db:status': () => ({
+    loaded: true,
+    tagCount: 0,
+    aliasCount: 0,
+    zhCount: 0,
+    implicationCount: 0,
+  }),
+  'skills:list': () => skillService.getConfig(),
+  'mcp:info': () => null,
+  'update:check': () => null,
+  'update:state': () => null,
+  'pages:removed': () => [],
+  'pages:list': () => [],
+  'ai:inpaint-plan': async (_, req) => {
+    lastPlanRequest = req
+    planController = new AbortController()
+    try {
+      return await planInpaint(req, planController.signal)
+    } finally {
+      planController = null
+    }
+  },
+  'ai:inpaint-plan-cancel': () => planController?.abort(),
+  'prompt:analyze': () => ({
+    tokens: [],
+    stats: { total: 0, valid: 0, alias: 0, unknown: 0, natural: 0, text: 0 },
+  }),
+  'nai:subscription': () => client.getSubscription(),
+  'nai:freeCheck': (_, ...args) => client.freeCheck(...args),
+  'nai:list': () => client.listImages(),
+  'nai:readImage': (_, name) => new Uint8Array(readFileSync(client.imagePath(name))),
+  'nai:inpaint': async (event, req) => {
+    lastRequest = req
+    generationRequests.push(req)
+    await new Promise((r) => setTimeout(r, 150))
+    return client.generateImages(
+      req,
+      (s) => event.sender.send('nai:step', { id: 'fixture', kind: 'inpaint', step: s }),
+      () => false,
+    )
+  },
+}
+for (const [name, handler] of Object.entries(handlers)) {
+  ipcMain.handle(name, handler)
+}
+const pause = (ms) => new Promise((r) => setTimeout(r, ms))
+function samePreview(actual, expected, message) {
+  const a = PNG.sync.read(Buffer.from(actual.split(',')[1], 'base64')).data
+  const b = PNG.sync.read(Buffer.from(expected.split(',')[1], 'base64')).data
+  let maxAlpha = 0
+  let maxPremultiplied = 0
+  for (let i = 0; i < a.length; i += 4) {
+    maxAlpha = Math.max(maxAlpha, Math.abs(a[i + 3] - b[i + 3]))
+    for (let c = 0; c < 3; c++) {
+      maxPremultiplied = Math.max(
+        maxPremultiplied,
+        Math.abs((a[i + c] * a[i + 3]) / 255 - (b[i + c] * b[i + 3]) / 255),
+      )
+    }
+  }
+  // Canvas can round antialiased overlap alpha by one 8-bit unit and color by
+  // two during alpha conversion and tinting. Solid interiors and CSS opacity are also
+  // asserted separately; actual fading cannot pass this pixel comparison.
+  assert.ok(
+    maxAlpha <= 1 && maxPremultiplied <= 2,
+    `${message}: max alpha delta ${maxAlpha}, max premultiplied color delta ${maxPremultiplied}`,
+  )
+}
+app.whenReady().then(async () => {
+  protocol.handle('np-img', (req) =>
+    originalFetch(
+      pathToFileURL(
+        client.imagePath(decodeURIComponent(new URL(req.url).pathname.slice(1))),
+      ).toString(),
+    ),
+  )
+  const win = new BrowserWindow({
+    width: 1440,
+    height: 900,
+    show: false,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#00000000', symbolColor: '#6b6c75', height: 40 },
+    webPreferences: {
+      preload: join(__dirname, '../../out/preload/index.js'),
+      backgroundThrottling: false,
+    },
+  })
+  const errors = []
+  win.webContents.on('console-message', (event) => {
+    if (event.level === 'error') {
+      errors.push(event.message)
+    }
+  })
+  const js = (code) => win.webContents.executeJavaScript(code, true)
+  const run = async (code) => {
+    const result = await js(code)
+    await pause(70)
+    return result
+  }
+  const wait = async (code) => {
+    for (let i = 0; i < 100; i++) {
+      if (await js(code)) {
+        return
+      }
+      await pause(50)
+    }
+    throw new Error('Timed out: ' + code)
+  }
+  const check = async (code, label) => {
+    assert.ok(await js(code), label)
+    console.log('PASS', label)
+  }
+  const clickText = (selector, text) =>
+    run(
+      `[...document.querySelectorAll(${JSON.stringify(selector)})].find(e=>e.textContent.includes(${JSON.stringify(text)})).click()`,
+    )
+  const input = (selector, value) =>
+    run(
+      `(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.value=${JSON.stringify(value)};e.dispatchEvent(new Event('input',{bubbles:true}))})()`,
+    )
+  const bounds = (selector) =>
+    js(
+      `(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}})()`,
+    )
+  const mouseClick = async (selector, text) => {
+    const p = await js(
+      `(()=>{const e=[...document.querySelectorAll(${JSON.stringify(selector)})].find(e=>e.textContent.includes(${JSON.stringify(text)}) && e.getClientRects().length && !e.closest('[class*="-leave-active"]'));e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`,
+    )
+    win.webContents.sendInputEvent({ type: 'mouseMove', ...p })
+    win.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...p })
+    win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...p })
+    await pause(220)
+  }
+  const zoomAtPointer = async (selector) => {
+    const before = await bounds(selector + ' .image-stage')
+    const frame = await bounds(selector)
+    const x = Math.round(frame.x + frame.w * 0.6)
+    const y = Math.round(frame.y + frame.h * 0.4)
+    await run(
+      `document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new WheelEvent('wheel',{clientX:${x},clientY:${y},deltaY:-300,bubbles:true,cancelable:true}))`,
+    )
+    const after = await bounds(selector + ' .image-stage')
+    assert.ok(after.w > before.w * 1.4, 'wheel enlarges image')
+    assert.ok(
+      Math.abs((x - before.x) / before.w - (x - after.x) / after.w) < 0.002,
+      'pointer x stays anchored',
+    )
+    assert.ok(
+      Math.abs((y - before.y) / before.h - (y - after.y) / after.h) < 0.002,
+      'pointer y stays anchored',
+    )
+    console.log('PASS pointer-anchored wheel zoom: ' + selector)
+  }
+  const panImage = async (selector, button, space = false) => {
+    const rect = await bounds(selector)
+    const before = await bounds(selector + ' .image-stage')
+    const x = Math.round(rect.x + rect.w / 2)
+    const y = Math.round(rect.y + rect.h / 2)
+    win.webContents.sendInputEvent({ type: 'mouseMove', x, y })
+    await pause(30)
+    if (space) {
+      await run(
+        `document.querySelector(${JSON.stringify(selector)}).focus();window.dispatchEvent(new KeyboardEvent('keydown',{key:' ',code:'Space',bubbles:true,cancelable:true}))`,
+      )
+      await check(
+        `getComputedStyle(document.querySelector(${JSON.stringify(selector)})).cursor==='grab'`,
+        'Space shows grab cursor',
+      )
+    }
+    win.webContents.sendInputEvent({ type: 'mouseDown', button, clickCount: 1, x, y })
+    await pause(30)
+    await check(
+      `getComputedStyle(document.querySelector(${JSON.stringify(selector)})).cursor==='grabbing'`,
+      'drag shows grabbing cursor',
+    )
+    win.webContents.sendInputEvent({ type: 'mouseMove', x: x + 60, y: y + 35 })
+    await pause(30)
+    win.webContents.sendInputEvent({ type: 'mouseUp', button, clickCount: 1, x: x + 60, y: y + 35 })
+    await pause(50)
+    if (space) {
+      await run(
+        `window.dispatchEvent(new KeyboardEvent('keyup',{key:' ',code:'Space',bubbles:true}))`,
+      )
+    }
+    const after = await bounds(selector + ' .image-stage')
+    assert.ok(
+      Math.abs(after.x - before.x - 60) < 2 && Math.abs(after.y - before.y - 35) < 2,
+      'drag translates image without jumping',
+    )
+  }
+  const drag = async (from, to) => {
+    const rect = await js(
+      `(()=>{const r=document.querySelector('.ip-viewport canvas.ip-active-mask').getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}})()`,
+    )
+    const point = (p) => ({
+      x: Math.round(rect.x + p[0] * rect.w),
+      y: Math.round(rect.y + p[1] * rect.h),
+    })
+    win.webContents.sendInputEvent({
+      type: 'mouseDown',
+      button: 'left',
+      clickCount: 1,
+      ...point(from),
+    })
+    for (let i = 1; i <= 8; i++) {
+      win.webContents.sendInputEvent({
+        type: 'mouseMove',
+        ...point([from[0] + ((to[0] - from[0]) * i) / 8, from[1] + ((to[1] - from[1]) * i) / 8]),
+      })
+    }
+    win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point(to) })
+    await pause(100)
+  }
+  const contextAt = async (x, y) => {
+    const r = await bounds('.ip-active-mask')
+    const p = { x: Math.round(r.x + r.w * x), y: Math.round(r.y + r.h * y) }
+    win.webContents.sendInputEvent({ type: 'mouseMove', ...p })
+    win.webContents.sendInputEvent({ type: 'mouseDown', button: 'right', clickCount: 1, ...p })
+    win.webContents.sendInputEvent({ type: 'mouseUp', button: 'right', clickCount: 1, ...p })
+    await pause(220)
+  }
+  try {
+    const pixels = new Uint8ClampedArray(8 * 6 * 4)
+    const setPixel = (x, y, alpha = 255) => pixels.set([255, 107, 154, alpha], (y * 8 + x) * 4)
+    for (let y = 0; y < 3; y++) {
+      for (let x = 0; x < 3; x++) {
+        setPixel(x, y)
+      }
+    }
+    for (let y = 1; y < 5; y++) {
+      for (let x = 5; x < 8; x++) {
+        setPixel(x, y)
+      }
+    }
+    setPixel(4, 0, 37) // Diagonal antialiased edge belongs to the right component.
+    const separated = splitMaskComponent(pixels, 8, 6, 6, 2)
+    assert.ok(separated.hasRemainder)
+    assert.equal(separated.component[3], 0)
+    assert.equal(separated.component[(4 * 8 + 7) * 4 + 3], 255)
+    assert.equal(separated.component[4 * 4 + 3], 37)
+    for (let i = 0; i < pixels.length; i++) {
+      assert.equal(separated.component[i] + separated.remainder[i], pixels[i])
+    }
+    assert.equal(splitMaskComponent(pixels, 8, 6, 3, 5), null)
+    // Erasing a dividing strip must separate one former stroke into two regions.
+    const divided = new Uint8ClampedArray(7 * 3 * 4).fill(255)
+    for (let y = 0; y < 3; y++) {
+      divided.fill(0, (y * 7 + 3) * 4, (y * 7 + 4) * 4)
+    }
+    const cut = splitMaskComponent(divided, 7, 3, 1, 1)
+    assert.ok(cut.hasRemainder)
+    assert.equal(cut.component[(1 * 7 + 5) * 4 + 3], 0)
+    console.log(
+      'PASS component extraction preserves alpha, diagonal connectivity, borders and erased gaps',
+    )
+    await win.loadFile(join(__dirname, '../../out/renderer/index.html'))
+    await js(
+      `localStorage.setItem('np-workspace-v1',JSON.stringify({prompt:'workspace unchanged',negative:'',characters:[],history:[]}))`,
+    )
+    win.reload()
+    await pause(600)
+    await clickText('.nav-item', '生图预览')
+    await wait(`!!document.querySelector('.thumb')`)
+    await run(`document.querySelector('.thumb').click()`)
+    await clickText('.viewer button', '局部重绘')
+    await wait(
+      `document.querySelector('.ip-viewport canvas.ip-active-mask')?.width===832 && !document.querySelector('.ip-settings fieldset').disabled`,
+    )
+    await wait(`!document.querySelector('.modal-enter-active')`)
+    await check(
+      `document.querySelector('#ip-prompt').value==='1girl, red dress, outdoors' && document.querySelector('.ip-foot button').disabled`,
+      'metadata initializes local draft; empty mask blocks submit',
+    )
+    await check(
+      `document.querySelector('.ip-mask').getBoundingClientRect().top===0 && document.elementFromPoint(10,10).classList.contains('ip-mask')`,
+      'backdrop covers the app header while dialog keeps titlebar clearance',
+    )
+    await check(
+      `document.querySelector('#ip-strength').value==='1'`,
+      'inpaint defaults to full redraw strength',
+    )
+    const initialPrompts = await js(
+      `[document.querySelector('#ip-prompt').value,document.querySelector('#ip-negative').value]`,
+    )
+    await input(
+      '#ip-prompt',
+      Array(24)
+        .fill(
+          'Use fine regular screentones for flat tones and selected shadows while keeping the deepest shadows solid black.',
+        )
+        .join(' '),
+    )
+    await input(
+      '#ip-negative',
+      Array(8)
+        .fill('lowres, blurry, worst quality, unfinished sketch, watermark, signature')
+        .join(', '),
+    )
+    await pause(250)
+    const promptStability = await js(`(async()=>{
+      const panel=document.querySelector('.ip-settings'),prompt=document.querySelector('#ip-prompt'),range=document.querySelector('#ip-strength');
+      panel.scrollTop=panel.scrollHeight;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+      const samples=[];
+      for(let i=0;i<20;i++){
+        samples.push([panel.scrollTop,prompt.clientWidth,prompt.clientHeight]);
+        range.value=i%2?'1':'0.99';range.dispatchEvent(new Event('input',{bubbles:true}));
+        await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+      }
+      range.value='1';range.dispatchEvent(new Event('input',{bubbles:true}));return samples;
+    })()`)
+    for (let column = 0; column < 3; column++) {
+      assert.ok(
+        Math.max(...promptStability.map((s) => s[column])) -
+          Math.min(...promptStability.map((s) => s[column])) <=
+          1,
+        'long inpaint prompts keep scroll/width/height stable on reactive updates: ' +
+          JSON.stringify(promptStability),
+      )
+    }
+    await input('#ip-prompt', initialPrompts[0])
+    await input('#ip-negative', initialPrompts[1])
+    await run(`document.querySelector('.ip-settings').scrollTop=0`)
+    await zoomAtPointer('.ip-viewport')
+    await check(
+      `(()=>{const c=document.querySelector('.brush-cursor'),s=document.querySelector('.ip-viewport canvas.ip-active-mask');return c && Math.abs(c.getBoundingClientRect().width-48*s.getBoundingClientRect().width/832)<1})()`,
+      'brush circle matches source-pixel diameter at current zoom',
+    )
+    await input('input[aria-label="笔刷大小"]', 96)
+    await check(
+      `(()=>{const c=document.querySelector('.brush-cursor'),s=document.querySelector('.ip-viewport canvas.ip-active-mask');return c && Math.abs(c.getBoundingClientRect().width-96*s.getBoundingClientRect().width/832)<1})()`,
+      'circle grows with brush size',
+    )
+    await run(`document.querySelector('input[aria-label="画布缩放"]').focus()`)
+    await check(
+      `getComputedStyle(document.querySelector('input[aria-label="画布缩放"]')).outlineStyle==='none'`,
+      'slider has no native rectangular focus outline',
+    )
+    await panImage('.ip-viewport', 'left', true)
+    await panImage('.ip-viewport', 'middle')
+    await check(
+      `document.querySelector('.ip-foot button').disabled`,
+      'Space and middle drag do not paint the mask',
+    )
+    await run(
+      `document.querySelector('#ip-prompt').focus();document.querySelector('#ip-prompt').dispatchEvent(new KeyboardEvent('keydown',{key:' ',code:'Space',bubbles:true,cancelable:true}))`,
+    )
+    await check(
+      `getComputedStyle(document.querySelector('.ip-viewport')).cursor!=='grab'`,
+      'typing spaces in prompt does not activate pan',
+    )
+    await drag([0.45, 0.45], [0.55, 0.55])
+    await check(
+      `document.querySelector('.ip-viewport canvas.ip-active-mask').getContext('2d').getImageData(416,608,1,1).data[3]>0`,
+      'drawing after zoom and pan hits correct source pixels',
+    )
+    await clickText('.ip-tools button', '清空')
+    await clickText('.ip-navigation button', '适应画布')
+    await input('input[aria-label="笔刷大小"]', 48)
+    await drag([0.4, 0.4], [0.6, 0.6])
+    await check(`!document.querySelector('.ip-foot button').disabled`, 'brush selects image pixels')
+    await run(`document.querySelector('button[title="撤销（Ctrl+Z）"]').click()`)
+    await check(
+      `document.querySelector('.ip-foot button').disabled`,
+      'undo removes brush selection',
+    )
+    await clickText('.ip-tools button', '框选')
+    await drag([0.35, 0.36], [0.65, 0.75])
+    await clickText('.ip-tools button', '橡皮')
+    await drag([0.45, 0.45], [0.55, 0.55])
+    await check(
+      `(()=>{const c=document.querySelector('.ip-viewport canvas.ip-active-mask');return c.getContext('2d').getImageData(416,608,1,1).data[3]===0})()`,
+      'eraser clears the middle of a selected region',
+    )
+    await run(`document.querySelector('button[title="撤销（Ctrl+Z）"]').click()`)
+    await input('#ip-prompt', '1girl, blue dress, outdoors')
+    await input('#ip-strength', '0.55')
+    win.setSize(1100, 700)
+    await pause(300)
+    await check(
+      `(()=>{const r=document.querySelector('.ip-dialog').getBoundingClientRect();return r.top>=40 && r.right<=innerWidth && r.bottom<=innerHeight && document.querySelector('.ip-head button').getBoundingClientRect().top>=40 && document.querySelector('.ip-viewport').clientHeight>100})()`,
+      'editor fits minimum window and avoids native titlebar controls',
+    )
+    win.setSize(1440, 900)
+    await win.webContents.capturePage()
+    await pause(400)
+    writeFileSync(
+      join(profile, 'inpaint-preview.png'),
+      (await win.webContents.capturePage()).toPNG(),
+    )
+    await run(`document.querySelector('.ip-foot button').click()`)
+    await check(
+      `document.querySelector('.ip-settings fieldset').disabled && document.querySelector('.ip-head button').disabled`,
+      'running request locks editing and close',
+    )
+    await wait(`document.querySelector('.ip-status')?.textContent.includes('已另存')`)
+    assert.equal(lastBody.action, 'infill')
+    assert.equal(lastBody.model, 'nai-diffusion-5-full-inpainting')
+    assert.deepEqual(lastBody.parameters.img2img, { strength: 0.55, color_correct: true })
+    assert.equal(lastBody.parameters.noise_schedule, 'karras')
+    const wireMask = PNG.sync.read(Buffer.from(lastBody.parameters.mask, 'base64'))
+    assert.equal(wireMask.width, width)
+    assert.equal(wireMask.height, height)
+    assert.deepEqual([...wireMask.data.subarray(0, 4)], [0, 0, 0, 255])
+    assert.deepEqual(
+      [...wireMask.data.subarray((560 * width + 400) * 4, (560 * width + 400) * 4 + 4)],
+      [255, 255, 255, 255],
+    )
+    for (let i = 0; i < wireMask.data.length; i += 4) {
+      assert.ok(wireMask.data[i] === 0 || wireMask.data[i] === 255)
+      assert.equal(wireMask.data[i + 1], wireMask.data[i])
+      assert.equal(wireMask.data[i + 2], wireMask.data[i])
+      assert.equal(wireMask.data[i + 3], 255)
+    }
+    assert.ok(
+      Buffer.from(lastBody.parameters.image, 'base64').equals(originalBytes),
+      'source sent to NovelAI must not contain the colored UI overlay',
+    )
+    const latest = client.listImages().find((g) => g.name !== sourceName)
+    const savedBytes = readFileSync(client.imagePath(latest.name))
+    const saved = PNG.sync.read(savedBytes)
+    const selected = PNG.sync.read(Buffer.from(lastRequest.inpaint.mask, 'base64'))
+    let changed = 0
+    for (let i = 0; i < saved.data.length; i += 4) {
+      if (selected.data[i] === 0) {
+        assert.ok(
+          saved.data.subarray(i, i + 4).equals(original.data.subarray(i, i + 4)),
+          'unmasked pixel changed',
+        )
+      } else if (!saved.data.subarray(i, i + 4).equals(original.data.subarray(i, i + 4))) {
+        changed++
+      }
+    }
+    assert.ok(changed > 1000)
+    assert.ok(savedBytes.includes(Buffer.from('blue dress')))
+    console.log(
+      'PASS backend request: full-size opaque black/white mask, clean source, strength, outside pixels, metadata',
+    )
+    await clickText('.ip-tools button', '原图 / 遮罩')
+    await check(
+      `document.querySelector('.ip-viewport canvas.ip-active-mask').style.display!=='none'`,
+      'original/result comparison retains editable mask',
+    )
+    const beforeCalls = generatedCalls
+    percent = 0
+    await run(`document.querySelector('.ip-foot button').click()`)
+    await wait(
+      `document.querySelector('.ip-settings .error-box')?.textContent.includes('不满足免费条件')`,
+    )
+    assert.equal(generatedCalls, beforeCalls)
+    console.log('PASS exhausted quota blocks network generation')
+    percent = 80
+    failGeneration = true
+    await run(`document.querySelector('.ip-foot button').click()`)
+    await wait(
+      `document.querySelector('.ip-settings .error-box')?.textContent.includes('fixture failure')`,
+    )
+    await check(
+      `!document.querySelector('.ip-foot button').disabled && document.querySelector('#ip-prompt').value.includes('blue dress')`,
+      'failure preserves draft and mask for retry',
+    )
+    failGeneration = false
+    charge = true
+    await run(`document.querySelector('.ip-foot button').click()`)
+    await wait(`document.querySelector('.ip-status')?.textContent.includes('扣除了 Anlas')`)
+    console.log('PASS charge detection preserves result and reports balance change')
+    charge = false
+    await clickText('.ip-canvas-foot button', '以结果继续修改')
+    await wait(
+      `document.querySelector('.ip-foot button').disabled && !document.querySelector('.ip-settings fieldset').disabled`,
+    )
+    await check(
+      `document.querySelector('#ip-prompt').value==='1girl, blue dress, outdoors'`,
+      'continue from result clears mask and keeps edit prompt',
+    )
+    await run(`document.querySelector('.ip-head button').click()`)
+    await check(
+      `!!document.querySelector('.ip-mask.modal-leave-active')`,
+      'inpaint stays mounted during exit animation',
+    )
+    await wait(`!document.querySelector('.ip-mask')`)
+    await check(
+      `document.querySelector('.view.generate textarea[data-src="pos"]').value==='workspace unchanged' && document.querySelectorAll('.thumb').length>=3`,
+      'workspace unchanged; source and results remain in gallery',
+    )
+    await run(`document.querySelector('.viewer-stage').click()`)
+    await wait(
+      `document.querySelector('.iv-canvas img')?.naturalWidth===832 && !document.querySelector('.modal-enter-active')`,
+    )
+    await zoomAtPointer('.iv-canvas')
+    await panImage('.iv-canvas', 'left')
+    await panImage('.iv-canvas', 'middle')
+    await check(`!!document.querySelector('.image-viewer')`, 'gallery drag keeps viewer open')
+    // Hidden Electron windows can defer compositor animation frames until capture.
+    // Finish finite animations so visual QA captures the settled UI, not a fade frame.
+    await js(
+      `document.getAnimations().filter(a=>Number.isFinite(a.effect?.getComputedTiming().endTime)).forEach(a=>a.finish())`,
+    )
+    await check(
+      `getComputedStyle(document.querySelector('.image-viewer')).opacity==='1'`,
+      'gallery reaches fully visible state',
+    )
+    await win.webContents.capturePage()
+    await pause(300)
+    writeFileSync(
+      join(profile, 'gallery-preview.png'),
+      (await win.webContents.capturePage()).toPNG(),
+    )
+    await clickText('.iv-toolbar button', '适应窗口')
+    await check(
+      `document.querySelector('.iv-zoom').textContent==='100%'`,
+      'fit restores gallery zoom',
+    )
+    await zoomAtPointer('.iv-canvas')
+    await run(`document.querySelector('.iv-toolbar button[title="下一张（→）"]').click()`)
+    await check(
+      `document.querySelector('.iv-zoom').textContent==='100%'`,
+      'switching image resets zoom and pan',
+    )
+    await run(`window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`)
+    await check(
+      `!!document.querySelector('.image-viewer.modal-leave-active')`,
+      'gallery Escape animates exit',
+    )
+    await wait(`!document.querySelector('.image-viewer')`)
+    // Regression: paint multiple places without comments, then annotate the
+    // second place first. This must not pin or submit the first painted place.
+    await run(
+      `[...document.querySelectorAll('.thumb')].find(e=>e.querySelector('img').src.includes('smoke-source.png')).click()`,
+    )
+    await clickText('.viewer button', '局部重绘')
+    await wait(
+      `document.querySelector('.ip-active-mask')?.width===832 && !document.querySelector('.ip-settings fieldset').disabled && !document.querySelector('.modal-enter-active')`,
+    )
+    await js(
+      `document.getAnimations().filter(a=>Number.isFinite(a.effect?.getComputedTiming().endTime)).forEach(a=>a.finish())`,
+    )
+    await win.webContents.capturePage()
+    await pause(200)
+    await clickText('.ip-tools button', '框选')
+    await clickText('.ip-tools button', '画笔')
+    await drag([0.1, 0.2], [0.3, 0.2])
+    await drag([0.6, 0.72], [0.7, 0.72])
+    await drag([0.68, 0.72], [0.8, 0.72])
+    const preview = () => js(`document.querySelector('.ip-mask-preview').toDataURL()`)
+    const unannotatedPreview = await preview()
+    await check(
+      `document.querySelectorAll('.ip-marker').length===0`,
+      'painting does not allocate annotation numbers',
+    )
+    await contextAt(0.75, 0.72)
+    await mouseClick('.ip-context-menu button', '新增批注')
+    const firstLabel = await js(`document.querySelector('.ip-marker').textContent`)
+    assert.match(firstLabel, /^[A-Z]{2}$/)
+    await check(
+      `document.querySelector('.ip-comment b').textContent==='区域 ${firstLabel}'`,
+      'first annotation has a fixed letter ID shared by the pin and comment',
+    )
+    await check(
+      `(()=>{const m=document.querySelector('.ip-marker');return Math.abs(parseFloat(m.style.left)-75)<.5 && Math.abs(parseFloat(m.style.top)-72)<.5})()`,
+      'annotation pin stays at the clicked second place, not the first stroke',
+    )
+    await check(
+      `(()=>{const c=document.querySelector('.ip-active-mask').getContext('2d'),a=(x,y)=>c.getImageData(Math.floor(x*832),Math.floor(y*1216),1,1).data[3];return a(.2,.2)===0 && a(.65,.72)===255 && a(.75,.72)===255})()`,
+      'annotation owns the clicked connected component including its overlapping strokes only',
+    )
+    samePreview(
+      await preview(),
+      unannotatedPreview,
+      'adding annotation must not change any mask preview pixels',
+    )
+    await input('.ip-comment textarea', '第二处的独立批注')
+    await mouseClick('.ip-comment button', '完成批注')
+    samePreview(
+      await preview(),
+      unannotatedPreview,
+      'finishing annotation must not fade existing paint',
+    )
+    await contextAt(0.2, 0.2)
+    await mouseClick('.ip-context-menu button', '新增批注')
+    const secondLabel = await js(`document.querySelectorAll('.ip-marker')[1].textContent`)
+    assert.notEqual(firstLabel, secondLabel)
+    await check(
+      `document.querySelector('.ip-comment b').textContent==='区域 ${secondLabel}' && document.querySelector('.ip-comment textarea').value===''`,
+      'earlier unannotated paint remains available for its own independent comment',
+    )
+    await input('.ip-comment textarea', '第一处的独立批注')
+    await mouseClick('.ip-comment button', '完成批注')
+    await mouseClick('.ip-marker', firstLabel)
+    samePreview(
+      await preview(),
+      unannotatedPreview,
+      'switching active annotation must not change mask appearance',
+    )
+    await mouseClick('.ip-marker', secondLabel)
+    await check(
+      `(()=>{const pins=[...document.querySelectorAll('.ip-marker')],styles=pins.map(e=>getComputedStyle(e));return !document.querySelector('.ip-marker.on') && styles.every(s=>s.width==='22px' && s.height==='22px' && s.backgroundColor===styles[0].backgroundColor && s.color===styles[0].color)})()`,
+      'pins are smaller and use the same appearance regardless of selection',
+    )
+    samePreview(
+      await preview(),
+      unannotatedPreview,
+      'switching back must not fade the other annotation',
+    )
+    await clickText('.ip-tools button', '框选')
+    await drag([0.7, 0.7], [0.9, 0.9])
+    const overlapPreview = await preview()
+    await check(
+      `(()=>{const c=document.querySelector('.ip-mask-preview'),ctx=c.getContext('2d');return getComputedStyle(c).opacity==='0.45' && getComputedStyle(document.querySelector('.ip-active-mask')).opacity==='0' && [.2,.75,.85].every((x,i)=>ctx.getImageData(Math.floor(x*832),Math.floor([.2,.72,.85][i]*1216),1,1).data[3]===255)})()`,
+      'all regions and overlapping paint share one opacity layer',
+    )
+    await contextAt(0.85, 0.85)
+    await mouseClick('.ip-context-menu button', '新增批注')
+    await mouseClick('.ip-comment button', '完成批注')
+    samePreview(
+      await preview(),
+      overlapPreview,
+      'annotating overlapping paint preserves its appearance',
+    )
+    await check(
+      `getComputedStyle(document.querySelector('.ip-mask-preview')).opacity==='0.45'`,
+      'annotation completion preserves the configured opacity',
+    )
+    await input('input[aria-label="遮罩不透明度"]', 65)
+    await check(
+      `getComputedStyle(document.querySelector('.ip-mask-preview')).opacity==='0.65'`,
+      'opacity slider controls all painted regions together',
+    )
+    await clickText('.ip-tabs button', '修改批注')
+    await check(
+      `(()=>{const labels=[...document.querySelectorAll('.ip-annotation-item > summary b')].map(e=>e.textContent);return labels[0]==='区域 ${firstLabel}' && labels[1]==='区域 ${secondLabel}' && new Set(labels).size===3 && labels.every(l=>/^区域 [A-Z]{2}$/.test(l))})()`,
+      'overview keeps unique stable IDs in annotation creation order',
+    )
+    await js(
+      `document.getAnimations().filter(a=>Number.isFinite(a.effect?.getComputedTiming().endTime)).forEach(a=>a.finish())`,
+    )
+    await win.webContents.capturePage()
+    await pause(200)
+    writeFileSync(
+      join(profile, 'mask-components.png'),
+      (await win.webContents.capturePage()).toPNG(),
+    )
+    await clickText('.ip-ai-section button', '分析批注')
+    await wait(`document.querySelectorAll('.ip-plan').length===2`)
+    assert.equal(lastPlanRequest.regions[0].instruction, '第二处的独立批注')
+    assert.equal(lastPlanRequest.regions[0].label, firstLabel)
+    assert.equal(lastPlanRequest.regions[1].label, secondLabel)
+    assert.notEqual(lastPlanRequest.regions[0].id, firstLabel)
+    assert.equal(JSON.parse(aiBody.messages[1].content[0].text).regions[0].label, firstLabel)
+    assert.equal(lastPlanRequest.regions[1].instruction, '第一处的独立批注')
+    const extractedMasks = lastPlanRequest.regions.map((r) =>
+      PNG.sync.read(Buffer.from(r.mask, 'base64')),
+    )
+    const maskValue = (m, x, y) =>
+      m.data[(Math.floor(y * height) * width + Math.floor(x * width)) * 4]
+    assert.equal(maskValue(extractedMasks[0], 0.2, 0.2), 0)
+    assert.equal(maskValue(extractedMasks[0], 0.75, 0.72), 255)
+    assert.equal(maskValue(extractedMasks[1], 0.2, 0.2), 255)
+    assert.equal(maskValue(extractedMasks[1], 0.75, 0.72), 0)
+    console.log(
+      'PASS submitted annotation masks match the clicked components rather than the original combined paint',
+    )
+    await run(`document.querySelector('.ip-head button').click()`)
+    await wait(`!!document.querySelector('.ip-close-confirm')`)
+    await check(
+      `!!document.querySelector('.ip-mask:not(.modal-leave-active)')`,
+      'closing with unsaved annotations asks for confirmation first',
+    )
+    await run(`document.querySelector('.ip-close-confirm .danger').click()`)
+    await wait(`!document.querySelector('.ip-mask')`)
+    // AI collaboration: separate masks, contextual comments, review, adoption,
+    // serial generation, stale-plan invalidation, and image-aware planning.
+    await run(
+      `[...document.querySelectorAll('.thumb')].find(e=>e.querySelector('img').src.includes('smoke-source.png')).click()`,
+    )
+    await clickText('.viewer button', '局部重绘')
+    await wait(
+      `document.querySelector('.ip-active-mask')?.width===832 && !document.querySelector('.ip-settings fieldset').disabled`,
+    )
+    await wait(`!document.querySelector('.modal-enter-active')`)
+    await check(
+      `document.querySelector('.ip-tabs .on').textContent.trim()==='提示词' && !document.querySelector('.ip-regions-bar')`,
+      'manual editing is the default and annotations are optional',
+    )
+    await js(
+      `document.getAnimations().filter(a=>Number.isFinite(a.effect?.getComputedTiming().endTime)).forEach(a=>a.finish())`,
+    )
+    await win.webContents.capturePage()
+    await pause(200)
+    const initialCanvasBounds = await bounds('.ip-viewport')
+    await clickText('.ip-tools button', '框选')
+    await drag([0.1, 0.78], [0.23, 0.9])
+    await contextAt(0.16, 0.84)
+    await check(
+      `!!document.querySelector('.ip-context-menu') && !document.querySelector('.ip-comment')`,
+      'right click opens an optional action menu, not the annotation form',
+    )
+    await mouseClick('.ip-context-menu button', '新增批注')
+    await check(
+      `!!document.querySelector('.ip-comment textarea') && !!document.querySelector('.ip-comment [role=combobox]')`,
+      'floating comment includes both text and character selection',
+    )
+    await mouseClick('.ip-comment button', '完成批注')
+    await check(
+      `document.querySelectorAll('.ip-annotation-item').length===1 && document.querySelector('textarea[aria-label="区域修改批注"]').value===''`,
+      'empty annotation is saved without blocking the next one',
+    )
+    // Reviewing an existing region used to clear the one-shot new-region flag.
+    const blankLabel = await js(`document.querySelector('.ip-marker').textContent`)
+    await mouseClick('.ip-marker', blankLabel)
+    await drag([0.35, 0.43], [0.65, 0.7])
+    await check(
+      `document.querySelector('.ip-canvas-foot').textContent.includes('未批注选区')`,
+      'painting after selecting an existing annotation creates an independent working mask',
+    )
+    await contextAt(0.5, 0.55)
+    await mouseClick('.ip-context-menu button', '新增批注')
+    const clothingLabel = await js(`document.querySelectorAll('.ip-marker')[1].textContent`)
+    await input('.ip-comment textarea', '角色1换成白衬衫，保留姿势，white shirt, long sleeves')
+    await mouseClick('.ip-comment [role=combobox]', '由 AI')
+    await check(
+      `document.querySelector('.theme-select-menu') && !document.querySelector('.ip-comment select')`,
+      'character menu uses themed options instead of the operating system popup',
+    )
+    await mouseClick('.theme-select-option', '角色 1')
+    await check(
+      `document.querySelector('.ip-comment [role=combobox]').textContent.includes('角色 1') && document.querySelector('.ip-comment [role=combobox]').getBoundingClientRect().height>=27`,
+      'floating character selection preserves typed value and intended height',
+    )
+    await mouseClick('.ip-comment button', '完成批注')
+    await drag([0.4, 0.18], [0.6, 0.3])
+    await contextAt(0.5, 0.24)
+    await mouseClick('.ip-context-menu button', '新增批注')
+    await input('.ip-comment textarea', '角色1头发改成黑色，其他不变')
+    await mouseClick('.ip-comment button', '完成批注')
+    assert.deepEqual(
+      await bounds('.ip-viewport'),
+      initialCanvasBounds,
+      'annotations must not move or resize the canvas',
+    )
+    await check(
+      `!document.querySelector('.ip-regions-bar') && document.querySelectorAll('.ip-marker').length===3`,
+      'annotation controls do not add a layout-shifting toolbar',
+    )
+    await contextAt(0.16, 0.84)
+    await mouseClick('.ip-context-menu button', '修改批注')
+    await input('.ip-comment textarea', '只修改第一条')
+    await mouseClick('.ip-comment button', '完成批注')
+    await check(
+      `(()=>{const e=[...document.querySelectorAll('textarea[aria-label="区域修改批注"]')];return e[0].value==='只修改第一条' && e[1].value.includes('白衬衫') && e[2].value.includes('黑色')})()`,
+      'editing one annotation leaves the other two unchanged',
+    )
+    await contextAt(0.16, 0.84)
+    await mouseClick('.ip-context-menu button', '删除批注')
+    await check(
+      `document.querySelectorAll('.ip-marker').length===2 && document.querySelectorAll('.ip-annotation-item').length===2 && document.querySelector('textarea[aria-label="区域修改批注"]').value.includes('白衬衫')`,
+      'deleting one annotation retains the other annotations',
+    )
+    await contextAt(0.16, 0.84)
+    await mouseClick('.ip-context-menu button', '新增批注')
+    await mouseClick('.ip-comment button', '完成批注')
+    await contextAt(0.5, 0.55)
+    await mouseClick('.ip-context-menu button', '编辑此区域遮罩')
+    await drag([0.38, 0.46], [0.42, 0.5])
+    await check(
+      `document.querySelectorAll('.ip-marker').length===3 && document.querySelector('.ip-canvas-foot').textContent.includes('区域 ${clothingLabel}')`,
+      'explicit mask editing updates the chosen region without adding an annotation',
+    )
+    await mouseClick('.ip-canvas-foot button', '完成遮罩编辑')
+    await drag([0.75, 0.75], [0.85, 0.85])
+    await contextAt(0.8, 0.8)
+    await mouseClick('.ip-context-menu button', '新增批注')
+    await mouseClick('.ip-comment button', '完成批注')
+    await check(
+      `document.querySelectorAll('.ip-marker').length===4`,
+      'new painting after finishing mask editing creates a fourth annotation',
+    )
+    const beforeDelete = await js(
+      `[...document.querySelectorAll('.ip-marker')].map(e=>e.textContent)`,
+    )
+    await contextAt(0.8, 0.8)
+    await mouseClick('.ip-context-menu button', '删除此区域')
+    await check(
+      `document.querySelectorAll('.ip-marker').length===3`,
+      'deleting an entire region preserves all other annotations',
+    )
+    assert.deepEqual(
+      await js(`[...document.querySelectorAll('.ip-marker')].map(e=>e.textContent)`),
+      beforeDelete.slice(0, 3),
+    )
+    await drag([0.75, 0.75], [0.85, 0.85])
+    await contextAt(0.8, 0.8)
+    await mouseClick('.ip-context-menu button', '新增批注')
+    await mouseClick('.ip-comment button', '完成批注')
+    const afterRecreate = await js(
+      `[...document.querySelectorAll('.ip-marker')].map(e=>e.textContent)`,
+    )
+    assert.deepEqual(afterRecreate.slice(0, 3), beforeDelete.slice(0, 3))
+    assert.ok(!beforeDelete.includes(afterRecreate[3]))
+    await contextAt(0.8, 0.8)
+    await mouseClick('.ip-context-menu button', '删除此区域')
+    console.log('PASS deletion and recreation keep other IDs stable and never recycle deleted IDs')
+    await clickText('.ip-tabs button', '修改批注')
+    await check(
+      `document.querySelectorAll('.ip-annotation-item').length===3 && !document.querySelector('.ip-annotation-item[open]')`,
+      'all comments appear in the overview, collapsed by default',
+    )
+    await run(`document.querySelectorAll('.ip-annotation-item > summary')[1].click()`)
+    await check(
+      `document.querySelectorAll('[role=combobox][aria-label="批注对应角色"]')[1].textContent.includes('角色 1')`,
+      'character choice is shared between floating card and overview',
+    )
+    await check(
+      `(()=>{const e=document.querySelectorAll('[role=combobox][aria-label="批注对应角色"]')[1];return e.getBoundingClientRect().height>=27 && getComputedStyle(e).flexBasis==='auto'})()`,
+      'vertical compact form controls no longer collapse',
+    )
+    const shortComment = await js(
+      `document.querySelector('.ip-annotation-item[open] textarea').value`,
+    )
+    await input(
+      '.ip-annotation-item[open] textarea',
+      Array(18).fill('描述此处的修改，保留其他内容。').join('\n'),
+    )
+    await check(
+      `(()=>{const t=document.querySelector('.ip-annotation-item[open] textarea');return t.clientHeight>300&&t.scrollHeight<=t.clientHeight+1})()`,
+      'long annotations grow with content',
+    )
+    win.setSize(1100, 700)
+    await pause(300)
+    await check(
+      `(()=>{const e=document.querySelectorAll('[role=combobox][aria-label="批注对应角色"]')[1],r=document.querySelector('.ip-dialog').getBoundingClientRect();return e.getBoundingClientRect().height>=27 && r.bottom<=innerHeight && document.querySelector('.ip-settings').scrollHeight>document.querySelector('.ip-settings').clientHeight})()`,
+      'small window scrolls form content instead of squeezing controls',
+    )
+    await input('.ip-annotation-item[open] textarea', shortComment)
+    await check(
+      `!document.querySelector('[aria-label="分析方式"]')`,
+      'analysis always includes images without a mode selector',
+    )
+    await mouseClick('.ip-annotation-item[open] [aria-label="批注对应角色"]', '角色 1')
+    await check(
+      `(()=>{const r=document.querySelector('.theme-select-menu').getBoundingClientRect();return r.top>=40 && r.bottom<=innerHeight})()`,
+      'themed popup stays within the small window',
+    )
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Up' })
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' })
+    await pause(200)
+    await check(
+      `document.querySelector('.ip-annotation-item[open] [aria-label="批注对应角色"]').textContent.includes('由 AI 判断')`,
+      'keyboard can select automatic character targeting',
+    )
+    await mouseClick('.ip-annotation-item[open] [aria-label="批注对应角色"]', '由 AI 判断')
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
+    await pause(200)
+    await check(
+      `!document.querySelector('.theme-select[aria-expanded="true"]') && !!document.querySelector('.ip-mask:not(.modal-leave-active)')`,
+      'Escape closes dropdown without closing the editor',
+    )
+    await mouseClick('.ip-annotation-item[open] [aria-label="批注对应角色"]', '由 AI 判断')
+    await mouseClick('.theme-select-option', '角色 1')
+    win.setSize(1440, 900)
+    await win.webContents.capturePage()
+    await pause(300)
+    await js(
+      `document.getAnimations().filter(a=>Number.isFinite(a.effect?.getComputedTiming().endTime)).forEach(a=>a.finish())`,
+    )
+    await win.webContents.capturePage()
+    await pause(200)
+    writeFileSync(
+      join(profile, 'annotation-overview.png'),
+      (await win.webContents.capturePage()).toPNG(),
+    )
+    await mouseClick('.ip-annotation-item[open] [aria-label="批注对应角色"]', '角色 1')
+    // A hidden window may not start Vue's double-rAF enter transition until the
+    // first capture; warm frames before finishing that newly started transition.
+    for (let i = 0; i < 4; i++) {
+      await win.webContents.capturePage()
+      await pause(100)
+      await js(
+        `document.getAnimations().filter(a=>Number.isFinite(a.effect?.getComputedTiming().endTime)).forEach(a=>a.finish())`,
+      )
+    }
+    await check(
+      `(()=>{const e=document.querySelector('.theme-select-menu:not(.select-menu-leave-active)'),s=e && getComputedStyle(e);return s?.opacity==='1' && s.zIndex==='200' && s.backgroundColor==='rgb(255, 255, 255)'})()`,
+      'dropdown reaches an opaque themed surface above the dialog',
+    )
+    writeFileSync(join(profile, 'themed-select.png'), (await win.webContents.capturePage()).toPNG())
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
+    await pause(200)
+    const beforeAiGeneration = generatedCalls
+    await clickText('.ip-ai-section button', '分析批注')
+    await check(
+      `document.querySelector('.ip-settings fieldset').disabled`,
+      'analysis locks editable inputs',
+    )
+    await wait(`document.querySelectorAll('.ip-plan').length===2`)
+    assert.equal(generatedCalls, beforeAiGeneration)
+    assert.ok(aiBody.messages[0].content.includes('局部重绘提示词优化'))
+    assert.ok(Array.isArray(aiBody.messages[1].content))
+    assert.ok(!aiBody.messages[1].content[0].text.includes('base64'))
+    assert.equal(aiBody.messages[1].content.filter((p) => p.type === 'image_url').length, 3)
+    assert.ok(!('useVision' in lastPlanRequest))
+    assert.equal(lastPlanRequest.regions.length, 2)
+    assert.equal(lastPlanRequest.regions[0].target, 0)
+    console.log('PASS blank comments are skipped by analysis without blocking later annotations')
+    assert.notEqual(lastPlanRequest.regions[0].mask, lastPlanRequest.regions[1].mask)
+    await check(
+      `document.querySelector('.ip-plan .diff-chip.add')?.textContent.includes('white shirt') && document.querySelector('.ip-plan .diff-chip.del')?.textContent.includes('red dress') && !document.querySelector('.ip-full-change[open]')`,
+      'AI suggestions show only changed tags with full text collapsed',
+    )
+    console.log(
+      'PASS AI sees images and independent annotations, dedicated Skill, no generation before adoption',
+    )
+    await clickText('.ip-ai-section button', '采纳各区域')
+    await check(
+      `[...document.querySelectorAll('.ip-foot button')].some(e=>e.textContent.includes('2 个区域'))`,
+      'both region plans can be adopted',
+    )
+    await run(`document.querySelector('.ip-plan input[type=checkbox]').click()`)
+    await check(
+      `[...document.querySelectorAll('.ip-foot button')].some(e=>e.textContent.includes('1 个区域'))`,
+      'changing reviewed selection revokes prior adoption',
+    )
+    await run(`document.querySelector('.ip-plan input[type=checkbox]').click()`)
+    await clickText('.ip-ai-section button', '采纳各区域')
+    await run(`document.querySelector('.ip-plan > button').click()`)
+    await clickText('.ip-tabs button', '提示词')
+    await check(
+      `document.querySelector('#ip-prompt').value.includes('white shirt')`,
+      'accepted region draft is editable without replacing workspace',
+    )
+    await clickText('.ip-tabs button', 'AI 建议')
+    for (let i = 0; i < 4; i++) {
+      await win.webContents.capturePage()
+      await pause(100)
+      await js(
+        `document.getAnimations().filter(a=>Number.isFinite(a.effect?.getComputedTiming().endTime)).forEach(a=>a.finish())`,
+      )
+    }
+    await check(
+      `!document.querySelector('.theme-select-menu')`,
+      'closed selector is gone before reviewing AI changes',
+    )
+    writeFileSync(
+      join(profile, 'inpaint-ai-preview.png'),
+      (await win.webContents.capturePage()).toPNG(),
+    )
+    const startRequests = generationRequests.length
+    await clickText('.ip-foot button', '生成已采纳')
+    await wait(`document.querySelector('.ip-status')?.textContent.includes('已完成 2/2')`)
+    assert.equal(generatedCalls, beforeAiGeneration + 2)
+    const batch = generationRequests.slice(startRequests)
+    assert.equal(batch.length, 2)
+    assert.equal(batch[0].inpaint.imageName, sourceName)
+    assert.notEqual(batch[1].inpaint.imageName, sourceName)
+    assert.equal(batch[0].base, '1girl, white shirt, long sleeves, outdoors')
+    assert.equal(batch[1].characters[0].prompt, 'girl, black hair')
+    assert.equal(batch[0].inpaint.mask, lastPlanRequest.regions[0].mask)
+    assert.equal(batch[1].inpaint.mask, lastPlanRequest.regions[1].mask)
+    console.log('PASS batch generates each independent mask and draft, chaining saved images')
+    const beforeFailedBatch = generatedCalls
+    failAt = generatedCalls + 2
+    await clickText('.ip-foot button', '生成已采纳')
+    await wait(
+      `document.querySelector('.ip-settings .error-box')?.textContent.includes('fixture failure') && !document.querySelector('.ip-head button').disabled`,
+    )
+    failAt = 0
+    assert.equal(generatedCalls, beforeFailedBatch + 1)
+    await check(
+      `document.querySelector('.ip-canvas-foot button')?.textContent.includes('以结果继续修改')`,
+      'failed later region keeps earlier saved result available',
+    )
+    const beforeStoppedBatch = generatedCalls
+    await clickText('.ip-foot button', '生成已采纳')
+    await clickText('.ip-foot button', '停止后续区域')
+    await wait(`document.querySelector('.ip-status')?.textContent.includes('已停止后续重绘')`)
+    assert.equal(generatedCalls, beforeStoppedBatch + 1)
+    console.log('PASS batch failure and stop preserve completed images and skip later work')
+    await clickText('.ip-tools button', '原图 / 遮罩')
+    await clickText('.ip-tabs button', '修改批注')
+    await run(
+      `(()=>{const e=document.querySelectorAll('textarea[aria-label="区域修改批注"]')[1];e.value='重新修改区域1的服装';e.dispatchEvent(new Event('input',{bubbles:true}))})()`,
+    )
+    await check(
+      `document.querySelectorAll('.ip-plan').length===1`,
+      'changing annotation invalidates that region only',
+    )
+    await clickText('.ip-tabs button', '提示词')
+    await input('#ip-prompt', '1girl, red dress, outdoors, sunset')
+    await check(
+      `document.querySelectorAll('.ip-plan').length===0 && ![...document.querySelectorAll('.ip-foot button')].some(e=>e.textContent.includes('生成已采纳'))`,
+      'changing source draft invalidates all stale plans',
+    )
+    await clickText('.ip-tabs button', '修改批注')
+    aiMalformed = true
+    await clickText('.ip-ai-section button', '分析批注')
+    await wait(
+      `document.querySelector('.ip-settings .error-box')?.textContent.includes('区域数量')`,
+    )
+    aiMalformed = false
+    await check(
+      `document.querySelectorAll('textarea[aria-label="区域修改批注"]')[1].value==='重新修改区域1的服装' && !document.querySelector('.ip-foot .accent').disabled`,
+      'malformed AI output preserves annotations and masks',
+    )
+    await clickText('.ip-ai-section button', '分析批注')
+    await clickText('.ip-ai-section button', '取消分析')
+    await wait(`document.querySelector('.ip-settings .error-box')?.textContent.includes('取消')`)
+    console.log('PASS AI analysis cancellation leaves editor usable')
+    const visionReq = { ...lastPlanRequest }
+    const vision = await planInpaint(visionReq)
+    assert.equal(vision.mode, 'vision')
+    assert.ok(vision.skills.includes('内置 · 局部重绘优化'))
+    assert.equal(aiBody.model, 'fixture-text')
+    assert.equal(aiUrl, 'https://fixture.test/v1/chat/completions')
+    assert.equal(aiAuth, 'Bearer fixture-ai')
+    await check(
+      `!document.querySelector('#inpaint-vision')`,
+      'settings no longer require a separate vision provider',
+    )
+    const pictures = aiBody.messages[1].content.filter((p) => p.type === 'image_url')
+    assert.equal(pictures.length, 3)
+    assert.ok(pictures.every((p) => p.image_url.url.startsWith('data:image/jpeg;base64,')))
+    assert.ok(
+      aiBody.messages[1].content.some(
+        (p) =>
+          p.type === 'text' &&
+          p.text.includes(`区域 ${visionReq.regions[0].label}，id=${visionReq.regions[0].id}`),
+      ),
+    )
+    assert.throws(
+      () =>
+        normalizePlans(
+          { plans: [{ id: 'wrong', summary: '', warning: '', changes: [] }] },
+          visionReq,
+        ),
+      /区域/,
+    )
+    const invalidCharacter = JSON.parse(JSON.stringify(vision))
+    invalidCharacter.plans[0].changes[0] = {
+      field: 'character',
+      characterIndex: 999,
+      after: 'bad',
+      reason: 'bad index',
+    }
+    assert.throws(() => normalizePlans(invalidCharacter, visionReq), /角色/)
+    const overlap = await planInpaint({
+      ...visionReq,
+      regions: visionReq.regions.map((r) => ({ ...r, mask: visionReq.regions[0].mask })),
+    })
+    assert.ok(overlap.plans.every((p) => p.warning.includes('重叠')))
+    const configuredKey = getSettings().apiKey
+    const beforeMissingConfig = aiCalls
+    saveSettings({ apiKey: '' })
+    await assert.rejects(planInpaint(visionReq), /API Key/)
+    assert.equal(aiCalls, beforeMissingConfig)
+    saveSettings({ apiKey: configuredKey })
+    const previousModel = getSettings().model
+    saveSettings({ model: 'fixture-shared-vision' })
+    await planInpaint(visionReq)
+    assert.equal(aiBody.model, 'fixture-shared-vision')
+    saveSettings({ model: previousModel })
+    aiRejectImages = true
+    const beforeUnsupported = aiCalls
+    await assert.rejects(planInpaint(visionReq), /不支持图片/)
+    assert.equal(
+      aiCalls,
+      beforeUnsupported + 1,
+      'unsupported images must not silently retry as text or use the legacy provider',
+    )
+    aiRejectImages = false
+    console.log(
+      'PASS image analysis uses shared credentials, endpoint and current model; legacy vision settings are ignored',
+    )
+    const change = vision.plans[0].changes[0]
+    assert.throws(
+      () => applyInpaintChanges({ ...visionReq.draft, base: 'changed since analysis' }, [change]),
+      /已改变/,
+    )
+    const config = skillService.getConfig()
+    assert.ok(config.some((s) => s.id === 'builtin:inpaint' && s.scope === 'inpaint' && s.enabled))
+    assert.ok(!skillService.activeSkills('optimize', 'v5').some((s) => s.id === 'builtin:inpaint'))
+    skillService.setConfig([{ id: 'builtin:inpaint', enabled: false }])
+    assert.ok(!skillService.activeSkills('inpaint', 'v5').some((s) => s.id === 'builtin:inpaint'))
+    const custom = skillService.createSkill({
+      name: '重绘测试规则',
+      description: 'fixture',
+      scope: 'inpaint',
+      model: 'v5',
+      content: '只修改被批注的衣服。',
+    })
+    assert.equal(skillService.getSkill(custom.id).scope, 'inpaint')
+    assert.ok(skillService.activeSkills('inpaint', 'v5').some((s) => s.id === custom.id))
+    assert.ok(!skillService.activeSkills('preview', 'v5').some((s) => s.id === custom.id))
+    console.log(
+      'PASS image payloads, response validation, stale patch rejection, dedicated Skill isolation and toggle',
+    )
+    await run(`document.querySelector('.ip-head button').click()`)
+    await wait(
+      `!!document.querySelector('.ip-close-confirm') || !document.querySelector('.ip-mask')`,
+    )
+    await run(`document.querySelector('.ip-close-confirm .danger')?.click()`)
+    await wait(`!document.querySelector('.ip-mask')`)
+    await check(
+      `document.querySelector('.view.generate textarea[data-src="pos"]').value==='workspace unchanged'`,
+      'AI collaboration keeps workspace unchanged',
+    )
+    // Backend validation and compositing boundaries, including partial alpha.
+    const empty = PNG.sync.write(png([0, 0, 0, 255])).toString('base64')
+    assert.throws(() => prepareInpaint(originalBytes, empty, width, height), /先涂/)
+    assert.throws(() => prepareInpaint(originalBytes, lastRequest.inpaint.mask, 1024, 1024), /尺寸/)
+    assert.throws(
+      () =>
+        prepareInpaint(
+          originalBytes,
+          PNG.sync.write(png([255, 0, 0, 255])).toString('base64'),
+          width,
+          height,
+        ),
+      /黑白/,
+    )
+    const req = { ...lastRequest, inpaint: { ...lastRequest.inpaint, strength: 2 } }
+    await assert.rejects(
+      client.generateImages(
+        req,
+        () => {},
+        () => false,
+      ),
+      /强度/,
+    )
+    await assert.rejects(
+      client.generateImages(
+        { ...lastRequest, inpaint: { ...lastRequest.inpaint, imageName: '../settings.png' } },
+        () => {},
+        () => false,
+      ),
+      /原图/,
+    )
+    const prepared = prepareInpaint(originalBytes, lastRequest.inpaint.mask, width, height)
+    assert.throws(
+      () => compositeInpaint(prepared, PNG.sync.write(png([0, 0, 0, 255], 64, 64))),
+      /尺寸/,
+    )
+    const v45 = client.buildInpaintBody(
+      { ...lastRequest, version: 'v4.5', inpaint: { ...lastRequest.inpaint, strength: 1 } },
+      42,
+      prepared,
+    )
+    assert.equal(v45.model, 'nai-diffusion-4-5-full-inpainting')
+    assert.ok(!('img2img' in v45.parameters))
+    assert.equal(v45.parameters.noise_schedule, 'karras')
+    assert.equal(v45.parameters.prefer_brownian, true)
+    const soft = png([0, 0, 0, 255], 64, 64)
+    const alphaSource = png([20, 40, 60, 128], 64, 64)
+    const alphaResult = png([200, 100, 0, 255], 64, 64)
+    soft.data.set([128, 128, 128, 255], 0)
+    const alphaPrepared = prepareInpaint(
+      PNG.sync.write(alphaSource),
+      PNG.sync.write(soft).toString('base64'),
+      64,
+      64,
+    )
+    const alphaComposite = PNG.sync.read(
+      compositeInpaint(alphaPrepared, PNG.sync.write(alphaResult)),
+    )
+    assert.ok(alphaComposite.data[0] > 130 && alphaComposite.data[0] < 150)
+    assert.ok(alphaComposite.data[3] > 190 && alphaComposite.data[3] < 195)
+    assert.ok(alphaComposite.data.subarray(4).equals(alphaSource.data.subarray(4)))
+    const normal = client.buildBody(lastRequest, 42)
+    assert.equal(normal.action, 'generate')
+    assert.ok(!('image' in normal.parameters))
+    console.log('PASS input validation and V4.5 full-strength request')
+    assert.deepEqual(errors, [], 'unexpected renderer errors')
+    console.log('All inpaint checks passed. Screenshot: ' + join(profile, 'inpaint-preview.png'))
+  } catch (e) {
+    console.error(e)
+    console.error(await js(`document.querySelector('.ip-dialog')?.innerText`))
+    console.error(errors)
+    process.exitCode = 1
+  } finally {
+    win.destroy()
+    app.exit(process.exitCode || 0)
+  }
+})
