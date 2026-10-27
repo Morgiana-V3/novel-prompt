@@ -249,7 +249,27 @@ app.whenReady().then(async () => {
     recipes.deleteRecipe(recoveredRecipe.id)
     assert.ok(pageCurrent(w).image.missing)
     assert.ok(pageIteration(w, changed.id).result)
-    assert.throws(() => pages.validateExecution(w, { kind: 'inpaint', regionId: 'none' }), /底图/)
+    const missingImageWorkspace = structuredClone(w)
+    pageCurrent(missingImageWorkspace).editor.regions = [
+      {
+        id: 'existing-region',
+        label: 'AB',
+        instruction: 'test missing base image',
+        target: null,
+        anchor: null,
+        annotated: false,
+        mask: bytes.toString('base64'),
+        accepted: null,
+      },
+    ]
+    assert.throws(
+      () =>
+        pages.validateExecution(missingImageWorkspace, {
+          kind: 'inpaint',
+          regionId: 'existing-region',
+        }),
+      /底图/,
+    )
     w = await discussPage(w.id, w.revision, '讨论提示词', null, [])
     assert.equal(aiInput.hasImage, false)
     assert.equal(aiInput.imageMissing, true)

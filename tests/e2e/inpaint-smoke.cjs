@@ -993,7 +993,8 @@ app.whenReady().then(async () => {
     )
     await input(
       '.ip-annotation-item[open] textarea',
-      Array(18).fill('描述此处的修改，保留其他内容。').join('\n'),
+      // Force overflow even when the host font metrics fit 18 lines in the compact panel.
+      Array(36).fill('描述此处的修改，保留其他内容。').join('\n'),
     )
     await check(
       `(()=>{const t=document.querySelector('.ip-annotation-item[open] textarea');return t.clientHeight>300&&t.scrollHeight<=t.clientHeight+1})()`,
