@@ -293,7 +293,7 @@ Codex、Claude Code、Cursor 等支持 MCP 的 Agent 可以直接调用本软件
 | `set_workspace_agent` / `reply_workspace_request` / `cancel_workspace_request` | 后台外部接管、回复与取消 | 不调用内置 AI |
 | `list_tasks` / `cancel_task` | 共享任务与取消 | 可用 |
 
-v0.6.0 共提供 51 个工具，实际名称和参数以连接后的 `tools/list` 为准；完整工作流见 [MCP 接入说明](agent-install.md)。
+工具按接入范围按需提供，实际名称和参数以连接后的 `tools/list` 为准；完整工作流见 [MCP 接入说明](agent-install.md)。
 
 重绘调用顺序：`inpaint_guide` → `list_images` / `read_image_prompt` → `prepare_inpaint` 并查看 `preview_path` → 自行修改或 `plan_inpaint` → 确认修改内容后 `inpaint_image`。遮罩支持 `mask_path`、`mask_base64`、`rectangles` 三选一；矩形使用原图像素，不是缩放后屏幕坐标。省略提示词时沿用原图元数据，传空字符串或空角色数组表示明确清空；不重复追加质量词或 UC 预设。批量区域需串行执行并以前一张结果为新底图；返回 `stopped` 时停止。升级后需重启 MCP 进程刷新工具列表。
 

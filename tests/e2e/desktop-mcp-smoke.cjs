@@ -899,6 +899,8 @@ app.whenReady().then(async () => {
     const regionPromise = act('ui_add_workspace_region', {
       rectangles: [{ x: 20, y: 30, width: 40, height: 50 }],
       instruction: '仅修改这里的颜色',
+      // Keep the reviewed step visible until the real screenshot finishes encoding.
+      step_delay_ms: 2000,
     })
     await wait(() => desktop.state?.frontend?.stage === '已填写区域批注')
     await ui(
