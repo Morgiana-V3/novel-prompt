@@ -64,10 +64,10 @@ nav {
   color: var(--text2);
   text-align: left;
   transition:
-    background 0.18s,
-    color 0.18s,
-    box-shadow 0.18s,
-    transform 0.3s var(--bounce);
+    background var(--dur-fast),
+    color var(--dur-fast),
+    box-shadow var(--dur-base),
+    transform var(--dur-slow) var(--bounce);
 }
 
 .nav-item:hover {
@@ -75,12 +75,8 @@ nav {
   color: var(--text);
 }
 
-.nav-item:hover .icon {
-  animation: wiggle 0.5s ease;
-}
-
 .nav-item:active {
-  transform: scale(0.96);
+  transform: scale(var(--press));
 }
 
 .nav-item.active {
@@ -157,7 +153,7 @@ nav {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  animation: fade-up 0.42s var(--bounce) backwards;
+  animation: fade-up var(--dur-slow) var(--ease-out) backwards;
 }
 
 .update-head {
@@ -213,12 +209,14 @@ nav {
   height: 8px;
   border-radius: 50%;
   background: var(--ok);
-  animation: pulse-ok 2.2s infinite;
+  box-shadow: 0 0 0 3px var(--ok-soft);
 }
 
+/* 只有需要用户处理（未下载 tag 库）时才持续脉冲，就绪状态保持静止 */
 .status-dot.off {
   background: var(--pink);
-  animation-name: pulse-pink;
+  box-shadow: none;
+  animation: pulse-pink 2.2s infinite;
 }
 
 .main {
@@ -245,7 +243,6 @@ nav {
   gap: 8px;
   font-weight: 650;
   font-size: 14.5px;
-  animation: pop 0.35s var(--bounce);
 }
 
 .topbar-title .icon {
@@ -262,7 +259,15 @@ nav {
   min-height: 0;
 }
 
+/*
+ * 切换页面只保留这一层轻淡入；视图用 v-show 切换，重新显示时会重播。
+ * 子元素的进场动画在切换时由 App.vue 直接结束，避免三层动画叠加。
+ */
+.view,
+.sessions-view {
+  animation: view-in var(--dur-base) var(--ease-out);
+}
+
 .view {
   height: 100%;
-  animation: view-in 0.35s var(--bounce);
 }

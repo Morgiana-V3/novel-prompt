@@ -217,6 +217,7 @@ select {
   animation: spin 1.1s linear infinite;
 }
 
+/* 进行中状态的图标：柔和呼吸，代替原来的高频摇晃 */
 .spin-slow {
-  animation: wiggle 1.2s ease-in-out infinite;
+  animation: breathe 1.6s ease-in-out infinite;
 }

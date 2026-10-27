@@ -664,12 +664,18 @@ async function close() {
   border-radius: 18px;
   background: var(--bg);
   color: var(--text);
-  box-shadow: 0 18px 70px #0002;
+  box-shadow: 0 24px 60px rgb(20 20 30 / 22%);
   overflow: auto;
 }
 
+.project-dialog[open] {
+  animation: pop var(--dur-slow) var(--ease-out);
+}
+
 .project-dialog::backdrop {
-  background: #16151d66;
+  background: rgb(16 16 20 / 42%);
+  backdrop-filter: blur(3px);
+  animation: fade-in var(--dur-base) var(--ease-out);
 }
 
 .project-dialog .session-create {

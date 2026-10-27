@@ -179,7 +179,7 @@
   border-radius: 18px;
   background: linear-gradient(100deg, var(--pink-soft), #fff 70%);
   border: 1px solid #ffe0ea;
-  animation: fade-up 0.42s var(--bounce) backwards;
+  animation: fade-up var(--dur-slow) var(--ease-out) backwards;
 }
 
 .cheer b {

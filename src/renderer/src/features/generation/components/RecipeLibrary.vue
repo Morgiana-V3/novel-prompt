@@ -149,186 +149,193 @@ function apply() {
 </script>
 <template>
   <Teleport to="body">
-    <div
-      class="recipe-backdrop"
-      @keydown.esc.stop="emit('close')"
+    <Transition
+      name="modal"
+      appear
     >
-      <section
-        class="recipe-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="配置收藏"
-        tabindex="-1"
+      <div
+        class="recipe-backdrop"
+        @keydown.esc.stop="emit('close')"
       >
-        <header>
-          <div>
-            <b>配置收藏</b>
-            <p class="muted small">保存完整提示词和生图设置，选中后即可加载使用。</p>
+        <section
+          class="recipe-dialog modal-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-label="配置收藏"
+          tabindex="-1"
+        >
+          <header>
+            <div>
+              <b>配置收藏</b>
+              <p class="muted small">保存完整提示词和生图设置，选中后即可加载使用。</p>
+            </div>
+            <button
+              class="btn small"
+              @click="emit('close')"
+            >
+              关闭
+            </button>
+          </header>
+          <div
+            v-if="currentRequest"
+            class="recipe-save-current"
+          >
+            <button
+              class="btn small"
+              :disabled="busy"
+              @click="saveCurrent"
+            >
+              收藏当前配置</button
+            ><span class="muted small">无需先生成图片</span>
           </div>
-          <button
-            class="btn small"
-            @click="emit('close')"
+          <p
+            v-if="error"
+            class="error-box"
+            role="alert"
           >
-            关闭
-          </button>
-        </header>
-        <div
-          v-if="currentRequest"
-          class="recipe-save-current"
-        >
-          <button
-            class="btn small"
-            :disabled="busy"
-            @click="saveCurrent"
-          >
-            收藏当前配置</button
-          ><span class="muted small">无需先生成图片</span>
-        </div>
-        <p
-          v-if="error"
-          class="error-box"
-          role="alert"
-        >
-          {{ error }}
-        </p>
-        <div class="recipe-columns">
-          <aside>
-            <input
-              ref="searchInput"
-              v-model="query"
-              class="input"
-              placeholder="搜索名称、备注或标签"
-              aria-label="搜索配置"
-            />
+            {{ error }}
+          </p>
+          <div class="recipe-columns">
+            <aside>
+              <input
+                ref="searchInput"
+                v-model="query"
+                class="input"
+                placeholder="搜索名称、备注或标签"
+                aria-label="搜索配置"
+              />
+              <p
+                v-if="!filtered.length"
+                class="muted"
+              >
+                暂无匹配的配置。可收藏当前配置，或在图片上点击「收藏此图配置」。
+              </p>
+              <button
+                v-for="r in filtered"
+                :key="r.id"
+                :class="['recipe-item', { on: selected?.id === r.id }]"
+                @click="select(r)"
+              >
+                <img
+                  v-if="r.thumbnail"
+                  :src="r.thumbnail"
+                  alt="配置示例"
+                /><span
+                  >{{ r.name }}<small>{{ r.tags.join(' · ') }}</small></span
+                >
+              </button>
+            </aside>
+            <article v-if="selected">
+              <label
+                >名称<input
+                  v-model="selected.name"
+                  class="input"
+                  maxlength="100"
+              /></label>
+              <details class="recipe-notes">
+                <summary>标签与备注（可选）</summary>
+                <label
+                  >标签（逗号分隔）<input
+                    v-model="tags"
+                    class="input"
+                /></label>
+                <label
+                  >备注<textarea
+                    v-model="selected.note"
+                    class="input"
+                    maxlength="6000"
+                    rows="2"
+                  ></textarea>
+                </label>
+              </details>
+              <div class="row">
+                <button
+                  class="btn small"
+                  :disabled="busy"
+                  @click="save"
+                >
+                  保存修改</button
+                ><button
+                  class="btn ghost small"
+                  :disabled="busy"
+                  @click="remove"
+                >
+                  {{ confirmDelete ? '确认删除收藏' : '删除收藏' }}
+                </button>
+              </div>
+              <p>
+                加载后将替换{{ props.workspace ? '本会话' : '当前' }}提示词、角色、模型和生成设置{{
+                  props.workspace ? '，清除旧选区并切换为整图生成' : ''
+                }}。
+              </p>
+              <p
+                v-if="selected.recipe.sourceKind === 'inpaint'"
+                class="error-box"
+              >
+                此配置来自局部重绘，仅复用提示词与设置，不包含底图和遮罩，不能直接还原重绘过程。
+              </p>
+              <details open>
+                <summary>
+                  完整生成配置 · {{ selected.recipe.request.version.toUpperCase() }}
+                </summary>
+                <div class="recipe-preview">
+                  <b>主提示词</b>
+                  <pre>{{ selected.recipe.request.base || '空' }}</pre>
+                  <b>负面提示词</b>
+                  <pre>{{ selected.recipe.request.negative || '空' }}</pre>
+                  <div
+                    v-for="(character, index) in selected.recipe.request.characters"
+                    :key="index"
+                  >
+                    <b>角色 {{ index + 1 }} · 位置 {{ character.position || '自动' }}</b>
+                    <pre>{{ character.prompt }}</pre>
+                    <pre>角色负面：{{ character.negative || '空' }}</pre>
+                  </div>
+                  <dl>
+                    <template
+                      v-for="[key, label] in fields"
+                      :key="key"
+                      ><dt>{{ label }}</dt>
+                      <dd>{{ display(selected.recipe.request.params[key]) }}</dd></template
+                    >
+                  </dl>
+                  <p v-if="selected.sourceImage">
+                    此图配置记录单张图片的实际生成设置，质量词与负面预设已合并到提示词中。
+                  </p>
+                </div>
+              </details>
+            </article>
             <p
-              v-if="!filtered.length"
+              v-else
               class="muted"
             >
-              暂无匹配的配置。可收藏当前配置，或在图片上点击「收藏此图配置」。
+              选择一个收藏的配置即可加载。
             </p>
-            <button
-              v-for="r in filtered"
-              :key="r.id"
-              :class="['recipe-item', { on: selected?.id === r.id }]"
-              @click="select(r)"
+          </div>
+          <footer
+            v-if="selected"
+            class="recipe-load"
+          >
+            <label class="seed-option"
+              ><input
+                v-model="keepSeed"
+                type="checkbox"
+              />保留收藏中的种子（{{ display(selected.recipe.request.params.seed) }}）</label
+            ><button
+              class="btn primary"
+              :disabled="busy"
+              @click="apply"
             >
-              <img
-                v-if="r.thumbnail"
-                :src="r.thumbnail"
-                alt="配置示例"
-              /><span
-                >{{ r.name }}<small>{{ r.tags.join(' · ') }}</small></span
-              >
-            </button>
-          </aside>
-          <article v-if="selected">
-            <label
-              >名称<input
-                v-model="selected.name"
-                class="input"
-                maxlength="100"
-            /></label>
-            <details class="recipe-notes">
-              <summary>标签与备注（可选）</summary>
-              <label
-                >标签（逗号分隔）<input
-                  v-model="tags"
-                  class="input"
-              /></label>
-              <label
-                >备注<textarea
-                  v-model="selected.note"
-                  class="input"
-                  maxlength="6000"
-                  rows="2"
-                ></textarea>
-              </label>
-            </details>
-            <div class="row">
-              <button
-                class="btn small"
-                :disabled="busy"
-                @click="save"
-              >
-                保存修改</button
-              ><button
-                class="btn ghost small"
-                :disabled="busy"
-                @click="remove"
-              >
-                {{ confirmDelete ? '确认删除收藏' : '删除收藏' }}
-              </button>
-            </div>
-            <p>
-              加载后将替换{{ props.workspace ? '本会话' : '当前' }}提示词、角色、模型和生成设置{{
-                props.workspace ? '，清除旧选区并切换为整图生成' : ''
-              }}。
-            </p>
-            <p
-              v-if="selected.recipe.sourceKind === 'inpaint'"
-              class="error-box"
+              加载配置</button
+            ><small
+              v-if="!keepSeed"
+              class="muted"
+              >加载时仅将种子改为随机，其余配置保持不变。</small
             >
-              此配置来自局部重绘，仅复用提示词与设置，不包含底图和遮罩，不能直接还原重绘过程。
-            </p>
-            <details open>
-              <summary>完整生成配置 · {{ selected.recipe.request.version.toUpperCase() }}</summary>
-              <div class="recipe-preview">
-                <b>主提示词</b>
-                <pre>{{ selected.recipe.request.base || '空' }}</pre>
-                <b>负面提示词</b>
-                <pre>{{ selected.recipe.request.negative || '空' }}</pre>
-                <div
-                  v-for="(character, index) in selected.recipe.request.characters"
-                  :key="index"
-                >
-                  <b>角色 {{ index + 1 }} · 位置 {{ character.position || '自动' }}</b>
-                  <pre>{{ character.prompt }}</pre>
-                  <pre>角色负面：{{ character.negative || '空' }}</pre>
-                </div>
-                <dl>
-                  <template
-                    v-for="[key, label] in fields"
-                    :key="key"
-                    ><dt>{{ label }}</dt>
-                    <dd>{{ display(selected.recipe.request.params[key]) }}</dd></template
-                  >
-                </dl>
-                <p v-if="selected.sourceImage">
-                  此图配置记录单张图片的实际生成设置，质量词与负面预设已合并到提示词中。
-                </p>
-              </div>
-            </details>
-          </article>
-          <p
-            v-else
-            class="muted"
-          >
-            选择一个收藏的配置即可加载。
-          </p>
-        </div>
-        <footer
-          v-if="selected"
-          class="recipe-load"
-        >
-          <label class="seed-option"
-            ><input
-              v-model="keepSeed"
-              type="checkbox"
-            />保留收藏中的种子（{{ display(selected.recipe.request.params.seed) }}）</label
-          ><button
-            class="btn primary"
-            :disabled="busy"
-            @click="apply"
-          >
-            加载配置</button
-          ><small
-            v-if="!keepSeed"
-            class="muted"
-            >加载时仅将种子改为随机，其余配置保持不变。</small
-          >
-        </footer>
-      </section>
-    </div>
+          </footer>
+        </section>
+      </div>
+    </Transition>
   </Teleport>
 </template>
 <style scoped>
@@ -359,8 +366,9 @@ function apply() {
 .recipe-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 1000;
-  background: #0008;
+  z-index: 90;
+  background: rgb(16 16 20 / 42%);
+  backdrop-filter: blur(3px);
   display: grid;
   place-items: center;
   padding: 24px;
@@ -440,7 +448,7 @@ function apply() {
 }
 
 .recipe-item.on {
-  background: var(--pink-bg);
+  background: var(--pink-soft);
 }
 
 .recipe-item img {

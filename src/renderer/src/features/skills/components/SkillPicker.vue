@@ -356,9 +356,9 @@ onBeforeUnmount(() => {
   background: #fff;
   border: 1px solid var(--line);
   transition:
-    border-color 0.15s,
-    box-shadow 0.15s,
-    transform 0.25s var(--bounce);
+    border-color var(--dur-fast),
+    box-shadow var(--dur-fast),
+    transform var(--dur-slow) var(--bounce);
 }
 
 .skill-trigger:hover {
@@ -367,7 +367,7 @@ onBeforeUnmount(() => {
 }
 
 .skill-trigger:active {
-  transform: scale(0.98);
+  transform: scale(var(--press));
 }
 
 .skill-trigger.on {

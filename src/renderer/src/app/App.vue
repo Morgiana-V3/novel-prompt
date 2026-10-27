@@ -101,6 +101,28 @@ let updateTimer: ReturnType<typeof setTimeout> | undefined
 const workspaceView = ref<InstanceType<typeof WorkspacesView>>()
 const settingsView = ref<InstanceType<typeof SettingsView>>()
 const generateView = ref<InstanceType<typeof GenerateView>>()
+const contentEl = ref<HTMLElement>()
+
+/**
+ * 视图用 v-show 切换，重新显示时其中所有 CSS 进场动画都会重播（卡片依次弹出等）。
+ * 切换页面只保留视图自身的淡入（view-in），其余有限次的进场动画直接结束；
+ * 之后新出现的元素（新结果、新列表项）仍按原样播放进场动画。
+ */
+watch(
+  () => shellState.tab,
+  () => {
+    for (const animation of contentEl.value?.getAnimations({ subtree: true }) ?? []) {
+      if (
+        animation instanceof CSSAnimation &&
+        animation.animationName !== 'view-in' &&
+        animation.effect?.getComputedTiming().iterations !== Infinity
+      ) {
+        animation.finish()
+      }
+    }
+  },
+  { flush: 'post' },
+)
 const desktopSession = crypto.randomUUID()
 const frontend = ref<DesktopState['frontend']>(null)
 const agentTask = computed(() =>
@@ -576,7 +598,6 @@ async function onDrop(event2: DragEvent) {
     <main class="main">
       <header class="topbar">
         <div
-          :key="current.key"
           class="topbar-title"
           :title="current.desc"
         >
@@ -651,6 +672,7 @@ async function onDrop(event2: DragEvent) {
         </button>
       </div>
       <div
+        ref="contentEl"
         class="content"
         :inert="frontend?.status === 'running'"
       >

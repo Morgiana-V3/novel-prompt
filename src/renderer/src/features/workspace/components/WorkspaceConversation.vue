@@ -683,22 +683,6 @@ defineExpose({
   flex-shrink: 0;
 }
 
-@media (width <= 1050px) {
-  .pw-conversation {
-    width: 370px;
-    min-width: 320px;
-    max-width: 48%;
-  }
-}
-
-@media (width <= 800px) {
-  .pw-conversation {
-    width: 340px;
-    max-width: 52%;
-    min-width: 280px;
-  }
-}
-
 @media (width <= 800px) {
   .pw-thread {
     padding: 6px 12px 15px;

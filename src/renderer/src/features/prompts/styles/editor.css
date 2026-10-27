@@ -114,11 +114,11 @@
 }
 
 .pop-menu-enter-active {
-  animation: fade-up 0.25s var(--bounce);
+  animation: fade-up var(--dur-base) var(--ease-out);
 }
 
 .pop-menu-leave-active {
-  transition: opacity 0.12s;
+  transition: opacity var(--dur-fast) var(--ease-in);
 }
 
 .pop-menu-leave-to {
@@ -144,10 +144,10 @@
   background: #fff;
   border: 1px solid var(--line2);
   transition:
-    background 0.15s,
-    color 0.15s,
-    border-color 0.15s,
-    transform 0.3s var(--bounce);
+    background var(--dur-fast),
+    color var(--dur-fast),
+    border-color var(--dur-fast),
+    transform var(--dur-slow) var(--bounce);
 }
 
 .section-tab:hover {
@@ -156,7 +156,7 @@
 }
 
 .section-tab:active {
-  transform: scale(0.94);
+  transform: scale(var(--press-sm));
 }
 
 .section-tab.on {
@@ -286,7 +286,7 @@
   border: 2px dashed var(--pink);
   color: var(--pink);
   box-shadow: 0 20px 50px rgb(255 107 154 / 20%);
-  animation: pop 0.3s var(--bounce);
+  animation: pop var(--dur-slow) var(--bounce);
 }
 
 .drop-card b {

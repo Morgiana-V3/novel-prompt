@@ -1673,7 +1673,6 @@ async function beginConfigFromButton() {
 
 .pw-heading input {
   width: 100%;
-  max-width: 360px;
   max-width: none;
 }
 

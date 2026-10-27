@@ -24,7 +24,17 @@
   --nl-soft: #edf4ff;
   --shadow-sm: 0 1px 2px rgb(20 20 30 / 4%), 0 1px 3px rgb(20 20 30 / 6%);
   --shadow: 0 6px 24px rgb(20 20 30 / 6%);
+
+  /* 动效：页面/面板/卡片用 ease-out，回弹只留给按压、toast、吉祥物等小面积反馈 */
   --bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --dur-fast: 0.14s;
+  --dur-base: 0.2s;
+  --dur-slow: 0.28s;
+  --dur-emph: 0.4s;
+  --press: 0.97;
+  --press-sm: 0.94;
   --mono: 'Cascadia Code', 'JetBrains Mono', consolas, 'Microsoft YaHei UI', monospace;
 
   font-family:

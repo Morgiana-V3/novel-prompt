@@ -13,19 +13,18 @@
   font-weight: 500;
   white-space: nowrap;
   transition:
-    transform 0.3s var(--bounce),
-    background 0.15s,
-    border-color 0.15s,
-    box-shadow 0.2s;
+    transform var(--dur-slow) var(--bounce),
+    background var(--dur-fast),
+    border-color var(--dur-fast),
+    box-shadow var(--dur-base);
 }
 
 .btn:hover:not(:disabled) {
   background: var(--hover);
-  transform: translateY(-1px);
 }
 
 .btn:active:not(:disabled) {
-  transform: scale(0.94);
+  transform: scale(var(--press-sm));
 }
 
 .btn:disabled {
@@ -105,9 +104,9 @@
   place-items: center;
   color: var(--text2);
   transition:
-    background 0.15s,
-    color 0.15s,
-    transform 0.3s var(--bounce);
+    background var(--dur-fast),
+    color var(--dur-fast),
+    transform var(--dur-slow) var(--bounce);
 }
 
 .icon-btn:hover {
@@ -115,13 +114,8 @@
   color: var(--text);
 }
 
-.icon-btn:hover .icon {
-  transform: rotate(-8deg) scale(1.08);
-  transition: transform 0.3s var(--bounce);
-}
-
 .icon-btn:active {
-  transform: scale(0.86);
+  transform: scale(var(--press-sm));
 }
 
 .icon-btn.sm {
@@ -148,14 +142,14 @@
   color: var(--text2);
   font-size: 12.5px;
   transition:
-    background 0.2s,
-    color 0.2s,
-    box-shadow 0.2s,
-    transform 0.3s var(--bounce);
+    background var(--dur-base),
+    color var(--dur-base),
+    box-shadow var(--dur-base),
+    transform var(--dur-slow) var(--bounce);
 }
 
 .seg button:active {
-  transform: scale(0.94);
+  transform: scale(var(--press-sm));
 }
 
 .seg button.on {
@@ -194,20 +188,19 @@
   font-size: 12.5px;
   color: var(--text2);
   transition:
-    transform 0.3s var(--bounce),
-    border-color 0.15s,
-    background 0.15s,
-    color 0.15s;
+    transform var(--dur-slow) var(--bounce),
+    border-color var(--dur-fast),
+    background var(--dur-fast),
+    color var(--dur-fast);
 }
 
 .chip:hover {
   border-color: var(--c, var(--pink-line));
   color: var(--c, var(--text));
-  transform: translateY(-1px);
 }
 
 .chip:active {
-  transform: scale(0.92);
+  transform: scale(var(--press-sm));
 }
 
 .chip.on {

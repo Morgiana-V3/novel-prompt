@@ -7,8 +7,8 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  animation: pop 0.36s var(--bounce) backwards;
-  animation-delay: calc(var(--i, 0) * 30ms);
+  animation: fade-up var(--dur-slow) var(--ease-out) backwards;
+  animation-delay: calc(min(var(--i, 0), 12) * 24ms);
 }
 
 .unknown-head {
@@ -63,8 +63,8 @@
   background: #fff;
   border: 1px solid #f8e7c4;
   cursor: pointer;
-  animation: pop 0.36s var(--bounce) backwards;
-  animation-delay: calc(var(--i, 0) * 30ms);
+  animation: fade-up var(--dur-slow) var(--ease-out) backwards;
+  animation-delay: calc(min(var(--i, 0), 12) * 24ms);
 }
 
 .alias-item .tag-raw {
@@ -79,7 +79,11 @@
 .arrow {
   color: var(--muted);
   display: inline-grid;
-  animation: nudge 1.6s ease-in-out infinite;
+}
+
+.alias-item:hover .arrow {
+  color: var(--alias);
+  animation: nudge 0.8s ease-in-out;
 }
 
 .nl-item {
@@ -91,8 +95,8 @@
   line-height: 1.7;
   font-size: 13px;
   overflow-wrap: anywhere;
-  animation: pop 0.36s var(--bounce) backwards;
-  animation-delay: calc(var(--i, 0) * 30ms);
+  animation: fade-up var(--dur-slow) var(--ease-out) backwards;
+  animation-delay: calc(min(var(--i, 0), 12) * 24ms);
 }
 
 .badge {

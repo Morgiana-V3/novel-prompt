@@ -12,9 +12,9 @@
   background: #fff;
   border: 1.5px dashed var(--line2);
   transition:
-    border-color 0.2s,
-    background 0.2s,
-    transform 0.3s var(--bounce);
+    border-color var(--dur-base),
+    background var(--dur-base),
+    transform var(--dur-slow) var(--bounce);
 }
 
 .import-zone.over {
@@ -71,7 +71,7 @@
   border-radius: 18px;
   background: #fff;
   border: 1px solid var(--line);
-  animation: fade-up 0.36s var(--bounce) backwards;
+  animation: fade-up var(--dur-slow) var(--ease-out) backwards;
 }
 
 .char-head {
@@ -194,8 +194,8 @@
   font-size: 13px;
   line-height: 1.7;
   color: var(--text2);
-  animation: fade-up 0.36s var(--bounce) backwards;
-  animation-delay: calc(var(--i, 0) * 30ms);
+  animation: fade-up var(--dur-slow) var(--ease-out) backwards;
+  animation-delay: calc(min(var(--i, 0), 12) * 24ms);
 }
 
 .effect-row + .effect-row {

@@ -63,7 +63,7 @@
   font-size: 12.5px;
   color: var(--text2);
   border-radius: 14px;
-  transition: background 0.2s;
+  transition: background var(--dur-fast);
 }
 
 .gen-advanced > summary::-webkit-details-marker {
@@ -82,7 +82,7 @@
 
 .gen-advanced-arrow {
   flex-shrink: 0;
-  transition: transform 0.25s var(--bounce);
+  transition: transform var(--dur-base) var(--ease-out);
 }
 
 .gen-advanced[open] .gen-advanced-arrow {
@@ -112,7 +112,7 @@
 
 .gen-advanced > .gen-params {
   padding: 4px 12px 14px;
-  animation: fade-up 0.28s var(--bounce) backwards;
+  animation: fade-up var(--dur-base) var(--ease-out) backwards;
 }
 
 .pair {
@@ -140,8 +140,8 @@ select.input {
   background-repeat: no-repeat;
   background-position: right 10px center;
   transition:
-    border-color 0.2s,
-    box-shadow 0.25s;
+    border-color var(--dur-base),
+    box-shadow var(--dur-base);
 }
 
 select.input:hover {
@@ -185,7 +185,7 @@ select.input:focus {
   border-radius: 50%;
   background: var(--pink);
   box-shadow: 0 1px 4px #0002;
-  transition: box-shadow 0.15s;
+  transition: box-shadow var(--dur-fast);
 }
 
 .range:hover::-webkit-slider-thumb {
@@ -213,7 +213,7 @@ select.input:focus {
   border-radius: 12px;
   font-size: 12.5px;
   line-height: 1.7;
-  animation: fade-up 0.3s var(--bounce) backwards;
+  animation: fade-up var(--dur-slow) var(--ease-out) backwards;
 }
 
 .free-check .icon {
@@ -251,8 +251,8 @@ select.input:focus {
   cursor: pointer;
   font-family: var(--mono);
   transition:
-    background 0.15s,
-    color 0.15s;
+    background var(--dur-fast),
+    color var(--dur-fast);
 }
 
 .pill.seed:hover {
@@ -276,7 +276,7 @@ select.input:focus {
   object-fit: contain;
   border-radius: 10px;
   box-shadow: 0 10px 30px rgb(20 20 30 / 12%);
-  animation: pop 0.4s var(--bounce);
+  animation: pop var(--dur-slow) var(--ease-out);
 }
 
 .viewer-busy {
@@ -308,11 +308,11 @@ select.input:focus {
   background: var(--panel);
   border: 2px solid transparent;
   transition:
-    transform 0.3s var(--bounce),
-    border-color 0.2s,
-    box-shadow 0.2s;
-  animation: pop 0.36s var(--bounce) backwards;
-  animation-delay: calc(var(--i, 0) * 18ms);
+    transform var(--dur-base) var(--ease-out),
+    border-color var(--dur-base),
+    box-shadow var(--dur-base);
+  animation: pop var(--dur-base) var(--ease-out) backwards;
+  animation-delay: calc(min(var(--i, 0), 16) * 16ms);
 }
 
 .thumb img {
@@ -339,7 +339,7 @@ select.input:focus {
   display: flex;
   gap: 2px;
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity var(--dur-fast);
 }
 
 .thumb:hover .thumb-actions,
@@ -353,7 +353,7 @@ select.input:focus {
   height: 26px;
   padding: 0 9px;
   font-size: 11.5px;
-  background: #e5484d;
+  background: var(--bad);
   color: #fff;
   border-color: transparent;
   box-shadow: var(--shadow-sm);
@@ -363,14 +363,4 @@ select.input:focus {
   background: rgb(255 255 255 / 92%);
   color: var(--text);
   box-shadow: var(--shadow-sm);
-}
-
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
 }

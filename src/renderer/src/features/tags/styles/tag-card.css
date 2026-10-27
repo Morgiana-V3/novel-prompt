@@ -72,11 +72,11 @@
   gap: 4px;
   min-width: 0;
   transition:
-    transform 0.3s var(--bounce),
-    box-shadow 0.2s,
-    border-color 0.2s;
-  animation: pop 0.36s var(--bounce) backwards;
-  animation-delay: calc(var(--i, 0) * 16ms);
+    transform var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base),
+    border-color var(--dur-base);
+  animation: pop var(--dur-base) var(--ease-out) backwards;
+  animation-delay: calc(min(var(--i, 0), 24) * 12ms);
 }
 
 .tag-card::before {
@@ -90,23 +90,23 @@
   background: var(--c);
   opacity: 0.75;
   transition:
-    top 0.25s var(--bounce),
-    bottom 0.25s var(--bounce);
+    transform var(--dur-base) var(--ease-out),
+    opacity var(--dur-base);
 }
 
 .tag-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--c) 30%, #fff);
-  box-shadow: 0 8px 18px color-mix(in srgb, var(--c) 13%, transparent);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--c) 12%, transparent);
 }
 
 .tag-card:hover::before {
-  top: 6px;
-  bottom: 6px;
+  opacity: 1;
+  transform: scaleY(1.25);
 }
 
 .tag-card:active {
-  transform: scale(0.97);
+  transform: scale(var(--press));
 }
 
 .tag-top {
@@ -183,8 +183,8 @@
   border-radius: 5px;
   padding: 1px;
   transition:
-    opacity 0.15s,
-    color 0.15s;
+    opacity var(--dur-fast),
+    color var(--dur-fast);
 }
 
 .edit-hint:hover {

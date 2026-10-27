@@ -2,7 +2,7 @@
 @keyframes view-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(4px);
   }
 
   to {
@@ -11,10 +11,16 @@
   }
 }
 
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
 @keyframes fade-up {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(6px);
   }
 
   to {
@@ -26,7 +32,7 @@
 @keyframes pop {
   from {
     opacity: 0;
-    transform: scale(0.88);
+    transform: scale(0.96);
   }
 
   to {
@@ -121,24 +127,27 @@
   }
 }
 
+/* 配合 width: 35% 的不定进度条：从左侧外滑入到右侧外，只动 transform */
 @keyframes slide {
   0% {
-    left: -35%;
+    transform: translateX(-100%);
   }
 
   100% {
-    left: 100%;
+    transform: translateX(286%);
   }
 }
 
-@keyframes pulse-ok {
-  0% {
-    box-shadow: 0 0 0 0 rgb(31 157 104 / 45%);
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
   }
 
-  70%,
-  100% {
-    box-shadow: 0 0 0 6px rgb(31 157 104 / 0%);
+  50% {
+    opacity: 0.55;
+    transform: scale(0.88);
   }
 }
 
@@ -170,18 +179,53 @@
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
   }
+}
+
+.fade-enter-active {
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.fade-leave-active {
+  transition: opacity var(--dur-fast) var(--ease-in);
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* 锚定在触发按钮附近的浮层面板（任务中心等），transform-origin 由组件自己指定 */
+.popover-enter-active {
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+
+.popover-leave-active {
+  transition:
+    opacity var(--dur-fast) var(--ease-in),
+    transform var(--dur-fast) var(--ease-in);
+  pointer-events: none;
+}
+
+.popover-enter-from,
+.popover-leave-to {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
 }
 
 /* Shared modal motion; parents unmount only after the leave transition. */
 .modal-enter-active {
-  transition: opacity 0.22s ease;
+  transition: opacity var(--dur-base) var(--ease-out);
 }
 
 .modal-leave-active {
-  transition: opacity 0.16s ease;
+  transition: opacity var(--dur-fast) var(--ease-in);
 }
 
 .modal-leave-active > * {
@@ -189,11 +233,11 @@
 }
 
 .modal-enter-active .modal-panel {
-  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: transform var(--dur-slow) var(--ease-out);
 }
 
 .modal-leave-active .modal-panel {
-  transition: transform 0.16s ease;
+  transition: transform var(--dur-fast) var(--ease-in);
 }
 
 .modal-enter-from,

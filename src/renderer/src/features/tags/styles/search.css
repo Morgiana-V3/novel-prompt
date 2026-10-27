@@ -16,15 +16,12 @@
   position: absolute;
   left: 17px;
   color: var(--muted);
-  transition:
-    color 0.2s,
-    transform 0.35s var(--bounce);
+  transition: color var(--dur-base);
   pointer-events: none;
 }
 
 .search-box:focus-within > .icon {
   color: var(--pink);
-  transform: scale(1.12) rotate(-10deg);
 }
 
 .search-input {
@@ -38,8 +35,8 @@
   outline: none;
   box-shadow: var(--shadow);
   transition:
-    border-color 0.2s,
-    box-shadow 0.25s;
+    border-color var(--dur-base),
+    box-shadow var(--dur-base);
 }
 
 .search-input::placeholder {

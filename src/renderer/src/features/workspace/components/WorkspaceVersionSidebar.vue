@@ -92,6 +92,16 @@ const emit = defineEmits<{
   color: var(--muted);
 }
 
+.pw-history {
+  width: 172px;
+  flex-shrink: 0;
+  background: var(--side);
+  padding: 16px 12px;
+  border-right: 1px solid var(--line);
+  max-width: 18%;
+}
+
+/* 断点规则必须写在基础规则之后，否则会被同优先级的基础规则覆盖 */
 @media (width <= 1050px) {
   .pw-history {
     width: 130px;
@@ -107,6 +117,7 @@ const emit = defineEmits<{
     z-index: 4;
     box-shadow: var(--shadow);
     width: 170px;
+    max-width: none;
   }
 }
 
@@ -115,15 +126,6 @@ const emit = defineEmits<{
   display: grid;
   place-items: center;
   color: var(--pink);
-}
-
-.pw-history {
-  width: 172px;
-  flex-shrink: 0;
-  background: var(--side);
-  padding: 16px 12px;
-  border-right: 1px solid var(--line);
-  max-width: 18%;
 }
 
 .pw-version b {

@@ -135,127 +135,129 @@ function closePanel() {
       ></span>
     </button>
     <Teleport to="body">
-      <section
-        v-if="opened"
-        id="task-panel"
-        ref="panel"
-        class="task-panel"
-        aria-label="任务进度"
-      >
-        <header>
-          <div><b>任务</b><span>切换页面，任务继续运行</span></div>
-          <button
-            class="icon-btn sm"
-            aria-label="关闭任务面板"
-            @click="closePanel"
-          >
-            <Icon
-              name="x"
-              :size="15"
-            />
-          </button>
-        </header>
-        <div class="task-list scroll">
-          <div
-            v-if="!taskState.tasks.length"
-            class="task-empty"
-          >
-            <Icon
-              name="layers"
-              :size="30"
-            /><b>暂时没有任务</b
-            ><span>AI 分析、图片生成与数据更新的进度<br />都会显示在这里。</span>
-          </div>
-          <template
-            v-for="group in [
-              { label: '正在进行', tasks: active },
-              { label: '最近结束', tasks: recent },
-            ]"
-            :key="group.label"
-          >
+      <Transition name="popover">
+        <section
+          v-if="opened"
+          id="task-panel"
+          ref="panel"
+          class="task-panel"
+          aria-label="任务进度"
+        >
+          <header>
+            <div><b>任务</b><span>切换页面，任务继续运行</span></div>
+            <button
+              class="icon-btn sm"
+              aria-label="关闭任务面板"
+              @click="closePanel"
+            >
+              <Icon
+                name="x"
+                :size="15"
+              />
+            </button>
+          </header>
+          <div class="task-list scroll">
             <div
-              v-if="group.tasks.length"
-              class="task-section"
+              v-if="!taskState.tasks.length"
+              class="task-empty"
             >
-              <span>{{ group.label }} · {{ group.tasks.length }}</span
-              ><button
-                v-if="group.tasks === recent"
-                @click="clear"
-              >
-                清除记录
-              </button>
+              <Icon
+                name="layers"
+                :size="30"
+              /><b>暂时没有任务</b
+              ><span>AI 分析、图片生成与数据更新的进度<br />都会显示在这里。</span>
             </div>
-            <article
-              v-for="task in group.tasks"
-              :key="task.id"
-              class="task-card"
-              :class="task.status"
-              :data-task-id="task.id"
-              :data-kind="task.kind"
+            <template
+              v-for="group in [
+                { label: '正在进行', tasks: active },
+                { label: '最近结束', tasks: recent },
+              ]"
+              :key="group.label"
             >
-              <div class="task-title">
-                <span class="task-icon"
-                  ><Icon
-                    :name="icon(task)"
-                    :size="15"
-                    :class="{ 'spin-slow': taskIsActive(task) }" /></span
-                ><button
-                  title="返回对应页面"
-                  @click="visit(task)"
-                >
-                  {{ task.origin === 'agent' ? 'Agent · ' : ''
-                  }}{{ task.label || TASK_LABELS[task.kind] }}</button
-                ><span class="task-status">{{ statusText[task.status] }}</span>
-              </div>
-              <p>{{ task.message }}</p>
               <div
-                v-if="taskIsActive(task)"
-                class="task-meter"
-                :class="{ indeterminate: percent(task) === null }"
-                role="progressbar"
-                :aria-label="TASK_LABELS[task.kind]"
-                :aria-valuenow="percent(task) ?? undefined"
-                aria-valuemin="0"
-                aria-valuemax="100"
+                v-if="group.tasks.length"
+                class="task-section"
               >
-                <i :style="percent(task) !== null ? { width: percent(task) + '%' } : {}"></i>
-              </div>
-              <footer>
-                <span
-                  >{{ duration(task)
-                  }}<template v-if="percent(task) !== null">
-                    · {{ Math.round(percent(task)!) }}%</template
-                  ></span
+                <span>{{ group.label }} · {{ group.tasks.length }}</span
                 ><button
-                  v-if="taskIsActive(task)"
-                  class="task-cancel"
-                  :disabled="task.status === 'cancelling'"
-                  @click="cancelTask(task.id)"
+                  v-if="group.tasks === recent"
+                  @click="clear"
                 >
-                  {{
-                    task.status === 'cancelling'
-                      ? '正在停止…'
-                      : task.cancelMode === 'after-current'
-                        ? '本张完成后停止'
-                        : '取消任务'
-                  }}</button
-                ><button
-                  v-else
-                  class="task-visit"
-                  @click="visit(task)"
-                >
-                  返回页面
-                  <Icon
-                    name="arrow"
-                    :size="12"
-                  />
+                  清除记录
                 </button>
-              </footer>
-            </article>
-          </template>
-        </div>
-        <div class="task-footnote">仅保留本次打开期间最近 20 条记录</div>
-      </section>
+              </div>
+              <article
+                v-for="task in group.tasks"
+                :key="task.id"
+                class="task-card"
+                :class="task.status"
+                :data-task-id="task.id"
+                :data-kind="task.kind"
+              >
+                <div class="task-title">
+                  <span class="task-icon"
+                    ><Icon
+                      :name="icon(task)"
+                      :size="15"
+                      :class="{ 'spin-slow': taskIsActive(task) }" /></span
+                  ><button
+                    title="返回对应页面"
+                    @click="visit(task)"
+                  >
+                    {{ task.origin === 'agent' ? 'Agent · ' : ''
+                    }}{{ task.label || TASK_LABELS[task.kind] }}</button
+                  ><span class="task-status">{{ statusText[task.status] }}</span>
+                </div>
+                <p>{{ task.message }}</p>
+                <div
+                  v-if="taskIsActive(task)"
+                  class="task-meter"
+                  :class="{ indeterminate: percent(task) === null }"
+                  role="progressbar"
+                  :aria-label="TASK_LABELS[task.kind]"
+                  :aria-valuenow="percent(task) ?? undefined"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                >
+                  <i :style="percent(task) !== null ? { width: percent(task) + '%' } : {}"></i>
+                </div>
+                <footer>
+                  <span
+                    >{{ duration(task)
+                    }}<template v-if="percent(task) !== null">
+                      · {{ Math.round(percent(task)!) }}%</template
+                    ></span
+                  ><button
+                    v-if="taskIsActive(task)"
+                    class="task-cancel"
+                    :disabled="task.status === 'cancelling'"
+                    @click="cancelTask(task.id)"
+                  >
+                    {{
+                      task.status === 'cancelling'
+                        ? '正在停止…'
+                        : task.cancelMode === 'after-current'
+                          ? '本张完成后停止'
+                          : '取消任务'
+                    }}</button
+                  ><button
+                    v-else
+                    class="task-visit"
+                    @click="visit(task)"
+                  >
+                    返回页面
+                    <Icon
+                      name="arrow"
+                      :size="12"
+                    />
+                  </button>
+                </footer>
+              </article>
+            </template>
+          </div>
+          <div class="task-footnote">仅保留本次打开期间最近 20 条记录</div>
+        </section>
+      </Transition>
     </Teleport>
   </div>
 </template>
@@ -312,6 +314,7 @@ function closePanel() {
   background: var(--bg);
   box-shadow: 0 14px 50px #17121e24;
   overflow: hidden;
+  transform-origin: top right;
   -webkit-app-region: no-drag;
 }
 
@@ -487,7 +490,7 @@ function closePanel() {
   height: 100%;
   background: var(--pink);
   border-radius: 4px;
-  transition: width 0.2s;
+  transition: width var(--dur-base) var(--ease-out);
 }
 
 .task-meter.indeterminate i {

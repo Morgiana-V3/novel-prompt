@@ -45,9 +45,9 @@
 }
 
 .toast-enter-active {
-  animation: toast-in 0.45s var(--bounce);
+  animation: toast-in var(--dur-emph) var(--bounce);
 }
 
 .toast-leave-active {
-  animation: toast-in 0.22s ease-in reverse;
+  animation: toast-in var(--dur-base) var(--ease-in) reverse;
 }

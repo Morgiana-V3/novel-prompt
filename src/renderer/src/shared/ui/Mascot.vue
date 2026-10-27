@@ -108,11 +108,14 @@ const src = computed(() => SRC[props.mood])
 }
 
 .mascot:hover img {
-  animation: m-boing 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: m-boing 0.6s var(--bounce);
 }
 
+/* 高频情绪动作只播两次，之后回到呼吸，避免长时间停留在页面上时持续抖动 */
 .m-happy img {
-  animation: m-jump 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+  animation:
+    m-jump 0.9s var(--bounce) 2,
+    m-breathe 3.4s ease-in-out 1.8s infinite;
 }
 
 .m-busy img {
@@ -131,10 +134,15 @@ const src = computed(() => SRC[props.mood])
   animation: m-bob 1.6s ease-in-out infinite;
 }
 
+/* 侧栏常驻头像保持静止，只在悬停时回应 */
 .m-avatar img {
-  animation: m-nod 3s ease-in-out infinite;
+  animation: none;
   transform-origin: 50% 80%;
   filter: none;
+}
+
+.m-avatar:hover img {
+  animation: m-nod 1.2s ease-in-out;
 }
 
 .m-paint img {
@@ -152,7 +160,9 @@ const src = computed(() => SRC[props.mood])
 }
 
 .m-oops img {
-  animation: m-shake 0.5s ease-in-out infinite;
+  animation:
+    m-shake 0.5s ease-in-out 2,
+    m-breathe 3.4s ease-in-out 1s infinite;
 }
 
 .m-search img,
@@ -168,11 +178,13 @@ const src = computed(() => SRC[props.mood])
 }
 
 .m-thumbs img {
-  animation: m-jump 1.2s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+  animation:
+    m-jump 1.2s var(--bounce) 2,
+    m-breathe 3.4s ease-in-out 2.4s infinite;
 }
 
 .mascot-swap-enter-active {
-  animation: m-pop-in 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: m-pop-in var(--dur-emph) var(--bounce);
 }
 
 .mascot-swap-leave-active {
