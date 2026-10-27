@@ -588,7 +588,7 @@ select.input:focus { border-color: var(--pink-line); box-shadow: 0 0 0 3px var(-
 .thumb:hover { transform: translateY(-2px); box-shadow: 0 8px 18px rgba(20, 20, 30, 0.12); }
 .thumb.on { border-color: var(--pink); box-shadow: 0 0 0 3px var(--pink-soft); }
 .thumb-actions { position: absolute; right: 4px; bottom: 4px; display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; }
-.thumb:hover .thumb-actions, .thumb:focus-within .thumb-actions, .thumb-actions:has(.danger-confirm) { opacity: 1; }
+.thumb:hover .thumb-actions, .thumb.on .thumb-actions, .thumb:focus-within .thumb-actions, .thumb-actions:has(.danger-confirm) { opacity: 1; }
 .thumb-actions .danger-confirm { height: 26px; padding: 0 9px; font-size: 11.5px; background: #e5484d; color: #fff; border-color: transparent; box-shadow: var(--shadow-sm); }
 .thumb-actions .icon-btn { background: rgba(255, 255, 255, 0.92); color: var(--text); box-shadow: var(--shadow-sm); }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }

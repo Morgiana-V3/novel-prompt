@@ -24,6 +24,7 @@
     "inpaint:mcp-smoke": "electron scripts/inpaint-mcp-smoke.cjs",
     "pages:smoke": "electron-vite build && electron scripts/page-workspace-smoke.cjs",
     "retention:smoke": "electron scripts/retention-smoke.cjs",
+    "workspace:cleanup-smoke": "electron scripts/workspace-cleanup-smoke.cjs",
     "screenshots": "electron-vite build && electron . --screenshots=release/screenshots",
     "screenshots:ai": "electron-vite build && electron . --screenshots=release/screenshots --screenshots-ai",
     "dist": "electron-vite build && electron-builder --win --x64 --publish never"

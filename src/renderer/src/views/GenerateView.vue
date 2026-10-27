@@ -168,6 +168,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   offGallery?.()
   window.removeEventListener('resize', resizeAll)
+  clearTimeout(pendingTimer)
 })
 
 watch(
@@ -249,22 +250,36 @@ async function copyImage(img: NaiImage) {
 }
 /** 删除需要在 3 秒内再点一次确认，避免和旁边的「下载」误触 */
 const pendingDelete = ref<string | null>(null)
+const deleting = ref<string | null>(null)
 let pendingTimer: ReturnType<typeof setTimeout> | undefined
+function resetDelete() {
+  clearTimeout(pendingTimer)
+  pendingDelete.value = null
+}
+watch([() => current.value?.name, galleryFilter, lightbox, () => state.tab], resetDelete)
 async function remove(img: NaiImage) {
+  if (deleting.value || img.storage === 'workspace') return
   if (pendingDelete.value !== img.name) {
     pendingDelete.value = img.name
     clearTimeout(pendingTimer)
     pendingTimer = setTimeout(() => (pendingDelete.value = null), 3000)
     return
   }
-  clearTimeout(pendingTimer)
-  pendingDelete.value = null
+  resetDelete()
+  deleting.value = img.name
+  const index = visibleGallery.value.findIndex(g => g.name === img.name)
+  const adjacent = index < 0 ? undefined : visibleGallery.value[index + 1] ?? visibleGallery.value[index - 1]
   try {
-    if (!(await window.api.naiDelete(img.name))) return
+    if (!(await window.api.naiDelete(img.name))) { toast('图片已不存在，请刷新图库'); return }
     toast('已移到回收站')
-    if (current.value?.name === img.name) current.value = null
+    gallery.value = gallery.value.filter(g => g.name !== img.name)
+    if (last.value) last.value.images = last.value.images.filter(g => g.name !== img.name)
+    if (current.value?.name === img.name) {
+      current.value = adjacent ?? null
+      if (!current.value) lightbox.value = false
+    }
     await refreshGallery()
-  } catch (e) { toast(cleanErr(e)) }
+  } catch (e) { toast(cleanErr(e)) } finally { deleting.value = null }
 }
 function useSeed(img: NaiImage) {
   if (img.seed === undefined) return
@@ -443,6 +458,7 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
           <div v-if="current.storage === 'temporary'" class="row" style="padding:10px 12px"><span class="muted small">满意这张？留存后下次启动仍可查看。</span><button class="btn small primary" @click="retain([current])">留存图片</button><button v-if="latestBatchTemporary.length" class="btn small" @click="retain(latestBatchTemporary)">留存最近一批剩余 {{ latestBatchTemporary.length }} 张</button></div>
           <div class="row" style="padding: 10px 12px; flex-wrap: wrap">
             <button class="btn small" @click="favorite(current)">收藏此图配置</button>
+            <button class="btn small gallery-delete" :class="{ 'danger-confirm': pendingDelete === current.name }" :disabled="!!deleting || current.storage === 'workspace'" :title="current.storage === 'workspace' ? '工作台引用中，无法从图库删除' : '删除图片（移到回收站）'" @click="remove(current)"><Icon name="trash" :size="14" />{{ deleting === current.name ? '删除中…' : pendingDelete === current.name ? '确认删除' : '删除图片' }}</button>
             <button class="btn small accent" :disabled="running || inpaintBusy" @click="inpaintSource = current">
               <Icon name="edit" :size="14" />局部重绘
             </button>
@@ -454,6 +470,8 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
             </button>
           </div>
         </div>
+
+        <p v-if="current?.storage === 'workspace'" class="muted small gallery-delete-note">工作台引用中，请进入对应项目清理图片；已删除项目的图片可在 AI 工作台首页「清理遗留图片」。</p>
 
         <div class="result-card" v-if="matchedPreview" style="--d: 60ms">
           <div class="result-head">
@@ -490,8 +508,8 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
               <img :src="g.url" loading="lazy" alt="" draggable="false" />
               <div class="thumb-actions">
                 <button class="icon-btn sm" title="下载" aria-label="下载" @click.stop="saveAs(g)"><Icon name="download" :size="14" /></button>
-                <button v-if="pendingDelete === g.name" class="btn small danger-confirm" title="再点一次移到回收站" aria-label="确认删除" @click.stop="remove(g)">确认删除</button>
-                <button v-else-if="g.storage !== 'workspace'" class="icon-btn sm" title="删除（移到回收站）" aria-label="删除" @click.stop="remove(g)"><Icon name="trash" :size="14" /></button>
+                <button v-if="pendingDelete === g.name" class="btn small danger-confirm" :disabled="!!deleting" title="再点一次移到回收站" aria-label="确认删除" @click.stop="remove(g)">确认删除</button>
+                <button v-else class="icon-btn sm" :disabled="!!deleting || g.storage === 'workspace'" :title="g.storage === 'workspace' ? '工作台引用中，无法从图库删除' : '删除（移到回收站）'" aria-label="删除" @click.stop="remove(g)"><Icon name="trash" :size="14" /></button>
               </div>
             </div>
           </div>
@@ -501,7 +519,8 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
 
     <RecipeLibrary v-if="recipeOpen" :current-request="currentRecipe" :initial-id="favoriteId" @close="recipeOpen=false;favoriteId=''" @apply="applyRecipe" />
     <ImageViewer v-if="lightbox && current" :image="current" :can-previous="galleryIndex > 0" :can-next="galleryIndex >= 0 && galleryIndex < visibleGallery.length - 1"
-      @close="lightbox = false" @previous="changeImage(-1)" @next="changeImage(1)" />
+      :can-delete="current.storage !== 'workspace'" :confirm-delete="pendingDelete === current.name" :deleting="!!deleting"
+      @close="lightbox = false" @previous="changeImage(-1)" @next="changeImage(1)" @delete="remove(current)" />
     <PositionEditor v-if="posEditing" @close="posEditing = false" />
     <InpaintEditor v-if="inpaintSource" :image="inpaintSource" :params="{ ...gen, ...params }"
       @close="inpaintSource = null" @busy="inpaintBusy = $event" @generated="onInpaintGenerated" />
@@ -511,4 +530,6 @@ const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
 <style scoped>
 .retention-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); white-space: nowrap; cursor: pointer; }
 .retention-toggle input { margin: 0; accent-color: var(--pink); }
+.viewer .danger-confirm { background: var(--bad); border-color: var(--bad); color: #fff; }
+.thumb-actions .icon-btn:disabled { opacity: .45; cursor: not-allowed; }
 </style>

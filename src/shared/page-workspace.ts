@@ -22,6 +22,7 @@ export interface PageVersion {
   parentId: string | null
   label: string
   image: NaiImage | null
+  imageCleared?: boolean
   createdAt: number
   /** Each candidate keeps its stable id; groupId identifies a generation scheme. */
   groupId?: string

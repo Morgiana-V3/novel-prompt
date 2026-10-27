@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import { app, shell } from 'electron'
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, rmSync, realpathSync, openSync, readSync, closeSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
@@ -123,4 +123,26 @@ export function restoreImageFile(name: string, bytes: Buffer): NaiImage {
   ensure(resolve(dest, '..'))
   writeFileAtomic(dest, bytes)
   return imageInfo(name)!
+}
+
+/** Include recipe-only leftovers so an interrupted cleanup can be retried. */
+export function ownedWorkspaceImages(owner?: string): string[] {
+  if (owner && !uuid.test(owner)) throw new Error('工作台标识无效')
+  const owners = owner ? [owner] : readdirSync(workspaceRoot(), { withFileTypes: true }).filter(e => e.isDirectory() && uuid.test(e.name)).map(e => e.name)
+  return owners.flatMap(id => {
+    const dir = join(workspaceRoot(), id)
+    if (!existsSync(dir)) return []
+    return [...new Set(readdirSync(dir).map(n => n.replace(/\.json$/, '')).filter(n => safeName.test(n) && n.startsWith(`ws-${id}-`)))]
+  })
+}
+
+/** Move both the PNG and its generation recipe to the system recycle bin. */
+export async function trashLibraryImage(name: string): Promise<boolean> {
+  if (typeof name !== 'string' || !safeName.test(name) || name.includes('..')) throw new Error('图片标识无效')
+  let removed = false
+  for (const path of [workspacePath(name), join(saved(), name), join(temporary(), name), join(legacyImageDir(), name)]) {
+    if (!path) continue
+    for (const target of [path, `${path}.json`]) if (existsSync(target)) { await shell.trashItem(target); removed = true }
+  }
+  return removed
 }

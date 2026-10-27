@@ -354,6 +354,7 @@ export function listRemovedPages(): { token: string; title: string; removedAt: n
 export function restorePage(token: string): PageWorkspace {
   if (!listRemovedPages().some(p => p.token === token)) throw new Error('回收站中的会话不存在')
   const id = token.slice(0, 36)
+  if (pageLocks.has(id)) throw new Error('项目图片正在清理，请稍后再恢复记录')
   if (existsSync(file(id))) throw new Error('同名会话已经存在，不能覆盖')
   renameSync(join(directory(), 'removed', token), file(id))
   return readPage(id)

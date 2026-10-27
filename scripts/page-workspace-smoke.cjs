@@ -1,6 +1,6 @@
 // Offline service + Electron UI regression. All model traffic is intercepted.
 // Profiles and screenshots are kept outside the repository.
-const { app, BrowserWindow, ipcMain, net, protocol } = require('electron')
+const { app, BrowserWindow, ipcMain, net, protocol, shell } = require('electron')
 const { mkdtempSync, mkdirSync, readFileSync, writeFileSync } = require('node:fs')
 const { tmpdir } = require('node:os')
 const { join } = require('node:path')
@@ -16,6 +16,12 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'np-img', privileges: { standard
 require.extensions['.ts'] = (m, f) => m._compile(ts.transpileModule(readFileSync(f, 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, esModuleInterop: true } }).outputText, f)
 const client = require('../src/main/nai/client.ts')
 const pages = require('../src/main/page-workspaces.ts')
+const cleanup = require('../src/main/workspace-cleanup.ts')
+const recycle = join(profile, 'recycle');mkdirSync(recycle)
+shell.trashItem = async path => {
+  assert.ok(require('node:path').resolve(path).startsWith(require('node:path').resolve(profile)+require('node:path').sep))
+  require('node:fs').renameSync(path,join(recycle,require('node:crypto').randomUUID()+'-'+require('node:path').basename(path)))
+}
 const collaborator = require('../src/main/ai/page-collaborator.ts')
 const { pageCurrent, pageDraft, pageIteration, pageConfigurationChanges } = require('../src/shared/page-workspace.ts')
 const { renderMarkdown } = require('../src/renderer/src/markdown.ts')
@@ -71,7 +77,9 @@ const handlers = {
   'nai:generate':(_,req)=>client.generateImages(req,()=>{},()=>false),
   'nai:retain':(_,name)=>require('../src/main/image-library.ts').retainImage(name), 'nai:recipe':(_,name)=>require('../src/main/image-library.ts').readImageRecipe(name),
   'nai:list':()=>client.listImages(), 'nai:readImage':(_,name)=>new Uint8Array(readFileSync(client.imagePath(name))),
-  'pages:delete':(_,id,rev)=>pages.deletePage(id,rev),
+  'pages:delete':async(e,id,rev)=>{try{await cleanup.deletePageWithImages(id,rev)}finally{e.sender.send('gallery:changed')}},
+  'pages:clear-image':async(e,id,rev,version)=>{try{return await cleanup.clearPageImage(id,rev,version)}finally{e.sender.send('gallery:changed')}},
+  'pages:cleanup-removed-images':async(e)=>{try{return await cleanup.cleanRemovedPageImages()}finally{e.sender.send('gallery:changed')}},
   'pages:removed':()=>pages.listRemovedPages(), 'pages:restore':(_,token)=>pages.restorePage(token),
   'recipes:workspace':(_,id,versionId)=>require('../src/main/recipes.ts').createWorkspaceRecipe(id,versionId),
   'recipes:config':(_,request)=>require('../src/main/recipes.ts').createConfigRecipe(request),
@@ -467,7 +475,7 @@ app.whenReady().then(async()=>{
     await run(`document.querySelector('[aria-label="本版图片"]').click()`);await wait(`!!document.querySelector('.pw-candidates')`)
     assert.equal(await js(`document.querySelectorAll('.pw-candidate img').length`),2)
     await shot('21-candidate-gallery.png')
-    await run(`document.querySelector('.pw-candidate').click()`)
+    await run(`document.querySelector('.pw-candidate-open').click()`)
     const previewBounds=await js(`(()=>{const r=document.querySelector('.pw-viewport').getBoundingClientRect();return [r.y,r.height]})()`)
     assert.ok(await js(`!!document.querySelector('.pw-execution')&&!document.querySelector('.pw-execution .btn.accent').disabled`),'historical preview keeps next-generation controls independent')
     assert.equal(pages.readPage(ui.id).currentVersionId,rolled.currentVersionId,'previewing another roll does not adopt it')
@@ -475,6 +483,30 @@ app.whenReady().then(async()=>{
     await click('.pw-scope-bar[data-historical="true"] button','设为蓝本');await wait(`!document.querySelector('.pw-scope-bar[data-historical="true"]')`)
     assert.equal(pages.readPage(ui.id).currentVersionId,latestGroup.versions[0].id)
     assert.deepEqual(await js(`(()=>{const r=document.querySelector('.pw-viewport').getBoundingClientRect();return [r.y,r.height]})()`),previewBounds,'adopting a preview does not resize or move the canvas')
+    const beforeClear=pages.readPage(ui.id), clearedImage=pageCurrent(beforeClear).image.name, clearedSnapshot=pageCurrent(beforeClear).generated
+    const otherCandidate=latestGroup.versions.find(v=>v.id!==beforeClear.currentVersionId)
+    const cardSelector=`.pw-candidate[data-version-id="${otherCandidate.id}"]`
+    await run(`document.querySelector('[aria-label="本版图片"]').click()`);await wait(`!!document.querySelector('.pw-candidates')`)
+    assert.ok(!await js(`document.querySelector('.pw-scope-actions [aria-label="清理图片"]')`),'deletion is only in candidate gallery')
+    win.webContents.sendInputEvent({type:'mouseMove',x:15,y:50});await pause(200)
+    assert.equal(await js(`getComputedStyle(document.querySelector('${cardSelector} .pw-candidate-delete')).opacity`),'0','delete icon hidden before hover')
+    const hoverCard=await js(`(()=>{const r=document.querySelector('${cardSelector}').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+30)}})()`)
+    win.webContents.sendInputEvent({type:'mouseMove',...hoverCard});await pause(200)
+    assert.equal(await js(`getComputedStyle(document.querySelector('${cardSelector} .pw-candidate-delete')).opacity`),'1','hover reveals that card delete icon')
+    await shot('25-workspace-gallery-hover-delete.png')
+    await run(`document.querySelector('${cardSelector} .pw-candidate-delete').click()`)
+    assert.ok(await js(`!!document.querySelector('.pw-candidates')`),'delete does not open canvas')
+    await click('.pw-candidate-delete-confirm button','取消');assert.ok(client.imagePath(otherCandidate.image.name),'cancelling keeps target image')
+    await run(`document.querySelector('${cardSelector} .pw-candidate-delete').click()`);await click('.pw-candidate-delete-confirm button','确认删除')
+    await wait(`document.querySelectorAll('.pw-candidate').length===1`)
+    assert.equal(client.imagePath(otherCandidate.image.name),null,'deletes hovered candidate, not current preview')
+    assert.ok(client.imagePath(clearedImage));assert.equal(pages.readPage(ui.id).currentVersionId,beforeClear.currentVersionId)
+    assert.ok(await js(`!!document.querySelector('.pw-candidates')`),'stays in gallery for continued cleanup')
+    await run(`document.querySelector('.pw-candidate-delete').click()`);await click('.pw-candidate-delete-confirm button','确认删除')
+    await wait(`!!document.querySelector('.pw-candidates-empty')`)
+    assert.equal(client.imagePath(clearedImage),null);assert.equal(pages.readPage(ui.id).versions.length,beforeClear.versions.length)
+    assert.deepEqual(pageCurrent(pages.readPage(ui.id)).generated,clearedSnapshot)
+    await click('.pw-view-tabs button','生图配置');assert.ok(await js(`!!document.querySelector('.workspace-prompt')`),'cleared image keeps readable generation snapshot')
     await run(`document.querySelector('[aria-label="返回项目"]').click()`);await wait(`!document.querySelector('.pw-shell')`)
     await run(`(()=>{const card=[...document.querySelectorAll('.session-card')].find(e=>e.textContent.includes('通用创作会话测试'));card.querySelector('.session-delete').click()})()`)
     await wait(`document.querySelector('.session-delete-popover')?.matches(':popover-open')`)
@@ -489,9 +521,9 @@ app.whenReady().then(async()=>{
     await wait(`document.querySelector('.session-delete-popover .delete-error')?.textContent.includes('fixture delete failure')`)
     assert.equal(pages.listPages().length,countBeforeDelete)
     assert.ok(await js(`document.querySelector('.session-delete-popover').matches(':popover-open')`),'failed deletion remains retryable locally')
-    ipcMain.removeHandler('pages:delete');ipcMain.handle('pages:delete',(_,id,revision)=>pages.deletePage(id,revision))
+    ipcMain.removeHandler('pages:delete');ipcMain.handle('pages:delete',async(e,id,revision)=>{try{await cleanup.deletePageWithImages(id,revision)}finally{e.sender.send('gallery:changed')}})
     await click('.session-delete-popover button','确认删除')
-    assert.ok(!pages.listPages().some(s=>s.id===ui.id));assert.ok(client.imagePath(pageCurrent(saved).image.name))
+    assert.ok(!pages.listPages().some(s=>s.id===ui.id));assert.equal(client.imagePath(pageCurrent(saved).image.name),null,'deleting the project cleans its generated images')
     assert.ok(await js(`!document.querySelector('.session-delete-popover').matches(':popover-open')&&!document.querySelector('.pw-shell')`),'successful deletion stays on the project list')
     // Further deletions use the adjacent card directly; no recycle UI or recycle read dependency.
     ipcMain.removeHandler('pages:removed')
@@ -505,6 +537,44 @@ app.whenReady().then(async()=>{
     assert.ok(pages.listRemovedPages().length>=2,'existing recovery data is not purged')
     console.log('PASS anchored delete confirmation, cancel, failure retry, consecutive deletes, preserved recovery data and no recycle listing dependency')
     console.log('PASS compact Skill count, 46px header, explicit rename, growing textareas, pinned save/cancel, resize and hidden-pane recovery; independent UI, intentional creation, conversation-derived goals, final prompt, review panel, annotation/mode separation, generation, manual history, reference/restore, reopen and deletion at 1440/1100 widths')
+    await click('.sessions-home header button','清理遗留图片');await wait(`document.querySelector('.session-delete-popover').matches(':popover-open')`)
+    assert.ok(await js(`document.querySelector('.delete-project-detail').textContent.includes('其他项目')`))
+    await click('.session-delete-popover button','确认清理');await wait(`!document.querySelector('.session-delete-popover').matches(':popover-open')`)
+    console.log('PASS workspace image cleanup, preserved version snapshots, project image removal and legacy cleanup entry')
+    // Isolate deletion UI from real files and the OS recycle bin.
+    const deleteFixtures=(await client.generateImages({...draft,version:'v5',params:{...params,count:2}},()=>{},()=>false)).images
+    let deleteGallery=deleteFixtures.map(g=>({...g,storage:'temporary'})), deleteCalls=0, deleteFails=true
+    ipcMain.removeHandler('nai:list');ipcMain.handle('nai:list',()=>deleteGallery)
+    ipcMain.handle('nai:delete',async(_e,name)=>{
+      deleteCalls++;await pause(150)
+      if(deleteFails)throw new Error('fixture gallery delete failure')
+      deleteGallery=deleteGallery.filter(g=>g.name!==name);return true
+    })
+    await click('.nav-item','生图预览');win.webContents.send('gallery:changed');await wait(`document.querySelectorAll('.gallery .thumb').length===2`)
+    await run(`document.querySelector('.gallery .thumb').click()`)
+    const firstDeleteUrl=await js(`document.querySelector('.viewer-stage img').getAttribute('src')`)
+    await click('.viewer button','删除图片');assert.equal(deleteCalls,0,'first click only asks for confirmation')
+    await click('.viewer button','确认删除');await pause(200)
+    assert.equal(await js(`document.querySelector('.viewer-stage img').getAttribute('src')`),firstDeleteUrl,'failed deletion preserves preview')
+    assert.equal(await js(`document.querySelectorAll('.gallery .thumb').length`),2)
+    deleteFails=false
+    await click('.viewer button','删除图片');await run(`document.querySelectorAll('.gallery .thumb')[1].click()`)
+    assert.ok(!await js(`document.querySelector('.viewer .danger-confirm')`),'switching images resets confirmation')
+    await run(`document.querySelector('.viewer-stage').click()`);await wait(`!!document.querySelector('.image-viewer')`)
+    const pressDelete=(repeat=false)=>run(`document.querySelector('.image-viewer').dispatchEvent(new KeyboardEvent('keydown',{key:'Delete',repeat:${repeat},bubbles:true,cancelable:true}))`)
+    await pressDelete();await pressDelete(true);assert.equal(deleteCalls,1,'holding Delete cannot confirm deletion')
+    await shot('23-gallery-delete-confirm.png')
+    await pressDelete();await wait(`document.querySelectorAll('.gallery .thumb').length===1`)
+    assert.equal(deleteCalls,2);assert.ok(await js(`!!document.querySelector('.image-viewer')&&!document.querySelector('.iv-delete.danger-confirm')`),'deletion advances and clears confirmation')
+    assert.equal(await js(`document.querySelector('.viewer-stage img').getAttribute('src')`),firstDeleteUrl)
+    await click('.iv-delete','删除图片');await click('.iv-delete','确认删除');await wait(`!document.querySelector('.image-viewer')&&!document.querySelector('.viewer')`)
+    assert.equal(deleteCalls,3);assert.equal(await js(`document.querySelectorAll('.gallery .thumb').length`),0,'deleting last image clears preview and viewer')
+    deleteGallery=[{...deleteFixtures[0],storage:'workspace'}];win.webContents.send('gallery:changed');await wait(`document.querySelectorAll('.gallery .thumb').length===1`)
+    await run(`document.querySelector('.gallery .thumb').click()`)
+    assert.ok(await js(`document.querySelector('.gallery-delete').disabled && document.querySelector('.thumb-actions [aria-label="删除"]').disabled && document.querySelector('.gallery-delete-note').textContent.includes('工作台引用中')`),'protected images keep a visible disabled delete entry with explanation')
+    await run(`document.querySelector('.viewer-stage').click()`);await wait(`!!document.querySelector('.image-viewer')`);await pressDelete();assert.equal(deleteCalls,3,'workspace archives cannot be deleted with shortcut')
+    assert.ok(await js(`document.querySelector('.iv-delete').disabled && document.querySelector('.iv-hint').textContent.includes('工作台引用中')`));await shot('24-protected-gallery-delete.png');await run(`document.querySelector('.image-viewer [title="关闭（Esc）"]').click()`);await wait(`!document.querySelector('.image-viewer')`)
+    console.log('PASS gallery preview and fullscreen deletion, confirmation reset, failure recovery, repeat-key guard, adjacent selection, last-image close and workspace protection')
     console.log('Artifacts:',artifacts)
   } catch(e) { console.error(e);process.exitCode=1;if(win){writeFileSync(join(artifacts,'failure.png'),(await win.webContents.capturePage()).toPNG());writeFileSync(join(artifacts,'failure.txt'),await win.webContents.executeJavaScript('document.body.innerText'))} }
   finally { app.exit(process.exitCode||0) }

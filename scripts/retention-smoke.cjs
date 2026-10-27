@@ -29,7 +29,7 @@ app.whenReady().then(async()=>{
     configRequest.params.seed = 999
     assert.equal(recipes.listRecipes().find(r=>r.id===configFavorite.id).recipe.request.params.seed,12345,'favorite is an independent persistent snapshot')
     assert.equal(configFavorite.thumbnail,'');assert.equal(configFavorite.sourceImage,'')
-    assert.throws(()=>recipes.createConfigRecipe({...req,params:{...params,count:999}}),/配置无效/)
+    assert.throws(()=>recipes.createConfigRecipe({...req,params:{...params,count:999}}),/张数或提示词预设无效/)
     recipes.deleteRecipe(configFavorite.id)
     flip=true
     const a=await client.generateImages({...req,params:{...params,count:2}},()=>{},()=>false)

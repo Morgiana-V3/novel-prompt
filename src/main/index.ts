@@ -17,7 +17,8 @@ import type {
 import { tagStore } from './tagdb/store'
 import { analyzePrompt } from './prompt/analyzer'
 import { getSettings, saveSettings } from './settings'
-import { createPage, deletePage, editPage, importPage, listPages, pageUsesImage, readPage, listRemovedPages, restorePage, recoverPageImage } from './page-workspaces'
+import { createPage, editPage, importPage, listPages, pageUsesImage, readPage, listRemovedPages, restorePage, recoverPageImage } from './page-workspaces'
+import { clearPageImage, deletePageWithImages, cleanRemovedPageImages } from './workspace-cleanup'
 import { clearTemporaryImages, retainImage, readImageRecipe, imageLibraryDir, temporaryCleanupStatus } from './image-library'
 import { createRecipe, createConfigRecipe, createWorkspaceRecipe, listRecipes, updateRecipe, deleteRecipe } from './recipes'
 import type { PageAction } from '../shared/page-workspace'
@@ -234,7 +235,15 @@ function registerIpc(): void {
     return result.canceled || !result.filePaths[0] ? null : recoverPageImage(id, revision, versionId, result.filePaths[0])
   })
   ipcMain.handle('pages:list', () => listPages())
-  ipcMain.handle('pages:delete', (_e, id: string, revision: number) => deletePage(id, revision))
+  ipcMain.handle('pages:delete', async (_e, id: string, revision: number) => {
+    try { await deletePageWithImages(id, revision) } finally { send('gallery:changed', null); notifyAppChanged() }
+  })
+  ipcMain.handle('pages:clear-image', async (_e, id: string, revision: number, versionId: string) => {
+    try { return await clearPageImage(id, revision, versionId) } finally { send('gallery:changed', null); notifyAppChanged() }
+  })
+  ipcMain.handle('pages:cleanup-removed-images', async () => {
+    try { return await cleanRemovedPageImages() } finally { send('gallery:changed', null); notifyAppChanged() }
+  })
   ipcMain.handle('pages:read', (_e, id: string) => readPage(id))
   ipcMain.handle('pages:create', (_e, image: string | null, params: NaiGenParams, model: NaiVersion, draft: InpaintDraft) => createPage(image, params, model, draft))
   ipcMain.handle('pages:import', async (_e, params: NaiGenParams, model: NaiVersion, draft: InpaintDraft) => {

@@ -141,8 +141,14 @@ async function remove(id: string) {
   const next=buttons[index+1] ?? buttons[index-1]
   busy.value=true;deleteError.value=''
   try {
-    const doc=await window.api.pagesRead(id)
-    await window.api.pagesDelete(id,doc.revision)
+    if (id === 'removed-images') {
+      const count = await window.api.pagesCleanupRemovedImages()
+      toast(count ? `已清理 ${count} 张遗留图片，移入系统回收站` : '没有可清理的遗留图片')
+    } else {
+      const doc=await window.api.pagesRead(id)
+      await window.api.pagesDelete(id,doc.revision)
+      toast('项目已删除，所属图片已清理；其他项目引用的图片保留')
+    }
     dismissDelete(false)
     await refresh();busy.value=false;await nextTick()
     next?.focus({preventScroll:true})
@@ -156,7 +162,7 @@ async function close() { current.value = null; await refresh() }
   <div class="sessions-view">
     <PageWorkspace ref="workspace" v-if="current" :key="current.id" :workspace="current" @close="close" />
     <section v-else class="sessions-home scroll">
-      <header><div><h1>创作项目 <span class="pill">{{ sessions.length }}</span></h1></div><div class="row"><button class="btn accent" :disabled="busy" @click="newSession()"><Icon name="plus" />新建项目</button></div></header>
+      <header><div><h1>创作项目 <span class="pill">{{ sessions.length }}</span></h1></div><div class="row"><button class="btn ghost small" :disabled="busy" title="清理以前删除的项目留下的图片" @click="confirmDelete('removed-images',$event)"><Icon name="trash" :size="14"/>清理遗留图片</button><button class="btn accent" :disabled="busy" @click="newSession()"><Icon name="plus" />新建项目</button></div></header>
       <div v-if="error && !modalOpen()" class="error-box" role="alert">{{ error }}</div>
       <div v-if="!sessions.length" class="session-empty"><Icon name="chat" :size="36" /><p>暂无项目</p><button class="btn primary" @click="newSession()">创建第一个项目</button></div>
       <div class="session-grid">
@@ -167,10 +173,11 @@ async function close() { current.value = null; await refresh() }
       </div>
     </section>
     <div ref="deletePopover" popover="auto" class="session-delete-popover" :data-above="deleteAbove" :style="deletePosition" role="alertdialog" aria-label="确认删除项目" aria-describedby="delete-project-question" @toggle="deleteToggle">
-      <p id="delete-project-question">删除这个项目？</p>
+      <p id="delete-project-question">{{ deleting === 'removed-images' ? '清理已删项目的遗留图片？' : '删除项目并清理图片？' }}</p>
       <span class="delete-project-name" :title="sessions.find(s=>s.id===deleting)?.title">{{ sessions.find(s=>s.id===deleting)?.title }}</span>
+      <span class="delete-project-detail">{{ deleting === 'removed-images' ? '清理已删项目与无归属项目的图片及生成文件。' : '项目记录归档，所属图片及生成文件移入系统回收站。' }}其他项目仍引用的图片保留。</span>
       <p v-if="deleteError" class="delete-error" role="alert">{{ deleteError }}</p>
-      <div class="row"><button class="btn ghost small delete-cancel" :disabled="busy" @click="dismissDelete()">取消</button><button class="btn primary small" :disabled="busy || !deleting" @click="deleting && remove(deleting)">{{ busy ? '删除中…' : '确认删除' }}</button></div>
+      <div class="row"><button class="btn ghost small delete-cancel" :disabled="busy" @click="dismissDelete()">取消</button><button class="btn primary small" :disabled="busy || !deleting" @click="deleting && remove(deleting)">{{ busy ? '清理中…' : deleting === 'removed-images' ? '确认清理' : '确认删除' }}</button></div>
     </div>
     <dialog ref="projectDialog" class="project-dialog" aria-label="创作项目管理" @cancel.prevent="dismissDialog" @click="e=>{if(e.target===projectDialog)dismissDialog()}">
       <button v-if="frontendRunning" class="btn small ghost project-agent-stop" @click="frontendControl?.stop()">Agent 正在操作 · 停止</button>
@@ -191,6 +198,7 @@ async function close() { current.value = null; await refresh() }
 </template>
 
 <style scoped>
+.delete-project-detail{display:block;color:var(--muted);font-size:12px;line-height:1.7;margin-top:8px}
 .project-agent-stop{position:absolute;right:18px;top:18px;color:var(--pink-deep);background:var(--bg);z-index:1}
 .project-dialog{width:min(600px,calc(100vw - 48px));max-height:calc(100vh - 100px);padding:24px;border:1px solid var(--pink-line);border-radius:18px;background:var(--bg);color:var(--text);box-shadow:0 18px 70px #0002;overflow:auto}.project-dialog::backdrop{background:#16151d66}.project-dialog .session-create{padding:0;border:0;margin:0;background:transparent;max-width:none}.project-dialog h3{margin:0;font-size:16px}.project-dialog p{font-size:12px;line-height:1.8;color:var(--text2)}.project-dialog .error-box{margin-top:14px}.sessions-home header p{margin:8px 0 0}.project-dialog .session-remove span{width:auto}
 

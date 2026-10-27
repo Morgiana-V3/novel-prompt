@@ -28,6 +28,7 @@ const viewedId = ref(work.value.currentVersionId)
 const viewed = computed(() => work.value.versions.find(v => v.id === viewedId.value) ?? current.value)
 const groups = computed(() => pageGroups(work.value).slice().reverse())
 const viewedGroup = computed(() => groups.value.find(g => g.versions.some(v => v.id === viewed.value.id))!)
+const viewedCandidates = computed(() => viewedGroup.value.versions.filter(v => !v.imageCleared))
 const groupCards = computed(() => groups.value.map(g => ({ ...g,
   cover: g.versions.find(v => v.id === viewedId.value) ?? g.versions.find(v => v.id === current.value.id) ?? g.versions[g.versions.length - 1],
   adopted: g.versions.some(v => v.id === current.value.id)
@@ -76,6 +77,22 @@ const overlayMode = ref<'annotation'|'execution'>('annotation')
 const displayRegion = computed(() => overlayMode.value === 'execution' ? current.value.editor.regions.find(r=>r.id===work.value.execution.regionId) : region.value)
 const executionRegion = computed(() => current.value.editor.regions.find(r=>r.id===work.value.execution.regionId))
 const historyOpen = ref(false), editing = ref(false)
+const clearingImage = ref<string | null>(null)
+watch([viewedId, pane, editingPrompt, () => state.tab], () => { clearingImage.value = null })
+async function clearImage(versionId: string) {
+  if (busy.value || !work.value.versions.find(v => v.id === versionId)?.image) return
+  operation.value = 'save'; error.value = ''
+  try {
+    await flushNotes()
+    work.value = await window.api.pagesClearImage(work.value.id, work.value.revision, versionId)
+    clearingImage.value = null
+    if (!current.value.editor.regions.some(r => r.id === regionId.value)) regionId.value = null
+    await refreshOverlay(); emit('updated')
+  } catch (e) {
+    error.value = cleanErr(e)
+    try { work.value = await window.api.pagesRead(work.value.id) } catch { /* Keep current inputs if refresh fails. */ }
+  } finally { operation.value = '' }
+}
 const operation = ref<'chat' | 'generate' | 'save' | ''>('')
 const saving = ref(false), error = ref(''), progress = ref(''), zoom = ref(100), overlay = ref('')
 const remoteBusy = ref(false)
@@ -412,8 +429,8 @@ onBeforeUnmount(() => { alive = false; clearTimeout(notesTimer); window.removeEv
       <div class="pw-header-tools">
       <b v-if="editingPrompt" class="pw-edit-title">编辑下一版配置</b>
       <div v-else class="pw-view-tabs seg"><button :class="{on:pane==='canvas'}" @click="pane='canvas'">画布</button><button :class="{on:pane==='prompt'}" @click="pane='prompt'">生图配置</button><button :class="{on:pane==='changes'}" @click="review(viewed.id)">修改对比</button><button class="pw-images-tab" :class="{on:pane==='images'}" title="本版图片" aria-label="本版图片" @click="pane='images'"><Icon name="image" :size="16"/></button></div>
-        <div class="pw-header-actions">
-          <button class="icon-btn sm" :disabled="editingPrompt" :aria-pressed="historyOpen" title="展开版本历史" aria-label="版本记录" @click="historyOpen=!historyOpen"><Icon name="layers" :size="17"/></button>
+        <div v-if="!editingPrompt" class="pw-header-actions">
+          <button class="icon-btn sm" :aria-pressed="historyOpen" title="展开版本历史" aria-label="版本记录" @click="historyOpen=!historyOpen"><Icon name="layers" :size="17"/></button>
           <button class="icon-btn sm pw-back" :disabled="busy || editing" title="返回项目" aria-label="返回项目" @click="close"><Icon name="arrow" class="pw-back-arrow" :size="17"/></button>
         </div>
       </div>
@@ -448,16 +465,24 @@ onBeforeUnmount(() => { alive = false; clearTimeout(notesTimer); window.removeEv
         <WorkspacePrompt v-if="editingPrompt && configDraft" ref="promptEditor" :editor="configDraft" :model="configDraft.model ?? work.model" :image="current.image" editable :disabled="!!operation || remoteBusy" :size-locked="configSizeLocked" @input.capture="configOwner=null" @change.capture="configOwner=null" @click.capture="configOwner=null" />
         <template v-else-if="pane==='canvas'">
           <ImageViewport v-if="viewed.image && !viewed.image.missing" ref="viewport" class="pw-viewport" :width="viewed.image.width||1" :height="viewed.image.height||1" v-model:zoom="zoom" label="创作画布"><img :src="viewed.image.url" @error="viewed.image.missing=true" :alt="viewed.label" draggable="false"><img v-if="overlay && showMask && !historical" class="pw-overlay" :src="overlay" alt="区域标记" draggable="false"></ImageViewport>
-          <div v-else class="pw-blank"><Icon name="image" :size="40"/><span>{{ viewed.image?.missing ? '图片文件缺失，生成记录仍保留' : '暂无图片' }}</span><button v-if="viewed.image?.missing" class="btn small" :disabled="busy" @click="recoverImage">恢复原图</button></div>
+          <div v-else class="pw-blank"><Icon name="image" :size="40"/><span>{{ viewed.imageCleared ? '图片已清理，提示词和生成参数仍保留' : viewed.image?.missing ? '图片文件缺失，生成记录仍保留' : '暂无图片' }}</span><button v-if="viewed.image?.missing" class="btn small" :disabled="busy" @click="recoverImage">恢复原图</button></div>
 <div class="pw-canvas-actions"><button class="btn accent small" :disabled="busy || historical || !current.image || current.image.missing" @click="openEditor"><Icon name="edit" :size="14"/>区域批注 / 遮罩</button><button v-if="overlay&&!historical" class="btn ghost small" @click="showMask=!showMask">{{ showMask?'隐藏标记':'显示标记' }}</button><span v-if="displayRegion&&!historical" class="muted small">{{ overlayMode==='execution'?'执行遮罩':'说明区域' }} {{ displayRegion.label }}</span></div>
 
 
         </template>
         <div v-else-if="pane==='images'" class="pw-candidates scroll" aria-label="本版本图片预览">
-          <button v-for="(v,i) in viewedGroup.versions" :key="v.id" class="pw-candidate" :class="{selected:v.id===viewed.id}" :aria-pressed="v.id===viewed.id" :disabled="busy" @click="viewedId=v.id;pane='canvas'">
-            <div class="pw-candidate-image"><img v-if="v.image&&!v.image.missing" :src="v.image.url" :alt="v.label" loading="lazy" @error="v.image.missing=true"><span v-else class="muted">{{ v.image ? '图片缺失' : '暂无图片' }}</span></div>
-            <div class="pw-candidate-caption"><b>第 {{ i+1 }} 张</b><span v-if="v.id===current.id" class="pw-current">当前蓝本</span><span v-else-if="v.id===viewed.id" class="muted">查看中</span></div>
-          </button>
+          <article v-for="v in viewedCandidates" :key="v.id" class="pw-candidate" :class="{selected:v.id===viewed.id}" :data-version-id="v.id">
+            <button class="pw-candidate-open" :aria-pressed="v.id===viewed.id" :disabled="busy" @click="viewedId=v.id;pane='canvas'">
+            <div class="pw-candidate-image"><img v-if="v.image&&!v.image.missing" :src="v.image.url" :alt="v.label" loading="lazy" @error="v.image.missing=true"><span v-else class="muted">{{ v.imageCleared ? '图片已清理' : v.image ? '图片缺失' : '暂无图片' }}</span></div>
+            <div class="pw-candidate-caption"><b>第 {{ viewedGroup.versions.findIndex(candidate=>candidate.id===v.id)+1 }} 张</b><span v-if="v.id===current.id" class="pw-current">当前蓝本</span><span v-else-if="v.id===viewed.id" class="muted">查看中</span></div>
+            </button>
+            <button v-if="v.image && clearingImage!==v.id" class="icon-btn sm pw-candidate-delete" :disabled="busy" title="删除这张图片" :aria-label="`删除图片：${v.label}`" @click.stop="clearingImage=v.id"><Icon name="trash" :size="14"/></button>
+            <div v-if="clearingImage===v.id" class="pw-candidate-delete-confirm" role="alertdialog" :aria-label="`确认删除图片：${v.label}`" @click.stop @keydown.esc.stop="clearingImage=null">
+              <b>删除这张图片？</b><span>提示词和版本记录保留。</span>
+              <div class="row"><button class="btn ghost small" :disabled="busy" @click="clearingImage=null">取消</button><button class="btn primary small" :disabled="busy" @click="clearImage(v.id)">{{ operation==='save' ? '删除中…' : '确认删除' }}</button></div>
+            </div>
+          </article>
+          <div v-if="!viewedCandidates.length" class="pw-candidates-empty muted">本版图片已清理，提示词和版本记录仍可查看。</div>
         </div>
         <template v-else-if="pane==='prompt'"><WorkspacePrompt v-if="snapshotEditor" ref="promptEditor" :key="viewed.id" :editor="snapshotEditor" :model="snapshotEditor.model ?? work.model" :image="viewed.image" /><div v-else class="pw-blank">此版本未保存生图配置快照</div></template>
         <div v-else-if="pane==='changes'" class="pw-change-board scroll">
@@ -523,6 +548,7 @@ onBeforeUnmount(() => { alive = false; clearTimeout(notesTimer); window.removeEv
 .pw-edit-title{font-size:14px}.pw-scope-bar{display:flex}.pw-scope-actions .pw-compare{width:180px;max-width:220px}.pw-execution{display:flex;align-items:center;gap:10px;height:64px;min-height:64px;padding:10px 0}.pw-execution :deep(.theme-select){flex:0 1 auto;max-width:210px;width:auto;min-width:0}.pw-execution>.btn{flex-shrink:0;white-space:nowrap}.pw-execution-summary{white-space:nowrap}.pw-change-board{padding:8px 0}.pw-run-progress{margin:0!important}.pw-scope-actions{min-width:0}.pw-scope-label{flex-shrink:1}.pw-compare :deep(.theme-select-trigger){overflow:hidden;text-overflow:ellipsis}
 @media(max-width:1250px){.pw-execution-summary{display:none}.pw-execution{gap:6px}.pw-execution>.btn{padding-left:10px;padding-right:10px}.pw-scope-actions .pw-compare{width:140px}.pw-scope-actions{gap:3px}}
 .pw-shell{--pw-chat-width:380px}
+.pw-candidate{position:relative}.pw-candidate-open{display:block;width:100%;padding:0;text-align:left;border-radius:9px}.pw-candidate-open:disabled{cursor:default}.pw-candidate-delete{position:absolute;top:14px;right:14px;background:var(--bg);box-shadow:var(--shadow-sm);opacity:0;pointer-events:none;transition:opacity .15s,color .15s}.pw-candidate:hover .pw-candidate-delete,.pw-candidate:focus-within .pw-candidate-delete{opacity:1;pointer-events:auto}.pw-candidate-delete:hover{color:var(--bad)}.pw-candidate-delete-confirm{position:absolute;left:8px;right:8px;bottom:8px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);box-shadow:var(--shadow-sm);font-size:12px;line-height:1.7}.pw-candidate-delete-confirm>span{display:block;color:var(--muted)}.pw-candidate-delete-confirm .row{justify-content:flex-end;gap:6px;margin-top:8px}.pw-candidates-empty{grid-column:1/-1;text-align:center;padding:40px 12px;font-size:12px}@media(hover:none){.pw-candidate-delete{opacity:1;pointer-events:auto}}
 .pw-header{padding:0;gap:0;display:grid;grid-template-columns:minmax(0,1fr) var(--pw-chat-width)}
 .pw-header-tools{display:flex;align-items:center;gap:12px;min-width:0;padding:0 18px;height:100%}
 .pw-header-actions{margin-left:auto;display:flex;align-items:center;gap:6px;flex-shrink:0}
@@ -535,11 +561,6 @@ onBeforeUnmount(() => { alive = false; clearTimeout(notesTimer); window.removeEv
 .pw-heading input{max-width:none}
 .pw-conversation{width:var(--pw-chat-width);min-width:var(--pw-chat-width);max-width:none;flex:0 0 var(--pw-chat-width)}
 .pw-generation-actions{display:flex;align-items:center;gap:8px;margin-left:auto;flex-shrink:0}
-.pw-generation-actions .btn{height:36px;min-height:36px;border-radius:11px;padding:0 14px;gap:7px;font-size:12px;font-weight:500;line-height:1;box-shadow:none;white-space:nowrap}
-.pw-generation-actions .pw-config-edit,.pw-generation-actions .pw-config-back{background:var(--bg);border:1px solid var(--line);color:var(--text2)}
-.pw-generation-actions .pw-config-edit:hover,.pw-generation-actions .pw-config-back:hover{background:var(--hover);color:var(--text)}
-.pw-generation-actions .pw-generate{background:var(--pink);border:1px solid var(--pink);color:white}
-.pw-generation-actions .pw-generate:hover:not(:disabled){filter:brightness(.97)}
 .pw-generation-count{font-size:11px;border-left:1px solid #ffffff60;padding-left:7px}
 .pw-execution :deep(.theme-select){height:36px;min-height:36px;border-radius:11px;font-size:12px;padding:0 12px;box-shadow:none}
 @media(max-width:1050px){.pw-shell{--pw-chat-width:320px}.pw-header-tools{padding:0 12px;gap:6px}.pw-header .pw-heading{padding:0 16px}}
