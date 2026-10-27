@@ -40,7 +40,7 @@ NovelPrompt 把提示词、NovelAI 生图和 AI 协作放在同一个工作区�
 **AI 优化**既能整理已有提示词，也能把中文想法转换为完整方案。画风、场景、人物特征、多人位置和台词分别编排，修改内容与理由一起展示，由你决定是否采用。
 
 <p align="center">
-  <img src="docs/screenshots/ai.png" width="1000" alt="AI 优化：对照当前提示词，展示优化结果和修改依据" />
+  <img src="docs/screenshots/ai.png" width="1000" alt="AI 优化：按全局提示词与角色分组，对照修改前后并高亮变化" />
 </p>
 
 **画面推测**帮助你在生成前检查表达是否清楚：这组提示词可能呈现怎样的构图、人物和光影，哪些内容可能冲突，哪里与期望有差距。它提供的是分析参考，实际效果仍以出图为准。
@@ -60,7 +60,7 @@ NovelPrompt 把提示词、NovelAI 生图和 AI 协作放在同一个工作区�
 <summary>查看提示词比对与 Tag 搜索</summary>
 
 <p align="center">
-  <img src="docs/screenshots/compare.png" width="1000" alt="提示词比对：识别有效 tag、别名和自然语言内容" />
+  <img src="docs/screenshots/compare.png" width="1000" alt="提示词比对：识别有效 tag、错误拼写与自然语言，提供候选词" />
 </p>
 
 <p align="center">
@@ -74,7 +74,7 @@ NovelPrompt 把提示词、NovelAI 生图和 AI 协作放在同一个工作区�
 支持 **NovelAI V4.5 / V5** 的提示词生图，包含多角色提示词、角色负面、画幅、种子与采样参数。生成结果保存在本机图库，支持留存、删除和收藏生成配置，方便回看、复用或带入 AI 工作台。
 
 <p align="center">
-  <img src="docs/screenshots/generate.png" width="1000" alt="NovelAI 生图：提示词、生成参数与本机图库" />
+  <img src="docs/screenshots/generate.png" width="1000" alt="NovelAI 生图：预览生成结果，留存图片、收藏配置或继续局部重绘" />
 </p>
 
 **角色位置可视化**让多人构图更直观。可以对照已有图片调整每个角色的位置：V4.5 使用网格，V5 使用自由坐标，参考底图支持透明度调节。
@@ -106,22 +106,27 @@ AI 工作台把**当前画面、对话、提示词和历史版本**放在一起�
 
 **每次尝试都有迹可循。** 来源图片与结果并排展示，提示词、角色和生图参数按组突出变化，未修改内容默认隐藏，长文本可展开核对。可以引用历史画面继续讨论，也可以从更满意的旧版本继续探索。
 
-**一次讨论多处修改。** 勾选“本轮修改清单”中的区域，补充各处要求，内置 AI 或外部 Agent 会联合讨论并给出完整方案。采纳后先查看合并范围，再用统一提示词和强度重绘；未勾选区域不纳入遮罩。
-
-**选择谁来处理讨论。** 工作台支持内置 AI 和外部 Agent 两种处理者。外部接管时，Agent 读取图片、选区、启用的 Skill 与历史，自己分析并写回对话和建议，不转调 DeepSeek。新方案保留完整修改前后记录，可回看每条建议。
-
 <details>
-<summary>查看 AI 建议与修改对比</summary>
+<summary>查看历史版本与修改对比</summary>
 
 <p align="center">
-  <img src="docs/screenshots/workspace-suggestions.png" width="1000" alt="AI 建议：查看完整修改前后内容与差异" />
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/workspace-iterations.png" width="1000" alt="修改对比：并排查看来源与结果，追溯提示词变化" />
+  <img src="docs/screenshots/workspace-iterations.png" width="1000" alt="修改对比：切换历史版本，并排查看来源与结果，按组核对提示词变化" />
 </p>
 
 </details>
+
+**一次讨论多处修改。** 在画布标记要改的位置，勾选“本轮修改清单”中的区域并补充要求，内置 AI 或外部 Agent 会联合讨论并给出完整方案。采纳后先查看合并范围，再用统一提示词和强度重绘；未勾选区域不纳入遮罩。
+
+<details>
+<summary>查看区域批注与工作台重绘</summary>
+
+<p align="center">
+  <img src="docs/screenshots/workspace-inpaint.png" width="1000" alt="工作台重绘：画布显示区域标记，本轮修改清单关联讨论、已采纳方案与生成进度" />
+</p>
+
+</details>
+
+**选择谁来处理讨论。** 工作台支持内置 AI 和外部 Agent 两种处理者。外部接管时，Agent 读取图片、选区、启用的 Skill 与历史，自己分析并写回对话和建议，不转调 DeepSeek。新方案保留完整修改前后记录，可回看每条建议。
 
 ## 让 AI 按你的规则创作
 
