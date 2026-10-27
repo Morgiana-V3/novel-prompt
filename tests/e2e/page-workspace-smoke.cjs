@@ -4,7 +4,8 @@ const { temporaryProfile, artifactDirectory } = require('../support/fixtures.cjs
 const { app, BrowserWindow, ipcMain, net, protocol, shell } = require('electron')
 const { mkdtempSync, mkdirSync, readFileSync, writeFileSync } = require('node:fs')
 const { tmpdir } = require('node:os')
-const { join } = require('node:path')
+const { join, resolve } = require('node:path')
+const buildDirectory = resolve(process.env.NP_TEST_BUILD_DIR || join(__dirname, '../../out'))
 const { pathToFileURL } = require('node:url')
 const assert = require('node:assert/strict')
 const ts = require('typescript')
@@ -198,6 +199,7 @@ net.fetch = async (url, init) => {
         execution: {
           kind: mode === 'inpaint' ? 'inpaint' : 'generate',
           regionId: mode === 'inpaint' ? input.currentRegion?.id : null,
+          regionIds: mode === 'inpaint' ? input.selectedRegions.map((region) => region.id) : [],
         },
       }
     }
@@ -718,6 +720,144 @@ app.whenReady().then(async () => {
         }
       }
     }
+    // Joint discussion, immutable selection, proposal scope, union masks and undo.
+    const secondMask = image([0, 0, 0, 255])
+    rect(secondMask, 390, 590, 60, 80, [255, 255, 255, 255])
+    const secondRegion = {
+      ...region,
+      id: 'second',
+      label: 'CD',
+      instruction: '调整右下区域',
+      mask: PNG.sync.write(secondMask).toString('base64'),
+    }
+    const unselectedMask = image([0, 0, 0, 255])
+    rect(unselectedMask, 220, 60, 40, 40, [255, 255, 255, 255])
+    const unselectedRegion = {
+      ...region,
+      id: 'unselected',
+      label: 'EF',
+      instruction: '这轮不要修改',
+      mask: PNG.sync.write(unselectedMask).toString('base64'),
+    }
+    batch = pages.editPage(batch.id, batch.revision, {
+      type: 'editor',
+      versionId: batchSource,
+      editor: {
+        ...pageCurrent(batch).editor,
+        regions: [region, secondRegion, unselectedRegion],
+        params: { ...params, count: 1 },
+      },
+    })
+    const selectedIds = [region.id, secondRegion.id]
+    const { validateExecution } = require('../../src/main/modules/workspace/validation.ts')
+    const { mergeRegionMasks } = require('../../src/main/modules/workspace/region-mask.ts')
+    const { selectRegions, regionIds } = require('../../src/shared/workspace/regions.ts')
+    assert.deepEqual(regionIds({ regionId: region.id }), [region.id])
+    assert.throws(() => selectRegions(pageCurrent(batch), [region.id, region.id]), /不重复/)
+    assert.throws(() => selectRegions(pageCurrent(batch), ['missing']), /不存在/)
+    assert.throws(
+      () =>
+        validateExecution(
+          batch,
+          { kind: 'inpaint', regionId: region.id, regionIds: [region.id] },
+          selectedIds,
+        ),
+      /全部区域/,
+    )
+    assert.throws(
+      () =>
+        validateExecution(
+          batch,
+          {
+            kind: 'inpaint',
+            regionId: region.id,
+            regionIds: [...selectedIds, unselectedRegion.id],
+          },
+          selectedIds,
+        ),
+      /全部区域/,
+    )
+    const merged = PNG.sync.read(
+      Buffer.from(
+        mergeRegionMasks(PNG.sync.write(source), [region, secondRegion], width, height),
+        'base64',
+      ),
+    )
+    for (let i = 0; i < merged.data.length; i += 4) {
+      assert.equal(merged.data[i], Math.max(mask.data[i], secondMask.data[i]))
+      assert.equal(merged.data[i + 3], 255)
+    }
+    mode = 'inpaint'
+    batch = await collaborator.discussPage(
+      batch.id,
+      batch.revision,
+      '一起修改 AB 和 CD，保持其他位置',
+      selectedIds,
+      [],
+    )
+    assert.deepEqual(
+      aiInputs.at(-1).input.selectedRegions.map((region) => region.id),
+      selectedIds,
+    )
+    assert.ok(
+      aiInputs.at(-1).input.selectedRegions.every((region) => region.bounds && region.instruction),
+    )
+    const jointMessage = batch.messages.findLast((message) => message.proposal)
+    const requestMessage = batch.messages.findLast((message) => message.role === 'user')
+    assert.deepEqual(requestMessage.regionIds, selectedIds)
+    assert.equal(requestMessage.regions.length, 2)
+    assert.deepEqual(jointMessage.proposal.execution.regionIds, selectedIds)
+    const beforeJoint = structuredClone(pageCurrent(batch).editor.draft)
+    const previousExecution = structuredClone(batch.execution)
+    batch = pages.editPage(batch.id, batch.revision, {
+      type: 'proposal',
+      messageId: jointMessage.id,
+      decision: 'accept',
+    })
+    const unionGenerationStart = generationInputs.length
+    batch = await collaborator.renderPage(
+      batch.id,
+      batch.revision,
+      batch.execution,
+      () => {},
+      () => false,
+    )
+    assert.equal(
+      generationInputs.length,
+      unionGenerationStart + 1,
+      'one request for the complete union',
+    )
+    const jointVersion = batch.versions.at(-1)
+    const unionPixels = PNG.sync.read(readFileSync(client.imagePath(jointVersion.image.name)))
+    const savedUnion = PNG.sync.read(Buffer.from(jointVersion.generated.inpaint.mask, 'base64'))
+    assert.deepEqual(savedUnion.data, merged.data)
+    assert.deepEqual(
+      jointVersion.generated.inpaint.regions.map((region) => region.id),
+      selectedIds,
+    )
+    for (let i = 0; i < source.data.length; i += 4) {
+      if (!merged.data[i]) {
+        assert.ok(
+          source.data.subarray(i, i + 4).equals(unionPixels.data.subarray(i, i + 4)),
+          'unselected regions and all outside pixels are preserved',
+        )
+      }
+    }
+    batch = pages.editPage(batch.id, batch.revision, {
+      type: 'proposal',
+      messageId: jointMessage.id,
+      decision: 'undo',
+    })
+    assert.deepEqual(pageCurrent(batch).editor.draft, beforeJoint)
+    assert.deepEqual(batch.execution, previousExecution)
+    const persisted = pages.readPage(batch.id)
+    assert.deepEqual(
+      persisted.messages.find((message) => message.id === requestMessage.id).regions,
+      requestMessage.regions,
+    )
+    console.log(
+      'PASS multi-region AI discussion, scope validation, exact mask union, single generation, unselected pixels, snapshots and undo',
+    )
     batch = pages.editPage(batch.id, batch.revision, {
       type: 'editor',
       versionId: batchSource,
@@ -761,7 +901,7 @@ app.whenReady().then(async () => {
       titleBarStyle: 'hidden',
       titleBarOverlay: { color: '#00000000', symbolColor: '#6b6c75', height: 40 },
       webPreferences: {
-        preload: join(__dirname, '../../out/preload/index.js'),
+        preload: join(buildDirectory, 'preload/index.js'),
         sandbox: false,
         backgroundThrottling: false,
         offscreen: true,
@@ -794,7 +934,7 @@ app.whenReady().then(async () => {
       await pause(300)
       writeFileSync(join(artifacts, name), (await win.webContents.capturePage()).toPNG())
     }
-    await win.loadFile(join(__dirname, '../../out/renderer/index.html'))
+    await win.loadFile(join(buildDirectory, 'renderer/index.html'))
     await pause(600)
     assert.ok(await js(`document.body.textContent.includes('测试：上次临时文件清理失败')`))
     await click('.frontend-status button', '重试清理')
@@ -1135,28 +1275,16 @@ app.whenReady().then(async () => {
     await click('.ip-foot button', '保存并返回讨论')
     await wait(`!document.querySelector('.ip-dialog')`)
     assert.equal(pages.readPage(ui.id).execution.kind, 'generate')
-    await wait(
-      `document.querySelector('[aria-label="附加区域批注"]')?.textContent.includes('区域 ')`,
-    )
-    // 选「不附加」后打开再关闭编辑器（没有新画区域），不应被自动改回附加区域
-    await run(`document.querySelector('[aria-label="附加区域批注"]').click()`)
-    await wait(`!!document.querySelector('.theme-select-option')`)
-    await run(
-      `[...document.querySelectorAll('.theme-select-option')].find(e=>e.textContent.includes('不附加')).click()`,
-    )
+    await wait(`document.querySelector('.pw-region-checklist input')?.checked`)
+    // Explicitly unchecked regions remain unchecked after reopening the editor.
+    await run(`document.querySelector('.pw-region-checklist input').click()`)
     await click('.pw-canvas-actions button', '区域批注')
     await wait(`!!document.querySelector('.ip-foot')`)
     await pause(200)
     await click('.ip-foot button', '保存并返回讨论')
     await wait(`!document.querySelector('.ip-dialog')`)
-    await wait(
-      `document.querySelector('[aria-label="附加区域批注"]')?.textContent.includes('不附加')`,
-    )
-    await run(`document.querySelector('[aria-label="附加区域批注"]').click()`)
-    await wait(`!!document.querySelector('.theme-select-option')`)
-    await run(
-      `[...document.querySelectorAll('.theme-select-option')].find(e=>e.textContent.startsWith('区域 ')).click()`,
-    )
+    assert.equal(await run(`document.querySelector('.pw-region-checklist input').checked`), false)
+    await run(`document.querySelector('.pw-region-checklist input').click()`)
     mode = 'inpaint'
     await input('.pw-input-wrap textarea', '这次只重绘刚才的区域')
     await run(`document.querySelector('.pw-send').click()`)

@@ -1,3 +1,4 @@
+import { regionIds, regionNotes, selectRegions } from '../../../shared/workspace/regions'
 import type { InpaintDraft } from '../../../shared/prompts/types'
 import type { PageAgentIdentity, PageExternalReply } from '../../../shared/workspace/model'
 import {
@@ -108,7 +109,7 @@ export function queueExternalRequest(
   id: string,
   revision: number,
   text: string,
-  regionId: string | null,
+  selection: string | string[] | null,
   referenceIds: string[],
   discussionVersionId?: string,
   agent?: PageAgentIdentity,
@@ -137,18 +138,20 @@ export function queueExternalRequest(
   ) {
     throw new Error('需求或引用版本无效')
   }
-  if (regionId && !version.editor.regions.some((region) => region.id === regionId)) {
-    throw new Error('区域已不存在')
-  }
+  const selectedRegions = selectRegions(version, selection)
+  const selectedIds = selectedRegions.map((region) => region.id)
+  const regionId = selectedIds[0] ?? null
   const discussion = discussionSnapshot(workspace, discussionVersionId)
   const message = pageMessage('user', text.trim(), version.id)
   const skills = composeSkills('workspace', workspace.model)
   message.discussion = discussion
   message.regionId = regionId
+  message.regionIds = selectedIds
+  message.regions = regionNotes(selectedRegions)
   message.referenceIds = [...referenceIds]
   message.externalRequest = {
     status: 'pending',
-    contextKey: pageContextKey(version, regionId, workspace),
+    contextKey: pageContextKey(version, selectedIds, workspace),
   }
   message.skills = skills.skills.map((skill) => skill.name)
   message.skillSnapshot = skills.snapshot
@@ -197,7 +200,7 @@ export function replyExternalRequest(
   if (
     request.versionId !== version.id ||
     request.externalRequest!.contextKey !==
-      pageContextKey(version, request.regionId ?? null, workspace) ||
+      pageContextKey(version, regionIds(request), workspace) ||
     discussionIsStale(workspace, request.discussion)
   ) {
     throw new Error('需求发出后讨论图片、目标、版本、提示词或选区已改变，请取消旧需求后重新发送')
@@ -229,7 +232,7 @@ export function replyExternalRequest(
     ) {
       throw new Error('建议标题或风险说明无效')
     }
-    validateExecution(workspace, proposal.execution)
+    validateExecution(workspace, proposal.execution, regionIds(request))
   }
   if (response.understanding) {
     workspace.goal = response.understanding.goal
@@ -243,6 +246,8 @@ export function replyExternalRequest(
   message.author = { kind: 'external', name: agent.name }
   message.requestId = request.id
   message.regionId = request.regionId
+  message.regionIds = regionIds(request)
+  message.regions = request.regions
   message.referenceIds = request.referenceIds
   message.discussion = request.discussion ? clone(request.discussion) : undefined
   message.skills = request.skills
@@ -250,14 +255,15 @@ export function replyExternalRequest(
     const before = pageDraft(version, request.regionId ?? null)
     message.proposal = {
       regionId: request.regionId ?? null,
+      regionIds: regionIds(request),
       title: proposal.title,
       warning: proposal.warning,
       changes: pageChanges(before, proposal.draft),
       status: 'pending',
-      contextKey: pageContextKey(version, request.regionId ?? null, workspace),
+      contextKey: pageContextKey(version, regionIds(request), workspace),
       before: clone(before),
       after: clone(proposal.draft),
-      execution: validateExecution(workspace, proposal.execution),
+      execution: validateExecution(workspace, proposal.execution, regionIds(request)),
       previousAccepted: null,
     }
   }

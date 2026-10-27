@@ -2,6 +2,15 @@
 import { useMcpSettings } from './use-mcp-settings'
 import { copy } from '../../shared/lib/notifications'
 import Icon from '../../shared/ui/Icon.vue'
+import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
+
+const scopeOptions = [
+  { value: 'all', label: '全部功能' },
+  { value: 'workspace,frontend,images,skills,tags', label: '工作台创作' },
+  { value: 'workspace,images,skills,tags', label: '后台创作' },
+  { value: 'tags,skills', label: '标签与提示词' },
+  { value: 'core', label: '按需加载' },
+]
 const { mcp, isPackaged, loadMcp, mcpScope, codexConfig, jsonConfig, agentPrompt, fmtLogTime } =
   useMcpSettings()
 defineProps<{ allowAi: boolean; allowGenerate: boolean }>()
@@ -98,14 +107,14 @@ const emit = defineEmits<{
         v-if="!mcp?.portable"
         class="form-field full"
       >
-        <label>接入范围</label>
-        <select v-model="mcpScope">
-          <option value="all">全部功能</option>
-          <option value="workspace,frontend,images,skills,tags">工作台创作</option>
-          <option value="workspace,images,skills,tags">后台创作</option>
-          <option value="tags,skills">标签与提示词</option>
-          <option value="core">按需加载</option>
-        </select>
+        <label for="mcp-scope">接入范围</label>
+        <ThemeSelect
+          id="mcp-scope"
+          v-model="mcpScope"
+          class="mcp-scope"
+          aria-label="接入范围"
+          :options="scopeOptions"
+        />
         <span class="help"
           >所选功能在首次连接时即可使用，范围越小，Agent
           需要读取的工具说明越少。选择后复制下方新配置并重新连接。“按需加载”适合支持动态刷新工具的客户端。</span

@@ -1,3 +1,4 @@
+import { selectRegions } from '@shared/workspace/regions'
 import type { FrontendContext, FrontendRequest } from '@shared/contracts/desktop'
 import { patchWorkspaceConfig } from '@shared/workspace/config'
 import type {
@@ -35,6 +36,7 @@ interface WorkspaceCommandHost {
   compareVersionId: Ref<string>
   composer: Ref<string>
   regionId: Ref<string | null>
+  selectedRegionIds: Ref<string[]>
   references: Ref<string[]>
   overlayMode: Ref<'annotation' | 'execution'>
   pendingRequest: Ref<PageMessage | undefined>
@@ -92,6 +94,7 @@ export function createWorkspaceCommands(host: WorkspaceCommandHost) {
     compareVersionId,
     composer,
     regionId,
+    selectedRegionIds,
     references,
     overlayMode,
     pendingRequest,
@@ -278,17 +281,16 @@ export function createWorkspaceCommands(host: WorkspaceCommandHost) {
         }
         await ctx.step('已切换工作台视图')
       } else if (request.action === 'compose') {
-        if (
-          request.region_id &&
-          !current.value.editor.regions.some((region) => region.id === request.region_id)
-        ) {
-          throw new Error('区域不存在')
-        }
+        const regions = selectRegions(
+          current.value,
+          request.region_ids ?? request.region_id ?? null,
+        )
         for (const id of request.reference_ids ?? []) {
           version(id)
         }
         composer.value = request.text!
-        regionId.value = request.region_id ?? null
+        selectedRegionIds.value = regions.map((region) => region.id)
+        regionId.value = selectedRegionIds.value[0] ?? null
         references.value = [...new Set(request.reference_ids ?? [])]
         if (regionId.value) {
           viewedId.value = current.value.id
@@ -372,15 +374,17 @@ export function createWorkspaceCommands(host: WorkspaceCommandHost) {
         check()
         await ctx.step('处理结果已显示')
       } else if (request.action === 'generate') {
-        if (
-          request.kind === 'inpaint' &&
-          !current.value.editor.regions.some((region) => region.id === request.region_id)
-        ) {
-          throw new Error('重绘区域不存在')
+        const regions =
+          request.kind === 'inpaint'
+            ? selectRegions(current.value, request.region_ids ?? request.region_id ?? null)
+            : []
+        if (request.kind === 'inpaint' && !regions.length) {
+          throw new Error('请选择重绘区域')
         }
         await setExecution({
           kind: request.kind!,
-          regionId: request.kind === 'inpaint' ? request.region_id! : null,
+          regionId: regions[0]?.id ?? null,
+          regionIds: regions.map((region) => region.id),
         })
         check()
         inspectMask()

@@ -3,7 +3,8 @@ const { temporaryProfile, artifactDirectory } = require('../support/fixtures.cjs
 const { app, BrowserWindow, ipcMain, net } = require('electron')
 const { mkdtempSync, readFileSync, writeFileSync } = require('node:fs')
 const { tmpdir } = require('node:os')
-const { join } = require('node:path')
+const { join, resolve } = require('node:path')
+const buildDirectory = resolve(process.env.NP_TEST_BUILD_DIR || join(__dirname, '../../out'))
 const { crc32, deflateSync } = require('node:zlib')
 const assert = require('node:assert/strict')
 const ts = require('typescript')
@@ -27,6 +28,7 @@ let copied = ''
 let holdAnalysis = false
 let pending = []
 let calls = 0
+let reviewResult = null
 function analysis(text) {
   const tokens = parsePrompt(text).map((t) => {
     const tag = { name: t.core, display: t.core, category: 0, count: 100 }
@@ -92,6 +94,9 @@ const handlers = {
   'ai:optimize': (_, req) => {
     optimizeCalls++
     lastOptimize = req
+    if (reviewResult) {
+      return reviewResult
+    }
     return {
       positive: 'outdoors',
       negative: '',
@@ -172,7 +177,7 @@ app.whenReady().then(async () => {
       width: 1440,
       height: 960,
       webPreferences: {
-        preload: join(__dirname, '../../out/preload/index.js'),
+        preload: join(buildDirectory, 'preload/index.js'),
         sandbox: false,
         backgroundThrottling: false,
         offscreen: true,
@@ -211,7 +216,7 @@ app.whenReady().then(async () => {
         `(()=>{const data=new DataTransfer();data.setData('text/plain',${JSON.stringify(value)});document.querySelector('.compare textarea').dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}))})()`,
       )
     const value = () => js(`document.querySelector('.compare textarea').value`)
-    await win.loadFile(join(__dirname, '../../out/renderer/index.html'))
+    await win.loadFile(join(buildDirectory, 'renderer/index.html'))
     await waitUI(`document.querySelector('.side-bottom .seg')?.textContent.includes('V5')`)
     await paste('[Prompt]\ntwin tails\n[Undesired Content]\nlowres, blurry')
     await waitUI(`!!document.querySelector('.alias-item button')`)
@@ -444,6 +449,120 @@ app.whenReady().then(async () => {
       await waitUI(`document.querySelectorAll('.ai .char-block').length===${charsBefore}`)
       console.log('PASS deleting a character can be undone from the toast')
     }
+
+    // Real review UI: one continuous comparison per field, no unchanged groups,
+    // exact full-text copy, and character positions/negative prompts grouped together.
+    const unchangedContext = 'Her black hair and grey dress stay unchanged. '.repeat(12)
+    const previousProse =
+      unchangedContext + 'She stands in the doorway, smiling quietly, with her hands empty.'
+    const nextProse =
+      unchangedContext +
+      'She stands beside the doorway, with both arms still, looking directly at the viewer, and the background stays empty.'
+    await click('.nav-item', '提示词比对')
+    await click('.section-tab', '主提示词1')
+    await paste(
+      `[Prompt]\nmanga, monochrome\n[Character 1 @ B3]\nsilver hair\n[Character 1 Undesired Content]\nglasses\n[Character 2 @ C3]\n${previousProse}\n[Character 2 Undesired Content]\nblurry\n[Undesired Content]\nlowres`,
+    )
+    reviewResult = {
+      positive: 'manga, monochrome, detailed lineart',
+      negative: 'lowres',
+      characters: [
+        { prompt: 'silver hair', negative: 'glasses', position: 'B3' },
+        { prompt: nextProse, negative: 'blurry', position: 'D3' },
+        {
+          prompt:
+            'girl, heart-shaped pupils, A close-up shows her eyes, with the nose outside the crop.',
+          negative: 'ringed eyes',
+          position: 'A1',
+        },
+      ],
+      changes: [],
+      invalid: [],
+      notes: '',
+      evidence: { related: [], wiki: [], failed: [], implications: true },
+    }
+    await click('.nav-item', 'AI 优化')
+    await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+    await waitUI(`document.querySelectorAll('.ai .review-group').length === 3`)
+    await js(`document.querySelector('.ai [data-group="global"] .diff-context').click()`)
+    assert.equal(
+      await js(`document.querySelector('.ai [data-group="global"] .before p').textContent`),
+      'manga, monochrome',
+    )
+    assert.equal(
+      await js(`document.querySelector('.ai [data-group="global"] .after p').textContent`),
+      reviewResult.positive,
+    )
+    await js(`document.querySelector('.ai [data-group="global"] .diff-context').click()`)
+    assert.equal(await js(`!!document.querySelector('.ai [data-group="character-0"]')`), false)
+    assert.equal(
+      await js(
+        `[...document.querySelectorAll('.ai .review-field-head')].some(node => node.textContent.includes('负面词') && !node.closest('[data-group="character-2"]'))`,
+      ),
+      false,
+    )
+    assert.equal(
+      await js(`document.querySelectorAll('.ai [data-group="character-1"] .diff-prose').length`),
+      1,
+    )
+    assert.equal(
+      await js(
+        `document.querySelectorAll('.ai [data-group="character-1"] .review-position').length`,
+      ),
+      1,
+    )
+    assert.equal(
+      await js(
+        `document.querySelectorAll('.ai [data-group="character-2"] .review-status.added').length`,
+      ),
+      1,
+    )
+    assert.ok(
+      await js(
+        `document.querySelector('.ai [data-group="character-1"] .diff-context').getAttribute('aria-expanded') === 'false'`,
+      ),
+    )
+    await js(`document.querySelector('.ai [data-group="character-1"] .diff-context').click()`)
+    assert.equal(
+      await js(`document.querySelector('.ai [data-group="character-1"] .before p').textContent`),
+      previousProse,
+    )
+    assert.equal(
+      await js(`document.querySelector('.ai [data-group="character-1"] .after p').textContent`),
+      nextProse,
+    )
+    await js(
+      `document.querySelector('.ai [data-group="character-1"] button[title="复制完整提示词"]').click()`,
+    )
+    await wait(() => copied === nextProse)
+    await js(`document.querySelector('.ai [data-group="character-1"] .diff-context').click()`)
+    for (const width of [2000, 1100]) {
+      win.setSize(width, 960)
+      await pause(180)
+      assert.ok(
+        await js(`(() => {
+        const field = document.querySelector('.ai [data-group="character-1"] .prompt-diff')
+        const panes = [...field.querySelectorAll('.diff-sentence')].map(node => node.getBoundingClientRect())
+        return panes.every(rect => rect.width > 0 && rect.left >= 0 && rect.right <= innerWidth + 1)
+          && (field.clientWidth < 600 ? panes[1].top >= panes[0].bottom - 1 : Math.abs(panes[0].top - panes[1].top) < 1)
+      })()`),
+        'comparison follows its container width without clipping',
+      )
+      writeFileSync(
+        join(profile, `prompt-review-${width}.png`),
+        (await win.webContents.capturePage()).toPNG(),
+      )
+    }
+    const revisionBeforeReview = pages.listPages().map((page) => pages.readPage(page.id).revision)
+    await js(`document.querySelector('.ai [data-group="character-1"] summary').click()`)
+    assert.deepEqual(
+      pages.listPages().map((page) => pages.readPage(page.id).revision),
+      revisionBeforeReview,
+      'review controls never write workspace data',
+    )
+    console.log(
+      'PASS grouped review hides unchanged fields, preserves prose/commas/copy, folds context and adapts to narrow containers',
+    )
 
     // 主进程：AI 请求错误中文化、5xx 自动重试、Key 脱敏；Danbooru 熔断
     const { chat } = require('../../src/main/modules/prompts/chat.ts')

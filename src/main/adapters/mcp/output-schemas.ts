@@ -68,6 +68,7 @@ const desktopWorkspace = shape(
     title: str,
     versionId: str,
     regionId: nullable(str),
+    regionIds: strings,
     pane: str,
     editing: bool,
     composer: str,

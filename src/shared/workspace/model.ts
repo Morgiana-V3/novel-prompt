@@ -46,12 +46,14 @@ export interface PageVersion {
       label?: string
       instruction?: string
       target?: number | null
+      regions?: Pick<PageRegion, 'id' | 'label' | 'instruction' | 'target'>[]
     }
   }
 }
 export interface PageExecution {
   kind: 'generate' | 'inpaint'
   regionId: string | null
+  regionIds?: string[]
 }
 /** The observed image/recipe is frozen independently of the editable target. */
 export interface PageDiscussion {
@@ -84,6 +86,7 @@ export interface PageExternalReply {
 }
 export interface PageProposal {
   regionId: string | null
+  regionIds?: string[]
   title: string
   warning: string
   changes: InpaintChange[]
@@ -123,6 +126,8 @@ export interface PageMessage {
   createdAt: number
   versionId: string
   regionId?: string | null
+  regionIds?: string[]
+  regions?: Pick<PageRegion, 'id' | 'label' | 'instruction' | 'target'>[]
   referenceIds?: string[]
   discussion?: PageDiscussion
   proposal?: PageProposal
@@ -324,7 +329,7 @@ export function pageDraft(version: PageVersion, _regionId: string | null): Inpai
 /** Serializable on both sides; no model-generated digest is trusted. */
 export function pageContextKey(
   version: PageVersion,
-  regionId: string | null,
+  regionId: string | string[] | null,
   notes?: Pick<PageWorkspace, 'goal' | 'preserve'> & {
     execution?: PageExecution
     model?: NaiVersion
@@ -332,7 +337,7 @@ export function pageContextKey(
 ): string {
   return JSON.stringify([
     version.id,
-    pageDraft(version, regionId),
+    pageDraft(version, null),
     version.editor.params,
     version.editor.strength,
     version.editor.regions.map((region) => [
@@ -345,6 +350,7 @@ export function pageContextKey(
     notes?.preserve,
     notes?.execution,
     notes?.model,
+    ...(Array.isArray(regionId) && regionId.length > 1 ? [regionId.slice().sort()] : []),
   ])
 }
 

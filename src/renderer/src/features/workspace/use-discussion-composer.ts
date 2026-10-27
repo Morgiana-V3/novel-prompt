@@ -11,18 +11,7 @@ export function useDiscussionComposer(
   focusComposer: () => void,
 ) {
   const regionId = ref<string | null>(null)
-
-  const region = computed(() =>
-    current.value.editor.regions.find((region2) => region2.id === regionId.value),
-  )
-
-  const regionOptions = computed(() => [
-    { value: null as string | null, label: '不附加区域批注' },
-    ...current.value.editor.regions.map((region2) => ({
-      value: region2.id,
-      label: `区域 ${region2.label}${region2.instruction ? ` · ${region2.instruction.slice(0, 20)}` : ''}`,
-    })),
-  ])
+  const selectedRegionIds = ref<string[]>([])
 
   const references = ref<string[]>([])
 
@@ -52,5 +41,5 @@ export function useDiscussionComposer(
     }
     focusComposer()
   }
-  return { regionId, region, regionOptions, references, composer, discussionContext, reference }
+  return { regionId, selectedRegionIds, references, composer, discussionContext, reference }
 }

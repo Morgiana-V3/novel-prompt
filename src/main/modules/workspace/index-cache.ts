@@ -1,3 +1,4 @@
+import { regionIds } from '../../../shared/workspace/regions'
 import {
   pageContextKey,
   pageCurrent,
@@ -72,7 +73,7 @@ export function rememberPage(workspace: PageWorkspace, signature: string) {
         stale:
           request.versionId !== version.id ||
           request.externalRequest!.contextKey !==
-            pageContextKey(version, request.regionId ?? null, workspace) ||
+            pageContextKey(version, regionIds(request), workspace) ||
           discussionIsStale(workspace, request.discussion),
       })
     : null

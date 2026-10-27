@@ -1,3 +1,4 @@
+import { regionIds, regionNotes } from '../../../shared/workspace/regions'
 import { randomUUID } from 'node:crypto'
 import type { PageExternalReply } from '../../../shared/workspace/model'
 import {
@@ -74,6 +75,12 @@ export const EXTERNAL_RESPONSE_SCHEMA = {
           properties: {
             kind: { type: 'string', enum: ['generate', 'inpaint'] },
             regionId: { type: ['string', 'null'] },
+            regionIds: {
+              type: 'array',
+              items: { type: 'string' },
+              maxItems: 16,
+              uniqueItems: true,
+            },
           },
           required: ['kind', 'regionId'],
         },
@@ -123,7 +130,7 @@ export function externalWorkspaceTools(desktop: DesktopBridge): McpTool[] {
         }
         if (
           request.externalRequest!.contextKey !==
-            pageContextKey(pageCurrent(workspace), request.regionId ?? null, workspace) ||
+            pageContextKey(pageCurrent(workspace), regionIds(request), workspace) ||
           discussionIsStale(workspace, request.discussion)
         ) {
           throw new Error('需求上下文已改变，请重新读取')
@@ -158,6 +165,7 @@ export function externalWorkspaceTools(desktop: DesktopBridge): McpTool[] {
           text: { type: 'string', maxLength: 6000 },
           discussion_version_id: id,
           region_id: { type: ['string', 'null'] },
+          region_ids: { type: 'array', items: { type: 'string' }, maxItems: 16, uniqueItems: true },
           reference_ids: { type: 'array', items: id, maxItems: 2 },
         },
         required: ['id', 'revision', 'text'],
@@ -175,7 +183,9 @@ export function externalWorkspaceTools(desktop: DesktopBridge): McpTool[] {
                 workspace.id,
                 Number(argumentsRecord.revision),
                 argumentsRecord.text as string,
-                (argumentsRecord.region_id as string) ?? null,
+                (argumentsRecord.region_ids as string[] | undefined) ??
+                  (argumentsRecord.region_id as string) ??
+                  null,
                 (argumentsRecord.reference_ids as string[]) ?? [],
                 argumentsRecord.discussion_version_id as string | undefined,
                 requireAgent(),
@@ -423,11 +433,23 @@ export function externalWorkspaceTools(desktop: DesktopBridge): McpTool[] {
           const ids = new Set(candidates.items.map((version2) => version2.id))
           const discussion =
             request?.discussion ?? discussionSnapshot(workspace, request?.versionId)
-          const region = version.editor.regions.find((region2) => region2.id === request?.regionId)
-          const preview =
-            region && version.image && !version.image.missing
-              ? JSON.parse(await workspaceInpaintPreview(version.image.name, region.mask, signal))
-              : null
+          const selected = regionIds(request ?? {})
+          const selectedRegions = version.editor.regions.filter((region) =>
+            selected.includes(region.id),
+          )
+          const regionPreviews = []
+          for (const region of selectedRegions) {
+            regionPreviews.push({
+              ...regionNotes([region])[0],
+              preview:
+                version.image && !version.image.missing
+                  ? JSON.parse(
+                      await workspaceInpaintPreview(version.image.name, region.mask, signal),
+                    )
+                  : null,
+            })
+          }
+          const preview = regionPreviews[0]?.preview ?? null
           const resolveProcessing = () => {
             if (workspace.agentMode !== 'external') {
               return 'internal' as const
@@ -455,12 +477,14 @@ export function externalWorkspaceTools(desktop: DesktopBridge): McpTool[] {
                   text: request.text,
                   versionId: request.versionId,
                   regionId: request.regionId,
+                  regionIds: regionIds(request),
+                  regions: request.regions,
                   referenceIds: request.referenceIds,
                   discussionVersionId: discussion.versionId,
                   stale:
                     request.versionId !== version.id ||
                     request.externalRequest!.contextKey !==
-                      pageContextKey(version, request.regionId ?? null, workspace) ||
+                      pageContextKey(version, regionIds(request), workspace) ||
                     discussionIsStale(workspace, request.discussion),
                 }
               : null,
@@ -505,6 +529,7 @@ export function externalWorkspaceTools(desktop: DesktopBridge): McpTool[] {
             execution: workspace.execution,
             regions: version.editor.regions.map(({ mask: _mask, accepted: _accepted, ...r }) => r),
             preview,
+            selectedRegions: regionPreviews,
             references: workspace.versions
               .filter((version2) => request?.referenceIds?.includes(version2.id))
               .map((version2) => ({
@@ -529,7 +554,7 @@ export function externalWorkspaceTools(desktop: DesktopBridge): McpTool[] {
             },
             capabilities: { strength: { min: 0.01, max: 1 }, canAutoWakeAgent: false },
             instructions:
-              '先读总则和目录，用 skills_task/skills_ids 补齐本轮相关冻结正文（可 rules_only:true）；检查 missingRequiredIds 并确认正文仍在当前上下文，然后阅读 discussion.image 所指的讨论图片、当前采用图片/选区与必要历史，再自行分析。discussion 是发送时冻结的讨论对象，不随画布切换；editTarget 是修改目标。discussion.recipe.source=generated 表示实际生成记录，initial 仅是会话起始稿和设置，不能当作导入图片实际使用的生成参数。两者不同时，不能将候选图当成已采用底图，proposal.draft 仍基于顶层 draft；要在候选图上重绘须先由用户采用该版本。reply_workspace_request 或 ui_reply_workspace_request 写回中文回复和可选完整方案；不调用内置 AI 工具来代替本轮分析。采纳与生成是分开的操作。',
+              '先读总则和目录，用 skills_task/skills_ids 补齐本轮相关冻结正文（可 rules_only:true）；检查 missingRequiredIds 并确认正文仍在当前上下文，然后阅读 discussion.image 所指的讨论图片、当前采用图片/选区与必要历史，再自行分析。discussion 是发送时冻结的讨论对象，不随画布切换；editTarget 是修改目标。discussion.recipe.source=generated 表示实际生成记录，initial 仅是会话起始稿和设置，不能当作导入图片实际使用的生成参数。两者不同时，不能将候选图当成已采用底图，proposal.draft 仍基于顶层 draft；要在候选图上重绘须先由用户采用该版本。reply_workspace_request 或 ui_reply_workspace_request 写回中文回复和可选完整方案；不调用内置 AI 工具来代替本轮分析。采纳与生成是分开的操作。selectedRegions 是本轮选中区域，按编号联合讨论，在 reply 中逐项说明并指出冲突。inpaint 的 execution.regionIds 必须包含本轮选中全部区域；不加入未选区域，合并遮罩后使用统一草稿与强度执行。',
           })
         }),
     },

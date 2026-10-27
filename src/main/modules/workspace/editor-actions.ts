@@ -1,3 +1,4 @@
+import { regionIds } from '../../../shared/workspace/regions'
 import { isNaiVersion } from '../../../shared/generation/types'
 import { pageCurrent, type PageAction, type PageWorkspace } from '../../../shared/workspace/model'
 import { clone, pageEvent, pageMessage } from './snapshot'
@@ -78,8 +79,9 @@ export function applyEditor(
     region.accepted = null
   })
   if (
-    workspace.execution.regionId &&
-    !version.editor.regions.some((region) => region.id === workspace.execution.regionId)
+    regionIds(workspace.execution).some(
+      (id) => !version.editor.regions.some((region) => region.id === id),
+    )
   ) {
     workspace.execution = { kind: 'generate', regionId: null }
   }

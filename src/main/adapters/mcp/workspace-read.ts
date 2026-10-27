@@ -222,6 +222,8 @@ export function readWorkspaceResult(workspace: PageWorkspace, args: Record<strin
         createdAt: messageSnapshot.createdAt,
         versionId: messageSnapshot.versionId,
         regionId: messageSnapshot.regionId,
+        regionIds: messageSnapshot.regionIds,
+        regions: messageSnapshot.regions,
         referenceIds: messageSnapshot.referenceIds,
         requestId: messageSnapshot.requestId,
         externalRequest: messageSnapshot.externalRequest,
@@ -234,6 +236,7 @@ export function readWorkspaceResult(workspace: PageWorkspace, args: Record<strin
               status: messageSnapshot.proposal.status,
               superseded: messageSnapshot.proposal.superseded,
               regionId: messageSnapshot.proposal.regionId,
+              regionIds: messageSnapshot.proposal.regionIds,
             }
           : messageSnapshot.proposalSummary,
         discussion: messageSnapshot.discussion

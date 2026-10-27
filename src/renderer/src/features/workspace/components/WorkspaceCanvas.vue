@@ -9,7 +9,7 @@ const props = defineProps<{
   overlay: string
   historical: boolean
   busy: boolean
-  displayRegion?: PageRegion
+  displayRegions: PageRegion[]
   overlayMode: 'annotation' | 'execution'
 }>()
 const zoom = defineModel<number>('zoom', { required: true })
@@ -82,9 +82,10 @@ defineExpose({ reset: () => viewport.value?.reset() })
     >
       {{ showMask ? '隐藏标记' : '显示标记' }}</button
     ><span
-      v-if="displayRegion && !historical"
+      v-if="displayRegions.length && !historical"
       class="muted small"
-      >{{ overlayMode === 'execution' ? '执行遮罩' : '说明区域' }} {{ displayRegion.label }}</span
+      >{{ overlayMode === 'execution' ? '执行遮罩' : '说明区域' }}
+      {{ displayRegions.map((region) => region.label).join('、') }}</span
     >
   </div>
 </template>
@@ -99,7 +100,6 @@ defineExpose({ reset: () => viewport.value?.reset() })
 }
 
 .pw-overlay {
-  opacity: 0.32;
   pointer-events: none;
 }
 

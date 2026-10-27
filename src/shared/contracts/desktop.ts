@@ -48,6 +48,7 @@ export interface FrontendRequest {
   compare_version_id?: string
   text?: string
   region_id?: string | null
+  region_ids?: string[]
   reference_ids?: string[]
   rectangles?: { x: number; y: number; width: number; height: number }[]
   instruction?: string
@@ -79,6 +80,7 @@ export interface DesktopState {
     title: string
     versionId: string
     regionId: string | null
+    regionIds?: string[]
     pane: string
     editing: boolean
     composer: string

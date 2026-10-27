@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs'
+import { regionIds, regionNotes, selectRegions } from '../../../shared/workspace/regions'
+import { imagePath } from '../images/access'
+import { mergeRegionMasks } from './region-mask'
 import { createHash, randomUUID } from 'node:crypto'
 import type { PageExecution } from '../../../shared/workspace/model'
 import { pageCurrent, pageDraft, type PageWorkspace } from '../../../shared/workspace/model'
@@ -28,7 +32,20 @@ export async function renderPage(
     throw new Error('此工作区已保留 1000 张候选，请从选定图片新建工作区')
   }
   const selectedExecution = validateExecution(workspace, execution)
-  const region = version.editor.regions.find((region2) => region2.id === selectedExecution.regionId)
+  const regions = selectRegions(version, regionIds(selectedExecution))
+  const regionLabel = regions.map((region) => region.label).join('、')
+  const instruction =
+    regions.length === 1
+      ? regions[0].instruction
+      : regions.map((region) => `${region.label}：${region.instruction}`).join('\n')
+  const mask = regions.length
+    ? mergeRegionMasks(
+        readFileSync(imagePath(version.image!.name)!),
+        regions,
+        version.editor.params.width,
+        version.editor.params.height,
+      )
+    : ''
   pageLocks.set(id, new AbortController())
   try {
     const draft = structuredClone(pageDraft(version, null))
@@ -48,7 +65,7 @@ export async function renderPage(
         ? {
             inpaint: {
               imageName: version.image!.name,
-              mask: region!.mask,
+              mask,
               strength: version.editor.strength,
             },
           }
@@ -118,11 +135,12 @@ export async function renderPage(
           ...(selectedExecution.kind === 'inpaint'
             ? {
                 inpaint: {
-                  mask: region!.mask,
+                  mask,
                   strength: version.editor.strength,
-                  label: region!.label,
-                  instruction: region!.instruction,
-                  target: region!.target,
+                  label: regionLabel,
+                  instruction,
+                  regions: regionNotes(regions),
+                  target: regions.length === 1 ? regions[0].target : null,
                 },
               }
             : {}),
@@ -145,7 +163,7 @@ export async function renderPage(
       }
       pageEvent(
         workspace,
-        `从「${version.label}」${region ? `局部重绘 ${region.label}` : '按提示词生成'}，得到「${next.label}」。${first ? '首张结果已设为创作蓝本。' : '已保存，当前蓝本未改变。'}`,
+        `从「${version.label}」${regions.length ? `局部重绘 ${regionLabel}` : '按提示词生成'}，得到「${next.label}」。${first ? '首张结果已设为创作蓝本。' : '已保存，当前蓝本未改变。'}`,
         next.id,
       )
     }

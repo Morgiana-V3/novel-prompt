@@ -281,3 +281,9 @@ npm install; npm run build
 项目刚检出或构建尚未结束时，先运行 `npm run build`，完成后再启动或连接 MCP；开发调试使用 `npm run dev`。MCP 冷启动会检查主程序、预加载与页面文件，构建未齐时在连接期限内等待，不启动缺少入口的 Electron。超时会说明需要构建。重新构建主进程时保留原入口，避免清空目录造成短暂缺失。已运行宿主仍需完整退出后重开才能加载新主进程代码。
 
 `npm run mcp:launch-smoke` 检查文件缺失、构建中、已有宿主和安装版启动路径；前台回归还覆盖区域修改/删除、错误目标与超过自动保存间隔的取消。所有这些回归使用临时数据或模拟环境，不触碰真实项目。
+
+### 工作台多区域讨论与重绘
+
+`ui_set_workspace_input`、`submit_workspace_request` 使用 `region_ids` 数组选择本轮区域，省略时不附加区域；原 `region_id` 仍用于单区。`get_workspace_context` 的 `request.regionIds` 与 `selectedRegions` 给出本轮范围、批注和各区预览，`regions` 是全部可用区域。
+
+方案继续返回一份完整 `draft`；重绘时传 `execution: { kind: "inpaint", regionId: "首个区域 id", regionIds: ["区域 id", "另一区域 id"] }`，必须包含本轮选中的全部区域，不能加入未勾选项。统一强度与草稿作用于遮罩并集。采纳与执行仍是独立动作；`ui_generate_workspace` 和 `generate_workspace` 都支持 `region_ids`。仅绘制或附加批注不会自动触发生图。

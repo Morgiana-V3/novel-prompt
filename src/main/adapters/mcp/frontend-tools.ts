@@ -364,6 +364,7 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
       {
         text: { type: 'string' },
         region_id: { type: ['string', 'null'] },
+        region_ids: { type: 'array', items: { type: 'string' }, maxItems: 16, uniqueItems: true },
         reference_ids: { type: 'array', items: { type: 'string' }, maxItems: 2 },
       },
       ['text'],
@@ -479,6 +480,13 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
       {
         kind: { type: 'string', enum: ['generate', 'inpaint'] },
         region_id: { type: 'string' },
+        region_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+          maxItems: 16,
+          uniqueItems: true,
+        },
         confirm: { type: 'boolean' },
       },
       ['kind', 'confirm'],
@@ -489,7 +497,7 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
         if (!['generate', 'inpaint'].includes(String(argumentsRecord.kind))) {
           throw new Error('未知生成方式')
         }
-        if (argumentsRecord.kind === 'inpaint') {
+        if (argumentsRecord.kind === 'inpaint' && argumentsRecord.region_ids === undefined) {
           nonempty(argumentsRecord.region_id, '重绘区域 id')
         }
       },

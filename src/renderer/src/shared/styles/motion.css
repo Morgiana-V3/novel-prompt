@@ -174,10 +174,31 @@
   }
 }
 
+/* Native disclosures keep summary keyboard behavior while animating both directions. */
+@supports (interpolate-size: allow-keywords) and selector(details::details-content) {
+  details::details-content {
+    interpolate-size: allow-keywords;
+    block-size: 0;
+    min-block-size: 0;
+    overflow: clip;
+    opacity: 0;
+    transition:
+      block-size var(--dur-base) var(--ease-out),
+      opacity var(--dur-base) var(--ease-out),
+      content-visibility var(--dur-base) allow-discrete;
+  }
+
+  details[open]::details-content {
+    block-size: auto;
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
-  *::after {
+  *::after,
+  details::details-content {
     animation-duration: 0.01ms !important;
     animation-delay: 0s !important;
     animation-iteration-count: 1 !important;

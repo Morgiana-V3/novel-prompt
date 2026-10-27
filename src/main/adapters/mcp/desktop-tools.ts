@@ -384,6 +384,13 @@ export function desktopTools(
           id: ID,
           revision: REV,
           confirm: { type: 'boolean' },
+          region_ids: {
+            type: 'array',
+            items: { type: 'string' },
+            minItems: 1,
+            maxItems: 16,
+            uniqueItems: true,
+          },
           region_id: {
             type: 'string',
             description: '提供时对会话内该区域重绘；省略时按提示词生成',
@@ -411,7 +418,11 @@ export function desktopTools(
             string(argumentsRecord.id),
             revision(argumentsRecord.revision),
             {
-              kind: argumentsRecord.region_id ? 'inpaint' : 'generate',
+              kind:
+                argumentsRecord.region_ids !== undefined || argumentsRecord.region_id
+                  ? 'inpaint'
+                  : 'generate',
+              regionIds: argumentsRecord.region_ids as string[] | undefined,
               regionId: string(argumentsRecord.region_id) || null,
             },
             progress ?? (() => {}),

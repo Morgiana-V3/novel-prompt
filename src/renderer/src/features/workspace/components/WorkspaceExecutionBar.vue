@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { regionIds } from '@shared/workspace/regions'
 import type { PageExecution, PageVersion, PageEditorState } from '@shared/workspace/model'
 import type { AppTask } from '@shared/tasks/model'
 import ThemeSelect from '../../../shared/ui/ThemeSelect.vue'
 import Icon from '../../../shared/ui/Icon.vue'
 const props = defineProps<{
   current: PageVersion
+  selectedRegionIds: string[]
   execution: PageExecution
   nextEditor: PageEditorState
   operation: string
@@ -21,13 +23,49 @@ const emit = defineEmits<{
   editConfig: []
   returnFromConfig: []
   generate: []
+  preview: []
   cancel: [id: string]
 }>()
+const executionIds = computed(() => regionIds(props.execution))
+const executionChoice = computed(() => {
+  if (props.execution.kind === 'generate') {
+    return 'generate'
+  }
+  return executionIds.value.length > 1 ? 'merged-current' : props.execution.regionId
+})
+const options = computed(() => [
+  { value: 'generate', label: '按提示词生图' },
+  ...(executionIds.value.length > 1
+    ? [{ value: 'merged-current', label: `合并重绘 · ${executionIds.value.length} 个区域` }]
+    : []),
+  ...(props.selectedRegionIds.length > 1
+    ? [
+        {
+          value: 'merged-selection',
+          label: `使用本轮 ${props.selectedRegionIds.length} 个区域`,
+          disabled: !props.current.image || props.current.image.missing,
+        },
+      ]
+    : []),
+  ...props.current.editor.regions.map((region) => ({
+    value: region.id,
+    label: '局部重绘 · ' + region.label,
+    disabled: !props.current.image || props.current.image.missing,
+  })),
+])
 function chooseExecution(id: string | null) {
-  emit(
-    'execution',
-    id === 'generate' ? { kind: 'generate', regionId: null } : { kind: 'inpaint', regionId: id },
-  )
+  if (id === 'merged-current') {
+    return
+  }
+  if (id === 'generate') {
+    emit('execution', { kind: 'generate', regionId: null })
+    return
+  }
+  const ids = id ? [id] : []
+  if (id === 'merged-selection') {
+    ids.splice(0, ids.length, ...props.selectedRegionIds)
+  }
+  emit('execution', { kind: 'inpaint', regionId: ids[0] ?? null, regionIds: ids })
 }
 const generationLabel = computed(() => {
   if (props.operation === 'generate') {
@@ -47,19 +85,20 @@ const generationLabel = computed(() => {
     :title="'基于 ' + current.label + ' 的下一版配置'"
   >
     <ThemeSelect
-      :model-value="execution.kind === 'generate' ? 'generate' : execution.regionId"
+      :model-value="executionChoice"
       :disabled="!!operation || remoteBusy"
-      :options="[
-        { value: 'generate', label: '按提示词生图' },
-        ...current.editor.regions.map((r) => ({
-          value: r.id,
-          label: '局部重绘 · ' + r.label,
-          disabled: !current.image || current.image.missing,
-        })),
-      ]"
+      :options="options"
       aria-label="生成方式"
       @update:model-value="chooseExecution"
     />
+    <button
+      v-if="execution.kind === 'inpaint'"
+      class="btn ghost small"
+      :disabled="busy"
+      @click="emit('preview')"
+    >
+      查看范围
+    </button>
     <span class="muted small pw-execution-summary"
       >{{ nextEditor.params.width }}×{{ nextEditor.params.height }} ·
       {{ nextEditor.params.steps }} 步</span

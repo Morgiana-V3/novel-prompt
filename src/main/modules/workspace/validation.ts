@@ -1,3 +1,4 @@
+import { regionIds, selectRegions } from '../../../shared/workspace/regions'
 import { isUcPreset, isNaiSampler, isNaiNoiseSchedule } from '../../../shared/generation/types'
 import { readFileSync } from 'node:fs'
 import { MAX_CHARACTERS, isGridPosition, parsePosition } from '../../../shared/generation/presets'
@@ -128,7 +129,11 @@ export function checkEditor(
   }
 }
 
-export function validateExecution(workspace: PageWorkspace, execution: PageExecution) {
+export function validateExecution(
+  workspace: PageWorkspace,
+  execution: PageExecution,
+  allowedIds?: string[],
+) {
   if (!execution || !['generate', 'inpaint'].includes(execution.kind)) {
     throw new Error('请选择执行方式')
   }
@@ -136,12 +141,16 @@ export function validateExecution(workspace: PageWorkspace, execution: PageExecu
     return { kind: 'generate' as const, regionId: null }
   }
   const version = pageCurrent(workspace)
-  if (
-    !version.image ||
-    !imagePath(version.image.name) ||
-    !version.editor.regions.some((region) => region.id === execution.regionId)
-  ) {
+  const ids = regionIds(execution)
+  const regions = selectRegions(version, ids)
+  if (!version.image || !imagePath(version.image.name) || !regions.length) {
     throw new Error('局部重绘需要可读取的底图和明确的遮罩')
   }
-  return { kind: 'inpaint' as const, regionId: execution.regionId }
+  if (
+    allowedIds &&
+    (ids.length !== allowedIds.length || ids.some((id) => !allowedIds.includes(id)))
+  ) {
+    throw new Error('重绘方案必须包含本轮选中的全部区域，不能遗漏或加入未勾选区域')
+  }
+  return { kind: 'inpaint' as const, regionId: ids[0], regionIds: ids }
 }

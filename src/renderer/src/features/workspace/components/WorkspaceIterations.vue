@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { pageConfigurationChanges, type PageWorkspace } from '@shared/workspace/model'
-import { changeLabel } from '@shared/prompts/inpaint-plan'
-import { diffPrompt } from '../../prompts/prompt-diff'
-import DiffChips from '../../prompts/components/DiffChips.vue'
+import { reviewDrafts } from '../../prompts/prompt-review'
+import PromptReview from '../../prompts/components/PromptReview.vue'
 
 const props = defineProps<{ work: PageWorkspace; versionId: string; compareId: string }>()
 const iteration = computed(() =>
   pageConfigurationChanges(props.work, props.versionId, props.compareId),
+)
+const groups = computed(() =>
+  iteration.value.before && iteration.value.snapshot
+    ? reviewDrafts(iteration.value.before.draft, iteration.value.snapshot.draft)
+    : [],
 )
 function name(id: string) {
   const i = props.work.versions.findIndex((version) => version.id === id)
@@ -117,20 +121,16 @@ const maskUrl = computed(() => {
       >
         对比对象为项目起始稿与设置，不代表导入图片的实际生成参数。
       </p>
-      <div
-        v-for="(changeItem, index) in iteration.changes"
-        :key="index"
-        class="wi-change"
-      >
-        <label>{{ changeLabel(changeItem) }}</label
-        ><DiffChips :diff="diffPrompt(changeItem.before, changeItem.after)" />
-        <p v-if="changeItem.reason">{{ changeItem.reason }}</p>
-      </div>
+      <PromptReview
+        :groups="groups"
+        before-label="对比对象"
+        after-label="正在查看"
+      />
       <p
         v-if="
           iteration.before &&
           iteration.snapshot &&
-          !iteration.changes.length &&
+          !groups.length &&
           !parameters.length &&
           !iteration.maskChanged
         "
@@ -142,6 +142,10 @@ const maskUrl = computed(() => {
         v-if="parameters.length && iteration.before"
         class="wi-params"
       >
+        <caption>
+          生图配置
+          <span>{{ parameters.length }} 项修改</span>
+        </caption>
         <thead>
           <tr>
             <th>参数</th>
@@ -155,8 +159,12 @@ const maskUrl = computed(() => {
             :key="p.label"
           >
             <th>{{ p.label }}</th>
-            <td>{{ p.before }}</td>
-            <td>{{ p.after }}</td>
+            <td>
+              <span class="wi-param-before">{{ p.before }}</span>
+            </td>
+            <td>
+              <span class="wi-param-after">{{ p.after }}</span>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -258,32 +266,44 @@ const maskUrl = computed(() => {
   padding-top: 6px;
 }
 
-.wi-change {
-  margin: 18px 0;
-}
-
-.wi-change label {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.wi-change :deep(.diff-row) {
-  margin: 6px 0;
-}
-
-.wi-change p {
-  font-size: 12px;
-  color: var(--text2);
-}
-
 .wi-params {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
   margin: 16px 0;
   text-align: left;
+  table-layout: fixed;
+}
+
+.wi-params caption {
+  text-align: left;
+  padding: 10px 0;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.wi-params caption span {
+  margin-left: 8px;
+  color: var(--text2);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.wi-param-before,
+.wi-param-after {
+  padding: 2px 6px;
+  border-radius: 4px;
+  box-decoration-break: clone;
+}
+
+.wi-param-before {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.wi-param-after {
+  background: var(--ok-soft);
+  color: var(--ok);
 }
 
 .wi-params th,

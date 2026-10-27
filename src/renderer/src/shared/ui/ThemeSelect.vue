@@ -316,6 +316,9 @@ onBeforeUnmount(() => {
   font-size: 12.5px;
   color: var(--text2);
   cursor: pointer;
+  transition:
+    color var(--dur-fast),
+    background-color var(--dur-fast);
 
   &.active {
     background: var(--pink-soft);
@@ -330,6 +333,11 @@ onBeforeUnmount(() => {
 .theme-select-option.disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.theme-select:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
 }
 
 .select-menu-enter-active,

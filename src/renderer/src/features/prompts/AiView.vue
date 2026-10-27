@@ -11,14 +11,14 @@ import { cleanErr } from '../../shared/lib/format'
 import { type Tab } from '../../shared/state/shell'
 import { type Snapshot } from './state'
 import { vAutosize, resizeWithin } from '../../shared/lib/autosize'
-import { diffTags, diffSize, type TagDiff } from './tag-diff'
+import { reviewDrafts } from './prompt-review'
 import Icon from '../../shared/ui/Icon.vue'
 import Mascot from '../../shared/ui/Mascot.vue'
 import PromptEditor from './components/PromptEditor.vue'
 import WorkspaceBar from './components/WorkspaceBar.vue'
 import BasisPill from './components/BasisPill.vue'
 import EvidenceNote from './components/EvidenceNote.vue'
-import DiffChips from './components/DiffChips.vue'
+import PromptReview from './components/PromptReview.vue'
 import { activeTask, cancelTask } from '../../shared/state/tasks'
 import { usePageShortcuts, runKeyLabel, runKeyShort } from '../../shared/lib/shortcuts'
 
@@ -141,30 +141,18 @@ const changeGroups = computed(() =>
     .filter((changeGroup) => changeGroup.items.length),
 )
 
-/* ---------- 改动对比：原文为空的段落不显示（描述转提示词时全是新增） ---------- */
-const empty: TagDiff = { added: [], removed: [], changed: [] }
-const diffs = computed(() => {
-  const character = result.value
-  const promptSnapshot = sent.value
-  if (!character || !promptSnapshot) {
-    return null
+const review = computed(() => {
+  if (!sent.value || !result.value) {
+    return []
   }
-  const compareTags = (leftText: string, rightText: string) =>
-    leftText.trim() ? diffTags(leftText, rightText) : empty
-  return {
-    base: compareTags(promptSnapshot.base, character.positive),
-    negative: compareTags(promptSnapshot.negative, character.negative),
-    chars: character.characters.map((character2, i) =>
-      compareTags(promptSnapshot.characters[i]?.prompt ?? '', character2.prompt),
-    ),
-  }
+  return reviewDrafts(sent.value, {
+    base: result.value.positive,
+    negative: result.value.negative,
+    characters: result.value.characters,
+  })
 })
 const totalChanges = computed(() =>
-  diffs.value
-    ? diffSize(diffs.value.base) +
-      diffSize(diffs.value.negative) +
-      diffs.value.chars.reduce((numericValue, difference) => numericValue + diffSize(difference), 0)
-    : 0,
+  review.value.reduce((count, group) => count + group.fields.length, 0),
 )
 
 async function run() {
@@ -437,7 +425,7 @@ usePageShortcuts('ai', {
                   ? `${result.characters.length} 个角色提示词`
                   : '单角色 / 无角色提示词'
               }}
-              <template v-if="totalChanges"> · 共 {{ totalChanges }} 处 tag 改动</template>
+              <template v-if="totalChanges"> · 共 {{ totalChanges }} 处字段改动</template>
             </div>
           </div>
           <div class="actions ml-auto">
@@ -464,106 +452,27 @@ usePageShortcuts('ai', {
           </div>
         </div>
 
-        <div
-          class="result-card"
-          style="--d: 0ms"
-        >
-          <div class="result-head">
-            <span class="group-badge pink"
-              ><Icon
-                name="sparkle"
-                :size="14"
-            /></span>
-            <h3>{{ result.characters.length ? '主提示词' : '正向提示词' }}</h3>
+        <PromptReview :groups="review">
+          <template #actions="{ field }">
             <button
+              v-if="field.kind === 'prompt' && field.after"
               class="icon-btn sm ml-auto"
-              title="复制"
-              @click="copy(result.positive)"
+              :title="'复制完整' + field.label"
+              @click="copy(field.after)"
             >
               <Icon
                 name="copy"
                 :size="15"
               />
             </button>
-          </div>
-          <pre class="result-text">{{ result.positive }}</pre>
-          <DiffChips
-            v-if="diffs"
-            :diff="diffs.base"
-          />
-        </div>
-
-        <div
-          v-for="(character, index) in result.characters"
-          :key="index"
-          class="result-card"
-          :style="{ '--d': (index + 1) * 70 + 'ms' }"
+          </template>
+        </PromptReview>
+        <p
+          v-if="!review.length"
+          class="muted"
         >
-          <div class="result-head">
-            <span class="group-badge nl"
-              ><Icon
-                name="user"
-                :size="14"
-            /></span>
-            <h3>角色 {{ index + 1 }}</h3>
-            <span
-              v-if="character.position"
-              class="pill"
-              >{{ character.position }}</span
-            >
-            <button
-              class="icon-btn sm ml-auto"
-              title="复制"
-              @click="copy(character.prompt)"
-            >
-              <Icon
-                name="copy"
-                :size="15"
-              />
-            </button>
-          </div>
-          <pre class="result-text">{{ character.prompt }}</pre>
-          <DiffChips
-            v-if="diffs?.chars[index]"
-            :diff="diffs.chars[index]"
-          />
-          <div
-            v-if="character.negative"
-            class="notes"
-          >
-            <span class="chip-zh">角色负面：</span>{{ character.negative }}
-          </div>
-        </div>
-
-        <div
-          v-if="result.negative"
-          class="result-card"
-          style="--d: 140ms"
-        >
-          <div class="result-head">
-            <span class="group-badge bad"
-              ><Icon
-                name="stop"
-                :size="14"
-            /></span>
-            <h3>负面提示词</h3>
-            <button
-              class="icon-btn sm ml-auto"
-              title="复制"
-              @click="copy(result.negative)"
-            >
-              <Icon
-                name="copy"
-                :size="15"
-              />
-            </button>
-          </div>
-          <pre class="result-text">{{ result.negative }}</pre>
-          <DiffChips
-            v-if="diffs"
-            :diff="diffs.negative"
-          />
-        </div>
+          提示词没有变化。
+        </p>
 
         <div
           v-if="result.invalid.length"

@@ -20,7 +20,12 @@ const {
   diffPrompt,
   changedWords,
   wordParts,
+  foldContext,
 } = require('../../src/renderer/src/features/prompts/prompt-diff.ts')
+const {
+  reviewDrafts,
+  reviewChanges,
+} = require('../../src/renderer/src/features/prompts/prompt-review.ts')
 const source = new PNG({ width: 128, height: 64 })
 source.data.fill(255)
 const sourceBytes = PNG.sync.write(source)
@@ -264,10 +269,16 @@ app.whenReady().then(async () => {
       'girl, bob cut, Her black bob touches her shoulders. Her dress stays grey.',
       'girl, long hair, Her black hair falls past her shoulders. Her dress stays grey.',
     )
-    assert.ok(prose.added.some((t) => t.text === 'long hair'))
-    assert.ok(prose.removed.some((t) => t.text === 'bob cut'))
-    assert.ok(prose.added.some((t) => t.text.includes('hair')))
-    assert.ok(![...prose.added, ...prose.removed].some((t) => t.text.includes('dress stays')))
+    assert.equal(
+      prose.added.length + prose.removed.length,
+      0,
+      'mixed prose and tags remain one field',
+    )
+    assert.ok(
+      prose.sentences[0].parts.some(
+        (part) => part.kind === 'add' && part.text.includes('long hair'),
+      ),
+    )
     assert.deepEqual(changedWords('Text: 来了来了', 'Text: 等一下'), {
       removed: ['来了来了'],
       added: ['等一下'],
@@ -284,6 +295,14 @@ app.whenReady().then(async () => {
       ['', 'A new sentence.'],
       ['A deleted sentence.', ''],
       ['x '.repeat(2000), 'y '.repeat(2000)],
+      [
+        'girl, 1.2::heart-shaped pupils::, She waits, still, by the door.\nText: 来了来了',
+        'girl, 1.4::heart-shaped pupils::, She smiles, her hands empty, her gaze steady.\nText: 来了',
+      ],
+      [
+        'One sentence. Two sentences. Three sentences.',
+        'Three sentences. One sentence. Two sentences.',
+      ],
     ]) {
       const parts = wordParts(a, b)
       assert.equal(
@@ -300,7 +319,71 @@ app.whenReady().then(async () => {
           .join(''),
         b,
       )
+      const document = diffPrompt(a, b).sentences?.[0]
+      if (document) {
+        for (const [excluded, expected] of [
+          ['add', a],
+          ['remove', b],
+        ]) {
+          assert.equal(
+            document.parts
+              .filter((part) => part.kind !== excluded)
+              .map((part) => part.text)
+              .join(''),
+            expected,
+            'phrase highlights retain exact original text',
+          )
+        }
+      }
     }
+
+    const context = 'Unchanged appearance and clothing. '.repeat(30)
+    const folded = foldContext(wordParts(context + 'old', context + 'new'))
+    assert.ok(folded.some((part) => part.hiddenText))
+    assert.equal(
+      folded
+        .filter((part) => part.kind !== 'remove')
+        .map((part) => part.hiddenText ?? part.text)
+        .join(''),
+      context + 'new',
+    )
+    const draftBefore = {
+      base: 'same',
+      negative: 'same negative',
+      characters: [
+        { prompt: 'girl', negative: 'blurry', position: 'B3' },
+        { prompt: 'boy', negative: '', position: '' },
+      ],
+    }
+    const draftAfter = structuredClone(draftBefore)
+    draftAfter.characters[0].position = 'C3'
+    draftAfter.characters.push({ prompt: 'new person', negative: 'glasses', position: 'A1' })
+    const review = reviewDrafts(draftBefore, draftAfter)
+    assert.deepEqual(
+      review.map((group) => group.label),
+      ['角色 1', '角色 3'],
+    )
+    assert.deepEqual(
+      review[0].fields.map((field) => field.label),
+      ['位置'],
+    )
+    assert.equal(review[1].status, 'added')
+    assert.equal(review[1].fields.length, 3)
+    assert.equal(reviewDrafts(draftAfter, draftBefore)[1].status, 'removed')
+    assert.deepEqual(reviewDrafts(draftBefore, structuredClone(draftBefore)), [])
+    const selectable = reviewChanges([
+      { field: 'base', before: 'same', after: 'same', reason: '' },
+      { field: 'character', characterIndex: 1, before: 'boy', after: 'man', reason: '改动作' },
+      { field: 'characterNegative', characterIndex: 1, before: '', after: 'glasses', reason: '' },
+    ])
+    assert.deepEqual(
+      selectable[0].fields.map((field) => field.sourceIndex),
+      [1, 2],
+      'hidden unchanged fields never shift adoption indexes',
+    )
+    console.log(
+      'PASS continuous prompt reconstruction, context folding, unchanged-field hiding, grouped character lifecycle/position and original selection indexes',
+    )
 
     console.log(
       'PASS MCP guide, masks/previews, image plans, infill, metadata defaults, pixel preservation, validation, permission gates and tag diffs; no real API calls',

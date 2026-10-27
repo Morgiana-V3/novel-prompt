@@ -69,7 +69,7 @@ ${AGENT_ENTRY}
 3. 若要新选区，先 read_image 看原图，再 ui_add_workspace_region。rectangles 使用原图像素 x/y/width/height，不是截图显示坐标；target 为角色零基索引或 null。保存后记录返回的区域 id。修改已有区域用 ui_update_workspace_region(version_id,region_id,instruction/target/rectangles)，仅传需要改变的字段；rectangles 替换该区域整个遮罩，省略则保留。删除用 ui_delete_workspace_region(version_id,region_id,confirm:true)。两者限定已采用候选，在窗口内定位并展示后保存，未保存时停止会丢弃本次修改。
 4. 需要新需求时 ui_set_workspace_input(text,region_id,reference_ids) 只填写；ui_send_workspace_message 才提交并保存请求。使用用户要求的文本，不替换用户未发送的其他草稿。
 5. get_workspace_context 获取 request.id、stale、discussion、editTarget、draft、params、图片、选区预览和 Skill 正文。discussion 是发送时所指的画面，editTarget 是建议修改的已采用稿；不同则须读取两张图，不把候选图当成当前底图。发送前可用 ui_view_workspace 查看要讨论的候选；发送后切换画布不改变该请求。读 Skill、原图和 preview_path，必要时 get_workspace 补齐历史。stale=true 时走恢复流程。
-6. 开始处理时用 report_workspace_progress(id,revision,request_id,phase:processing) 报告状态；每 120 秒内续报，phase:waiting 结束状态，断线立即清除。然后自行分析、查词、校验；ui_reply_workspace_request 的 response 至少包含 requestId 和 reply。纯讨论不传 proposal；修改方案传 title、warning、完整 draft（base/negative/characters）和 execution（kind:generate|inpaint，regionId:null 或区域 id）。这里是 JSON 接口，不能用提示词指南的分节交付文本代替 schema。
+6. 开始处理时用 report_workspace_progress(id,revision,request_id,phase:processing) 报告状态；每 120 秒内续报，phase:waiting 结束状态，断线立即清除。然后自行分析、查词、校验；ui_reply_workspace_request 的 response 至少包含 requestId 和 reply。纯讨论不传 proposal；修改方案传 title、warning、完整 draft（base/negative/characters）和 execution（kind:generate|inpaint，regionId:null 或首个区域 id，regionIds:选中区域 id 数组）。这里是 JSON 接口，不能用提示词指南的分节交付文本代替 schema。
 7. 写回只产生回复/建议，不等于采纳。按用户已授权范围 ui_review_workspace(decision:accept|reject|undo,message_id)；仅要求“给建议”则停在方案展示。前台采纳后进入下一版配置编辑页，可继续微调，使用 ui_edit_workspace_config(config_action:save) 返回查看后再执行其他操作。
 8. 已获生图授权后 ui_generate_workspace(kind,region_id?,confirm:true)。完成后 ui_view_workspace(pane:canvas|changes) 并 read_image/ui_capture_app 核验。报告方案、执行、视觉结果三个层次。
 
@@ -77,7 +77,7 @@ ${AGENT_ENTRY}
 - 查词/检查：读取相关 Skill → 查词 → 自己组织内容 → analyze_prompt → 返回结果；不用打开工作台。
 - 往普通会话提交建议：get_workspace → propose_workspace_edit → 按授权 apply_workspace_action → 按生成授权 generate_workspace。新建时 create_workspace 默认留在后台；只有 show:true 才打开窗口。
 - 回复外部接管需求：get_workspace → set_workspace_agent(mode:external,revision) → get_workspace_context → 自己分析 → reply_workspace_request(id,revision,response)。必须有待处理请求；接管本身不创建请求，新需求按下一条显式提交。取消用 cancel_workspace_request。
-- 新需求：set_workspace_agent(mode:external) → 按需 add_workspace_region(id,revision,version_id,rectangles,instruction) → submit_workspace_request(id,revision,text,discussion_version_id?,region_id?,reference_ids?) → get_workspace_context → 自行分析 → reply_workspace_request。添加区域必须指定已采用候选；提交会冻结讨论图片与 Skill，存在未发送草稿时拒绝覆盖。不调用内置 AI，不自动采用或生成。list_workspace_requests 可发现待处理需求，但不自动唤醒。独立后台重绘可用 prepare_inpaint → 查看预览 → 自己拟定提示词 → inpaint_image，具体参数读 schema。
+- 新需求：set_workspace_agent(mode:external) → 按需 add_workspace_region(id,revision,version_id,rectangles,instruction) → submit_workspace_request(id,revision,text,discussion_version_id?,region_ids?,reference_ids?) → get_workspace_context → 自行分析 → reply_workspace_request。添加区域必须指定已采用候选；提交会冻结讨论图片与 Skill，存在未发送草稿时拒绝覆盖。不调用内置 AI，不自动采用或生成。list_workspace_requests 可发现待处理需求，但不自动唤醒。独立后台重绘可用 prepare_inpaint → 查看预览 → 自己拟定提示词 → inpaint_image，具体参数读 schema。
 - 后台表示不展示交互步骤，当前并非完全隔离的沙箱：共享数据、图片选择和打开会话可能同步变化。用户要求绝不干扰当前状态时，应先确认将调用工具的副作用；没有满足条件的写入入口时只读并说明限制。
 
 ## C. 用户明确委托内置 AI
@@ -94,6 +94,7 @@ ${AGENT_ENTRY}
 - 生图配置页（pane:prompt）始终只读 generated/initial 快照，已采用图片也不例外。底部「编辑配置」打开下一版草稿，独立于版本页签；返回时保存，直接生成也先保存。查看其他版本不会覆盖下一版草稿。张数 count 支持 1/2/4，qualityTags 和 ucPreset 可编辑；同批逐张保存，停止时保留已完成图片。遮罩存在时尺寸锁定，disabledFields 会说明原因。
 - 手动编辑的前台入口是 ui_edit_workspace_config：begin → update(patch.draft/params/strength) → save 或 cancel，不需要 AI 建议。每一步使用最新 token。get_app_state.desktop.workspace.config 返回 open、owner、dirty、sourceVersionId、draft、params、strength、disabledFields。只允许本 MCP 连接继续自己打开的编辑；用户触碰表单后归用户所有，不能强行取消或保存。重新连接时请让用户完成/退出编辑，不能接管旧连接的编辑。
 - 修改对比仅展示有变化的配置，完整内容在生图配置中查看。方案留在对应对话消息内；pane:suggestions 是兼容入口，只展开消息中的方案，不再切换到独立页签。focusedProposalId 表示通过操作定位的方案，不代表已采纳。
+- 多区域修改：region_ids 指定本轮勾选区域；get_workspace_context.selectedRegions 给出各区说明与预览。联合讨论并在 reply 按区域说明修改及冲突。inpaint 方案的 execution.regionIds 必须包含本轮全部选中区域；统一草稿、统一强度、合并遮罩执行一次。未选区域不加入；region_id 仍可用于单区。
 - 讨论对象（discussion）在发送时冻结；建议的 editTarget 始终是已采用稿。引用（referenceIds）仅为讨论资料，也不等于对比对象或重绘底图。
 
 ## E. 管理、缓存与分页

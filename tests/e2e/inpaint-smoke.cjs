@@ -3,7 +3,8 @@ const { temporaryProfile, artifactDirectory } = require('../support/fixtures.cjs
 // All NovelAI network calls are replaced with fixtures; no credentials or credits used.
 const { app, BrowserWindow, ipcMain, net, protocol } = require('electron')
 const { mkdtempSync, readFileSync, writeFileSync } = require('node:fs')
-const { join } = require('node:path')
+const { join, resolve } = require('node:path')
+const buildDirectory = resolve(process.env.NP_TEST_BUILD_DIR || join(__dirname, '../../out'))
 const { tmpdir } = require('node:os')
 const { pathToFileURL } = require('node:url')
 const assert = require('node:assert/strict')
@@ -255,7 +256,7 @@ app.whenReady().then(async () => {
     titleBarStyle: 'hidden',
     titleBarOverlay: { color: '#00000000', symbolColor: '#6b6c75', height: 40 },
     webPreferences: {
-      preload: join(__dirname, '../../out/preload/index.js'),
+      preload: join(buildDirectory, 'preload/index.js'),
       backgroundThrottling: false,
     },
   })
@@ -427,7 +428,7 @@ app.whenReady().then(async () => {
     console.log(
       'PASS component extraction preserves alpha, diagonal connectivity, borders and erased gaps',
     )
-    await win.loadFile(join(__dirname, '../../out/renderer/index.html'))
+    await win.loadFile(join(buildDirectory, 'renderer/index.html'))
     await js(
       `localStorage.setItem('np-workspace-v1',JSON.stringify({prompt:'workspace unchanged',negative:'',characters:[],history:[]}))`,
     )
@@ -1000,9 +1001,22 @@ app.whenReady().then(async () => {
     )
     win.setSize(1100, 700)
     await pause(300)
-    await check(
-      `(()=>{const e=document.querySelectorAll('[role=combobox][aria-label="批注对应角色"]')[1],r=document.querySelector('.ip-dialog').getBoundingClientRect();return e.getBoundingClientRect().height>=27 && r.bottom<=innerHeight && document.querySelector('.ip-settings').scrollHeight>document.querySelector('.ip-settings').clientHeight})()`,
-      'small window scrolls form content instead of squeezing controls',
+    // Hidden native windows need a rendered frame to advance disclosure transitions.
+    await win.webContents.capturePage()
+    await js(
+      `document.getAnimations().filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime)).forEach(animation => animation.finish())`,
+    )
+    const compactLayout = await js(`(() => {
+      const control = document.querySelectorAll('[role=combobox][aria-label="批注对应角色"]')[1]
+      const panel = document.querySelector('.ip-settings')
+      return {controlHeight:control.getBoundingClientRect().height, bottom:document.querySelector('.ip-dialog').getBoundingClientRect().bottom, viewport:innerHeight, scroll:panel.scrollHeight, height:panel.clientHeight}
+    })()`)
+    assert.ok(
+      compactLayout.controlHeight >= 27 &&
+        compactLayout.bottom <= compactLayout.viewport + 1 &&
+        compactLayout.scroll > compactLayout.height,
+      'small window scrolls form content instead of squeezing controls: ' +
+        JSON.stringify(compactLayout),
     )
     await input('.ip-annotation-item[open] textarea', shortComment)
     await check(
@@ -1083,12 +1097,18 @@ app.whenReady().then(async () => {
     console.log(
       'PASS AI sees images and independent annotations, dedicated Skill, no generation before adoption',
     )
+    await run(`document.querySelector('.ip-plan .diff-context').click()`)
+    await check(
+      `document.querySelector('.ip-plan .before p').textContent.includes('red dress') && document.querySelector('.ip-plan .after p').textContent.includes('white shirt') && document.querySelector('.ip-plan input[type=checkbox]').checked`,
+      'full prompt inspection preserves the selected change',
+    )
+    await run(`document.querySelector('.ip-plan .diff-context').click()`)
     await clickText('.ip-ai-section button', '采纳各区域')
     await check(
       `[...document.querySelectorAll('.ip-foot button')].some(e=>e.textContent.includes('2 个区域'))`,
       'both region plans can be adopted',
     )
-    await run(`document.querySelector('.ip-plan input[type=checkbox]').click()`)
+    await run(`document.querySelector('.ip-plan .ip-review-check').click()`)
     await check(
       `[...document.querySelectorAll('.ip-foot button')].some(e=>e.textContent.includes('1 个区域'))`,
       'changing reviewed selection revokes prior adoption',

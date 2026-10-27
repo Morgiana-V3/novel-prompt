@@ -19,6 +19,7 @@ const assert = require('node:assert/strict')
 const ts = require('typescript')
 const { PNG } = require('pngjs')
 const root = join(__dirname, '../..')
+const buildDirectory = resolve(process.env.NP_TEST_BUILD_DIR || join(root, 'out'))
 const profile = temporaryProfile('np-desktop-mcp-')
 app.setPath('userData', profile)
 app.getAppPath = () => root
@@ -255,7 +256,7 @@ app.whenReady().then(async () => {
       title: testTitle,
       autoHideMenuBar: true,
       webPreferences: {
-        preload: join(root, 'out/preload/index.js'),
+        preload: join(buildDirectory, 'preload/index.js'),
         sandbox: false,
         backgroundThrottling: false,
       },
@@ -294,9 +295,22 @@ app.whenReady().then(async () => {
           readFileSync(client.imagePath(decodeURIComponent(new URL(req.url).pathname.slice(1)))),
         ),
     )
-    await win.loadFile(join(root, 'out/renderer/index.html'))
+    await win.loadFile(join(buildDirectory, 'renderer/index.html'))
     const js = (code) => win.webContents.executeJavaScript(code, true)
     const ui = (predicate) => wait(() => js(predicate))
+    const assertExecutionBarAtBottom = async () => {
+      const bounds = await js(`(() => {
+        const column = document.querySelector('.pw-canvas-column').getBoundingClientRect()
+        const bar = document.querySelector('.pw-execution').getBoundingClientRect()
+        return {columnBottom: column.bottom, barBottom: bar.bottom, barHeight: bar.height, viewportHeight: innerHeight}
+      })()`)
+      assert.ok(
+        Math.abs(bounds.barBottom - bounds.columnBottom) <= 1 &&
+          bounds.barBottom <= bounds.viewportHeight + 1 &&
+          bounds.barHeight >= 60,
+        `execution controls stay at the workspace bottom and inside the viewport: ${JSON.stringify(bounds)}`,
+      )
+    }
     const click = async (selector, text) => {
       await js(
         `(()=>{const e=[...document.querySelectorAll(${JSON.stringify(selector)})].find(e=>e.textContent.trim()===${JSON.stringify(text)}&&!e.disabled);if(!e)throw Error('Missing '+${JSON.stringify(text)});e.click()})()`,
@@ -1112,6 +1126,7 @@ app.whenReady().then(async () => {
       assert.equal(front.workspace.viewedVersionId, resultVersion.id)
       assert.equal(front.workspace.adoptedVersionId, generatedVersion)
       assert.equal(front.workspace.discussionVersionId, resultVersion.id)
+      await assertExecutionBarAtBottom()
       assert.equal(
         await js(`document.querySelectorAll('.wi-timeline,[aria-label="建议所属版本"]').length`),
         0,
@@ -1146,9 +1161,27 @@ app.whenReady().then(async () => {
       /另一个有效/,
     )
     await act('ui_view_workspace', { pane: 'changes', compare_version_id: firstVersion })
-    for (const width of [1440, 1100]) {
-      win.setSize(width, 900)
+    for (const [width, height] of [
+      [1440, 900],
+      [1100, 700],
+    ]) {
+      win.setSize(width, height)
       await pause(150)
+      await assertExecutionBarAtBottom()
+      await js(`(() => {
+        const filler = document.createElement('div')
+        filler.id = 'comparison-scroll-fixture'
+        filler.style.height = '1400px'
+        document.querySelector('.pw-change-board').append(filler)
+      })()`)
+      await js(`document.querySelector('.pw-change-board').scrollTop = 1400`)
+      assert.ok(
+        await js(`document.querySelector('.pw-change-board').scrollTop > 0`),
+        'long comparisons scroll independently of execution controls',
+      )
+      await assertExecutionBarAtBottom()
+      await js(`document.getElementById('comparison-scroll-fixture').remove()`)
+      await js(`document.querySelector('.pw-change-board').scrollTop = 0`)
       assert.ok(
         await js(
           `(()=>{const r=document.querySelector('.wi-record').getBoundingClientRect();return r.left>=0&&r.right<=innerWidth})()`,
@@ -1234,7 +1267,7 @@ app.whenReady().then(async () => {
       revision: pages.readPage(frontId).revision,
       text: '后台讨论历史候选',
       discussion_version_id: resultVersion.id,
-      region_id: annotated.addedRegionId,
+      region_ids: [regionId, annotated.addedRegionId],
     }
     await assert.rejects(b.data('submit_workspace_request', requestArgs), /未接管/)
     const queued = await a.data('submit_workspace_request', requestArgs)
@@ -1250,6 +1283,8 @@ app.whenReady().then(async () => {
     )
     const backendContext = await a.data('get_workspace_context', { id: frontId })
     assert.ok(backendContext.skills.sections[0]?.text)
+    assert.deepEqual(backendContext.request.regionIds, requestArgs.region_ids)
+    assert.equal(backendContext.selectedRegions.length, 2)
     assert.equal(backendContext.discussion.versionId, resultVersion.id)
     await a.data('reply_workspace_request', {
       id: frontId,
@@ -1373,13 +1408,39 @@ app.whenReady().then(async () => {
     console.log(
       'PASS frozen discussion images and recipes, independent edit target, pane changes, external replies and stale-image rejection',
     )
-    await act('ui_set_workspace_input', {
-      text: '外部方案：调整选区，保留画面其余部分',
-      region_id: regionId,
+    front = await act('ui_add_workspace_region', {
+      rectangles: [{ x: 80, y: 90, width: 20, height: 20 }],
+      instruction: '修正第二处，同时保持其他地方',
     })
+    const jointRegionId = front.workspace.regionId
+    const jointIds = [regionId, jointRegionId]
+    front = await act('ui_set_workspace_input', {
+      text: '外部方案：一起调整两处选区，保留画面其余部分',
+      region_ids: jointIds,
+    })
+    assert.deepEqual(front.workspace.regionIds, jointIds)
+    assert.equal(
+      await js(`document.querySelectorAll('.pw-region-checklist input:checked').length`),
+      2,
+    )
+    await js(`document.querySelector('.pw-region-checklist button').click()`)
+    await ui(`!!document.querySelector('.pw-overlay')`)
+    await pause(400)
+    await win.webContents.capturePage()
+    writeFileSync(
+      join(profile, 'multi-region-discussion.png'),
+      (await win.webContents.capturePage()).toPNG(),
+    )
+
     await act('ui_send_workspace_message')
     context = await a.data('get_workspace_context', { id: frontId })
     assert.equal(context.skills.digest, frozenSkills)
+    assert.deepEqual(context.request.regionIds, jointIds)
+    assert.deepEqual(
+      context.selectedRegions.map((region) => region.id),
+      jointIds,
+    )
+    assert.ok(context.selectedRegions.every((region) => region.preview))
     const externalDraft = { ...context.draft, base: context.draft.base + ', soft light' }
     const extResponse = {
       requestId: context.request.id,
@@ -1388,20 +1449,59 @@ app.whenReady().then(async () => {
         title: '外部区域方案',
         warning: '仅选区内允许变化。',
         draft: externalDraft,
-        execution: { kind: 'inpaint', regionId },
+        execution: { kind: 'inpaint', regionId, regionIds: jointIds },
       },
     }
+    await assert.rejects(
+      a.data('reply_workspace_request', {
+        id: frontId,
+        revision: context.revision,
+        response: {
+          ...extResponse,
+          proposal: { ...extResponse.proposal, execution: { kind: 'inpaint', regionId } },
+        },
+      }),
+      /全部区域/,
+    )
     front = await act('ui_reply_workspace_request', { response: extResponse })
     const externalProposalId = front.workspace.latestProposal.id
     assert.notEqual(front.workspace.pane, 'suggestions')
     assert.equal(front.workspace.focusedProposalId, front.workspace.latestProposal.id)
     const stored = pages.readPage(frontId).messages.find((m) => m.id === externalProposalId)
     assert.equal(stored.proposal.regionId, regionId)
+    assert.deepEqual(stored.proposal.regionIds, jointIds)
     assert.equal(stored.proposal.status, 'pending')
     front = await act('ui_review_workspace', { message_id: externalProposalId, decision: 'accept' })
     await act('ui_edit_workspace_config', { config_action: 'save' })
     assert.equal(pages.readPage(frontId).execution.kind, 'inpaint')
+    assert.deepEqual(pages.readPage(frontId).execution.regionIds, jointIds)
+    await click('.pw-execution button', '查看范围')
+    await pause(400)
+    await win.webContents.capturePage()
+    writeFileSync(
+      join(profile, 'multi-region-execution.png'),
+      (await win.webContents.capturePage()).toPNG(),
+    )
+    autoGenerate = true
+    front = await act('ui_generate_workspace', {
+      kind: 'inpaint',
+      region_ids: jointIds,
+      confirm: true,
+    })
+    autoGenerate = false
+    const unionResult = pages
+      .readPage(frontId)
+      .versions.find((version) => version.id === pages.readPage(frontId).latestGeneratedVersionId)
+    assert.deepEqual(unionResult.generated.execution.regionIds, jointIds)
+    assert.deepEqual(
+      unionResult.generated.inpaint.regions.map((region) => region.id),
+      jointIds,
+    )
     front = await act('ui_review_workspace', { message_id: externalProposalId, decision: 'undo' })
+    extResponse.proposal.execution = { kind: 'inpaint', regionId }
+    console.log(
+      'PASS visible multi-region checklist, MCP previews, omitted-scope rejection, joint proposal, union generation and undo',
+    )
     await act('ui_set_workspace_input', { text: '再次讨论，不生成', region_id: regionId })
     await act('ui_send_workspace_message')
     context = await a.data('get_workspace_context', { id: frontId })
@@ -1815,10 +1915,17 @@ app.whenReady().then(async () => {
     )
 
     await b.data('navigate_app', { tab: 'settings' })
-    await ui(`document.querySelector('select option[value="tags,skills"]') !== null`)
-    await js(
-      `(()=>{const e=document.querySelector('select option[value="tags,skills"]').parentElement;e.value='tags,skills';e.dispatchEvent(new Event('change',{bubbles:true}))})()`,
+    await ui(`document.querySelector('#mcp-scope[role="combobox"]') !== null`)
+    await js(`document.querySelector('#mcp-scope').scrollIntoView({block: 'center'})`)
+    await pause(200)
+    await js(`document.querySelector('#mcp-scope').click()`)
+    await ui(`document.querySelectorAll('.theme-select-option').length === 5`)
+    await pause(200)
+    writeFileSync(
+      join(profile, 'settings-scope-dropdown.png'),
+      (await win.webContents.capturePage()).toPNG(),
     )
+    await click('.theme-select-option', '标签与提示词')
     await ui(
       `[...document.querySelectorAll('.code-box pre')].filter(e=>e.textContent.includes('NOVELPROMPT_MCP_GROUPS')&&e.textContent.includes('tags,skills')).length===3`,
     )
@@ -1828,8 +1935,31 @@ app.whenReady().then(async () => {
       ),
       'selected scopes preserve the configured data directory',
     )
+    await js(`(() => {
+      const scope = document.querySelector('#mcp-scope')
+      scope.focus()
+      for (const key of ['ArrowDown', 'End', 'Enter']) {
+        scope.dispatchEvent(new KeyboardEvent('keydown', {key, bubbles: true}))
+      }
+    })()`)
+    await ui(
+      `[...document.querySelectorAll('.code-box pre')].filter(e=>e.textContent.includes('NOVELPROMPT_MCP_GROUPS')&&e.textContent.includes('core')).length===3`,
+    )
+    assert.equal(await js(`document.activeElement.id`), 'mcp-scope')
+    await js(`document.querySelector('details.manual summary').click()`)
+    await pause(250)
+    assert.ok(await js(`document.querySelector('details.manual').open`))
+    assert.ok(
+      await js(
+        `document.querySelector('details.manual .code-box').getBoundingClientRect().height > 0`,
+      ),
+      'expanded configuration remains visible after disclosure animation',
+    )
+    await js(`document.querySelector('details.manual summary').click()`)
+    await pause(250)
+    assert.equal(await js(`document.querySelector('details.manual').open`), false)
     console.log(
-      'PASS settings scope selection updates automatic, TOML and JSON configurations together',
+      'PASS settings scope mouse/keyboard selection updates automatic, TOML and JSON configurations; native disclosures open and close',
     )
 
     console.log('Artifacts:', profile)

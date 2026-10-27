@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { regionIds } from '@shared/workspace/regions'
+import { regionOverlay } from '../region-overlay'
 import { useDiscussionComposer } from '../use-discussion-composer'
 
 import { reportError } from '../../../shared/lib/notifications'
@@ -85,7 +87,7 @@ async function recoverImage() {
     operation.value = ''
   }
 }
-const { regionId, region, regionOptions, references, composer, discussionContext, reference } =
+const { regionId, selectedRegionIds, references, composer, discussionContext, reference } =
   useDiscussionComposer(
     work,
     current,
@@ -136,14 +138,39 @@ const {
   agentLabel,
 } = useAgentState(work)
 const overlayMode = ref<'annotation' | 'execution'>('annotation')
-const displayRegion = computed(() =>
-  overlayMode.value === 'execution'
-    ? current.value.editor.regions.find((region2) => region2.id === work.value.execution.regionId)
-    : region.value,
+const executionRegions = computed(() =>
+  current.value.editor.regions.filter((region) =>
+    regionIds(work.value.execution).includes(region.id),
+  ),
 )
-const executionRegion = computed(() =>
-  current.value.editor.regions.find((region2) => region2.id === work.value.execution.regionId),
+const displayRegions = computed(() => {
+  if (overlayMode.value === 'execution') {
+    return executionRegions.value
+  }
+  const ids = new Set([...selectedRegionIds.value, ...(regionId.value ? [regionId.value] : [])])
+  return current.value.editor.regions.filter((region) => ids.has(region.id))
+})
+watch(
+  () => current.value.editor.regions,
+  (regions) => {
+    selectedRegionIds.value = selectedRegionIds.value.filter((id) =>
+      regions.some((region) => region.id === id),
+    )
+  },
+  { deep: true },
 )
+function locateRegion(id: string) {
+  regionId.value = id
+  overlayMode.value = 'annotation'
+  showMask.value = true
+  viewedId.value = current.value.id
+  pane.value = 'canvas'
+}
+function updateSelection() {
+  regionId.value = null
+  overlayMode.value = 'annotation'
+  showMask.value = true
+}
 const historyOpen = ref(false)
 const editing = ref(false)
 const clearingImage = ref<string | null>(null)
@@ -258,7 +285,7 @@ function stale(message: PageMessage) {
     (message.proposal.superseded ||
       message.versionId !== current.value.id ||
       message.proposal.contextKey !==
-        pageContextKey(current.value, message.proposal.regionId, work.value))
+        pageContextKey(current.value, regionIds(message.proposal), work.value))
   )
 }
 async function setAgentMode(mode: 'internal' | 'external') {
@@ -350,6 +377,9 @@ async function closeEditor() {
   // 原来选「不附加」又没新画区域时保持不附加，避免整图需求被悄悄当成局部需求
   const added = regions.filter((region2) => !regionsBeforeEditor.has(region2.id))
   if (added.length) {
+    selectedRegionIds.value = [
+      ...new Set([...selectedRegionIds.value, ...added.map((region) => region.id)]),
+    ]
     regionId.value = added[added.length - 1].id
   } else if (regionId.value && !regions.some((region2) => region2.id === regionId.value)) {
     regionId.value = null
@@ -374,7 +404,7 @@ async function send() {
       work.value.id,
       work.value.revision,
       text,
-      regionId.value,
+      [...selectedRegionIds.value],
       [...references.value],
       frontendContext?.actionId,
       discussionVersionId,
@@ -410,6 +440,7 @@ async function proposal(message: PageMessage, decision: 'accept' | 'reject' | 'u
     selectedProposalId.value = null
     if (message.proposal?.regionId) {
       regionId.value = message.proposal.regionId
+      selectedRegionIds.value = regionIds(message.proposal)
     }
   } catch (error2) {
     error.value = cleanErr(error2)
@@ -438,6 +469,10 @@ async function setExecution(execution: PageExecution) {
     await flushNotes()
     await mutate({ type: 'execution', execution })
     overlayMode.value = 'execution'
+    if (execution.kind === 'inpaint') {
+      inspectMask()
+      await refreshOverlay()
+    }
   } catch (error2) {
     error.value = cleanErr(error2)
   } finally {
@@ -446,13 +481,14 @@ async function setExecution(execution: PageExecution) {
 }
 
 function planLabel(execution?: PageExecution, versionId = current.value.id) {
-  return execution?.kind === 'inpaint'
-    ? '局部重绘 · ' +
-        (work.value.versions
-          .find((image) => image.id === versionId)
-          ?.editor.regions.find((position) => position.id === execution.regionId)?.label ??
-          '遮罩已不存在')
-    : '按提示词生成新图'
+  if (execution?.kind !== 'inpaint') {
+    return '按提示词生成新图'
+  }
+  const version = work.value.versions.find((item) => item.id === versionId)
+  const labels = regionIds(execution).map(
+    (id) => version?.editor.regions.find((region) => region.id === id)?.label ?? '已移除区域',
+  )
+  return `${labels.length > 1 ? '合并重绘' : '局部重绘'} · ${labels.join('、')}`
 }
 function review(id: string) {
   viewedId.value = id
@@ -478,7 +514,7 @@ async function generate() {
   if (
     operation.value ||
     remoteBusy.value ||
-    (work.value.execution.kind === 'inpaint' && !executionRegion.value)
+    (work.value.execution.kind === 'inpaint' && !executionRegions.value.length)
   ) {
     return
   }
@@ -488,6 +524,10 @@ async function generate() {
   try {
     await finishConfig()
     await flushNotes()
+    if (work.value.execution.kind === 'inpaint') {
+      inspectMask()
+      await refreshOverlay()
+    }
     work.value = await window.api.pagesGenerate(
       work.value.id,
       work.value.revision,
@@ -524,6 +564,7 @@ async function continueVersion(id: string) {
     await mutate({ type: 'switch', versionId: id })
     viewedId.value = id
     regionId.value = null
+    selectedRegionIds.value = []
     await scrollEnd()
   } catch (error2) {
     error.value = cleanErr(error2)
@@ -539,33 +580,22 @@ let overlayEpoch = 0
 async function refreshOverlay() {
   const epoch = ++overlayEpoch
   overlay.value = ''
-  if (!displayRegion.value || historical.value) {
+  if (!displayRegions.value.length || historical.value) {
     return
   }
-  const img = new Image()
-  img.src = `data:image/png;base64,${displayRegion.value.mask}`
   try {
-    await img.decode()
-    if (!alive || epoch !== overlayEpoch) {
-      return
+    const preview = await regionOverlay(
+      displayRegions.value,
+      overlayMode.value === 'annotation' ? regionId.value : null,
+    )
+    if (alive && epoch === overlayEpoch) {
+      overlay.value = preview
     }
-    const canvas = document.createElement('canvas')
-    canvas.width = img.width
-    canvas.height = img.height
-    const ctx = canvas.getContext('2d')!
-    ctx.drawImage(img, 0, 0)
-    const data = ctx.getImageData(0, 0, canvas.width, canvas.height)
-    for (let i = 0; i < data.data.length; i += 4) {
-      const alpha = data.data[i]
-      data.data.set([255, 107, 154, alpha], i)
-    }
-    ctx.putImageData(data, 0, 0)
-    overlay.value = canvas.toDataURL('image/png')
   } catch {
     error.value = '选区预览读取失败，请在选区编辑器中检查'
   }
 }
-watch([displayRegion, viewedId, () => current.value.id], refreshOverlay)
+watch([displayRegions, regionId, overlayMode, viewedId, () => current.value.id], refreshOverlay)
 watch(viewedId, async () => {
   zoom.value = 100
   await nextTick()
@@ -592,6 +622,7 @@ function desktopState() {
     title: title.value,
     versionId: current.value.id,
     regionId: regionId.value,
+    regionIds: [...selectedRegionIds.value],
     pane: editingPrompt.value ? 'config-edit' : pane.value,
     editing: !!operation.value || editingPrompt.value || editing.value || renaming.value,
     composer: composer.value,
@@ -663,6 +694,7 @@ const frontendAction = createWorkspaceCommands({
   compareVersionId,
   composer,
   regionId,
+  selectedRegionIds,
   references,
   overlayMode,
   pendingRequest,
@@ -1056,7 +1088,7 @@ async function beginConfigFromButton() {
           :overlay="overlay"
           :historical="historical"
           :busy="busy"
-          :display-region="displayRegion"
+          :display-regions="displayRegions"
           :overlay-mode="overlayMode"
           @missing="markVersionMissing"
           @recover="recoverImage"
@@ -1104,26 +1136,28 @@ async function beginConfigFromButton() {
         </div>
         <WorkspaceExecutionBar
           :current="current"
+          :selected-region-ids="selectedRegionIds"
           :execution="work.execution"
           :next-editor="nextEditor"
           :operation="operation"
           :remote-busy="remoteBusy"
           :busy="busy"
           :editing-prompt="editingPrompt"
-          :has-execution-region="!!executionRegion"
+          :has-execution-region="!!executionRegions.length"
           :progress="progress"
           :generate-task="generateTask"
           @execution="setExecution"
           @edit-config="beginConfigFromButton"
           @return-from-config="returnFromConfig"
           @generate="generate"
+          @preview="inspectMask"
           @cancel="cancelTask"
         />
       </div>
       <WorkspaceConversation
         ref="conversation"
         v-model:composer="composer"
-        v-model:region-id="regionId"
+        v-model:region-ids="selectedRegionIds"
         :work="work"
         :current="current"
         :busy="busy"
@@ -1141,7 +1175,6 @@ async function beginConfigFromButton() {
         :editing-prompt="editingPrompt"
         :selected-proposal-id="selectedProposalId"
         :references="references"
-        :region-options="regionOptions"
         :discussion-context="discussionContext"
         :label="label"
         :time="time"
@@ -1155,7 +1188,8 @@ async function beginConfigFromButton() {
         @cancel-chat="cancelChat"
         @clear-error="error = ''"
         @reference="reference"
-        @annotation="overlayMode = 'annotation'"
+        @annotation="updateSelection"
+        @locate="locateRegion"
         @send="send"
       />
     </div>
@@ -1290,10 +1324,18 @@ async function beginConfigFromButton() {
 .pw-canvas-column {
   flex: 1;
   min-width: 240px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--panel);
   padding: 0 18px;
+}
+
+.pw-change-board {
+  flex: 1;
+  min-height: 0;
+  padding: 8px 0;
+  animation: fade-in var(--dur-base) var(--ease-out);
 }
 
 .pw-canvas-bar {

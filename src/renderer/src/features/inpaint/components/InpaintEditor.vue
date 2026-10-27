@@ -25,9 +25,8 @@ import Icon from '../../../shared/ui/Icon.vue'
 import ImageViewport from '../../../shared/ui/ImageViewport.vue'
 import ThemeSelect from '../../../shared/ui/ThemeSelect.vue'
 import { splitMaskComponent } from '../mask-components'
-import DiffChips from '../../prompts/components/DiffChips.vue'
-import { diffSize } from '../../prompts/tag-diff'
-import { diffPrompt } from '../../prompts/prompt-diff'
+import PromptReview from '../../prompts/components/PromptReview.vue'
+import { reviewChanges } from '../../prompts/prompt-review'
 import { vAutosize } from '../../../shared/lib/autosize'
 import { changeLabel } from '@shared/prompts/inpaint-plan'
 import type { PageEditorState } from '@shared/workspace/model'
@@ -1431,37 +1430,21 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                     >
                       {{ region.plan!.warning }}
                     </p>
-                    <div
-                      v-for="(change, index) in region.plan!.changes"
-                      :key="index"
-                      class="ip-change"
-                    >
-                      <label
-                        ><input
-                          v-model="region.checked[index]"
-                          type="checkbox"
-                          :disabled="running || analyzing"
-                          @change="region.accepted = null"
-                        />
-                        {{ changeLabel(change) }}</label
-                      >
-                      <DiffChips :diff="diffPrompt(change.before, change.after)" />
-                      <span
-                        v-if="!diffSize(diffPrompt(change.before, change.after))"
-                        class="muted small"
-                        >仅调整顺序或格式</span
-                      >
-                      <small>{{ change.reason }}</small>
-                      <details class="ip-full-change">
-                        <summary>查看完整前后文本</summary>
-                        <div>
-                          <b>修改前</b>
-                          <p>{{ change.before || '（空）' }}</p>
-                          <b>修改后</b>
-                          <p>{{ change.after || '（清空）' }}</p>
-                        </div>
-                      </details>
-                    </div>
+                    <PromptReview :groups="reviewChanges(region.plan!.changes)">
+                      <template #control="{ field }">
+                        <label class="ip-review-check">
+                          <input
+                            v-if="field.sourceIndex != null"
+                            v-model="region.checked[field.sourceIndex]"
+                            type="checkbox"
+                            :aria-label="changeLabel(region.plan!.changes[field.sourceIndex])"
+                            :disabled="running || analyzing"
+                            @change="region.accepted = null"
+                          />
+                          {{ field.label }}
+                        </label>
+                      </template>
+                    </PromptReview>
                     <div class="row">
                       <button
                         class="btn primary small"
@@ -1902,57 +1885,11 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
   color: var(--alias);
 }
 
-.ip-change {
+.ip-review-check {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 10px 0;
-}
-
-.ip-change input {
-  accent-color: var(--pink);
-}
-
-.ip-change input:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--pink-line);
-}
-
-.ip-full-change {
-  color: var(--text2);
-}
-
-.ip-full-change summary {
+  align-items: center;
+  gap: 8px;
   cursor: pointer;
-  font-size: 11px;
-}
-
-.ip-full-change > div {
-  margin-top: 8px;
-  padding: 8px;
-  background: var(--panel);
-  border-radius: 7px;
-  max-height: 260px;
-  overflow: auto;
-  overflow-wrap: anywhere;
-}
-
-.ip-change :deep(.diff-row) {
-  padding: 0;
-  margin: 0;
-}
-
-.ip-change :deep(.diff-chip) {
-  max-width: 100%;
-  height: auto;
-  min-height: 22px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.ip-change small {
-  color: var(--text2);
-  line-height: 1.6;
 }
 
 .ip-head {

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import type { PageMessage } from '@shared/workspace/model'
-import { changeLabel } from '@shared/prompts/inpaint-plan'
-import { diffPrompt } from '../../prompts/prompt-diff'
-import DiffChips from '../../prompts/components/DiffChips.vue'
-defineProps<{
+import { computed } from 'vue'
+import { reviewChanges } from '../../prompts/prompt-review'
+import PromptReview from '../../prompts/components/PromptReview.vue'
+const props = defineProps<{
   message: PageMessage
   selectedProposalId: string | null
   busy: boolean
@@ -13,6 +13,10 @@ defineProps<{
   statusLabel: string
 }>()
 const emit = defineEmits<{ decide: [decision: 'accept' | 'reject' | 'undo'] }>()
+const groups = computed(() => {
+  const proposal = props.message.proposal
+  return proposal ? reviewChanges(proposal.changes, proposal.before, proposal.after) : []
+})
 </script>
 
 <template>
@@ -37,22 +41,9 @@ const emit = defineEmits<{ decide: [decision: 'accept' | 'reject' | 'undo'] }>()
       >
         {{ message.proposal!.warning }}
       </p>
-      <div
-        v-for="(changeItem, index) in message.proposal!.changes"
-        :key="index"
-        class="pw-change"
-      >
-        <label>{{ changeLabel(changeItem) }}</label
-        ><DiffChips :diff="diffPrompt(changeItem.before, changeItem.after)" />
-        <p v-if="changeItem.reason">{{ changeItem.reason }}</p>
-        <details v-if="changeItem.before || changeItem.after">
-          <summary>完整修改前后</summary>
-          <pre>{{ changeItem.before || '（空）' }}</pre>
-          <pre>{{ changeItem.after || '（空）' }}</pre>
-        </details>
-      </div>
+      <PromptReview :groups="groups" />
       <p
-        v-if="!message.proposal!.changes.length"
+        v-if="!groups.length"
         class="muted small"
       >
         保持当前提示词，使用上述执行方式继续尝试。
@@ -133,80 +124,8 @@ const emit = defineEmits<{ decide: [decision: 'accept' | 'reject' | 'undo'] }>()
   white-space: pre-wrap;
 }
 
-.pw-change {
-  border-top: 1px solid var(--line);
-  padding: 12px 0;
-}
-
-.pw-change label {
-  font-weight: 600;
-  font-size: 11px;
-}
-
-.pw-change p {
-  font-size: 11px;
-  color: var(--text2);
-  margin: 8px 0 0;
-}
-
-.pw-change details {
-  font-size: 10px;
-  color: var(--muted);
-  margin-top: 8px;
-}
-
-.pw-change summary {
-  cursor: pointer;
-}
-
-.pw-change pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 180px;
-  overflow: auto;
-  background: var(--panel);
-  padding: 8px;
-  border-radius: 8px;
-  font: 10px/1.7 var(--mono);
-  user-select: text;
-}
-
-.pw-change-board > h3 {
-  font-size: 14px;
-}
-
-.pw-change-board > .pw-proposal {
-  margin: 15px 0;
-}
-
 .pw-plan-kind {
   font-size: 12px;
   color: var(--pink-deep);
-}
-
-.pw-change-board pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: 11px;
-}
-
-.pw-change > label {
-  display: block;
-  margin-bottom: 8px;
-}
-
-.pw-change :deep(.diff-row) {
-  padding: 0;
-  margin: 0 0 10px;
-}
-
-.pw-change :deep(.diff-prose) {
-  margin: 10px 0;
-}
-
-.pw-change-board {
-  flex: 1;
-  min-height: 0;
-  padding: 8px 0;
 }
 </style>

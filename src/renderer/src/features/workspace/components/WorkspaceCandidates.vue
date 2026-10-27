@@ -81,31 +81,33 @@ const emit = defineEmits<{
           :size="14"
         />
       </button>
-      <div
-        v-if="clearingImage === versionItem.id"
-        class="pw-candidate-delete-confirm"
-        role="alertdialog"
-        :aria-label="`确认删除图片：${versionItem.label}`"
-        @click.stop
-        @keydown.esc.stop="emit('confirm', null)"
-      >
-        <b>删除这张图片？</b><span>提示词和版本记录保留。</span>
-        <div class="row">
-          <button
-            class="btn ghost small"
-            :disabled="busy"
-            @click="emit('confirm', null)"
-          >
-            取消</button
-          ><button
-            class="btn primary small"
-            :disabled="busy"
-            @click="emit('remove', versionItem.id)"
-          >
-            {{ operation === 'save' ? '删除中…' : '确认删除' }}
-          </button>
+      <Transition name="popover">
+        <div
+          v-if="clearingImage === versionItem.id"
+          class="pw-candidate-delete-confirm"
+          role="alertdialog"
+          :aria-label="`确认删除图片：${versionItem.label}`"
+          @click.stop
+          @keydown.esc.stop="emit('confirm', null)"
+        >
+          <b>删除这张图片？</b><span>提示词和版本记录保留。</span>
+          <div class="row">
+            <button
+              class="btn ghost small"
+              :disabled="busy"
+              @click="emit('confirm', null)"
+            >
+              取消</button
+            ><button
+              class="btn primary small"
+              :disabled="busy"
+              @click="emit('remove', versionItem.id)"
+            >
+              {{ operation === 'save' ? '删除中…' : '确认删除' }}
+            </button>
+          </div>
         </div>
-      </div>
+      </Transition>
     </article>
     <div
       v-if="!viewedCandidates.length"
@@ -175,6 +177,7 @@ const emit = defineEmits<{
   align-content: start;
   gap: 14px;
   padding: 12px 0 20px;
+  animation: fade-in var(--dur-base) var(--ease-out);
 }
 
 .pw-candidate:hover,
@@ -219,6 +222,9 @@ const emit = defineEmits<{
   border-radius: 14px;
   background: var(--bg);
   position: relative;
+  transition:
+    border-color var(--dur-base),
+    background-color var(--dur-base);
 }
 
 .pw-candidate-open {
@@ -268,6 +274,7 @@ const emit = defineEmits<{
   box-shadow: var(--shadow-sm);
   font-size: 12px;
   line-height: 1.7;
+  transform-origin: bottom right;
 }
 
 .pw-candidate-delete-confirm > span {

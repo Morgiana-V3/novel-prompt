@@ -77,3 +77,14 @@ details.manual summary:hover {
 details.manual[open] summary {
   margin-bottom: 4px;
 }
+
+.mcp-scope {
+  width: 100%;
+  max-width: 360px;
+}
+
+details.manual::details-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}

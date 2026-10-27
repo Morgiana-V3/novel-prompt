@@ -1,10 +1,8 @@
-import { diffTags, type DiffTag, type SentenceDiff, type TagDiff, type WordPart } from './tag-diff'
+import { diffTags, diffSize, tagsOf, type TagDiff, type WordPart } from './tag-diff'
 
 const words = (text: string) => text.match(/\s+|[\p{Script=Han}]|[\p{L}\p{N}_'-]+|[^\s]/gu) ?? []
-const prose = (tagDifference: DiffTag) =>
-  /^Text:/i.test(tagDifference.text) ||
-  /[.!?。！？]/.test(tagDifference.text) ||
-  tagDifference.text.split(/\s+/).length >= 8
+const prose = (text: string) =>
+  /^Text:/i.test(text) || /[.!?。！？](?:\s|$)/.test(text) || text.trim().split(/\s+/).length >= 8
 
 /** Keep unchanged context and exact whitespace around word-level changes. */
 export function wordParts(before: string, after: string): WordPart[] {
@@ -86,44 +84,70 @@ export function changedWords(
 }
 
 export function diffPrompt(before: string, after: string): TagDiff {
+  if (before === after) {
+    return { added: [], removed: [], changed: [] }
+  }
   const diff = diffTags(before, after)
-  const additions = [...diff.added]
-  const removed: DiffTag[] = []
-  const sentences: SentenceDiff[] = []
-  for (const old of diff.removed) {
-    if (!prose(old)) {
-      removed.push(old)
-      continue
+  // Compare prose as one field, preserving punctuation, weights and original order.
+  if ([...tagsOf(before), ...tagsOf(after)].some((tag) => prose(tag.text)) || !diffSize(diff)) {
+    return {
+      added: [],
+      removed: [],
+      changed: [],
+      sentences: [{ before, after, parts: changeRanges(wordParts(before, after)) }],
     }
-    const oldWords = new Set(words(old.text).filter((text) => text.trim()))
-    let match = -1
-    let score = 0.25
-    additions.forEach((next, i) => {
-      if (!prose(next)) {
-        return
+  }
+  return diff
+}
+
+export interface ContextPart extends WordPart {
+  hiddenText?: string
+}
+
+/** Highlight phrases rather than isolated words, without changing either side's text. */
+function changeRanges(parts: WordPart[]): WordPart[] {
+  const result: WordPart[] = []
+  let pending: WordPart[] = []
+  const flush = () => {
+    for (const kind of ['remove', 'add'] as const) {
+      const text = pending
+        .filter((part) => part.kind === kind || part.kind === 'same')
+        .map((part) => part.text)
+        .join('')
+      if (text) {
+        result.push({ kind, text })
       }
-      const nextWords = new Set(words(next.text).filter((text) => text.trim()))
-      const common = [...nextWords].filter((text) => oldWords.has(text)).length
-      const overlap = common / Math.max(oldWords.size, nextWords.size, 1)
-      if (overlap > score) {
-        match = i
-        score = overlap
-      }
-    })
-    if (match < 0) {
-      sentences.push({ before: old.text, after: '', parts: wordParts(old.text, '') })
-      continue
     }
-    const next = additions.splice(match, 1)[0]
-    sentences.push({ before: old.text, after: next.text, parts: wordParts(old.text, next.text) })
+    pending = []
   }
-  const added = additions.filter((tagDifference) => !prose(tagDifference))
-  for (const tagDifference2 of additions.filter(prose)) {
-    sentences.push({
-      before: '',
-      after: tagDifference2.text,
-      parts: wordParts('', tagDifference2.text),
-    })
-  }
-  return { added, removed, changed: diff.changed, sentences }
+  parts.forEach((part, index) => {
+    const bridge =
+      part.kind === 'same' &&
+      pending.length > 0 &&
+      part.text.length <= 16 &&
+      !/[\n.!?。！？]/.test(part.text) &&
+      parts[index + 1]?.kind !== 'same' &&
+      index + 1 < parts.length
+    if (part.kind !== 'same' || bridge) {
+      pending.push(part)
+    } else {
+      flush()
+      result.push(part)
+    }
+  })
+  flush()
+  return result
+}
+
+/** Collapse only long unchanged runs, keeping context next to every changed token. */
+export function foldContext(parts: WordPart[]): ContextPart[] {
+  return parts.map((part, index) => {
+    const characters = Array.from(part.text)
+    if (part.kind !== 'same' || characters.length <= 240) {
+      return part
+    }
+    const prefix = index === 0 ? '' : characters.slice(0, 80).join('')
+    const suffix = index === parts.length - 1 ? '' : characters.slice(-80).join('')
+    return { ...part, text: `${prefix} … ${suffix}`, hiddenText: part.text }
+  })
 }

@@ -48,7 +48,7 @@ export function createWorkspaceActions(context: TaskContext) {
       id: string,
       revision: number,
       text: string,
-      region: string | null,
+      region: string | string[] | null,
       refs: string[],
       actionId?: string,
       discussionVersionId?: string,

@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { regionIds as messageRegionIds } from '@shared/workspace/regions'
+import WorkspaceRegionChecklist from './WorkspaceRegionChecklist.vue'
 import type {
   PageWorkspace,
   PageVersion,
@@ -31,7 +33,6 @@ const props = defineProps<{
   editingPrompt: boolean
   selectedProposalId: string | null
   references: string[]
-  regionOptions: { value: string | null; label: string }[]
   discussionContext: { versionId: string; label: string; editVersionId: string; editLabel: string }
   label: (id: string) => string
   time: (at: number) => string
@@ -40,7 +41,13 @@ const props = defineProps<{
   planLabel: (execution?: PageExecution, versionId?: string) => string
 }>()
 const composer = defineModel<string>('composer', { required: true })
-const regionId = defineModel<string | null>('regionId', { required: true })
+const regionIds = defineModel<string[]>('regionIds', { required: true })
+const displayedRegionIds = computed({
+  get: () => (props.pendingRequest ? messageRegionIds(props.pendingRequest) : regionIds.value),
+  set: (ids: string[]) => {
+    regionIds.value = ids
+  },
+})
 const emit = defineEmits<{
   agentMode: [mode: 'internal' | 'external']
   view: [id: string]
@@ -50,6 +57,7 @@ const emit = defineEmits<{
   clearError: []
   reference: [id: string]
   annotation: []
+  locate: [id: string]
   send: []
 }>()
 const thread = ref<HTMLElement>()
@@ -175,6 +183,20 @@ defineExpose({
               引用 {{ label(id) }}
             </button>
           </div>
+          <details
+            v-if="messageItem.regions?.length"
+            class="pw-message-regions"
+          >
+            <summary>
+              本轮区域 · {{ messageItem.regions.map((region) => region.label).join('、') }}
+            </summary>
+            <p
+              v-for="region in messageItem.regions"
+              :key="region.id"
+            >
+              <b>{{ region.label }}</b> · {{ region.instruction || '要求见讨论内容' }}
+            </p>
+          </details>
           <WorkspaceProposalCard
             v-if="messageItem.proposal"
             :message="messageItem"
@@ -282,18 +304,14 @@ defineExpose({
           引用 {{ label(id) }} ×
         </button>
       </div>
-      <div
+      <WorkspaceRegionChecklist
         v-if="current.editor.regions.length"
-        class="pw-target"
-      >
-        <ThemeSelect
-          v-model="regionId"
-          :options="regionOptions"
-          :disabled="busy"
-          aria-label="附加区域批注"
-          @update:model-value="emit('annotation')"
-        />
-      </div>
+        v-model="displayedRegionIds"
+        :regions="current.editor.regions"
+        :disabled="busy || !!pendingRequest"
+        @change="emit('annotation')"
+        @locate="emit('locate', $event)"
+      />
       <div class="pw-input-wrap">
         <textarea
           ref="input"
@@ -302,7 +320,11 @@ defineExpose({
           :disabled="busy"
           maxlength="6000"
           aria-label="持续讨论输入"
-          placeholder="描述目标，或接着上次的结果继续说…"
+          :placeholder="
+            regionIds.length
+              ? '补充这些区域的共同要求、保留内容，或继续讨论…'
+              : '描述目标，或接着上次的结果继续说…'
+          "
           @keydown.enter.exact.prevent="sendOnEnter"
         ></textarea
         ><button
@@ -322,6 +344,17 @@ defineExpose({
 </template>
 
 <style scoped>
+.pw-message-regions {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text2);
+  overflow-wrap: anywhere;
+}
+
+.pw-message-regions summary {
+  cursor: pointer;
+}
+
 .pw-discussion-context {
   display: flex;
   flex-direction: column;
