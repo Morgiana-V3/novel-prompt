@@ -66,9 +66,9 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
     tool('ui_rename_workspace', '重命名项目', 'rename', '在项目标题处展示并保存新名称，不改变提示词。', { title: { type: 'string', minLength: 1, maxLength: 100 } }, ['title'], a => { if (typeof a.title !== 'string' || !a.title.trim() || a.title.length > 100) throw new Error('项目名称须为 1～100 字符') }),
     tool('ui_delete_workspace_image', '删除指定候选图片', 'delete-image', '在工作台图库定位指定候选，展示删除提示后清理图片。保留提示词和历史，其他项目引用的文件保留。须先获用户删除授权。', { version_id: { type: 'string' }, confirm: { type: 'boolean' } }, ['version_id', 'confirm'], a => { nonempty(a.version_id, '候选 id'); if (a.confirm !== true) throw new Error('删除须有用户授权并传 confirm:true') }),
     tool('ui_delete_workspace', '删除项目', 'delete-project', '在项目列表展示目标及删除提示，然后归档记录、清理所属图片。共享文件保留。须先获用户删除授权。', { confirm: { type: 'boolean' } }, ['confirm'], a => { if (a.confirm !== true) throw new Error('删除须有用户授权并传 confirm:true') }),
-    tool('ui_edit_workspace_config', '编辑下一版生图配置', 'config', '从底部入口打开独立的下一版配置。config_action=begin 开始；update 修改同一表单的提示词或参数；save 保存并返回原查看面板；cancel 放弃本次未保存修改并返回。无需 AI 建议，不生成图片，也不改变查看、采用版本或图片快照。操作前读取最新 token；只能继续本连接打开的编辑，用户手动操作后拒绝覆盖。get_app_state.workspace.config 返回当前表单和禁用原因。',
-      {config_action:{type:'string',enum:['begin','update','save','cancel']},patch:WORKSPACE_CONFIG_SCHEMA},['config_action'],a=>{
-        if(!['begin','update','save','cancel'].includes(String(a.config_action)))throw new Error('未知配置操作')
+    tool('ui_edit_workspace_config', '编辑下一版生图配置', 'config', '从底部入口打开独立的下一版配置。config_action=begin 开始；resume 显式接续已断线 Agent 的草稿（不保存）；update 修改同一表单的提示词或参数；save 保存并返回原查看面板；cancel 放弃未保存修改。无需 AI 建议，不生成图片，也不改变查看、采用版本或图片快照。先读取最新 token；用户手动操作后拒绝覆盖，也不能接续其他在线 Agent 的编辑。get_app_state.desktop.workspace.config 返回当前表单，connection.workspace.editor.canResume 标记可否接续。',
+      {config_action:{type:'string',enum:['begin','resume','update','save','cancel']},patch:WORKSPACE_CONFIG_SCHEMA},['config_action'],a=>{
+        if(!['begin','resume','update','save','cancel'].includes(String(a.config_action)))throw new Error('未知配置操作')
         if(a.config_action==='update'&&(!a.patch||typeof a.patch!=='object'||Array.isArray(a.patch)))throw new Error('修改配置需要 patch')
         if(a.config_action!=='update'&&a.patch!==undefined)throw new Error('仅 update 可传 patch')
       }),

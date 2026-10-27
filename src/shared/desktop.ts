@@ -29,7 +29,7 @@ export interface FrontendRequest {
   kind?: 'generate' | 'inpaint'
   mode?: 'internal' | 'external'
   response?: PageExternalReply
-  config_action?: 'begin' | 'update' | 'save' | 'cancel'
+  config_action?: 'begin' | 'resume' | 'update' | 'save' | 'cancel'
   patch?: import('./workspace-config').WorkspaceConfigPatch
   agent_session?: string
 }

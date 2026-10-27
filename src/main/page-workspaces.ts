@@ -26,7 +26,8 @@ function file(id: string) {
 export const pageLocks = new Map<string, AbortController>()
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v))
 type PendingPageSummary = { id: string; title: string; revision: number; requestId: string; agent: PageWorkspace['externalAgent']; discussionVersionId: string; editVersionId: string | null; stale: boolean }
-type PageIndexEntry = { signature: string; stamp: string; summary: PageWorkspaceSummary; pending: PendingPageSummary | null; images: [string, string | null][] }
+type PageAccess = Pick<PageWorkspace, 'id' | 'revision' | 'agentMode' | 'externalAgent' | 'currentVersionId' | 'execution'>
+type PageIndexEntry = { signature: string; stamp: string; summary: PageWorkspaceSummary; access: PageAccess; pending: PendingPageSummary | null; images: [string, string | null][] }
 // Derived, bounded metadata only. Files remain authoritative; no masks or history bodies are retained.
 const pageIndex = new Map<string, PageIndexEntry>()
 const readIndexes = new WeakMap<PageWorkspace, PageIndexEntry>()
@@ -47,7 +48,8 @@ function rememberPage(w: PageWorkspace, signature: string) {
     discussionVersionId: request.discussion?.versionId ?? request.versionId, editVersionId: request.versionId,
     stale: request.versionId !== v.id || request.externalRequest!.contextKey !== pageContextKey(v, request.regionId ?? null, w) || discussionIsStale(w, request.discussion) }) : null
   pageIndex.delete(path)
-  const entry = { signature, stamp: signature + JSON.stringify(images), summary, pending, images }
+  const access = clone({ id: w.id, revision: w.revision, agentMode: w.agentMode, externalAgent: w.externalAgent, currentVersionId: w.currentVersionId, execution: w.execution })
+  const entry = { signature, stamp: signature + JSON.stringify(images), summary, access, pending, images }
   readIndexes.set(w, entry)
   if (fileSignature(path) !== signature) return
   pageIndex.set(path, entry)
@@ -64,6 +66,13 @@ function cachedPageIndex(id: string) {
 }
 /** Only usable for a snapshot actually read from this unchanged file and image state. */
 export function pageReadStamp(id: string): string | undefined { return cachedPageIndex(id)?.stamp }
+export function readPageAccess(id: string): PageAccess {
+  const path = file(id), entry = pageIndex.get(path)
+  // Ownership/execution metadata depends only on the project file, not every
+  // historical image. Keep frequent connection checks independent of gallery size.
+  if (entry && fileSignature(path) === entry.signature) return clone(entry.access)
+  return clone(readIndexes.get(readPage(id))!.access)
+}
 function indexedPages(): PageIndexEntry[] {
   const dir = directory(), names = readdirSync(dir).filter(n => n.endsWith('.json')), present = new Set(names.map(n => join(dir, n)))
   for (const path of pageIndex.keys()) if (!present.has(path)) pageIndex.delete(path)

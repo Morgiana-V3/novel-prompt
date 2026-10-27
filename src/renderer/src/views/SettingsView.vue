@@ -121,19 +121,21 @@ watch(
 )
 // TOML 字面量字符串（单引号）不处理反斜杠转义，适合 Windows 路径
 const tomlStr = (s: string) => `'${s.replace(/'/g, "''")}'`
+const mcpScope = ref('all')
+const mcpEnv = computed(() => ({ ...mcp.value?.env, NOVELPROMPT_MCP_GROUPS: mcpScope.value }))
 
 const codexConfig = computed(() => {
   const m = mcp.value
   if (!m) return ''
-  const env = Object.entries(m.env).map(([k, v]) => `${k} = ${tomlStr(v)}`)
+  const env = Object.entries(mcpEnv.value).map(([k, v]) => `${k} = ${tomlStr(v)}`)
   return `[mcp_servers.${m.serverName ?? 'novel-prompt'}]\ncommand = ${tomlStr(m.command)}\nargs = [${m.args.map(tomlStr).join(', ')}]\nenv = { ${env.join(', ')} }`
 })
 const launchJson = computed(() =>
-  mcp.value ? JSON.stringify({ command: mcp.value.command, args: mcp.value.args, env: mcp.value.env }, null, 2) : ''
+  mcp.value ? JSON.stringify({ command: mcp.value.command, args: mcp.value.args, env: mcpEnv.value }, null, 2) : ''
 )
 const jsonConfig = computed(() =>
   mcp.value
-    ? JSON.stringify({ mcpServers: { [mcp.value.serverName ?? 'novel-prompt']: { command: mcp.value.command, args: mcp.value.args, env: mcp.value.env } } }, null, 2)
+    ? JSON.stringify({ mcpServers: { [mcp.value.serverName ?? 'novel-prompt']: { command: mcp.value.command, args: mcp.value.args, env: mcpEnv.value } } }, null, 2)
     : ''
 )
 const agentPrompt = computed(() =>
@@ -143,7 +145,7 @@ const agentPrompt = computed(() =>
         `- 服务名 ${mcp.value.serverName ?? 'novel-prompt'}，传输方式 stdio，启动参数如下（路径原样使用）：`,
         launchJson.value,
         `- 写进你自己的 MCP 配置文件（用户级），改之前先把原文件备份为 .bak，只新增或覆盖 ${mcp.value.serverName ?? 'novel-prompt'} 这一项，其他配置不要动。`,
-        '- 配置完告诉我需要完全重启你；重启后调用 prompt_guide，能返回使用说明即接入成功，之后写 NovelAI 提示词时按它执行。'
+        '- 配置完成后重新连接 MCP；若客户端不支持重连则重启客户端。连接后调用 agent_guide 和 get_app_state 核对功能、运行环境及连接状态；写提示词前再读取相关规则。'
       ].join('\n')
     : ''
 )
@@ -385,6 +387,17 @@ async function translate() {
         <div class="form-field full" v-if="mcp?.portable">
           <div class="error-box"><Icon name="warn" :size="16" />便携版每次运行都会解压到临时目录，路径不固定，agent 无法稳定启动它。请改用安装版。</div>
         </div>
+        <div class="form-field full" v-if="!mcp?.portable">
+          <label>接入范围</label>
+          <select v-model="mcpScope">
+            <option value="all">全部功能</option>
+            <option value="workspace,frontend,images,skills,tags">工作台创作</option>
+            <option value="workspace,images,skills,tags">后台创作</option>
+            <option value="tags,skills">标签与提示词</option>
+            <option value="core">按需加载</option>
+          </select>
+          <span class="help">所选功能在首次连接时即可使用，范围越小，Agent 需要读取的工具说明越少。选择后复制下方新配置并重新连接。“按需加载”适合支持动态刷新工具的客户端。</span>
+        </div>
         <details class="form-field full manual" v-if="!mcp?.portable">
           <summary>Agent 自动配置</summary>
           <span class="help">把下面这段话发给你正在用的 agent（Codex、Claude Code、Cursor 等），它会自己把 MCP 写进它的配置：</span>
@@ -411,7 +424,7 @@ async function translate() {
           </div>
           <span class="help">
             服务名 novel-prompt，传输方式 stdio。其他 agent 按各自格式填写同样的 command / args / env 即可，改完需完全重启 agent。
-            始终可用：prompt_guide、analyze_prompt、search_tags、validate_tags、related_tags、tag_wiki、nai_subscription、list_images、read_image_prompt，以及 Skill 管理（list_skills、get_skill、create_skill、update_skill、delete_skill、set_skill_config）。
+            接入范围只决定 Agent 首次看到哪些工具，不替代上方 AI 与生图权限。
           </span>
         </details>
         <div class="form-field full">

@@ -17,6 +17,7 @@
     "desktop:smoke": "electron-vite build && electron scripts/desktop-mcp-smoke.cjs",
     "desktop:lifecycle-smoke": "electron scripts/desktop-lifecycle-smoke.cjs",
     "mcp:launch-smoke": "node scripts/mcp-launch-smoke.cjs",
+    "mcp:relay-smoke": "node scripts/mcp-relay-smoke.cjs",
     "mcp:recovery-smoke": "electron scripts/mcp-recovery-smoke.cjs",
     "mcp:context-smoke": "electron scripts/mcp-context-smoke.cjs",
     "mcp:performance-smoke": "electron scripts/mcp-performance-smoke.cjs",

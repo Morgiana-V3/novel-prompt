@@ -50,7 +50,7 @@ const tasks = registerTaskIpc(send)
 const cleanup = require('../src/main/workspace-cleanup.ts')
 for(const [name,handler] of Object.entries({
   'images:cleanup-status':()=>({pending:0,message:''}), 'settings:get':()=>settings.getSettings(), 'settings:save':(_,p)=>settings.saveSettings(p), 'db:status':()=>tagStore.status(),
-  'window:dark-titlebar':()=>{}, 'skills:list':()=>[], 'mcp:info':()=>null,'update:check':()=>null,'update:state':()=>null,
+  'window:dark-titlebar':()=>{}, 'skills:list':()=>[], 'mcp:info':()=>({command:process.execPath,args:[join(root,'scripts/mcp-proxy.cjs'),root],env:{ELECTRON_RUN_AS_NODE:'1',NOVELPROMPT_MCP_GROUPS:'all',NOVELPROMPT_USER_DATA:profile},packaged:false,portable:false,log:[]}),'update:check':()=>null,'update:state':()=>null,
   'nai:list':()=>client.listImages(), 'nai:freeCheck':()=>({ok:true,reasons:[],notes:[]}),
   'nai:readImage':(_,name)=>new Uint8Array(readFileSync(client.imagePath(name))),
   'pages:removed':()=>pages.listRemovedPages(), 'pages:list':()=>pages.listPages(), 'pages:read':(_,id)=>pages.readPage(id), 'pages:edit':(_,id,rev,action)=>pages.editPage(id,rev,action),
@@ -242,7 +242,27 @@ app.whenReady().then(async()=>{
     await act('ui_edit_workspace_config',{config_action:'begin'})
     await js(`document.querySelector('.workspace-prompt textarea').dispatchEvent(new Event('input',{bubbles:true}))`)
     await assert.rejects(act('ui_edit_workspace_config',{config_action:'update',patch:{draft:{base:'overwrite user'}}}),/用户或其他 Agent/)
+    await assert.rejects(act('ui_edit_workspace_config',{config_action:'resume'}),/用户或其他 Agent/)
+    assert.equal((await a.data('get_app_state')).connection.workspace.editor.ownership,'user')
     await click('.pw-execution button','返回查看')
+    const orphan=connectAgent();await orphan.request('initialize',{clientInfo:{name:'orphan-draft-fixture'}})
+    const orphanAct=async args=>orphan.data('ui_edit_workspace_config',{id:frontId,expected_token:(await orphan.data('get_app_state')).desktop.token,...args})
+    await orphanAct({config_action:'begin'})
+    await orphanAct({config_action:'update',patch:{draft:{base:'retained disconnected draft'}}})
+    await assert.rejects(act('ui_edit_workspace_config',{config_action:'resume'}),/用户或其他 Agent/)
+    const orphanSession=(await orphan.data('get_app_state')).connection.sessionId
+    orphan.child.stdin.end()
+    await wait(()=>!require('../src/main/agent-sessions.ts').agentIsConnected(orphanSession))
+    const recovery=await a.data('get_app_state')
+    assert.equal(recovery.connection.workspace.editor.canResume,true)
+    assert.equal(recovery.desktop.workspace.config.draft.base,'retained disconnected draft')
+    assert.equal(pages.readPage(frontId).versions[0].editor.draft.base,'manual configuration','disconnect does not save a draft')
+    await act('ui_edit_workspace_config',{config_action:'resume'})
+    const resumed=await a.data('get_app_state')
+    assert.equal(resumed.connection.workspace.editor.ownership,'self')
+    assert.equal(resumed.desktop.workspace.config.draft.base,'retained disconnected draft')
+    await act('ui_edit_workspace_config',{config_action:'cancel'})
+    console.log('PASS orphaned config recovery preserves draft; connected-agent and human edits remain protected; no auto-save')
     await act('ui_edit_workspace_config',{config_action:'begin'})
     await act('ui_edit_workspace_config',{config_action:'update',patch:{draft:configBefore.editor.draft,params:{count:configBefore.editor.params.count,qualityTags:configBefore.editor.params.qualityTags,ucPreset:configBefore.editor.params.ucPreset,steps:configBefore.editor.params.steps,scale:configBefore.editor.params.scale,seed:configBefore.editor.params.seed}}})
     await act('ui_edit_workspace_config',{config_action:'save'})
@@ -661,6 +681,13 @@ app.whenReady().then(async()=>{
     assert.equal(existsSync(originalPath+'.json'),false)
     assert.equal((await b.data('delete_image',{name:source.name,confirm:true})).outcome,'not_found')
     console.log('PASS structured contracts/errors, default background creation, config guards, cached Skills, history/gallery pagination, frontend rename/delete, shared-image protection and gallery recipe cleanup')
+
+    await b.data('navigate_app',{tab:'settings'})
+    await ui(`document.querySelector('select option[value="tags,skills"]') !== null`)
+    await js(`(()=>{const e=document.querySelector('select option[value="tags,skills"]').parentElement;e.value='tags,skills';e.dispatchEvent(new Event('change',{bubbles:true}))})()`)
+    await ui(`[...document.querySelectorAll('.code-box pre')].filter(e=>e.textContent.includes('NOVELPROMPT_MCP_GROUPS')&&e.textContent.includes('tags,skills')).length===3`)
+    assert.ok(await js(`[...document.querySelectorAll('.code-box pre')].every(e=>!e.textContent.includes('NOVELPROMPT_MCP_GROUPS')||e.textContent.includes(${JSON.stringify(profile.replaceAll('\\','\\\\'))})||e.textContent.includes(${JSON.stringify(profile)}))`),'selected scopes preserve the configured data directory')
+    console.log('PASS settings scope selection updates automatic, TOML and JSON configurations together')
 
     console.log('Artifacts:',profile)
     for(const c of clients)c.child.stdin.end()

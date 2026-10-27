@@ -179,7 +179,7 @@ function registerIpc(): void {
     return {
       command: process.execPath,
       args: app.isPackaged ? [proxy] : [proxy, root],
-      env: { ELECTRON_RUN_AS_NODE: '1', ...(bridgeProfile ? { NOVELPROMPT_USER_DATA: runtimeData } : {}) },
+      env: { ELECTRON_RUN_AS_NODE: '1', NOVELPROMPT_MCP_GROUPS: 'all', ...(bridgeProfile ? { NOVELPROMPT_USER_DATA: runtimeData } : {}) },
       runtime: runtimeInfo(),
       serverName: app.isPackaged ? 'novel-prompt' : 'novel-prompt-dev',
       packaged: app.isPackaged,

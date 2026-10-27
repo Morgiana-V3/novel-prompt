@@ -10,6 +10,14 @@ export const TOOL_GROUPS = {
   skills: '读取和管理提示词规则'
 } as const
 export type ToolGroup = keyof typeof TOOL_GROUPS
+export function initialToolGroups(value?: unknown): ToolGroup[] {
+  if (value === undefined) return ['core']
+  if (value === 'all') return Object.keys(TOOL_GROUPS) as ToolGroup[]
+  const groups = typeof value === 'string' ? value.split(',').map(s => s.trim()) : value
+  if (!Array.isArray(groups) || groups.some(g => typeof g !== 'string' || !Object.hasOwn(TOOL_GROUPS, g)))
+    throw Error('NOVELPROMPT_MCP_GROUPS 须为 all 或 core,tags,workspace,frontend,images,ai,skills 的逗号分隔组合')
+  return [...new Set<ToolGroup>(['core', ...groups as ToolGroup[]])]
+}
 const CORE = new Set(['agent_guide', 'get_app_state', 'list_tasks', 'cancel_task', 'configure_tools', 'get_operation'])
 const TAGS = new Set(['search_tags', 'validate_tags', 'related_tags', 'tag_wiki', 'analyze_prompt'])
 const AI = new Set(['optimize_prompt', 'preview_prompt', 'plan_inpaint'])

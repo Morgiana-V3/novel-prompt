@@ -305,7 +305,7 @@ v0.6.0 共提供 51 个工具，实际名称和参数以连接后的 `tools/list
 [mcp_servers.novel-prompt]
 command = 'C:\Users\你\AppData\Local\Programs\NovelPrompt\NovelPrompt.exe'
 args = ['C:\Users\你\AppData\Local\Programs\NovelPrompt\resources\mcp-proxy.cjs']
-env = { ELECTRON_RUN_AS_NODE = '1' }
+env = { ELECTRON_RUN_AS_NODE = '1', NOVELPROMPT_MCP_GROUPS = 'all' }
 ```
 
 > 为什么要经过 `mcp-proxy.cjs`：Electron 在 Windows 启动时会往标准输出写一个空行，部分 MCP 客户端读到非 JSON 内容会报错。代理以 Node 模式运行同一个 exe，通过带会话认证的本地管道连接共享应用宿主，只向客户端转发协议消息；宿主不存在时自动启动。

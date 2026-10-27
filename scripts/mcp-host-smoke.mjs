@@ -10,8 +10,8 @@ import assert from 'node:assert/strict'
 const root=fileURLToPath(new URL('..',import.meta.url)), electron=createRequire(import.meta.url)('electron')
 const profile=mkdtempSync(join(tmpdir(),'np-mcp-host-')), clients=[], hosts=new Set()
 const packagedExe=process.env.NP_PACKAGED_EXECUTABLE ? resolve(process.env.NP_PACKAGED_EXECUTABLE) : null
-function agent() {
-  const child=spawn(packagedExe??electron,packagedExe?[join(dirname(packagedExe),'resources/mcp-proxy.cjs')]:[join(root,'scripts/mcp-proxy.cjs'),root],{windowsHide:true,env:{...process.env,ELECTRON_RUN_AS_NODE:'1',NOVELPROMPT_USER_DATA:profile},stdio:['pipe','pipe','pipe']})
+function agent(groups = 'core') {
+  const child=spawn(packagedExe??electron,packagedExe?[join(dirname(packagedExe),'resources/mcp-proxy.cjs')]:[join(root,'scripts/mcp-proxy.cjs'),root],{windowsHide:true,env:{...process.env,ELECTRON_RUN_AS_NODE:'1',NOVELPROMPT_USER_DATA:profile,NOVELPROMPT_MCP_GROUPS:groups},stdio:['pipe','pipe','pipe']})
   const waiting=new Map();let sequence=0,errors=''
   child.stderr.on('data',b=>errors+=b)
   createInterface({input:child.stdout}).on('line',line=>{const m=JSON.parse(line),w=waiting.get(m.id);if(w){clearTimeout(w.timer);waiting.delete(m.id);w.resolve(m)}})
@@ -27,6 +27,14 @@ try {
   assert.equal(initialized[0].result.capabilities.resources.subscribe,true)
   const core=['agent_guide','get_app_state','list_tasks','cancel_task','configure_tools','get_operation']
   for(const c of [a,b])assert.deepEqual((await c.request('tools/list')).result.tools.map(t=>t.name).sort(),[...core].sort())
+  const fixed=agent('all');await init(fixed)
+  assert.equal((await fixed.request('tools/list')).result.tools.length,69,'first tools/list exposes all configured tools without refresh')
+  fixed.child.stdin.end()
+  const narrow=agent('tags,skills');await init(narrow)
+  const narrowTools=(await narrow.request('tools/list')).result.tools.map(t=>t.name)
+  assert.ok(narrowTools.includes('search_tags'));assert.ok(!narrowTools.includes('generate_image'))
+  narrow.child.stdin.end()
+  const invalid=agent('workspace,typo');await assert.rejects(init(invalid),/NOVELPROMPT_MCP_GROUPS/)
   const catalog=await a.data('configure_tools')
   await a.data('configure_tools',{groups:catalog.groups.map(g=>g.id)})
   assert.equal((await b.request('tools/list')).result.tools.length,6)
@@ -54,6 +62,9 @@ try {
   const w=await a.data('create_workspace',creation)
   a.child.stdin.end();await b.request('ping')
   assert.equal((await b.data('get_workspace',{id:w.id})).id,w.id)
+  await b.data('set_workspace_agent',{id:w.id,revision:(await b.data('get_workspace',{id:w.id})).revision,mode:'external'})
+  const owned=await b.data('get_app_state',{workspace_id:w.id})
+  assert.equal(owned.connection.workspace.agentOwnership,'self')
   console.log('PASS concurrent proxy cold-start uses one actual host; headless operation, compact guide, persistent workspace, disconnect isolation')
   process.kill(x.hostPid)
   await new Promise(r=>setTimeout(r,1000))
@@ -61,6 +72,15 @@ try {
   assert.equal((await c.request('tools/list')).result.tools.length,6,'reconnect starts with core discovery')
   await c.data('configure_tools',{groups:['workspace']})
   const restarted=await c.data('get_app_state');hosts.add(restarted.hostPid);assert.notEqual(restarted.hostPid,x.hostPid)
+  let recovered
+  for(let i=0;i<100;i++) { try { recovered=await b.data('get_app_state',{workspace_id:w.id});break } catch { await new Promise(r=>setTimeout(r,100)) } }
+  assert.ok(recovered,'same stdio client reconnects after the real host exits')
+  assert.equal(b.child.exitCode,null)
+  assert.notEqual(recovered.connection.sessionId,owned.connection.sessionId)
+  assert.equal(recovered.connection.workspace.agentOwnership,'disconnected')
+  assert.equal(recovered.connection.workspace.needsTakeover,true)
+  assert.equal((await b.data('configure_tools')).activeGroups.includes('workspace'),true)
+  console.log('PASS initial fixed tool groups; same stdio connection survives real host restart and reports explicit takeover requirements')
   assert.equal((await c.data('get_workspace',{id:w.id})).id,w.id)
   const operation=await c.data('get_operation',{operation_id:creation.operation_id})
   assert.equal(operation.operation.status,'succeeded');assert.equal(operation.result.structuredContent.id,w.id)

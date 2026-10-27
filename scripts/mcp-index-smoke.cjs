@@ -57,6 +57,9 @@ app.whenReady().then(async () => {
     assert.equal((await a.call('get_workspace', { id, since_revision: initial.revision })).notModified, true)
     assert.equal((await a.call('list_workspaces')).items[0].title, 'Index A')
     assert.equal((await a.call('list_workspace_requests')).items.length, 1)
+    assert.equal(pages.readPageAccess(id).revision, initial.revision)
+    const access = pages.readPageAccess(id); access.execution.kind = 'inpaint'
+    assert.equal(pages.readPageAccess(id).execution.kind, 'generate', 'recovery metadata is detached from callers')
     assert.equal(projectReads, 0, 'warm summary/inbox/unchanged must not parse project JSON')
     locked = true
     await assert.rejects(a.call('get_workspace', { id, since_revision: initial.revision }), /unsaved editor/)

@@ -9,7 +9,7 @@ import { AGENT_GUIDE_URI, agentGuide } from './agent-guide'
 import { validateArguments, RESULT_SCHEMA, errorDetails } from './contract'
 import { toolOutputSchema } from './output-schemas'
 import { operationStore, tracksOperation, OPERATION_ID_SCHEMA } from './operations'
-import { TOOL_GROUPS, toolGroup, groupCatalog, type ToolGroup } from './tool-groups'
+import { TOOL_GROUPS, toolGroup, groupCatalog, initialToolGroups, type ToolGroup } from './tool-groups'
 
 /**
  * 最小 MCP（Model Context Protocol）服务端：stdio 上的换行分隔 JSON-RPC 2.0。
@@ -31,6 +31,7 @@ export interface McpTool {
 export type McpProgress = (message: string, current?: number, total?: number) => void
 export interface McpResult { content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[]; structuredContent?: Record<string, unknown>; isError?: boolean }
 export interface McpSessionOptions {
+  initialGroups?: ToolGroup[]
   execute?: (tool: McpTool, args: Record<string, unknown>, signal: AbortSignal, progress: McpProgress) => Promise<string | McpResult>
   state?: () => unknown
 }
@@ -152,7 +153,7 @@ export function createMcpSession(tools: McpTool[], info: ServerInfo, write: (lin
   const agent = { sessionId: randomUUID(), name: '外部 Agent' }
   // Start with the task-independent entry points; discover other groups on demand.
   // Discovery filters are per connection, never a permission boundary.
-  let selectedGroups = new Set<ToolGroup>(['core'])
+  let selectedGroups = new Set<ToolGroup>(initialToolGroups(options.initialGroups))
   const controlTools: McpTool[] = [
     { name: 'configure_tools', title: '选择任务工具组',
       description: '新连接默认只展示核心工具。省略 groups 查看分组；按任务传 groups 加载需要的工具组，替换本连接的可见列表（core 始终保留）。groups:[] 回到核心；查看全部传所有组名。只改变 tools/list，不改变权限或其他连接。切换后发送刷新通知，客户端须重新读取 tools/list 获取参数定义。',

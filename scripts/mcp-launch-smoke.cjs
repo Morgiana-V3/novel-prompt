@@ -9,7 +9,7 @@ const source = readFileSync(join(__dirname, 'mcp-proxy.cjs'), 'utf8')
 async function scenario({ readyAt = Infinity, existing = false, packaged = false, partial = false } = {}) {
   let now = 0, spawned = 0, piped = false, stderr = '', exitCode = null, done = false
   const timers = new Set(), root = resolve(__dirname, '..'), stdin = new EventEmitter()
-  stdin.pause = () => {}; stdin.pipe = () => { piped = true }
+  stdin.pause = () => {}; stdin.resume = () => { piped = true }
   const proc = Object.assign(new EventEmitter(), {
     argv: ['electron', 'proxy', ...packaged ? [] : [root]], env: {}, execPath: 'electron', stdin,
     stdout: { write() {} }, stderr: { write(s) { stderr += s } }, exit(code) { exitCode = code }

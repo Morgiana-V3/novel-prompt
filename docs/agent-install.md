@@ -50,7 +50,7 @@ Test-Path $exe
 | 传输方式 | stdio |
 | `command` | `$exe` 的完整路径 |
 | `args` | `[ "<$exe 所在目录>\resources\mcp-proxy.cjs" ]` |
-| `env` | `{ "ELECTRON_RUN_AS_NODE": "1" }` |
+| `env` | `{ "ELECTRON_RUN_AS_NODE": "1", "NOVELPROMPT_MCP_GROUPS": "all" }` |
 
 - 路径用第 1 / 2 步得到的实际路径，不要猜默认位置。
 - 写入前先把原配置文件备份为 `.bak`，只新增或覆盖 `novel-prompt` 这一项，其他内容不要动。
@@ -62,7 +62,7 @@ Codex（`~/.codex/config.toml`）示例：
 [mcp_servers.novel-prompt]
 command = 'C:\Users\你\AppData\Local\Programs\NovelPrompt\NovelPrompt.exe'
 args = ['C:\Users\你\AppData\Local\Programs\NovelPrompt\resources\mcp-proxy.cjs']
-env = { ELECTRON_RUN_AS_NODE = '1' }
+env = { ELECTRON_RUN_AS_NODE = '1', NOVELPROMPT_MCP_GROUPS = 'all' }
 ```
 
 Claude Code（`~/.claude.json` 的 `mcpServers`）、Cursor 等 JSON 格式：
@@ -73,7 +73,7 @@ Claude Code（`~/.claude.json` 的 `mcpServers`）、Cursor 等 JSON 格式：
     "novel-prompt": {
       "command": "C:\\Users\\你\\AppData\\Local\\Programs\\NovelPrompt\\NovelPrompt.exe",
       "args": ["C:\\Users\\你\\AppData\\Local\\Programs\\NovelPrompt\\resources\\mcp-proxy.cjs"],
-      "env": { "ELECTRON_RUN_AS_NODE": "1" }
+      "env": { "ELECTRON_RUN_AS_NODE": "1", "NOVELPROMPT_MCP_GROUPS": "all" }
     }
   }
 }
@@ -234,7 +234,19 @@ npm install; npm run build
 - 前台工作台：`["frontend", "workspace", "images", "skills"]`。
 - 需要委托内置 AI 时增加 `"ai"`。
 
-新连接默认只展示 `core` 的 6 个入口：指南、应用状态、任务查询/取消、分组设置和操作恢复。Agent 根据任务选择分组，再读取 `tools/list` 获取已加载工具的参数定义。`groups:[]` 回到核心工具；需要查看全部 69 个工具时传清单中的所有组名。分组只影响本连接的工具发现，不改变权限或其他连接。客户端须处理 `notifications/tools/list_changed` 刷新工具列表；当前开发版本统一采用这一接入方式，不保留默认全量列表的旧行为。
+设置页的「接入范围」会写入代理环境变量 `NOVELPROMPT_MCP_GROUPS`。首次 `tools/list` 直接列出所选范围，适用于不会动态刷新工具的客户端：`all` 为全部功能；`workspace,frontend,images,skills,tags` 为工作台创作；`workspace,images,skills,tags` 为后台创作；`tags,skills` 为标签与提示词。设置页默认选择全部功能，改选后复制新配置并重连。范围越小，初始工具说明越少。
+
+未设置此变量或设为 `core` 时只展示 6 个核心入口，适合支持动态刷新的客户端。Agent 可调用 `configure_tools(groups)`，再刷新 `tools/list`；`groups:[]` 回到核心。分组只影响本连接的工具发现，不改变权限或其他连接。变量中的错误组名会明确报错，不静默降级。初始范围经本地连接握手传递，不依赖哪个代理先启动共享宿主。
+
+## 连接恢复与编辑接续
+
+代理在应用断线后保持 stdio 通道，自动尝试重连，恢复协议初始化、成功选定的工具组和状态订阅。不会重放生图、删除、发送、采纳或其他业务请求。已发送却未收到结果的请求返回 `OUTCOME_UNKNOWN` 和原操作编号；恢复期间的新请求返回 `NOT_SENT`，不会排队执行。每轮连接尝试最多 30 秒，失败后下一个请求触发再次连接，该请求本身仍不执行。
+
+恢复后先调用 `get_app_state`，后台会话可传 `workspace_id`。`connection` 包含新连接身份、工作台接管归属、配置编辑归属和建议步骤。应用操作结果先按原编号查询 `get_operation`；接管使用最新 revision，其他在线 Agent 的工作台不能抢占。
+
+如果只是 Agent 断线、应用窗口仍在，尚未保存的配置草稿会保留。`connection.workspace.editor.canResume:true` 时，核对 `desktop.workspace.config` 后可调用 `ui_edit_workspace_config(config_action:resume)` 接续草稿，再明确保存或取消。接续不会改变内容、保存或生成；用户手动编辑和其他在线 Agent 的编辑不可接续。主进程退出后的未保存表单不保证保留。
+
+`connection.workspace.execution.sourceVersionId` 是接下来生成或重绘的蓝本，`viewedVersionId` 是当前查看对象，两者可能不同。
 
 ## 超时后查询结果，避免重复执行
 

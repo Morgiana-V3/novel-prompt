@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 export const AGENT_GUIDE_URI = 'novelprompt://guide/agent'
 export const AGENT_ENTRY = `NovelPrompt 不只是提示词查询工具，也提供图库、生图、局部重绘、AI 工作台、完整修改历史和真实前台操作。
 首次使用先读 agent_guide(topic=overview)；开始工作台操作前读 agent_guide(topic=workflows)。完整指南也可通过资源 novelprompt://guide/agent 读取。get_workspace_context 首次只给总则和目录，分析前按 skills_task/skills_ids 补读任务相关正文；可用 rules_only:true 避免重复读取图片和参数。
-新连接默认只展示 6 个核心工具。开始任务先用 configure_tools(groups) 加载所需工具组，再读取 tools/list 获取参数定义：查词选 tags/skills，后台工作台选 workspace/images/skills，前台操作再加 frontend；core 始终保留。写入和付费 AI 调用前生成唯一 operation_id，超时先 get_operation(operation_id)，勿盲目重放。
+首次 tools/list 展示接入配置预选的工具范围。设置页默认生成全量配置，也可选择工作台、后台或标签范围；不支持动态刷新工具的客户端应预选所需范围。仅 core 模式需要 configure_tools(groups) 后刷新 tools/list：查词选 tags/skills，后台工作台选 workspace/images/skills，前台再加 frontend；core 始终保留。写入和付费 AI 调用前生成唯一 operation_id，超时先 get_operation(operation_id)，勿盲目重放。
 按用户意图选择执行方式：查词、检查、只要结果用后台；“在软件里操作、每一步可见、演示给我看”用 ui_* 前台工具。前台流程允许后台只读查询及 report_workspace_progress 状态报告（报告后重新读取 token），不要混入后台数据写入来冒充可见步骤。未指定时，纯资料任务走后台；明确操作当前工作台走前台。
 执行方式（前台/后台）与处理者（你自己/内置 AI）独立。用户让你接管时选择 external，由你读取上下文、分析并写回；不要默认转调 DeepSeek。外部模式提交只保存需求，不会自动唤醒 Agent。
 涉及当前内容先 get_app_state；runtime.mode、runtime.dataPath 和 runtime.appPath 标识连接的开发版或安装版及实际目录，操作前确认环境符合用户意图。两套环境的数据不会自动同步。get_workspace 默认仅给最近 5 条摘要，完整记录用 detail:full 分页或按消息/候选 id 读取；实际像素用 ui_capture_app/read_image。状态、截图和历史不是同一种信息。所有写入遵守最新 token/revision 和用户授权。`
@@ -118,6 +118,9 @@ ${AGENT_ENTRY}
 - 操作状态 running 表示仍在执行；succeeded 只表示工具返回，须检查业务结果；failed/interrupted 可能已有部分成果，不能推断回滚。同编号同参数只返回历史结果或进度，同编号改参数会拒绝；确认需要新操作后用新编号和最新状态，不盲目重放创建、发送、采纳或生成。
 - 操作记录跨连接/重启保留 7 天，绑定当前数据目录。resultOmitted 表示大结果仅保留摘要，需读取对应项目/图库。查不到记录不等于没执行；核对环境和实际状态。恢复的历史结果不会重新接管项目、恢复编辑器或替代最新 token。
 - 外部 Agent 断线：模式和需求保留，不回退 DeepSeek。重连是新连接，需要再次显式接管；另一个在线 Agent 已接管时不能抢占，只有用户主动解除或连接断开后再接管。
+- stdio 代理在宿主断开后自动重连并恢复工具范围与状态订阅；只重建协议会话，绝不重放业务调用。OUTCOME_UNKNOWN 表示已发送但结果不确定，携带原 operationId；NOT_SENT 表示恢复期间请求尚未发送。恢复失败后保持 stdio，下个请求触发再次连接，该请求不自动执行。
+- 重连后 get_app_state(workspace_id 可选) 的 connection 返回新 sessionId、接管归属、配置编辑归属和 nextActions。已有操作先 get_operation 核对；需要接管时使用最新 revision。实际执行底图是 connection.workspace.execution.sourceVersionId，不是 viewedVersionId。
+- 原 Agent 断线但窗口仍开着时，配置草稿保持原样。先核对 desktop.workspace.config，canResume:true 时可显式 ui_edit_workspace_config(config_action:resume) 接续，然后再决定保存、修改或取消。该操作不保存、不生成，不能接管用户手动编辑或其他在线 Agent 的表单。应用主进程退出后未保存的表单不保证保留。
 - 已完成/取消请求的重复回复会被拒绝。旧方案完整保留用于查看，已被新方案替代的待采纳方案不可再次采纳。
 - 取消外部待处理请求用 cancel_workspace_request/ui_cancel_workspace_request；运行任务用 cancel_task；前台也有停止入口。生图取消可能等待当前图片保存，已完成图片要如实报告。
 - 内置 AI 权限与 NovelAI 生图权限不同。external 回复不需要 DeepSeek Key，但生成仍需要 NovelAI 配置、允许生图、用户授权和 confirm:true；confirm 不能代替授权，已有明确授权无需重复询问。

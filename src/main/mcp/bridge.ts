@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import { chmodSync, mkdirSync, writeFileSync, renameSync, unlinkSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 import { createMcpSession, type McpTool, type McpSessionOptions, type ServerInfo } from './server'
+import { initialToolGroups } from './tool-groups'
 
 /** Kept in sync with mcp-proxy.cjs; descriptor holds only this local session's authentication secret. */
 export function bridgePaths(root: string, profile = '') {
@@ -21,21 +22,25 @@ export async function startMcpBridge(root: string, profile: string, tools: McpTo
     sockets.add(socket)
     let authenticated = false
     const authTimer = setTimeout(() => socket.destroy(), 5000)
-    const session = createMcpSession(tools, info, line => socket.write(line), options)
+    let session: ReturnType<typeof createMcpSession> | undefined
     const lines = createInterface({ input: socket, crlfDelay: Infinity })
     lines.on('line', line => {
       if (Buffer.byteLength(line) > 16 * 1024 * 1024) return socket.destroy()
       if (!authenticated) {
-        let token = ''
-        try { token = JSON.parse(line).token ?? '' } catch { socket.destroy(); return }
+        let handshake: { token?: unknown; toolGroups?: unknown }
+        try { handshake = JSON.parse(line) } catch { socket.destroy(); return }
+        if (!handshake || typeof handshake !== 'object') { socket.destroy(); return }
+        const token = handshake.token ?? ''
         const provided = Buffer.from(String(token)), expected = Buffer.from(secret)
         if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return socket.destroy()
+        try { session = createMcpSession(tools, info, line => socket.write(line), { ...options, initialGroups: initialToolGroups(handshake.toolGroups) }) }
+        catch (e) { clearTimeout(authTimer); socket.end(JSON.stringify({ bridgeError: String((e as Error).message) }) + '\n'); return }
         authenticated = true; clearTimeout(authTimer); sessions.add(session); socket.write('{"bridgeReady":true}\n'); return
       }
-      session.receive(line)
+      session!.receive(line)
     })
     socket.on('error', () => {})
-    socket.on('close', () => { clearTimeout(authTimer); sockets.delete(socket); sessions.delete(session); session.close(); lines.close() })
+    socket.on('close', () => { clearTimeout(authTimer); sockets.delete(socket); if (session) { sessions.delete(session); session.close() }; lines.close() })
   })
   if (process.platform !== 'win32') { try { unlinkSync(paths.address) } catch {} }
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(paths.address, resolve) })

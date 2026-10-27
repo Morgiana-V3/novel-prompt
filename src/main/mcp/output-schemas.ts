@@ -40,7 +40,7 @@ const generation = shape({ images: array(image), stopped: nullable(str), anlasCh
 const namedSchemas: Record<string, Schema> = {
   get_workspace: workspace,
   get_workspace_context: context,
-  get_app_state: shape({ desktop: nullable(desktop), tasks, capabilities: shape({ ai: obj, generation: obj, canAutoWakeAgent: bool }), visible: bool, version: str, hostPid: int, runtime: obj }, ['desktop', 'tasks', 'capabilities']),
+  get_app_state: shape({ desktop: nullable(desktop), tasks, connection: shape({ sessionId: nullable(str), connected: bool, workspace: nullable(obj), nextActions: array(obj), recovery: str }), capabilities: shape({ ai: obj, generation: obj, canAutoWakeAgent: bool }), visible: bool, version: str, hostPid: int, runtime: obj }, ['desktop', 'tasks', 'capabilities', 'connection']),
   list_workspaces: shape({ items: array(shape({ id: str, title: str, updatedAt: num, image: nullable(image), versions: int, messages: int })) }),
   list_workspace_requests: shape({ items: array(shape({ id: str, requestId: str }, ['id', 'requestId'])) }),
   report_workspace_progress: shape({ id: str, requestId: str, phase: { enum: ['processing', 'waiting'] }, activity: nullable(obj), canAutoWakeAgent: bool }),

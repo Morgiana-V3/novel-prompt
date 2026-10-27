@@ -313,8 +313,16 @@ function desktopState() {
     agentConnected: agentConnected.value, agentStatus: agentStatus.value, agentActivity: agentActivity.value ? { ...agentActivity.value } : null, pendingRequestId: pendingRequest.value?.id ?? null }
 }
 async function frontendAction(a: import('@shared/desktop').FrontendRequest, ctx: import('@shared/desktop').FrontendContext) {
+  const resumeOwner = configOwner.value
   if (operation.value || remoteBusy.value || editing.value || renaming.value || frontendContext || editingPrompt.value&&a.action!=='config') throw new Error('工作台正在编辑或执行任务，请先完成当前操作')
-  if(a.action==='config'&&editingPrompt.value&&(!ctx.agentSession||configOwner.value!==ctx.agentSession))throw new Error('正在编辑的配置属于用户或其他 Agent，未覆盖修改')
+  if(a.action==='config'&&editingPrompt.value&&(!ctx.agentSession||configOwner.value!==ctx.agentSession)) {
+    // Only an explicit resume may claim an abandoned agent draft. Human edits
+    // clear its owner and remain protected, even after the old agent disconnects.
+    const live = a.config_action==='resume' ? await window.api.agentConnections() : connections.value
+    if(a.config_action!=='resume'||!ctx.agentSession||!configOwner.value||live.some(agent=>agent.sessionId===configOwner.value))
+      throw new Error('正在编辑的配置属于用户或其他 Agent，未覆盖修改')
+    connections.value=live
+  }
   frontendContext = ctx; error.value = ''
   const check = () => { if (error.value) throw new Error(error.value); if (ctx.signal.aborted) throw new Error('已停止，已保存的内容保留') }
   const version = (id?: string) => {
@@ -338,7 +346,11 @@ async function frontendAction(a: import('@shared/desktop').FrontendRequest, ctx:
       if(a.config_action==='begin') { if(editingPrompt.value)throw new Error('配置编辑已打开');await beginConfig(ctx.agentSession!);await ctx.step('已打开下一版配置，可手动或通过 MCP 微调') }
       else {
         if(!editingPrompt.value||!configDraft.value)throw new Error('请先开始配置编辑')
-        if(a.config_action==='update'){configDraft.value=patchWorkspaceConfig(configDraft.value,a.patch!,configSizeLocked.value);await ctx.step('表单已更新，尚未保存或生成')}
+        if(a.config_action==='resume'){
+          if(!resumeOwner||configOwner.value!==resumeOwner)throw new Error('编辑归属已改变，请重新读取配置，未覆盖修改')
+          configOwner.value=ctx.agentSession!;await ctx.step('已接续断线 Agent 的配置草稿，内容保持原样，尚未保存')
+        }
+        else if(a.config_action==='update'){configDraft.value=patchWorkspaceConfig(configDraft.value,a.patch!,configSizeLocked.value);await ctx.step('表单已更新，尚未保存或生成')}
         else if(a.config_action==='save'){await finishConfig();await ctx.step('下一版配置已保存，已返回查看')}
         else if(a.config_action==='cancel'){await finishConfig(true);await ctx.step('已放弃本次未保存修改，返回查看')}
       }
