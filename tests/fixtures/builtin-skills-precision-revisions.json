@@ -1,0 +1,79 @@
+{
+  "nai-prompt": [
+    {
+      "path": "skills/nai-prompt/references/characters.md",
+      "reason": "失效数字引用改为主题链接；互动成对同名；移除默认重复台词的诱因。",
+      "before": ["0d142fb70c95e3958ca3d878347f694f4b7e2853ee73369c0743f8d45e09aa93"],
+      "after": ["5194a50a300b9c555e1251b4fabbcf2667bb5151fdbf60f49b733e90bdf4852c"]
+    },
+    {
+      "path": "skills/nai-prompt/references/characters.md",
+      "reason": "失效数字引用改为主题链接；互动成对同名；移除默认重复台词的诱因。",
+      "before": ["ba62f9eafa69b1b446883fbac8aa3a19256ca5ed2edf2854aa2015855ecc1313"],
+      "after": ["cd919dbaa57ed9795d2a0020b887873bfe63b8e497edab7b5cf7a26a311cea0e"]
+    },
+    {
+      "path": "skills/nai-prompt/references/consistency.md",
+      "reason": "发现结构或负面问题后显式补读对应操作规则。",
+      "before": ["9ef3da4b203902701745e0fc41a9ca47c2b9b965f6f41b25034b0d1ac67419a3"],
+      "after": ["d2328586b43f903d7ccb4f08d60635d85653e0a684b0dfa2fab3944e74a77c62"]
+    },
+    {
+      "path": "skills/nai-prompt/references/negative.md",
+      "reason": "与推测入口统一不确定性边界，保留用户明确要求的冲突项并说明。",
+      "before": ["0e1e5cfdae4b94b56cbaa8d6a41562867b8ea2d4e7bf90229546736fa644ca85"],
+      "after": ["ccbd86187d5dec8d30ec9a7d44aa346836d90c1a4c24a9b43402ebed11438a0b"]
+    },
+    {
+      "path": "skills/nai-prompt/references/style-evidence.md",
+      "reason": "修复去编号后失效的跨文件引用，明确负面规则的读取依赖。",
+      "before": ["d4f2a784fa8888fa4c0602c09f1dd47aecf351855936da112c068134bd166ace"],
+      "after": ["932dfb7471dba393cd365f9bd5578041468518bb8f7e18fc8f49b9cce94a9952"]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "明确按交付触发的必读条件、原稿保真与字段复核；消除全量搜索和局部范围的冲突。",
+      "before": [
+        "1fed7b29e24897507006e4d5e18331d558eb34ecc72ccf999698912b5eec7872",
+        "0a1ac28e5ce897eb1800610a02ea3c2152740c9ade5469d8ac275a0620437add"
+      ],
+      "after": [
+        "5df24e36beae710ea7141507c6be8456dac0a1aa65e349475ad600ba83843043",
+        "a9b358ac8460bce036ba380646aff79e569f63278d6898ce778d57de75638067"
+      ]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "明确按交付触发的必读条件、原稿保真与字段复核；消除全量搜索和局部范围的冲突。",
+      "before": ["2ab08f5259cf69ed31ab574bf5073112d5cde8e2c72ae2ac5519d6a145986044"],
+      "after": ["a44b8b388369dc5ff5c0998da35e42d8f4cc357ba53587ea4a61548a8d4a92a9"]
+    }
+  ],
+  "nai-preview": [
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "明确按交付触发的必读条件、原稿保真与字段复核；消除全量搜索和局部范围的冲突。",
+      "before": ["bf375dac5c6f150d3cbb4d9f4fa732810c8ebc26884ccc4a94de19efaa134d0c"],
+      "after": ["ee7acbba418aa968a21633a7f7ce4562408b05b660a3c08c870602dfd7d9d80a"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "明确按交付触发的必读条件、原稿保真与字段复核；消除全量搜索和局部范围的冲突。",
+      "before": ["1d3f9da61d2947d204f847484b03b53d19137943645e10b61bacba5b6193bf63"],
+      "after": ["256c06e442149086d77b18012aed6290e68d540e2b314c438dc4e6bcaf2f9528"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "明确按交付触发的必读条件、原稿保真与字段复核；消除全量搜索和局部范围的冲突。",
+      "before": ["c43cfef1fd21ae34a9175f4e902492f17058bdc267625341df7e04fa4f6f4ab7"],
+      "after": ["56687ddc20e5cfa61869790e0815f31d8341d369e28e224bef57ebae8ca3da18"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "明确按交付触发的必读条件、原稿保真与字段复核；消除全量搜索和局部范围的冲突。",
+      "before": ["e637dcad12ef4006c0ee289e5fae791a2374ea95dff70800daa55dee36901034"],
+      "after": ["b46fed876bf82c608d1e3edc414dcec21a0ae8c3a07655347a55465907e85e92"]
+    }
+  ],
+  "nai-inpaint": []
+}

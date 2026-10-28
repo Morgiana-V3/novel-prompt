@@ -1,5 +1,5 @@
 const { app } = require('electron')
-const { join, posix } = require('node:path')
+const { join } = require('node:path')
 const { readFileSync, mkdirSync, cpSync } = require('node:fs')
 const { createHash } = require('node:crypto')
 const assert = require('node:assert/strict')
@@ -15,6 +15,8 @@ const { renderDocumentMarkdown } = require('../../src/renderer/src/shared/lib/ma
 const { skillTools } = require('../../src/main/adapters/mcp/tools/skills.ts')
 const { contextSkills } = require('../../src/main/adapters/mcp/skills-cache.ts')
 const baseline = require('../fixtures/manga-template-baseline.json')
+const merge = require('../fixtures/manga-template-merge.json')
+const { checkSkillDocuments } = require('../support/skill-document-checks.cjs')
 const hash = (text) => createHash('sha256').update(text).digest('hex')
 
 app.whenReady().then(async () => {
@@ -28,7 +30,7 @@ app.whenReady().then(async () => {
     assert.equal(doc.source, 'template')
     assert.equal(doc.builtin, false)
     assert.equal(doc.format, 'directory')
-    assert.equal(doc.resources.length, 7)
+    assert.equal(doc.resources.length, 0)
     assert(!('resources' in templates[0]))
     assert.equal(skills.getSkill('template:../../secrets'), null)
     assert.deepEqual(skills.setConfig([{ id, enabled: true }]), before)
@@ -40,37 +42,53 @@ app.whenReady().then(async () => {
       ['SKILL.md', doc.content],
       ...doc.resources.map((resource) => [resource.path, resource.content]),
     ])
-    // Render actual Markdown so example-code paths are not mistaken for real links.
-    const rendered = new Map(
-      [...files].map(([path, content]) => [
-        path,
-        renderDocumentMarkdown(content, { localLinks: true }),
-      ]),
-    )
-    for (const [path, html] of rendered) {
-      for (const match of html.matchAll(/<a href="([^"]+)"/g)) {
-        const href = decodeURIComponent(match[1])
-        if (/^[a-z]+:/i.test(href)) {
-          continue
-        }
-        const [file, anchor] = href.split('#')
-        const target = file ? posix.normalize(posix.join(posix.dirname(path), file)) : path
-        assert(files.has(target), `${path}: missing ${href}`)
-        if (anchor) {
-          assert(rendered.get(target).includes(`id="${anchor}"`), `${path}: ${href}`)
-        }
-      }
-    }
+    checkSkillDocuments(files, renderDocumentMarkdown)
     const corpus = [...files.values()].join('\n')
     const blocks = new Set(
       [...corpus.matchAll(/```[^\n]*\n[\s\S]*?\n```/g)].map((match) => hash(match[0])),
     )
     for (const code of baseline.codeBlockHashes) {
-      assert(blocks.has(code), 'Lost original example')
+      const revision = merge.codeRevisions.find((item) => item.before === code)
+      assert(
+        blocks.has(code) || (revision?.reason && blocks.has(revision.after)),
+        'Lost original example',
+      )
+    }
+    assert.equal(
+      [...corpus.matchAll(/```[^\n]*\n[\s\S]*?\n```/g)].length,
+      baseline.codeBlockHashes.length,
+    )
+    const paragraphs = new Set(corpus.split(/\n\s*\n/).map((part) => hash(part.trim())))
+    for (const expected of Object.values(merge.passages).flat()) {
+      const revision = merge.revisions.find((item) => item.before === expected)
+      assert(
+        paragraphs.has(expected) ||
+          (revision?.reason &&
+            revision.after.length &&
+            revision.after.every((part) => paragraphs.has(part))),
+        `Lost original paragraph ${expected}`,
+      )
     }
     for (const heading of baseline.techniqueHeadings) {
       assert(corpus.includes(`### ${heading}\n`))
     }
+    const completeExample = [...corpus.matchAll(/```text\n([\s\S]*?)\n```/g)]
+      .map((match) => match[1])
+      .find((text) => text.startsWith('[Prompt]') && text.includes('Text: 坐这里。'))
+    assert(completeExample)
+    const fields = [...completeExample.matchAll(/^\[([^\]]+)\]\n([\s\S]*?)(?=\n\[|$)/gm)]
+    const appearances = fields.filter((field) => /^Character \d+ @/.test(field[1]))
+    assert.equal(appearances.length, 4)
+    const positions = appearances.map((field) => field[1].split('@ ')[1].split(',').map(Number))
+    assert.deepEqual(
+      positions,
+      [...positions].sort((a, b) => a[1] - b[1] || a[0] - b[0]),
+    )
+    assert(appearances[1][2].includes('glasses'))
+    assert(appearances[1][2].trim().endsWith('Text: 坐这里。'))
+    assert(appearances[3][2].includes('bob cut'))
+    assert(appearances[3][2].trim().endsWith('Text: 好。'))
+    assert(fields.every((field) => !field[2].includes('[Character')))
     assert(!corpus.includes('已由用户采纳为默认'))
     assert(!corpus.includes('用户已确认采用的默认漫画画风'))
 
@@ -78,7 +96,7 @@ app.whenReady().then(async () => {
     const catalog = await tools.find((tool) => tool.name === 'list_skill_templates').run({})
     assert(JSON.stringify(catalog).includes(id))
     const read = tools.find((tool) => tool.name === 'get_skill')
-    const reference = await read.run({ id, resource: 'references/actions.md' })
+    const reference = await read.run({ id })
     assert(JSON.stringify(reference).includes('人物互动、手别与动作结果'))
 
     const copy = skills.duplicateSkill(id)
@@ -92,23 +110,15 @@ app.whenReady().then(async () => {
     const entrySection = composed.snapshot.sections.find((s) => s.id === copy.id)
     const originalTotal =
       composed.text.length - (entrySection.end - entrySection.start) + baseline.originalBodyChars
-    assert(composed.text.length < originalTotal * 0.15, 'Entry + manifest must stay small')
-    const marker = 'The receiving woman'
-    const action = doc.resources.find((r) => r.path === 'references/actions.md')
-    assert(action.content.length > 500)
-    assert(!composed.text.includes(action.content))
-    const resourceId = `${copy.id}/references/actions.md`
-    const initial = contextSkills(composed.snapshot, { skills_task: 'prompt' })
-    assert(!initial.selectedIds.includes(resourceId))
-    const loaded = contextSkills(composed.snapshot, {
-      skills_task: 'prompt',
-      skills_ids: [resourceId],
-    })
-    assert.equal(loaded.sections.length, initial.sections.length + 1)
     assert(
-      loaded.sections.some((s) => s.id === resourceId && s.text.includes(action.content.trim())),
+      composed.text.includes(doc.content),
+      'All manga rules and examples must be delivered initially',
     )
-    assert(!composed.text.includes(marker))
+    assert.equal(composed.snapshot.sections.filter((s) => s.resourcePath).length, 0)
+    const initial = contextSkills(composed.snapshot, { skills_task: 'prompt' })
+    assert(initial.selectedIds.includes(copy.id))
+    assert(initial.sections.find((s) => s.id === copy.id).text.includes(doc.content))
+    assert.equal(initial.missingRequiredIds.length, 0)
 
     const exportRoot = join(profile, 'export')
     mkdirSync(exportRoot)

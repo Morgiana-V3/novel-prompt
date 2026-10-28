@@ -77,8 +77,21 @@ app.whenReady().then(async () => {
     aborted.abort()
     await assert.rejects(executor.run(batch, aborted.signal))
 
+    // Exercise batching with an explicit user package, independent of built-in rule layout.
+    const referenceFixture = skills.createSkill({
+      name: '批量读取测试',
+      scope: 'all',
+      format: 'directory',
+      content: '# 测试入口\n[第一篇](references/first.md) / [第二篇](references/second.md)',
+      resources: [
+        { path: 'references/first.md', kind: 'markdown', content: '# 第一篇\nFIRST_REFERENCE' },
+        { path: 'references/second.md', kind: 'markdown', content: '# 第二篇\nSECOND_REFERENCE' },
+      ],
+    })
     const snapshot = skills.composeSkills('workspace', 'v5').snapshot
     const refs = snapshot.sections.filter((s) => s.resourcePath).slice(0, 2)
+    assert.equal(refs.length, 2)
+    assert(refs.every((s) => s.skillId === referenceFixture.id))
     let turn = 0
     provider.requestChat = async (messages, _settings, options) => {
       turn++

@@ -56,10 +56,10 @@ Less 仅在 ThemeSelect 试点。验收包括开发/生产编译、scoped 选择
 
 Skill 目录包：构建后运行 `npm run skills:smoke`，或 `node scripts/check.mjs skills`。覆盖目录预览/复制/导出、旧单文件保留、越界及链接拒绝、冻结按需读取和真实界面编辑；界面验证包括 Markdown 排版、包内链接/图片、草稿与撤销隔离、查找框 Esc、Ctrl+S 保存、只读源码、窄窗口布局，以及禁用原生 HTML 和外部图片。合成资料与截图仅写入系统临时目录，不调用真实模型。
 
-内置 Skill 分层：`node scripts/check.mjs skills:builtins` 校验去编号后规则段落的内容指纹、稳定 ID/启用/顺序、完整复制导出、模拟安装资源路径、MCP 按篇读取和内置 AI 冻结补读。字符数报告写入临时 profile；固定场景只验证读取链路和内容体积，不代表真实模型会正确选择参考资料或保持生成质量。历史章节基线与质量修订分别保留在 `builtin-skills-baseline.json` / `builtin-skills-revisions.json`；当前正文保全使用 `tests/fixtures/builtin-skills-content.json` 的段落指纹，不把旧章节编号或文件边界作为内容契约。测试禁止带序号的同级标题、数字章节引用和无关有序清单，只允许明确的提示词编排顺序使用有序列表。短规则测试同时检查首次正文包含角色/负面或遮罩/文字规则，画面推测不开放额外参考读取。
+内置 Skill 完整交付：`node scripts/check.mjs skills:builtins` 校验历史及合并前全部段落的内容指纹、稳定 ID/启用/顺序、完整复制导出、模拟安装资源路径、内置 AI 首次全文交付及 MCP 完整入口读取。编排仅组合示例按需，预览与重绘不需要额外参考读取。历史 `builtin-skills-baseline.json` / `builtin-skills-revisions.json` / `builtin-skills-content.json` 保留不改；`builtin-skills-precision-revisions.json` 记录此前精度修订；`builtin-skills-merge-baseline.json` 保存合并前正文段落和代码块指纹，`builtin-skills-merge-revisions.json` 记录逐段替代和理由。检查沿修订链追踪旧内容，验证代码块完整保留，并确认原必需参考的规则已经出现在首次正文中；删除关键段落的故障样例必须被拒绝。frontmatter 由加载后的名称、scope/model 与配置行为检查，正文指纹不包含 YAML。仅执行流程和编排顺序使用有序列表，引用不使用数字章节。内置包与漫画包均通过实际 Markdown 渲染验证文件和标题锚点。字符数报告与合成工具场景不能证明真实模型遵循或成图质量，不以缩减上下文比例作为通过门槛。
 
 
-随附场景模板：`node scripts/check.mjs skills:templates skills` 验证模板目录独立于配置、不能直接启用/修改、可持久删除且保留个人副本、完整复制与导出、默认关闭、冻结按需读取、全部 Markdown 本地链接与标题锚点，以及模拟安装资源路径。漫画原稿的 92 个代码块和 71 个技法/完整实例标题由 `tests/fixtures/manga-template-baseline.json` 校验；UI 覆盖查看场景参考资料、复制进入编辑器和默认不启用。测试使用临时 profile，不改真实用户 Skill，不调用真实模型。
+随附场景模板：`node scripts/check.mjs skills:templates skills` 验证模板目录独立于配置、不能直接启用/修改、可持久删除且保留个人副本、完整复制与导出、默认关闭、首次完整交付、全部 Markdown 本地链接与标题锚点，以及模拟安装资源路径。漫画原稿的 92 个代码块和 71 个技法/完整实例标题由不变的 `tests/fixtures/manga-template-baseline.json` 校验；`manga-template-merge.json` 另存合并前段落指纹、修订原因与替代指纹，以及两份完整示例的语法/空间顺序修订。UI 覆盖页内主题跳转、复制进入编辑器和默认不启用；其他测试包仍覆盖冻结按需读取。测试使用临时 profile，不改真实用户 Skill，不调用真实模型。
 
 
 工作台工具调度：`node scripts/check.mjs discussion:tools` 覆盖一次超过 8 个工具调用、批量参考读取、混合资料/标签调用的应答完整性、重复查询去重、最多 4 个查询并发、48 次唯一查询上限、6 轮查询后收束作答和取消清理。参考读取预算在同一轮讨论中共享，不在每次标签查询后重置。测试使用假供应商与临时用户目录。

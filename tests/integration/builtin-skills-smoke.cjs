@@ -20,12 +20,48 @@ const provider = require('../../src/main/providers/chat/client.ts')
 const { chat } = require('../../src/main/modules/prompts/chat.ts')
 const baseline = require('../fixtures/builtin-skills-baseline.json')
 const contentBaseline = require('../fixtures/builtin-skills-content.json')
+const precisionRevisions = require('../fixtures/builtin-skills-precision-revisions.json')
+const mergeBaseline = require('../fixtures/builtin-skills-merge-baseline.json')
+const mergeRevisions = require('../fixtures/builtin-skills-merge-revisions.json')
+const { checkSkillDocuments } = require('../support/skill-document-checks.cjs')
+const { renderDocumentMarkdown } = require('../../src/renderer/src/shared/lib/markdown.ts')
 const names = {
   'builtin:prompt': 'nai-prompt',
   'builtin:preview': 'nai-preview',
   'builtin:inpaint': 'nai-inpaint',
 }
 const hash = (text) => createHash('sha256').update(text).digest('hex')
+const paragraphs = (documents) =>
+  new Set(documents.flatMap((text) => text.split(/\n\s*\n/).map((part) => hash(part.trim()))))
+
+// Follow documented revisions without replacing either historical or pre-merge baselines.
+function preserved(expected, actual, revisions, seen = new Set()) {
+  if (actual.has(expected)) {
+    return true
+  }
+  if (seen.has(expected)) {
+    return false
+  }
+  const nextSeen = new Set([...seen, expected])
+  return revisions.some(
+    (item) =>
+      item.before.includes(expected) &&
+      item.reason.trim() &&
+      item.after.length > 0 &&
+      item.after.every((replacement) => preserved(replacement, actual, revisions, nextSeen)),
+  )
+}
+
+function assertPreserved(name, expected, documents) {
+  const actual = paragraphs(documents)
+  const revisions = [...(precisionRevisions[name] ?? []), ...(mergeRevisions[name] ?? [])]
+  for (const paragraph of expected) {
+    assert(
+      preserved(paragraph, actual, revisions),
+      `${name}: lost preserved paragraph ${paragraph}`,
+    )
+  }
+}
 
 app.whenReady().then(async () => {
   try {
@@ -42,16 +78,43 @@ app.whenReady().then(async () => {
     for (const [id, name] of Object.entries(names)) {
       const doc = skills.getSkill(id)
       assert.equal(doc.format, 'directory')
-      assert.equal(doc.resources.length > 0, id !== 'builtin:preview')
+      assert.equal(
+        doc.scope,
+        {
+          'builtin:prompt': 'optimize',
+          'builtin:preview': 'preview',
+          'builtin:inpaint': 'inpaint',
+        }[id],
+      )
+      assert.equal(doc.model, 'all')
+      assert.ok(doc.name.startsWith('内置 · '))
+      assert.deepEqual(
+        doc.resources.map((resource) => resource.path),
+        id === 'builtin:prompt' ? ['references/examples.md'] : [],
+      )
       assert.deepEqual(missingSkillLinks(doc.content, doc.resources), [])
       // Preserve rule paragraphs while allowing peer topics to be regrouped.
       const documents = [doc.content, ...doc.resources.map((resource) => resource.content)]
-      const paragraphHashes = new Set(
-        documents.flatMap((text) => text.split(/\n\s*\n/).map((part) => hash(part.trim()))),
+      checkSkillDocuments(
+        new Map([
+          ['SKILL.md', doc.content],
+          ...doc.resources.map((resource) => [resource.path, resource.content]),
+        ]),
+        renderDocumentMarkdown,
       )
-      for (const expected of contentBaseline.passages[name]) {
-        assert(paragraphHashes.has(expected), name + ' lost a preserved rule or example')
-      }
+      assertPreserved(name, contentBaseline.passages[name], documents)
+      assertPreserved(name, Object.values(mergeBaseline.passages[name]).flat(), documents)
+      // Every former rule reference is delivered in the entry, not merely stored in the package.
+      const required = Object.entries(mergeBaseline.passages[name])
+        .filter(([path]) => name !== 'nai-prompt' || !path.endsWith('/references/examples.md'))
+        .flatMap(([, hashes]) => hashes)
+      assertPreserved(name, required, [doc.content])
+      const blocks = documents.flatMap((text) =>
+        [...text.matchAll(/^\s*```[^\n]*\n[\s\S]*?^\s*```/gm)].map((match) =>
+          hash(match[0].trim()),
+        ),
+      )
+      assert.deepEqual(blocks.sort(), [...mergeBaseline.codeBlocks[name]].sort())
       for (const text of documents) {
         assert(!/^#{1,6} \d+(?:\.\d+)*[. ]/m.test(text), 'Peer headings must not imply sequence')
         assert(!/第\s*[\d.]+(?:[、~～–-][\d.]+)*\s*节/.test(text), 'Use topic titles in citations')
@@ -65,7 +128,10 @@ app.whenReady().then(async () => {
             heading = line.slice(3)
           }
           if (!inCode && /^\s*\d+\. /.test(line)) {
-            assert.equal(heading, '编排顺序', 'Only actual prompt ordering uses a numbered list')
+            assert(
+              heading === '编排顺序' || heading === '执行流程',
+              'Numbered lists are reserved for explicit execution order',
+            )
           }
         }
       }
@@ -112,13 +178,7 @@ app.whenReady().then(async () => {
         composed.text.length -
         entries.reduce((sum, s) => sum + s.end - s.start, 0) +
         entries.reduce((sum, s) => sum + baseline[names[s.id]].chars, 0)
-      // Small frequently used rules are eager; only large packages target first-load savings.
-      if (feature === 'workspace') {
-        assert(composed.text.length < oldChars)
-      }
-      if (feature === 'optimize') {
-        assert(composed.text.length < oldChars * 0.5)
-      }
+      // Size is diagnostic. Coverage and correctness must not be constrained by a savings quota.
       reports.push({
         feature,
         oldChars,
@@ -128,10 +188,33 @@ app.whenReady().then(async () => {
       assert.equal(composed.text, composed.snapshot.text.slice(0, composed.text.length))
       assert.equal(
         composed.snapshot.sections.some((s) => s.resourcePath),
-        feature !== 'preview',
+        feature === 'optimize' || feature === 'workspace',
       )
+      for (const entry of entries) {
+        const name = names[entry.id]
+        const required = Object.entries(mergeBaseline.passages[name])
+          .filter(([path]) => name !== 'nai-prompt' || !path.endsWith('/references/examples.md'))
+          .flatMap(([, hashes]) => hashes)
+        assertPreserved(name, required, [composed.text.slice(entry.start, entry.end)])
+      }
     }
     const preview = skills.composeSkills('preview', 'v5')
+    assert.throws(
+      () =>
+        checkSkillDocuments(new Map([['SKILL.md', '见参考资料 8.3 节']]), renderDocumentMarkdown),
+      /stale numbered/,
+    )
+    assert.throws(
+      () =>
+        checkSkillDocuments(
+          new Map([
+            ['SKILL.md', '[规则](references/rule.md#旧标题)'],
+            ['references/rule.md', '# 新标题'],
+          ]),
+          renderDocumentMarkdown,
+        ),
+      /missing/,
+    )
     assert.ok(preview.text.includes('### 主提示词与角色提示词'))
     assert.ok(preview.text.includes('### 正负面冲突'))
     const inpaint = skills.composeSkills('inpaint', 'v5')
@@ -141,7 +224,7 @@ app.whenReady().then(async () => {
       inpaint.snapshot.sections
         .filter((section) => section.resourcePath)
         .map((section) => section.resourcePath),
-      ['references/examples.md'],
+      [],
     )
     const workspace = skills.composeSkills('workspace', 'v5')
     const selected = contextSkills(workspace.snapshot, { skills_task: 'prompt' })
@@ -150,7 +233,8 @@ app.whenReady().then(async () => {
         (s) => !workspace.snapshot.sections.find((section) => section.id === s.id).resourcePath,
       ),
     )
-    const resourceId = 'builtin:prompt/references/characters.md'
+    assert(selected.sections.find((s) => s.id === 'builtin:prompt').text.includes('source#'))
+    const resourceId = 'builtin:prompt/references/examples.md'
     const loaded = contextSkills(workspace.snapshot, {
       skills_task: 'prompt',
       skills_ids: [resourceId],
@@ -165,25 +249,39 @@ app.whenReady().then(async () => {
     assert(metadata.resources.every((r) => !Object.hasOwn(r, 'content')))
     assert(
       JSON.parse(
-        await getSkill.run({ id: 'builtin:prompt', resource: 'references/characters.md' }),
+        await getSkill.run({ id: 'builtin:prompt', resource: 'references/examples.md' }),
       ).content.includes('source#'),
     )
     const guide = await createPromptGuideTool().run({ version: 'v5' })
     assert(guide.includes(resourceId))
     assert(!guide.includes('两人互动示例'))
+    assertPreserved(
+      'nai-prompt',
+      Object.entries(mergeBaseline.passages['nai-prompt'])
+        .filter(([path]) => !path.endsWith('/references/examples.md'))
+        .flatMap(([, hashes]) => hashes),
+      [JSON.parse(await getSkill.run({ id: 'builtin:prompt' })).content],
+    )
+    const entry = skills.getSkill('builtin:prompt').content
+    const paragraph = entry.split(/\n\s*\n/).find((part) => part.startsWith('**字段底线**'))
+    assert.throws(
+      () => assertPreserved('nai-prompt', [hash(paragraph.trim())], [entry.replace(paragraph, '')]),
+      /lost preserved paragraph/,
+    )
 
     // Fixed scenario reads validate delivery/cost, not a real model's routing or generation quality.
     const scenarios = [
       {
         name: '普通单人提示词与负面检查',
         feature: 'optimize',
-        refs: ['consistency.md', 'negative.md'],
+        refs: [],
       },
       {
         name: '多人漫画与对白',
         feature: 'optimize',
-        refs: ['consistency.md', 'characters.md', 'negative.md'],
+        refs: [],
       },
+      { name: '用户索要完整组合范例', feature: 'optimize', refs: ['examples.md'] },
       { name: '简单画面推测（无角色块或负面）', feature: 'preview', refs: [] },
       { name: '角色与负面误伤推测', feature: 'preview', refs: [] },
       { name: '局部改色（非元数据输入）', feature: 'inpaint', refs: [] },
@@ -205,7 +303,7 @@ app.whenReady().then(async () => {
         calls++
         assert.equal(
           !!options.tools?.some((tool) => tool.function.name === 'read_skill_reference'),
-          scenario.feature !== 'preview',
+          scenario.feature === 'optimize',
         )
         if (calls === 1 && sections.length) {
           assert.equal(messages.length, 2)
@@ -268,7 +366,7 @@ app.whenReady().then(async () => {
     )
     console.log(JSON.stringify({ reports, scenarios }, null, 2))
     console.log(
-      `PASS built-in package preservation, IDs/config, copy/export, packaged paths, MCP/lazy delivery. Report: ${profile}`,
+      `PASS built-in rule preservation, complete first delivery, IDs/config, copy/export, packaged paths and optional-example reads. Report: ${profile}`,
     )
     app.exit(0)
   } catch (error) {

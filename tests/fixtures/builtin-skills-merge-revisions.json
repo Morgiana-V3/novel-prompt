@@ -1,0 +1,543 @@
+{
+  "nai-prompt": [
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "合并后完整提供规则，保留局部任务边界。",
+      "before": ["abe1c5e4f494c10bf2eed6309b2d93a54dacbcbd5989cebc2870af2da160310f"],
+      "after": ["91794263dc07c9cc32324cf4b35d8832f5d36c4e9933315938fb950b87adb99f"]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "移除已不适用的必读文件选择，保留结构修改的触发条件。",
+      "before": ["4979fe08dbbd92985e5c295f06060c5edb2d560b4a57289f962ecd4df1b8328e"],
+      "after": ["2f55a7579942854afebcd67bad73552413e92d2d2b472dc31d6a794f5c6ead28"]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "改为同页规则并明确完整负面的任务边界。",
+      "before": ["e9581e62d93532842f0f1e03134dac8288a70022d6ad49f163e250051e1deb1b"],
+      "after": ["79de8f6d79780b0f4bfe815683543ea9c8d051ddc00ccd2e7a2cc51c7e6b878f"]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "合并后不再要求补读核心规则。",
+      "before": ["0e83494f0d9fe7cf450798215b226101ea17b681c57b7d52af3e2f37d30ccde1"],
+      "after": ["5db5e5ea29161ae34ce9cbca15a43afd0d439dcbda7aa3e1f5abb393b3c8fcae"]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "统一统计证据边界，保留低频提示但移除未经实测的稳定性断言。；准确语义优先，避免成年等非关系属性被强行换成近义标签。",
+      "before": ["5df24e36beae710ea7141507c6be8456dac0a1aa65e349475ad600ba83843043"],
+      "after": ["bb7e75d4b9a98a754edbe1a027a2b69eb752f68e6358a34c2d23244803d03b2c"]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "统一补全权限，消除构图背景既可直接改又只能建议的矛盾。；引用合并后的实际主题名称。",
+      "before": ["5b39a7f2f01c0049315a0394e8a0c65b1d2c5e01597af2f2762ee5806c009e3e"],
+      "after": ["4694a462f14db9fe33f95152b8ece7bdf18ae837aa7632b25910b78ccf17f3b0"]
+    },
+    {
+      "path": "skills/nai-prompt/references/consistency.md",
+      "reason": "原参考文档已迁入同一正文，移除独立文件标题及返回入口指令；主题与内容保留。",
+      "before": ["8a2849bfa442ba7345bf22e09123b0607134a184dc1b3e31cfeee53205198a4f"],
+      "after": ["1fa2e232bca123eb8425c6b54d784c190ed871185d2efd09bcf639dfd3fb8d4d"]
+    },
+    {
+      "path": "skills/nai-prompt/references/consistency.md",
+      "reason": "原参考文档已迁入同一正文，移除独立文件标题及返回入口指令；主题与内容保留。",
+      "before": ["a78a9fb134a7b98e830944eb279b3152c012f5c92cfe210ce895ebff881d86ca"],
+      "after": ["1fa2e232bca123eb8425c6b54d784c190ed871185d2efd09bcf639dfd3fb8d4d"]
+    },
+    {
+      "path": "skills/nai-prompt/references/consistency.md",
+      "reason": "跨文件补读改成同页可验证主题链接，保留发现与修正的职责区别。",
+      "before": ["d2328586b43f903d7ccb4f08d60635d85653e0a684b0dfa2fab3944e74a77c62"],
+      "after": ["690c18b210f7bd9b2963785381d50264b63937c985b56737d36d96feb5e6eedd"]
+    },
+    {
+      "path": "skills/nai-prompt/references/consistency.md",
+      "reason": "不以完整性检查授权填充未知项。；人数检查采用人物语义而非数组长度。",
+      "before": ["fae6b1975e1eb8c702552608f9c6d30d440c062dc340e2fd9d909aed8fafad93"],
+      "after": ["3831bb0666a5e71bfc48701c7d8cb9506bf5e412bd68e67addd2a282c0678c58"]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "区分数据查无结果与模型无效、区域条数与人物数，以及冲突处置条件。；证据来源不等于修改权限。；证据分类与规则强度分别表述。",
+      "before": ["de76bb4d32202d9f81cba9acb777b9903db5f59ac811861805726c6f89ceab9d"],
+      "after": ["5ea797142d836d97b99ea8afb3c1faeec68f9a6563521fc86bfc66d4a107a765"]
+    },
+    {
+      "path": "skills/nai-prompt/references/style-evidence.md",
+      "reason": "原参考文档已迁入同一正文，移除独立文件标题及返回入口指令；主题与内容保留。",
+      "before": ["26ab3ddba3b1f2a68929a4c608b0d527179159f39ed41d722cd7acc1f8fb5b90"],
+      "after": ["904ed226588010cd7181634d2bcc8b70e08c244250afdae7947338e653b4d447"]
+    },
+    {
+      "path": "skills/nai-prompt/references/style-evidence.md",
+      "reason": "原参考文档已迁入同一正文，移除独立文件标题及返回入口指令；主题与内容保留。",
+      "before": ["a78a9fb134a7b98e830944eb279b3152c012f5c92cfe210ce895ebff881d86ca"],
+      "after": ["904ed226588010cd7181634d2bcc8b70e08c244250afdae7947338e653b4d447"]
+    },
+    {
+      "path": "skills/nai-prompt/references/style-evidence.md",
+      "reason": "消除必须重搜与已核实结果可复用的矛盾。",
+      "before": ["e7f7f142140a40202e06a33d23cf5f225f1c69ce2062fc1043fd2b63b2b3dbf2"],
+      "after": ["8475622b8f63ce57dbcbf181091bfe9d3d5ee1b949f31c50646c4e2bd01a01aa"]
+    },
+    {
+      "path": "skills/nai-prompt/references/style-evidence.md",
+      "reason": "合并后改用页内引用，保留负面例外。；统一统计与成图的证据边界。；保留省冗余原则，同时保证用户明确要求进入实际字段。；移除未验证的低频效果推断，保留语义核查与补句路径。",
+      "before": ["932dfb7471dba393cd365f9bd5578041468518bb8f7e18fc8f49b9cce94a9952"],
+      "after": ["13a1c1c0a1a7e34f7fdd3222bb9acaad27f8a4a01f13a9d3e010354ab71da1ea"]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "同步语法索引与条件式互动规则，移除旧标题引用。",
+      "before": ["61923888050ccc4472bc307e81ebf5b7b171956a34f541de7bbc3b01898bae45"],
+      "after": ["38a6983a3816c1a7096e62e577b3382b169017a5e4c032e0c17bb78e0b8da81c"]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "将软件编排约定与未经本轮验证的顺序效果区分。",
+      "before": ["f2d08bd9a259b1da23b0d50cefe8f1025960415c78fe37a18f1cdb3108132c25"],
+      "after": ["632a8ebae0789781dea698e4ad738d576ea99d363904cbf550a0beea668bb7cb"]
+    },
+    {
+      "path": "skills/nai-prompt/references/characters.md",
+      "reason": "原参考文档已迁入同一正文，移除独立文件标题及返回入口指令；主题与内容保留。",
+      "before": ["b83817581e0827b1d74896e4e8d936e42d080f690585c5552a2b5d4e5bfa6b9a"],
+      "after": ["aeeaf83111d66abf888132151de8af8628c929a255f5bf6052fcb68644229b7f"]
+    },
+    {
+      "path": "skills/nai-prompt/references/characters.md",
+      "reason": "原参考文档已迁入同一正文，移除独立文件标题及返回入口指令；主题与内容保留。",
+      "before": ["a78a9fb134a7b98e830944eb279b3152c012f5c92cfe210ce895ebff881d86ca"],
+      "after": ["aeeaf83111d66abf888132151de8af8628c929a255f5bf6052fcb68644229b7f"]
+    },
+    {
+      "path": "skills/nai-prompt/references/characters.md",
+      "reason": "消除区域不扩散的保证与后文串色风险矛盾。",
+      "before": ["bd371fbcc07e313beefa8c701fbb7fdc4e657ba9c34f647c2a3d0acc92bae794"],
+      "after": ["ca9c5e2c18d3b06ebb1efed9acf3a963c21bf4a17e775b7da2059f62079b1da1"]
+    },
+    {
+      "path": "skills/nai-prompt/references/characters.md",
+      "reason": "用条件分支定义义务，取消会掩盖无准确标签分支的标题绝对化。",
+      "before": ["ada4a7193164329eda418123b9b58e97495711adfe983f4b53b5fa07531b26b1"],
+      "after": ["96087efd995504b65b4e6278d8a2d24ce679300300e79e06148f58883636a06a"]
+    },
+    {
+      "path": "skills/nai-prompt/references/characters.md",
+      "reason": "把已存在的自然语言退路前置，与配对规则统一。",
+      "before": ["4548ad9e768eeaeadd89e66276b8f6ed9ae0c3d42daa73a9fa4530cc8941376a"],
+      "after": ["2d3980b8c0c066ae7c32c676631da17cb6658663b6cae1687dd433c8ac961234"]
+    },
+    {
+      "path": "skills/nai-prompt/references/characters.md",
+      "reason": "与入口复用查询结果规则一致。",
+      "before": ["ac80c6a1e05982d5c2937aec90683dd40096089ace17ed74097a555d7a07b5f5"],
+      "after": ["3ffd5e67de56e231f8de3deac5a184931b96c8adcb66d3eee97cb2c6d79c7611"]
+    },
+    {
+      "path": "skills/nai-prompt/references/characters.md",
+      "reason": "与未知属性保真规则统一，取消绝对效果承诺。；自然语言不是只能强化已存在标签，保留无准确标签的表达路径。",
+      "before": ["001a857664bc40aa90c4110909c45c11245a0e138611f8329b26cf244b18916a"],
+      "after": ["48ed6a10c4e1b6260264ea2c339ba91de36d2880f4015e94c45dcf9f8e702cb8"]
+    },
+    {
+      "path": "skills/nai-prompt/references/negative.md",
+      "reason": "原参考文档已迁入同一正文，移除独立文件标题及返回入口指令；主题与内容保留。",
+      "before": ["9f6bf33ca842e0f62cdf1bbe09650f1a3aa51eb7884a7811aa0d7d90a1f59b21"],
+      "after": ["349a96d94d0b9057266eaf3749d564da03883e9227f80eb535597996bae6d322"]
+    },
+    {
+      "path": "skills/nai-prompt/references/negative.md",
+      "reason": "原参考文档已迁入同一正文，移除独立文件标题及返回入口指令；主题与内容保留。",
+      "before": ["a78a9fb134a7b98e830944eb279b3152c012f5c92cfe210ce895ebff881d86ca"],
+      "after": ["349a96d94d0b9057266eaf3749d564da03883e9227f80eb535597996bae6d322"]
+    },
+    {
+      "path": "skills/nai-prompt/references/negative.md",
+      "reason": "负面模板起点与自动追加预设分开，保留局部边界。",
+      "before": ["59f2b9e41b70c8b02bc4fc9d7235e0f8148b4f4d500336193335016dd6e53bc9"],
+      "after": ["1fc168894bc143f6655206bb6720eedca753701594a9403e4dc7795e976fbbf3"]
+    },
+    {
+      "path": "skills/nai-prompt/references/negative.md",
+      "reason": "明确实际设置与重复词效果边界。",
+      "before": ["60dd7407f0d526a1a59676a4c36c32ae45bbf4292a53df9319b70a2f520f22d8"],
+      "after": ["b10d443382082b5d1bfc451c97007689e918be3c892159822c26a1567f9698da"]
+    },
+    {
+      "path": "skills/nai-prompt/references/negative.md",
+      "reason": "将经验候选与实际同词冲突分开，防止照表删除及补造输入。",
+      "before": ["e637dcad12ef4006c0ee289e5fae791a2374ea95dff70800daa55dee36901034"],
+      "after": ["8c6274a26b833bb34becc19f2af41a285b397b225f3340de44ee0f2a9b44b1f3"]
+    },
+    {
+      "path": "skills/nai-prompt/references/negative.md",
+      "reason": "表头明确条件，保留所有原候选映射。",
+      "before": ["048787c747b36074ad0a1f4a611aac216ae2aedfb18bbc03cfa30a23841852c3"],
+      "after": ["ec25f97985b76f13d85af22a3dee0bdae069272095b36a1ff380552cb0c6df24"]
+    },
+    {
+      "path": "skills/nai-prompt/references/negative.md",
+      "reason": "默认值不能替代本轮参数证据。",
+      "before": ["a8c4394bb347003c4fc7571cde60319f64087e7f15ef70527b29db52aace81c1"],
+      "after": ["8769a13ecdcc5b9566ec2fe691ba7d43520d3b0a2a0dda28e167393ac7dba3c0"]
+    },
+    {
+      "path": "skills/nai-prompt/references/examples.md",
+      "reason": "范例保留为可选材料，核心规则无需在范例中寻找。",
+      "before": ["a78a9fb134a7b98e830944eb279b3152c012f5c92cfe210ce895ebff881d86ca"],
+      "after": ["12f45f848fac2b054fd87e086f0ae46facb02735edd22ae9a8e715f477e8dd3f"]
+    },
+    {
+      "path": "skills/nai-prompt/references/examples.md",
+      "reason": "范例原则与入口的条件式互动、自然语言兜底一致。",
+      "before": ["3095a2e9762070eab4f15347e934685b65ad3b2ccbc5ffbe275e8eb1396c4b26"],
+      "after": ["52fb3bc46b112eae5713ed9a6451c0c4f193f3a13616d69375c4f1d0c7b8c8ce"]
+    },
+    {
+      "path": "skills/nai-prompt/references/examples.md",
+      "reason": "保留示例及原意，避免输入中文对白却无授权翻译的坏示范；JSON 不变。",
+      "before": ["804990754beadce36d7defd11d84cea712182c393fca8ddfdffe2d371ed5f17a"],
+      "after": ["2a227f3d6ad6f2ae6151da33819ff79463e960bb4709fc2a63c2f954a606424c"]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "核心资料已全部合回正文；读取条件改为任务适用条件，仅组合范例按需。",
+      "before": ["9611a145caed0d34e125a63b2a09b7f62f1bce0bd5151cb4795285461ef3a452"],
+      "after": [
+        "adc53cf79c16528afb6554b5ed075217c355e5ee98bc0752ba5067b473ffffc1",
+        "e8b1005965642409ecff91a288533a44e61b4380ea3fe2bad839fb980d57e04b",
+        "479767c9e341ee90f474c6f3049c58051053f9474a66a1ccea0713b2b933f2be"
+      ]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "核心资料已全部合回正文；读取条件改为任务适用条件，仅组合范例按需。",
+      "before": ["847e095274e54acb7a0a744148529cb3a78142c704331aabbe3d172c4b5fc727"],
+      "after": [
+        "adc53cf79c16528afb6554b5ed075217c355e5ee98bc0752ba5067b473ffffc1",
+        "e8b1005965642409ecff91a288533a44e61b4380ea3fe2bad839fb980d57e04b",
+        "479767c9e341ee90f474c6f3049c58051053f9474a66a1ccea0713b2b933f2be"
+      ]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "核心资料已全部合回正文；读取条件改为任务适用条件，仅组合范例按需。",
+      "before": ["87557bc286e1792822bed9f9bb76ce46b0fdb4c20a12dd055f128cded675749c"],
+      "after": [
+        "adc53cf79c16528afb6554b5ed075217c355e5ee98bc0752ba5067b473ffffc1",
+        "e8b1005965642409ecff91a288533a44e61b4380ea3fe2bad839fb980d57e04b",
+        "479767c9e341ee90f474c6f3049c58051053f9474a66a1ccea0713b2b933f2be"
+      ]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "清除本篇只有用户可覆盖的表述，尊重已有逐事项 Skill 优先级。",
+      "before": ["fc4134485b1dd7e1396b50799fe44156329442ce8b1362328f0a38a258fe203b"],
+      "after": ["8641db48ca93e4e83af78f568e063d19069bf22d1fed8c4b9b6a9a955b7b06b6"]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "2026-10-29 规则整理：执行流程明确视觉蓝本也是保留要求的依据。",
+      "before": ["3b802142e82171591fed3fbdb92edecffb4503f1954d46b516f6bcbbe8be99cb"],
+      "after": ["d8563a291ca2dee1a8fcf886f5c915a09366c14f712245446980706e4dca3f7f"]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "2026-10-29 规则整理：补充可见保留项的提取边界，兼顾图文冲突与不臆造。",
+      "before": ["d7194c07dd58ac001892f4a44816b4d810f3065ba7171a2c8d500c6f542fba58"],
+      "after": [
+        "8068380c60e142613af574ea01e3a2bae5c9169a53ff6151632efc89cbdb8aa0",
+        "7e54682fcc518c5b9be8ecb9bcf9826889a901d89e6a182286772ecd079dc326",
+        "03d5646683d032a2fc1c560cbe840ff09507f15fc853e1453d0413f156e7b34e",
+        "d7194c07dd58ac001892f4a44816b4d810f3065ba7171a2c8d500c6f542fba58"
+      ]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "2026-10-29 规则整理：句数降为简单场景建议，明确复杂关系完整性优先。",
+      "before": ["48ed6a10c4e1b6260264ea2c339ba91de36d2880f4015e94c45dcf9f8e702cb8"],
+      "after": ["39d3d549178ba2244969c05820846426b4e25ea9e8b136d7a65fd41f46f80a24"]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "2026-10-29 规则整理：输出篇幅与前文完整性优先原则一致。",
+      "before": ["22526f5dbdb3cb9f780bdcb9ae56e221643535b438e43d5969584c1b374f5c8b"],
+      "after": ["7e9563068b71f826694a4d8e3f6d4809312306541913b21a31403eb34eafaaea"]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "2026-10-29 规则整理：取消修改说明条数硬限，保留每项修改的可追溯性。",
+      "before": ["7e9563068b71f826694a4d8e3f6d4809312306541913b21a31403eb34eafaaea"],
+      "after": ["646b8e08eb6b5bcba6339e4ea391edec219a5125a51431f5a1200008ce806d3b"]
+    },
+    {
+      "path": "skills/nai-prompt/SKILL.md",
+      "reason": "2026-10-29 规则整理：移除不准确的标题方向指引。",
+      "before": ["d8563a291ca2dee1a8fcf886f5c915a09366c14f712245446980706e4dca3f7f"],
+      "after": ["23e4361dc9b0d22d26e9d9f704a6f6fcfe4837f267dddbc414c7d4dd6a31e5df"]
+    },
+    {
+      "path": "skills/nai-prompt/references/examples.md",
+      "reason": "2026-10-29 规则整理：同步组合范例中的条数建议，避免按需读取后重新引入旧限制。",
+      "before": ["a20f3bd8e678abf5d082848ad96aa55365d328d4a87248922cfd8ddd6a686887"],
+      "after": ["114a2959e54ad8b062466b5c2eecb08e7492af3b00d1931dbfe9f63ea95fe2b1"]
+    }
+  ],
+  "nai-preview": [
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "描述功能和边界。",
+      "before": ["6780f73b3e4cd88fb8ab341f8e60cc183d66a46fabe1219fb60eac793a651484"],
+      "after": ["790ce26728e9aeb3d0e1999602fbd4e20c6e9af7d990b55404a2dccb0ef0b8e8"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "与未知项和统计证据边界一致。",
+      "before": ["f027c3cba75171ad986f1e194182b5b32752c5646dd2417207f48c0c496d1a93"],
+      "after": ["351b6f817f593c2a8115888eddc9b1113bd09c8f41b8228a1a956a3ef0522b1e"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "纠正重复出场被误判人数和互斥负面被无条件要求的问题。",
+      "before": ["ecdfc07ef272b3c6245932fa093d3cc15847c209a586ab1e87aa55d14e8dbea7"],
+      "after": ["9d394bf569ac725c7c66e28eced4f14c30dc2f8e8a687c89a79ce15d20de7099"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "关注项与角色计数规则统一。",
+      "before": ["d7ab9d2d836d910d45f70d526001c836a0bcea17478d86085648ec971f507cff"],
+      "after": ["54bda0cba984288b239757a0cc2003ab58ddfd02ad239f5678ba96e5ff25c081"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "消除用低置信度补造未知项的通道。",
+      "before": ["bd0c7572c781725d333d187ee015a2db75fa63bd2994d32b702f826a7f2e2669"],
+      "after": ["6d532f82df71e5df0055f5a46b19179eeef90ad9123014c9a1df39f81e18b5ba"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "证据分类不再引入被正文禁止的推断。",
+      "before": ["56687ddc20e5cfa61869790e0815f31d8341d369e28e224bef57ebae8ca3da18"],
+      "after": ["1a3a8d31039ff6d932c34867430339ba8242ce207aa1e27ac5ad300524ada885"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "区分风险影响与未经测量的概率。",
+      "before": ["8d2b72c4277a23db32a8adf9165c863db86da316fe71a79b685f1618ab602f39"],
+      "after": ["b74ca3ff8145782f215578cd49907131d25fd2d39cff3fad7a052b02b4ec1aea"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "将经验候选与实际同词冲突分开，防止照表删除及补造输入。",
+      "before": ["b46fed876bf82c608d1e3edc414dcec21a0ae8c3a07655347a55465907e85e92"],
+      "after": ["f2ebfc60d59e46273ceb9dae494be3548bdb1a49f38d5567794431e95935d7d7"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "表头明确条件，保留所有原候选映射。",
+      "before": ["048787c747b36074ad0a1f4a611aac216ae2aedfb18bbc03cfa30a23841852c3"],
+      "after": ["ec25f97985b76f13d85af22a3dee0bdae069272095b36a1ff380552cb0c6df24"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "NovelAI 官方 models 文档明确支持 V4.5 自然语言；移除无依据的绝对限制。",
+      "before": ["15027e2a12edc9486cbe4998b5f0909a540126e7ab9a982af278d9e646630302"],
+      "after": ["88a4213f9f97bc838602161f6d5b05c0ee8cfc418b2226d0e9e87798c389b292"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "2026-10-29 规则整理：入口明确无图推测与有图验收两个分支，保持不自动改稿边界。",
+      "before": ["c6acd8c4da5383c228ae734f9a3859f7d909b82a7e01565346af574078292a46"],
+      "after": ["a6db365510c245b544d09f1dd976c541940b7bbba1b6cda6066664c9a06a1ece"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "2026-10-29 规则整理：执行流程同时适用于有图与无图任务。",
+      "before": ["8da98492825f9ab27c9cf7d216ce6913d913f733d571684f475765ebc7d68f74"],
+      "after": ["9187ea83a054a22547191f841afa03a9c4ceaf7e691ea2f1ef1f6eda5c6da637"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "2026-10-29 规则整理：先确认图文版本，再区分输入约束和像素证据。",
+      "before": ["cec3978f2ae83de5f35e58a53827e7ce0357e8f48e9b3341962819286e98278b"],
+      "after": ["48269fb86fc6d7d155eefd249a3cfc1a3430986473c6e15bf81fd0e505f628f7"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "2026-10-29 规则整理：加入图文核对后顺延实际执行步骤。",
+      "before": ["48269fb86fc6d7d155eefd249a3cfc1a3430986473c6e15bf81fd0e505f628f7"],
+      "after": ["72f0f3c987a14f7644bb9271b6ef06d9d0f49dbe99d8ff06fbae08da341b2a3e"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "2026-10-29 规则整理：将读图分支落实到执行流程而非仅在开头声明。",
+      "before": ["72f0f3c987a14f7644bb9271b6ef06d9d0f49dbe99d8ff06fbae08da341b2a3e"],
+      "after": ["cbebdb3dde5fcd952fedd2680bb2f85c3dc9b425a0aee6fe94e277bdb691dffd"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "2026-10-29 规则整理：允许有依据的实际读图，同时限制未经验证的因果归因。",
+      "before": ["cbebdb3dde5fcd952fedd2680bb2f85c3dc9b425a0aee6fe94e277bdb691dffd"],
+      "after": ["68c3f7783bb57ee470d58ff47a857fc53d3a329745525dfc9d97fac2c83c8fe8"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "2026-10-29 规则整理：移除角色定义中与有图验收冲突的禁止读图表述。",
+      "before": ["7f6fbb0bec3d05ffbaa66d2f53163e73b10ecd604f5fe9ba9e8aeef3aa10964f"],
+      "after": ["40b74954eb449974ceda1b21cc6b8959fa59c73f2e674401347fda53a415d7b5"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "2026-10-29 规则整理：将铁律限定到正确输入分支，保留禁止臆造要求。",
+      "before": ["22a15885b0b67244c5646d997e1ed571b661b9c5ead13afba98e06582f80a33c"],
+      "after": ["4aa1d16955b4ca2ccd2863c3baa6b676f5aeec2be14464fa8ac8d125e1c70b18"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "2026-10-29 规则整理：避免后文未知维度规则再次阻止有图观察。",
+      "before": ["feaa5610f93b06c72fd71217318f8b0b7edbf06b56247bb093f7e758b7bf4d25"],
+      "after": ["9f2554d9c4f9afd027e392025fd80be7a27dbd83fe6dc1770aead03392e88d70"]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "2026-10-29 规则整理：明确置信度与实图观察的不同用途，不新增接口枚举。",
+      "before": ["6d532f82df71e5df0055f5a46b19179eeef90ad9123014c9a1df39f81e18b5ba"],
+      "after": [
+        "7b07f2fcdc8eef5ef2ac6e75335db85f2e47db4a2f6afde124e5daf40e0ceb38",
+        "6d532f82df71e5df0055f5a46b19179eeef90ad9123014c9a1df39f81e18b5ba"
+      ]
+    },
+    {
+      "path": "skills/nai-preview/SKILL.md",
+      "reason": "2026-10-29 规则整理：输出摘要与两种任务对应，篇幅建议不压缩必要差异。",
+      "before": ["b74ca3ff8145782f215578cd49907131d25fd2d39cff3fad7a052b02b4ec1aea"],
+      "after": ["6a553d27242d3de553ce26e9e92b0cc953e5fab2a65bcce08b46e75bb471f082"]
+    }
+  ],
+  "nai-inpaint": [
+    {
+      "path": "skills/nai-inpaint/SKILL.md",
+      "reason": "重绘示例完整合并。",
+      "before": ["2a3f1ebdeeaf42649bb202ec47a3a9a0220bf99d6cc2e9024f458ebda8548155"],
+      "after": ["0f1d093e3ec4b8dd6b28498fbc0c4ef55bb2419be1c550025d43e99bf09f8e57"]
+    },
+    {
+      "path": "skills/nai-inpaint/SKILL.md",
+      "reason": "移除已不存在的参考资料路由标题。",
+      "before": ["55ba54d3580510ff062055a330a287ee88e50086291380f55fb7ac31b0e4c000"],
+      "after": ["2947018398afd05e00799891892abfa2cf1c1af228ee31b3607ec8b9e75a2ca3"]
+    },
+    {
+      "path": "skills/nai-inpaint/SKILL.md",
+      "reason": "保留四类示例用途，取消补读步骤。",
+      "before": ["376f5dd9ae2cdd631ad4a1079c97d18e70daaa17ee0ab54cb788468d161ee99c"],
+      "after": ["299d1d5e0af935ecec69c8a9a39048cf344a75ad7f8d8a51bda212db8c7f7945"]
+    },
+    {
+      "path": "skills/nai-inpaint/SKILL.md",
+      "reason": "把既有箭头工作顺序展开为可执行编号，不改变工作边界。",
+      "before": ["1be5f30ae65ad04f5362001d728b35b2f31f719772533492472329c9e9daa233"],
+      "after": [
+        "d7194c07dd58ac001892f4a44816b4d810f3065ba7171a2c8d500c6f542fba58",
+        "045d2115bb15347a04e99593b66cca4f35aab9c82d90240d4c6b565e6506a6b6",
+        "86592bfdc52c0d7977f5b854fe89f3dbd8ec2640cde0749e71fb26a413ca5f07"
+      ]
+    },
+    {
+      "path": "skills/nai-inpaint/SKILL.md",
+      "reason": "去字目标保留，统一未知标签与完整自然语言约束。；真实视觉规划仍保留 english text；明确移除文字诱发项与保留其他文字的条件。",
+      "before": ["db4695a53251bba8694ab0f7e669abb0de5b3c374c99c17d88d6bdc888b7e2ab"],
+      "after": ["5b2203b7402d3356391232ac763e1b5ba8b7f26d53a979b6c808511bddbc4857"]
+    },
+    {
+      "path": "skills/nai-inpaint/SKILL.md",
+      "reason": "重绘入口独立具备解析约束，不依赖另一份编排文档。",
+      "before": ["197129f317b79939085d2a8d5b589ccf30495bc6c7bdb141af4e5f58b0b253e2"],
+      "after": ["619482bd1c40acd777e70c4fcb497ddd7da6a9adbfad06b47ffde24851e16e1a"]
+    },
+    {
+      "path": "skills/nai-inpaint/references/examples.md",
+      "reason": "原参考文档已迁入同一正文，移除独立文件标题及返回入口指令；主题与内容保留。",
+      "before": ["6bf66fd3937d2b36f7618196c2b16c977284e1074fdc4b6f6938bf1fd7048527"],
+      "after": ["66b8cc154742e9f2ab46b58c26afe8f551509eb9a7a1196034ddf40d053b3e16"]
+    },
+    {
+      "path": "skills/nai-inpaint/references/examples.md",
+      "reason": "原参考文档已迁入同一正文，移除独立文件标题及返回入口指令；主题与内容保留。",
+      "before": ["a78a9fb134a7b98e830944eb279b3152c012f5c92cfe210ce895ebff881d86ca"],
+      "after": ["66b8cc154742e9f2ab46b58c26afe8f551509eb9a7a1196034ddf40d053b3e16"]
+    },
+    {
+      "path": "skills/nai-inpaint/SKILL.md",
+      "reason": "区分独立分析与工作台合并执行。",
+      "before": ["016d9de0953001d720a679b6f356a87020c0a350505d7090774094134efcecca"],
+      "after": ["fc8bad665aeca9ffc74eb8a54a6412a4d3104074865cc732eb0b55b54c4a2d99"]
+    },
+    {
+      "path": "skills/nai-inpaint/SKILL.md",
+      "reason": "防止工作台联合请求误套独立区域交付方式。",
+      "before": ["66878d874e975fcf2ddab84a4e91511b55bc52ceebf34ba28230cf4afa8e6b98"],
+      "after": ["653c45a6f72a296f245236b754466dead4859462ba26cb9320d87cee740126eb"]
+    },
+    {
+      "path": "skills/nai-inpaint/SKILL.md",
+      "reason": "流程复核按当前接口选择。",
+      "before": ["86592bfdc52c0d7977f5b854fe89f3dbd8ec2640cde0749e71fb26a413ca5f07"],
+      "after": ["b3150e658cddfb70c9ecd16b137cce55fc1f950ac750a0dbe924922c875992cb"]
+    },
+    {
+      "path": "skills/nai-inpaint/SKILL.md",
+      "reason": "输出 schema 由当前接口决定。",
+      "before": ["b3150e658cddfb70c9ecd16b137cce55fc1f950ac750a0dbe924922c875992cb"],
+      "after": ["961af5c3f335c122d1dbb6799f01273787fe2124bed2209a1e7e9debd8f67ac9"]
+    },
+    {
+      "path": "skills/nai-inpaint/SKILL.md",
+      "reason": "示例边界与当前接口一致，保留原有独立分析范例。",
+      "before": ["738ed79d949d835205d8a0e8bac728f0702d010adb007ded89981eeef1d7a974"],
+      "after": ["03b259f38bd6b9b02cf2ed71f5faccc831ec59d2b1183cdbf6a6e68335f84974"]
+    },
+    {
+      "path": "skills/nai-inpaint/SKILL.md",
+      "reason": "2026-10-29 规则整理：将接口选择、工作台字段与纯讨论出口集中为明确分支。",
+      "before": ["53925e20a8f167c494866625d9946d14c7a83d9b03d64fd2d3ad1b3e6b668076"],
+      "after": [
+        "f825c53df769ba3bfefce23ac0992f15f41ff330eb545da049d84cbd8b975e6b",
+        "b5c0c0156c5aa2834787c54adecf2b16365ba57f780edbce6ab232cdc3538863",
+        "a8cfffbd13b4123ee69bc5bf4cb3491309b077a8cb24d6ee514370df8940347f"
+      ]
+    },
+    {
+      "path": "skills/nai-inpaint/SKILL.md",
+      "reason": "2026-10-29 规则整理：将原有逐区域 schema 标成独立接口，消除全局适用语气。",
+      "before": [
+        "68cdf7091e0c8da14f95b39500ceb96915d5c5e4d6daf9a50dce4d985428a586",
+        "08587cfff7e93dfd737ba29336e5b3769890336b7b3014b43bd83e9f6815edf5"
+      ],
+      "after": [
+        "7bf321cf994aab0d1b96bcaca7db96678b9bf20642076321995c6351ee39dc0f",
+        "ef1b1307e5ee1c80ea28c072cfce63eb64ca44a7fb6fdc17990a55fa78508490"
+      ]
+    },
+    {
+      "path": "skills/nai-inpaint/SKILL.md",
+      "reason": "2026-10-29 规则整理：共同复核中分别检查独立与联合模式，不让后文覆盖前文分支。",
+      "before": ["f5a0e51fd8f4c4abd509d6d40e9a18fe6cd001313e88536db63ed3e5746261c0"],
+      "after": [
+        "7e03b9f578bfed5556759423e01b24a90dc59296e59b41054135c8b348053d45",
+        "74586f0fa594fe9b0482f1f792d86da749440f3e04b5a507f9d5ee11dff85fa4"
+      ]
+    },
+    {
+      "path": "skills/nai-inpaint/SKILL.md",
+      "reason": "2026-10-29 规则整理：前文缺失信息处理也按接口分支，避免误返回 changes。",
+      "before": ["55cf74d3a60c52fa5e6f202963f7410f214a11c0c2a1432603b2ef7e124b74c8"],
+      "after": ["d9a99a5a05f7807690fce3456781506bfc71ed5e3620c24cdbb509ae2bea34ff"]
+    }
+  ]
+}

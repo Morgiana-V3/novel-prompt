@@ -1585,12 +1585,14 @@ app.whenReady().then(async () => {
     const skillEntry = await b.data('get_skill', { id: 'builtin:prompt' })
     assert.equal(skillEntry.id, 'builtin:prompt')
     assert.equal(typeof skillEntry.name, 'string')
+    assert.ok(skillEntry.content.includes('source#'))
+    assert.ok(skillEntry.content.includes('NAI 官方 UC 预设'))
     const skillReference = await b.data('get_skill', {
       id: 'builtin:prompt',
-      resource: 'references/characters.md',
+      resource: 'references/examples.md',
     })
     assert.equal(skillReference.id, 'builtin:prompt')
-    assert.equal(skillReference.path, 'references/characters.md')
+    assert.equal(skillReference.path, 'references/examples.md')
     assert.ok(skillReference.content.includes('source#'))
     assert.ok((await b.tool('get_skill', { id: 'core' })).content[0].text.includes('Skill'))
     await assert.rejects(

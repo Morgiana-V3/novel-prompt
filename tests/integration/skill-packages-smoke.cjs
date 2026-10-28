@@ -272,9 +272,7 @@ app.whenReady().then(async () => {
     await js(
       "[...document.querySelectorAll('.skill-document-preview a')].find(a => a.textContent === '动作与连续性').click()",
     )
-    await wait(
-      "document.querySelector('.skill-document-preview h1')?.textContent === '动作、互动与连续性'",
-    )
+    await wait('!!document.querySelector(\'.skill-document-preview h2[id="动作互动与连续性"]\')')
     await new Promise((resolve) => setTimeout(resolve, 500))
     writeFileSync(
       join(profile, 'template-reference.png'),
@@ -287,7 +285,7 @@ app.whenReady().then(async () => {
     const templateCopy = skills.getConfig().find((s) => s.name === '黑白日式漫画（我的副本）')
     assert(templateCopy && !templateCopy.enabled)
     assert.equal(skills.getConfig().length, beforeTemplate + 1)
-    assert.equal(skills.getSkill(templateCopy.id).resources.length, 7)
+    assert.equal(skills.getSkill(templateCopy.id).resources.length, 0)
     await js("document.querySelector('.sk-head button').click()")
     await wait("!document.querySelector('.sk-dialog')")
     skills.deleteSkill(templateCopy.id)
