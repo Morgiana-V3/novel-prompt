@@ -270,10 +270,10 @@ app.whenReady().then(async () => {
     await wait("document.querySelector('.sk-dialog h3')?.textContent.includes('场景模板')")
     assert.equal(await js("!!document.querySelector('.cm-editor')"), false)
     await js(
-      "[...document.querySelectorAll('.skill-document-preview a')].find(a => a.textContent === '动作与互动').click()",
+      "[...document.querySelectorAll('.skill-document-preview a')].find(a => a.textContent === '动作与连续性').click()",
     )
     await wait(
-      "document.querySelector('.skill-document-preview h1')?.textContent === '人物互动与动作结果'",
+      "document.querySelector('.skill-document-preview h1')?.textContent === '动作、互动与连续性'",
     )
     await new Promise((resolve) => setTimeout(resolve, 500))
     writeFileSync(
@@ -287,7 +287,7 @@ app.whenReady().then(async () => {
     const templateCopy = skills.getConfig().find((s) => s.name === '黑白日式漫画（我的副本）')
     assert(templateCopy && !templateCopy.enabled)
     assert.equal(skills.getConfig().length, beforeTemplate + 1)
-    assert.equal(skills.getSkill(templateCopy.id).resources.length, 13)
+    assert.equal(skills.getSkill(templateCopy.id).resources.length, 7)
     await js("document.querySelector('.sk-head button').click()")
     await wait("!document.querySelector('.sk-dialog')")
     skills.deleteSkill(templateCopy.id)

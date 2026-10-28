@@ -19,7 +19,7 @@ const { createPromptGuideTool } = require('../../src/main/adapters/mcp/tools/pro
 const provider = require('../../src/main/providers/chat/client.ts')
 const { chat } = require('../../src/main/modules/prompts/chat.ts')
 const baseline = require('../fixtures/builtin-skills-baseline.json')
-const revisions = require('../fixtures/builtin-skills-revisions.json')
+const contentBaseline = require('../fixtures/builtin-skills-content.json')
 const names = {
   'builtin:prompt': 'nai-prompt',
   'builtin:preview': 'nai-preview',
@@ -44,20 +44,30 @@ app.whenReady().then(async () => {
       assert.equal(doc.format, 'directory')
       assert.equal(doc.resources.length > 0, id !== 'builtin:preview')
       assert.deepEqual(missingSkillLinks(doc.content, doc.resources), [])
-      // Preserve original chapters except explicitly recorded quality corrections.
-      const sectionHashes = new Set(
-        [doc.content, ...doc.resources.map((r) => r.content)].flatMap((text) =>
-          text
-            .split(/(?=^#{2,3} \d)/m)
-            .slice(1)
-            .map((chunk) => hash(chunk.trim())),
-        ),
+      // Preserve rule paragraphs while allowing peer topics to be regrouped.
+      const documents = [doc.content, ...doc.resources.map((resource) => resource.content)]
+      const paragraphHashes = new Set(
+        documents.flatMap((text) => text.split(/\n\s*\n/).map((part) => hash(part.trim()))),
       )
-      for (const section of baseline[name].sections) {
-        assert(
-          sectionHashes.has(revisions[name]?.[section.section]?.hash ?? section.hash),
-          `${name} lost or changed original section ${section.section}`,
-        )
+      for (const expected of contentBaseline.passages[name]) {
+        assert(paragraphHashes.has(expected), name + ' lost a preserved rule or example')
+      }
+      for (const text of documents) {
+        assert(!/^#{1,6} \d+(?:\.\d+)*[. ]/m.test(text), 'Peer headings must not imply sequence')
+        assert(!/第\s*[\d.]+(?:[、~～–-][\d.]+)*\s*节/.test(text), 'Use topic titles in citations')
+        let heading = ''
+        let inCode = false
+        for (const line of text.split('\n')) {
+          if (line.startsWith(String.fromCharCode(96).repeat(3))) {
+            inCode = !inCode
+          }
+          if (!inCode && line.startsWith('## ')) {
+            heading = line.slice(3)
+          }
+          if (!inCode && /^\s*\d+\. /.test(line)) {
+            assert.equal(heading, '编排顺序', 'Only actual prompt ordering uses a numbered list')
+          }
+        }
       }
       assert.throws(() => skills.updateSkill(id, { content: 'overwrite' }), /内置/)
       const copy = skills.duplicateSkill(id)
@@ -122,11 +132,11 @@ app.whenReady().then(async () => {
       )
     }
     const preview = skills.composeSkills('preview', 'v5')
-    assert.ok(preview.text.includes('### 1.3 主提示词与角色提示词'))
-    assert.ok(preview.text.includes('### 8.3 正负面冲突'))
+    assert.ok(preview.text.includes('### 主提示词与角色提示词'))
+    assert.ok(preview.text.includes('### 正负面冲突'))
     const inpaint = skills.composeSkills('inpaint', 'v5')
-    assert.ok(inpaint.text.includes('### 2.2 保留内容与相邻对象'))
-    assert.ok(inpaint.text.includes('### 4.3 画面文字'))
+    assert.ok(inpaint.text.includes('### 保留内容与相邻对象'))
+    assert.ok(inpaint.text.includes('### 画面文字'))
     assert.deepEqual(
       inpaint.snapshot.sections
         .filter((section) => section.resourcePath)
@@ -160,7 +170,7 @@ app.whenReady().then(async () => {
     )
     const guide = await createPromptGuideTool().run({ version: 'v5' })
     assert(guide.includes(resourceId))
-    assert(!guide.includes('例 1：两人互动'))
+    assert(!guide.includes('两人互动示例'))
 
     // Fixed scenario reads validate delivery/cost, not a real model's routing or generation quality.
     const scenarios = [
@@ -172,13 +182,7 @@ app.whenReady().then(async () => {
       {
         name: '多人漫画与对白',
         feature: 'optimize',
-        refs: [
-          'consistency.md',
-          'characters.md',
-          'language-text.md',
-          'model-tags.md',
-          'negative.md',
-        ],
+        refs: ['consistency.md', 'characters.md', 'negative.md'],
       },
       { name: '简单画面推测（无角色块或负面）', feature: 'preview', refs: [] },
       { name: '角色与负面误伤推测', feature: 'preview', refs: [] },

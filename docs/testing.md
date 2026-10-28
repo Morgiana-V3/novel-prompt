@@ -56,7 +56,7 @@ Less 仅在 ThemeSelect 试点。验收包括开发/生产编译、scoped 选择
 
 Skill 目录包：构建后运行 `npm run skills:smoke`，或 `node scripts/check.mjs skills`。覆盖目录预览/复制/导出、旧单文件保留、越界及链接拒绝、冻结按需读取和真实界面编辑；界面验证包括 Markdown 排版、包内链接/图片、草稿与撤销隔离、查找框 Esc、Ctrl+S 保存、只读源码、窄窗口布局，以及禁用原生 HTML 和外部图片。合成资料与截图仅写入系统临时目录，不调用真实模型。
 
-内置 Skill 分层：`node scripts/check.mjs skills:builtins` 校验迁移前各编号章节的内容指纹、稳定 ID/启用/顺序、完整复制导出、模拟安装资源路径、MCP 按篇读取和内置 AI 冻结补读。字符数报告写入临时 profile；固定场景只验证读取链路和内容体积，不代表真实模型会正确选择参考资料或保持生成质量。迁移基线保存在 `tests/fixtures/builtin-skills-baseline.json`，后续主动修订规则时应审阅并将修订指纹与理由记录在 `tests/fixtures/builtin-skills-revisions.json`，历史基线不重写。短规则测试同时检查首次正文包含角色/负面或遮罩/文字规则，画面推测不开放额外参考读取。
+内置 Skill 分层：`node scripts/check.mjs skills:builtins` 校验去编号后规则段落的内容指纹、稳定 ID/启用/顺序、完整复制导出、模拟安装资源路径、MCP 按篇读取和内置 AI 冻结补读。字符数报告写入临时 profile；固定场景只验证读取链路和内容体积，不代表真实模型会正确选择参考资料或保持生成质量。历史章节基线与质量修订分别保留在 `builtin-skills-baseline.json` / `builtin-skills-revisions.json`；当前正文保全使用 `tests/fixtures/builtin-skills-content.json` 的段落指纹，不把旧章节编号或文件边界作为内容契约。测试禁止带序号的同级标题、数字章节引用和无关有序清单，只允许明确的提示词编排顺序使用有序列表。短规则测试同时检查首次正文包含角色/负面或遮罩/文字规则，画面推测不开放额外参考读取。
 
 
 随附场景模板：`node scripts/check.mjs skills:templates skills` 验证模板目录独立于配置、不能直接启用/修改、可持久删除且保留个人副本、完整复制与导出、默认关闭、冻结按需读取、全部 Markdown 本地链接与标题锚点，以及模拟安装资源路径。漫画原稿的 92 个代码块和 71 个技法/完整实例标题由 `tests/fixtures/manga-template-baseline.json` 校验；UI 覆盖查看场景参考资料、复制进入编辑器和默认不启用。测试使用临时 profile，不改真实用户 Skill，不调用真实模型。

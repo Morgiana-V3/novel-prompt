@@ -30,16 +30,12 @@ model: all
 
 | 当前需求 | 读取资料 |
 | --- | --- |
-| 从描述编写完整输入，或调整 Base、人物条件、坐标与 UC 的组织 | [输入组织与边界](references/fundamentals.md) |
-| 选择或修正墨线、网点、黑白材料及画风 | [可替换画风示例](references/style.md)；不要自动套用其中的画师或参数 |
-| 人物互动、左右手、持物与交接完成状态 | [动作与互动](references/actions.md) |
-| 添加或调整台词原文、Text 与文字排法 | [文字输入](references/lettering.md)；按需要再读下方气泡资料 |
-| 整体预想画面或分析返图问题；单处已明确的问题直接读对应专项 | [推测与风险](references/review.md)，再按问题读取相关专项资料 |
-| 格框、出格、插格、四格、跨页或页面层级 | [格框与页面](references/panels.md) |
-| 景别、视角、越肩、遮挡或镜面 | [镜头与取景](references/camera.md) |
-| 连续动作、时间变化、回忆或揭示 | [时间与连续](references/continuity.md) |
-| 留白、图底、黑白节奏与视线主次 | [构图与黑白主次](references/composition.md) |
-| 速度线、集中线、排线或情绪背景 | [线效与情绪](references/effects.md) |
-| 气泡、旁白、竖排、跨框对白与拟声字 | [对白与载体](references/dialogue.md) |
-| 画面目标不清楚适合哪种技法 | [按目的选技法](references/index.md)，再读取命中的专项文件 |
-| 用户明确索要现成范例，或专项资料仍不足以消除具体结构歧义；要求完整方案本身不触发 | [三格对话与单幅成稿](references/examples.md) |
+| 编写完整输入、调整字段组织，或整体评估画面 | [输入组织与评估](references/fundamentals.md)；单处已明确的问题直接读对应专项 |
+| 持物、交接、手别、接触、连续动作或跨格时间关系 | [动作与连续性](references/actions.md) |
+| 格框、出格、插格、页面层级或读序 | [格框与页面](references/panels.md) |
+| 景别、视角、裁切、遮挡或镜面 | [镜头与取景](references/camera.md) |
+| 墨线、网点、明暗主次、速度线或情绪背景 | [黑白画法与线效](references/visual.md)；画师和参数示例不自动套用 |
+| 台词、Text、气泡、竖排、旁白或拟声字 | [文字与对白](references/dialogue.md) |
+| 用户明确索要现成完整范例，或专项资料仍不能消除具体结构歧义 | [完整组合示例](references/examples.md)；要求完整方案本身不触发 |
+
+各专项文件的选用索引与正文放在一起，无需先读独立索引。表格是同级场景入口，不是执行顺序；按本轮问题选择，不能因为列在前面就先读或必读。

@@ -28,7 +28,7 @@ app.whenReady().then(async () => {
     assert.equal(doc.source, 'template')
     assert.equal(doc.builtin, false)
     assert.equal(doc.format, 'directory')
-    assert.equal(doc.resources.length, 13)
+    assert.equal(doc.resources.length, 7)
     assert(!('resources' in templates[0]))
     assert.equal(skills.getSkill('template:../../secrets'), null)
     assert.deepEqual(skills.setConfig([{ id, enabled: true }]), before)
@@ -79,7 +79,7 @@ app.whenReady().then(async () => {
     assert(JSON.stringify(catalog).includes(id))
     const read = tools.find((tool) => tool.name === 'get_skill')
     const reference = await read.run({ id, resource: 'references/actions.md' })
-    assert(JSON.stringify(reference).includes('人物互动与动作结果'))
+    assert(JSON.stringify(reference).includes('人物互动、手别与动作结果'))
 
     const copy = skills.duplicateSkill(id)
     assert.equal(copy.source, undefined)
