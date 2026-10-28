@@ -219,7 +219,7 @@ function closePanel() {
                   aria-valuemin="0"
                   aria-valuemax="100"
                 >
-                  <i :style="percent(task) !== null ? { width: percent(task) + '%' } : {}"></i>
+                  <i :style="percent(task) !== null ? { '--p': percent(task)! / 100 } : {}"></i>
                 </div>
                 <footer>
                   <span
@@ -279,11 +279,20 @@ function closePanel() {
   font-size: 12px;
   color: var(--text2);
   background: var(--bg);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-slow) var(--bounce);
 }
 
 .task-trigger:hover,
 .task-trigger.opened {
   background: var(--hover);
+}
+
+.task-trigger:active {
+  transform: scale(var(--press));
 }
 
 .task-trigger.working {
@@ -312,7 +321,7 @@ function closePanel() {
   border: 1px solid var(--line2);
   border-radius: 18px;
   background: var(--bg);
-  box-shadow: 0 14px 50px #17121e24;
+  box-shadow: var(--shadow-pop);
   overflow: hidden;
   transform-origin: top right;
   -webkit-app-region: no-drag;
@@ -357,6 +366,7 @@ function closePanel() {
 
 .task-section button {
   color: var(--text2);
+  transition: color var(--dur-fast) var(--ease-out);
 }
 
 .task-section button:hover {
@@ -412,6 +422,7 @@ function closePanel() {
   font-size: 12px;
   font-weight: 600;
   text-align: left;
+  transition: color var(--dur-fast) var(--ease-out);
 }
 
 .task-title > button:hover {
@@ -454,21 +465,31 @@ function closePanel() {
 
 .task-cancel {
   border: 1px solid var(--line2);
-  border-radius: 6px;
-  padding: 4px 7px;
+  border-radius: 999px;
+  padding: 3px 10px;
   color: var(--text2);
   background: var(--bg);
-  font-size: 10px;
+  font-size: 10.5px;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-slow) var(--bounce);
 }
 
 .task-cancel:disabled {
   opacity: 0.55;
-  cursor: default;
+  cursor: not-allowed;
 }
 
 .task-cancel:hover:not(:disabled) {
   color: var(--bad);
   border-color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.task-cancel:active:not(:disabled) {
+  transform: scale(var(--press-sm));
 }
 
 .task-visit {
@@ -485,16 +506,21 @@ function closePanel() {
   background: var(--pink-soft);
 }
 
+/* 确定进度用 scaleX 而非 width，避免每次进度更新触发布局 */
 .task-meter i {
   display: block;
   height: 100%;
   background: var(--pink);
-  border-radius: 4px;
-  transition: width var(--dur-base) var(--ease-out);
+  transform: scaleX(var(--p, 0));
+  transform-origin: left center;
+  transition: transform var(--dur-base) var(--ease-out);
 }
 
 .task-meter.indeterminate i {
   width: 35%;
+  border-radius: 4px;
+  transform: none;
+  transition: none;
   animation: task-progress 1.8s ease-in-out infinite;
 }
 
@@ -533,12 +559,6 @@ function closePanel() {
 
   to {
     transform: translateX(390%);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .task-meter.indeterminate i {
-    animation: none;
   }
 }
 </style>

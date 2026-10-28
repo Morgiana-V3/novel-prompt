@@ -172,6 +172,7 @@ watch(
   background: var(--panel);
   color: var(--text2);
   font-size: 11px;
+  transition: color var(--dur-fast) var(--ease-out);
 }
 
 .diff-context:hover {

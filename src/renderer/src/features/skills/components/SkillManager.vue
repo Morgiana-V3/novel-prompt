@@ -122,6 +122,13 @@ async function importDirectory() {
   }
 }
 
+// 导入预览离场动画结束后再打开编辑器，避免两个弹窗短暂叠在一起
+let afterImportClosed: (() => void) | undefined
+function importClosed() {
+  afterImportClosed?.()
+  afterImportClosed = undefined
+}
+
 async function confirmImport() {
   if (!importing.value || importBusy.value) {
     return
@@ -129,9 +136,9 @@ async function confirmImport() {
   importBusy.value = true
   try {
     const doc = await window.api.skillsCreate(JSON.parse(JSON.stringify(importing.value.input)))
+    afterImportClosed = () => (editing.value = { doc, readonly: false })
     importing.value = null
     await loadSkills()
-    editing.value = { doc, readonly: false }
     toast('已导入独立副本并启用；原文件夹不会被修改')
   } catch (error) {
     importError.value = cleanErr(error)
@@ -378,70 +385,75 @@ const openPicker = () => (skillsState.skillPanel = true)
     </div>
 
     <Teleport to="body">
-      <div
-        v-if="importing"
-        class="skill-import-mask"
+      <Transition
+        name="modal"
+        @after-leave="importClosed"
       >
-        <section
-          class="skill-import-dialog modal-panel"
-          role="dialog"
-          aria-modal="true"
-          aria-label="导入 Skill 预览"
+        <div
+          v-if="importing"
+          class="skill-import-mask"
         >
-          <h3>导入 Skill 文件夹</h3>
-          <p>
-            <b>{{ importing.input.name }}</b> · 入口 SKILL.md ·
-            {{ importing.input.resources?.length ?? 0 }} 个参考文件
-          </p>
-          <p class="muted small">
-            {{ importing.input.description || '没有说明，可在导入后编辑。' }} · 导入后默认启用
-          </p>
-          <details>
-            <summary>查看入口正文</summary>
-            <pre class="skill-import-entry">{{ importing.input.content }}</pre>
-          </details>
-          <SkillFiles
-            :model-value="importing.input.resources ?? []"
-            readonly
-          />
-          <details
-            v-if="importing.warnings.length"
-            open
-            class="skill-import-warnings"
+          <section
+            class="skill-import-dialog modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label="导入 Skill 预览"
           >
-            <summary>{{ importing.warnings.length }} 项导入提示</summary>
-            <p
-              v-for="warning in importing.warnings"
-              :key="warning"
-            >
-              {{ warning }}
+            <h3>导入 Skill 文件夹</h3>
+            <p>
+              <b>{{ importing.input.name }}</b> · 入口 SKILL.md ·
+              {{ importing.input.resources?.length ?? 0 }} 个参考文件
             </p>
-          </details>
-          <p
-            v-if="importError"
-            class="error-box"
-          >
-            {{ importError }}
-          </p>
-          <div class="row">
-            <span class="muted small">保存独立副本，不修改来源文件夹</span>
-            <button
-              class="btn small ml-auto"
-              :disabled="importBusy"
-              @click="importing = null"
+            <p class="muted small">
+              {{ importing.input.description || '没有说明，可在导入后编辑。' }} · 导入后默认启用
+            </p>
+            <details>
+              <summary>查看入口正文</summary>
+              <pre class="skill-import-entry">{{ importing.input.content }}</pre>
+            </details>
+            <SkillFiles
+              :model-value="importing.input.resources ?? []"
+              readonly
+            />
+            <details
+              v-if="importing.warnings.length"
+              open
+              class="skill-import-warnings"
             >
-              取消
-            </button>
-            <button
-              class="btn primary small"
-              :disabled="importBusy"
-              @click="confirmImport"
+              <summary>{{ importing.warnings.length }} 项导入提示</summary>
+              <p
+                v-for="warning in importing.warnings"
+                :key="warning"
+              >
+                {{ warning }}
+              </p>
+            </details>
+            <p
+              v-if="importError"
+              class="error-box"
             >
-              {{ importBusy ? '正在导入…' : '确认导入' }}
-            </button>
-          </div>
-        </section>
-      </div>
+              {{ importError }}
+            </p>
+            <div class="row">
+              <span class="muted small">保存独立副本，不修改来源文件夹</span>
+              <button
+                class="btn small ml-auto"
+                :disabled="importBusy"
+                @click="importing = null"
+              >
+                取消
+              </button>
+              <button
+                class="btn primary small"
+                :disabled="importBusy"
+                @click="confirmImport"
+              >
+                {{ importBusy ? '正在导入…' : '确认导入' }}
+              </button>
+            </div>
+          </section>
+        </div>
+      </Transition>
     </Teleport>
 
     <SkillEditor
@@ -475,7 +487,9 @@ const openPicker = () => (skillsState.skillPanel = true)
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  transition: background 0.15s;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
 }
 
 .sm-item:hover {
@@ -530,14 +544,6 @@ const openPicker = () => (skillsState.skillPanel = true)
   line-height: 1.6;
 }
 
-.btn.danger {
-  background: var(--bad);
-  color: #fff;
-  border-color: var(--bad);
-}
-</style>
-
-<style scoped>
 .skill-import-mask {
   position: fixed;
   inset: 0;
@@ -545,7 +551,8 @@ const openPicker = () => (skillsState.skillPanel = true)
   display: grid;
   place-items: center;
   padding: 36px;
-  background: rgb(16 16 20 / 42%);
+  background: var(--scrim);
+  backdrop-filter: blur(3px);
 }
 
 .skill-import-dialog {
@@ -556,7 +563,9 @@ const openPicker = () => (skillsState.skillPanel = true)
   height: min(800px, 90vh);
   padding: 24px;
   background: var(--bg);
-  border-radius: 16px;
+  border: 1px solid var(--line2);
+  border-radius: 18px;
+  box-shadow: var(--shadow-modal);
 }
 
 .skill-import-entry,

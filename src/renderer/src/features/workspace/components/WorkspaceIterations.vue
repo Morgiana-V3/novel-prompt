@@ -362,7 +362,6 @@ const maskUrl = computed(() => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  margin: 16px 0;
   margin: 0 0 16px;
 }
 </style>

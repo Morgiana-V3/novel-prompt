@@ -512,6 +512,9 @@ defineExpose({
   border: 1px solid var(--line2);
   border-radius: 12px;
   line-height: 1.6;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
 }
 
 .pw-welcome > button:hover {
@@ -586,6 +589,14 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 4px;
+  border-radius: 5px;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.pw-citations button:hover {
+  color: var(--pink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .pw-thinking {
@@ -630,9 +641,14 @@ defineExpose({
   display: flex;
   align-items: flex-end;
   gap: 8px;
+  transition:
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    background-color var(--dur-base) var(--ease-out);
 }
 
 .pw-input-wrap:focus-within {
+  background: var(--bg);
   border-color: var(--pink-line);
   box-shadow: 0 0 0 3px var(--pink-soft);
 }
@@ -660,10 +676,27 @@ defineExpose({
   display: grid;
   place-items: center;
   flex-shrink: 0;
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--pink) 28%, transparent);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-slow) var(--bounce);
+}
+
+.pw-send:hover:not(:disabled) {
+  background: var(--pink-deep);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--pink) 36%, transparent);
+}
+
+.pw-send:active:not(:disabled) {
+  transform: scale(var(--press-sm));
 }
 
 .pw-send:disabled {
   opacity: 0.4;
+  box-shadow: none;
+  cursor: not-allowed;
 }
 
 .pw-compose-foot {
@@ -696,6 +729,11 @@ defineExpose({
   display: flex;
   gap: 5px;
   align-items: center;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.pw-reference-chips button:hover {
+  background: color-mix(in srgb, var(--pink-soft) 60%, var(--pink-line));
 }
 
 .pw-error {

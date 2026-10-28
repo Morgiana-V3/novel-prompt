@@ -137,8 +137,8 @@
   background: #fff;
   outline: none;
   transition:
-    border-color var(--dur-base),
-    box-shadow var(--dur-base);
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
 }
 
 textarea.input {
@@ -217,8 +217,8 @@ input[type='checkbox']:checked::before {
 }
 
 input[type='checkbox']:focus-visible {
-  outline: 2px solid var(--pink);
-  outline-offset: 3px;
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 input[type='checkbox']:disabled {

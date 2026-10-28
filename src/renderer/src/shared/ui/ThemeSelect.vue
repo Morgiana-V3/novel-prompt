@@ -258,7 +258,7 @@ onBeforeUnmount(() => {
   stroke-width: 2.4;
   stroke-linecap: round;
   stroke-linejoin: round;
-  transition: transform 0.16s;
+  transition: transform var(--dur-base) var(--ease-out);
 }
 
 .theme-select.expanded svg {
@@ -283,7 +283,7 @@ onBeforeUnmount(() => {
   background: var(--bg);
   border: 1px solid var(--pink-line);
   border-radius: 12px;
-  box-shadow: 0 8px 28px #24202c20;
+  box-shadow: var(--shadow-pop);
 }
 
 .theme-select-options {
@@ -332,7 +332,7 @@ onBeforeUnmount(() => {
 
 .theme-select-option.disabled {
   opacity: 0.4;
-  cursor: default;
+  cursor: not-allowed;
 }
 
 .theme-select:disabled {
@@ -340,27 +340,22 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
 }
 
-.select-menu-enter-active,
+.select-menu-enter-active {
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
 .select-menu-leave-active {
   transition:
-    opacity 0.14s,
-    transform 0.14s;
+    opacity var(--dur-fast) var(--ease-in),
+    transform var(--dur-fast) var(--ease-in);
+  pointer-events: none;
 }
 
 .select-menu-enter-from,
 .select-menu-leave-to {
   opacity: 0;
   transform: translateY(-3px);
-}
-
-.select-menu-leave-active {
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .select-menu-enter-active,
-  .select-menu-leave-active {
-    transition: none;
-  }
 }
 </style>

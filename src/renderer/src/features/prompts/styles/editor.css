@@ -52,8 +52,9 @@
   background: #fff;
   border: 1px solid var(--line2);
   border-radius: 16px;
-  box-shadow: 0 16px 40px rgb(20 20 30 / 14%);
+  box-shadow: var(--shadow-pop);
   overflow: hidden;
+  transform-origin: top center;
 }
 
 .history-head {
@@ -86,7 +87,7 @@
   text-align: left;
   padding: 8px 10px;
   border-radius: 10px;
-  transition: background 0.15s;
+  transition: background-color var(--dur-fast) var(--ease-out);
 }
 
 .history-item:hover {
@@ -111,18 +112,6 @@
 .history-empty {
   padding: 16px 14px;
   line-height: 1.7;
-}
-
-.pop-menu-enter-active {
-  animation: fade-up var(--dur-base) var(--ease-out);
-}
-
-.pop-menu-leave-active {
-  transition: opacity var(--dur-fast) var(--ease-in);
-}
-
-.pop-menu-leave-to {
-  opacity: 0;
 }
 
 .section-tabs {

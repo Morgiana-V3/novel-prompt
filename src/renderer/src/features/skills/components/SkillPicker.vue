@@ -428,7 +428,7 @@ onBeforeUnmount(() => {
   background: #fff;
   border: 1px solid var(--line2);
   border-radius: 16px;
-  box-shadow: 0 18px 48px rgb(20 20 30 / 18%);
+  box-shadow: var(--shadow-pop);
   overflow: hidden;
   transform-origin: left bottom;
 }
@@ -470,16 +470,16 @@ onBeforeUnmount(() => {
   border: 1px solid var(--line);
   background: #fff;
   transition:
-    background 0.15s,
-    opacity 0.15s,
-    border-color 0.15s;
+    background-color var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
 }
 
 .sp-item:hover {
   background: var(--panel);
 }
 
-.sp-item:hover .sp-move {
+.sp-item:is(:hover, :focus-within) .sp-move {
   opacity: 1;
 }
 
@@ -569,7 +569,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity var(--dur-fast) var(--ease-out);
 }
 
 .icon-btn.xs {
@@ -591,13 +591,23 @@ onBeforeUnmount(() => {
 }
 
 .sp-switch {
+  --x: 0px;
+
   width: 32px;
   height: 18px;
   border-radius: 999px;
   background: var(--line2);
   position: relative;
   flex-shrink: 0;
-  transition: background 0.2s;
+  transition: background-color var(--dur-base) var(--ease-out);
+}
+
+.sp-switch:hover:not(.on, :disabled) {
+  background: #d4d4db;
+}
+
+.sp-switch.on:hover:not(:disabled) {
+  background: var(--pink-deep);
 }
 
 .sp-switch span {
@@ -609,15 +619,18 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 1px 2px rgb(0 0 0 / 20%);
-  transition: transform 0.25s var(--bounce);
+  transform: translateX(var(--x));
+  transition: transform var(--dur-slow) var(--bounce);
+}
+
+.sp-switch:active:not(:disabled) span {
+  transform: translateX(var(--x)) scale(0.88);
 }
 
 .sp-switch.on {
-  background: var(--pink);
-}
+  --x: 14px;
 
-.sp-switch.on span {
-  transform: translateX(14px);
+  background: var(--pink);
 }
 
 .sp-summary {

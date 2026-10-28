@@ -23,7 +23,7 @@
   font-size: 12.5px;
   white-space: pre-wrap;
   word-break: break-all;
-  animation: shake 0.4s;
+  animation: shake 0.4s var(--ease-out);
 }
 
 .timeline {

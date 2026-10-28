@@ -183,8 +183,9 @@
   border-radius: 5px;
   padding: 1px;
   transition:
-    opacity var(--dur-fast),
-    color var(--dur-fast);
+    opacity var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
 }
 
 .edit-hint:hover {
@@ -192,7 +193,8 @@
   background: var(--pink-soft);
 }
 
-.tag-card:hover .edit-hint {
+.tag-card:is(:hover, :focus-within) .edit-hint,
+.edit-hint:focus-visible {
   opacity: 1;
 }
 

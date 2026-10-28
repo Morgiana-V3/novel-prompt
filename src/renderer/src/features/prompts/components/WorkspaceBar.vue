@@ -159,7 +159,7 @@ const preview = (text: string) => text.replace(/\s+/g, ' ').trim().slice(0, 60) 
       @change="onFilePicked"
     />
 
-    <transition name="pop-menu">
+    <transition name="popover">
       <div
         v-if="open"
         class="history-menu"

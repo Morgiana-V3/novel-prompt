@@ -18,6 +18,11 @@ const busy = ref(false)
 const confirmDelete = ref(false)
 const keepSeed = ref(true)
 const searchInput = ref<HTMLInputElement>()
+// 先播离场过渡，过渡结束后再通知父组件卸载
+const opened = ref(true)
+function close() {
+  opened.value = false
+}
 const previousFocus = document.activeElement as HTMLElement | null
 const fields: [keyof NaiGenParams, string][] = [
   ['width', '宽度'],
@@ -152,10 +157,12 @@ function apply() {
     <Transition
       name="modal"
       appear
+      @after-leave="emit('close')"
     >
       <div
+        v-if="opened"
         class="recipe-backdrop"
-        @keydown.esc.stop="emit('close')"
+        @keydown.esc.stop="close"
       >
         <section
           class="recipe-dialog modal-panel"
@@ -171,7 +178,7 @@ function apply() {
             </div>
             <button
               class="btn small"
-              @click="emit('close')"
+              @click="close"
             >
               关闭
             </button>
@@ -256,7 +263,7 @@ function apply() {
                 >
                   保存修改</button
                 ><button
-                  class="btn ghost small"
+                  :class="['btn small', confirmDelete ? 'danger' : 'ghost']"
                   :disabled="busy"
                   @click="remove"
                 >
@@ -367,7 +374,7 @@ function apply() {
   position: fixed;
   inset: 0;
   z-index: 90;
-  background: rgb(16 16 20 / 42%);
+  background: var(--scrim);
   backdrop-filter: blur(3px);
   display: grid;
   place-items: center;
@@ -377,8 +384,9 @@ function apply() {
 .recipe-dialog {
   background: var(--bg);
   color: var(--text);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line2);
   border-radius: 18px;
+  box-shadow: var(--shadow-modal);
   padding: 22px;
   width: min(960px, 95vw);
   height: min(780px, 90vh);
@@ -445,6 +453,11 @@ function apply() {
   text-align: left;
   border-radius: 10px;
   overflow-wrap: anywhere;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.recipe-item:hover:not(.on) {
+  background: var(--hover);
 }
 
 .recipe-item.on {

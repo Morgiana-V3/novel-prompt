@@ -126,9 +126,9 @@ const emit = defineEmits<{
   right: 0;
   z-index: 20;
   background: var(--bg);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line2);
   border-radius: 12px;
-  box-shadow: 0 8px 24px #0002;
+  box-shadow: var(--shadow-pop);
   display: flex;
   gap: 8px;
   overflow: auto;
@@ -147,6 +147,14 @@ const emit = defineEmits<{
   border: 1px solid var(--line);
   border-radius: 10px;
   font-size: 10px;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+
+.pw-candidate-list button:hover:not(.selected) {
+  border-color: var(--pink-line);
+  background: var(--panel);
 }
 
 .pw-candidate-list button.selected {
@@ -223,8 +231,8 @@ const emit = defineEmits<{
   background: var(--bg);
   position: relative;
   transition:
-    border-color var(--dur-base),
-    background-color var(--dur-base);
+    border-color var(--dur-base) var(--ease-out),
+    background-color var(--dur-base) var(--ease-out);
 }
 
 .pw-candidate-open {
@@ -236,7 +244,7 @@ const emit = defineEmits<{
 }
 
 .pw-candidate-open:disabled {
-  cursor: default;
+  cursor: not-allowed;
 }
 
 .pw-candidate-delete {
@@ -248,8 +256,9 @@ const emit = defineEmits<{
   opacity: 0;
   pointer-events: none;
   transition:
-    opacity 0.15s,
-    color 0.15s;
+    opacity var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
 }
 
 .pw-candidate:hover .pw-candidate-delete,

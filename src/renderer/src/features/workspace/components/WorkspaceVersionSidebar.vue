@@ -59,10 +59,18 @@ const emit = defineEmits<{
   border: 1px solid transparent;
   border-radius: 12px;
   margin-bottom: 10px;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
 }
 
-.pw-version:hover {
+.pw-version:hover:not(:disabled, .selected) {
   background: var(--hover);
+}
+
+.pw-version:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .pw-version.selected {

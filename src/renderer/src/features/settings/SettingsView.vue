@@ -84,7 +84,10 @@ watch(
       return
     }
     nextTick(() => {
-      document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      document.getElementById(anchor)?.scrollIntoView({
+        behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        block: 'start',
+      })
       settingsState.settingsAnchor = ''
     }).catch(reportError)
   },

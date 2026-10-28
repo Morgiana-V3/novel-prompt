@@ -1723,7 +1723,7 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
   padding: calc(var(--titlebar-safe-height) + 24px) 24px 24px;
   display: grid;
   place-items: center;
-  background: rgb(16 16 20 / 42%);
+  background: var(--scrim);
   backdrop-filter: blur(3px);
 }
 
@@ -1736,7 +1736,7 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
   background: var(--bg);
   border: 1px solid var(--line2);
   border-radius: 18px;
-  box-shadow: 0 24px 60px rgb(20 20 30 / 22%);
+  box-shadow: var(--shadow-modal);
   overflow: hidden;
 }
 
@@ -1765,15 +1765,9 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
   gap: 10px;
   padding: 9px 18px;
   border-top: 1px solid var(--line2);
-  background: #fff4f4;
+  background: var(--bad-soft);
   color: #b4232a;
   font-size: 12.5px;
-}
-
-.ip-close-confirm .danger {
-  background: #e5484d;
-  color: #fff;
-  border-color: transparent;
 }
 
 /* Keep a separate interaction/measurement surface; only the union is visible. */

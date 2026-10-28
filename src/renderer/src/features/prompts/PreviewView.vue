@@ -221,7 +221,10 @@ function locateTag(tag: string, preferNeg = false) {
       if (i < 0) {
         continue
       }
-      el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      el.scrollIntoView({
+        block: 'center',
+        behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      })
       el.focus({ preventScroll: true })
       el.setSelectionRange(i, i + text2.length)
       return

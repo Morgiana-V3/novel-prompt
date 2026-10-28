@@ -68,6 +68,7 @@ details.manual summary {
   font-weight: 600;
   color: var(--text2);
   padding: 2px 0;
+  transition: color var(--dur-fast) var(--ease-out);
 }
 
 details.manual summary:hover {

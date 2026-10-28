@@ -322,7 +322,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   display: grid;
   place-items: center;
   padding: calc(var(--titlebar-safe-height) + 28px) 28px 28px;
-  background: rgb(16 16 20 / 42%);
+  background: var(--scrim);
   backdrop-filter: blur(3px);
 }
 
@@ -334,7 +334,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   background: #fff;
   border: 1px solid var(--line2);
   border-radius: 18px;
-  box-shadow: 0 24px 60px rgb(20 20 30 / 22%);
+  box-shadow: var(--shadow-modal);
   overflow: hidden;
 }
 

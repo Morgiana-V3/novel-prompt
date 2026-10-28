@@ -2,7 +2,7 @@
 
 .toast .icon {
   color: #ff9fc0;
-  animation: wiggle 0.6s ease 0.1s;
+  animation: wiggle 0.6s var(--ease-out) 0.1s;
   flex: none;
 }
 
@@ -11,7 +11,7 @@
   bottom: 28px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 100;
+  z-index: 300;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -36,6 +36,9 @@
   font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-slow) var(--bounce);
 }
 
 .toast-action:hover,
@@ -44,10 +47,14 @@
   outline: none;
 }
 
+.toast-action:active {
+  transform: scale(var(--press-sm));
+}
+
 .toast-enter-active {
   animation: toast-in var(--dur-emph) var(--bounce);
 }
 
 .toast-leave-active {
-  animation: toast-in var(--dur-base) var(--ease-in) reverse;
+  animation: toast-out var(--dur-base) var(--ease-in) forwards;
 }

@@ -271,12 +271,6 @@ onBeforeUnmount(() => {
   font: 12px var(--mono);
 }
 
-.iv-delete.danger-confirm {
-  background: var(--bad);
-  border-color: var(--bad);
-  color: #fff;
-}
-
 .iv-canvas {
   flex: 1;
   border-radius: 10px;

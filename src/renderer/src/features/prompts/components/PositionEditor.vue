@@ -588,7 +588,7 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   padding: calc(var(--titlebar-safe-height) + 24px) 24px 24px;
-  background: rgb(16 16 20 / 42%);
+  background: var(--scrim);
   backdrop-filter: blur(3px);
 }
 
@@ -600,7 +600,7 @@ onBeforeUnmount(() => {
   background: #fff;
   border: 1px solid var(--line2);
   border-radius: 18px;
-  box-shadow: 0 24px 60px rgb(20 20 30 / 22%);
+  box-shadow: var(--shadow-modal);
   overflow: hidden;
 }
 
@@ -701,7 +701,7 @@ onBeforeUnmount(() => {
 
 .pos-opacity .range:disabled {
   opacity: 0.4;
-  cursor: default;
+  cursor: not-allowed;
 }
 
 .pos-reference-note {
@@ -783,8 +783,8 @@ onBeforeUnmount(() => {
     0 0 0 3px #fff,
     0 4px 12px rgb(0 0 0 / 22%);
   transition:
-    transform 0.2s var(--bounce),
-    box-shadow 0.15s;
+    transform var(--dur-base) var(--bounce),
+    box-shadow var(--dur-fast) var(--ease-out);
 }
 
 .pos-dot:hover {
@@ -841,8 +841,8 @@ onBeforeUnmount(() => {
   border: 1px solid var(--line);
   cursor: pointer;
   transition:
-    border-color 0.15s,
-    background 0.15s;
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
 }
 
 .pos-item:hover {

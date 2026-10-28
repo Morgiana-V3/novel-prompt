@@ -14,9 +14,10 @@
   white-space: nowrap;
   transition:
     transform var(--dur-slow) var(--bounce),
-    background var(--dur-fast),
-    border-color var(--dur-fast),
-    box-shadow var(--dur-base);
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
 }
 
 .btn:hover:not(:disabled) {
@@ -60,12 +61,29 @@
   background: var(--pink);
   border-color: var(--pink);
   color: #fff;
-  box-shadow: 0 4px 12px rgb(255 107 154 / 30%);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--pink) 30%, transparent);
 }
 
 .btn.accent:hover:not(:disabled) {
   background: var(--pink-deep);
-  box-shadow: 0 8px 20px rgb(255 107 154 / 38%);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--pink) 38%, transparent);
+}
+
+/* 危险操作 / 二次确认删除：统一定义，避免各处 scoped 规则与 .btn:hover 打架 */
+.btn.danger,
+.btn.danger-confirm,
+.icon-btn.danger-confirm {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: #fff;
+}
+
+.btn.danger:hover:not(:disabled),
+.btn.danger-confirm:hover:not(:disabled),
+.icon-btn.danger-confirm:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bad) 86%, #000);
+  border-color: color-mix(in srgb, var(--bad) 86%, #000);
+  color: #fff;
 }
 
 .btn.accent:hover:not(:disabled) .icon {
@@ -104,18 +122,24 @@
   place-items: center;
   color: var(--text2);
   transition:
-    background var(--dur-fast),
-    color var(--dur-fast),
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out),
     transform var(--dur-slow) var(--bounce);
 }
 
-.icon-btn:hover {
+.icon-btn:hover:not(:disabled) {
   background: var(--hover);
   color: var(--text);
 }
 
-.icon-btn:active {
+.icon-btn:active:not(:disabled) {
   transform: scale(var(--press-sm));
+}
+
+.icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .icon-btn.sm {
@@ -142,14 +166,24 @@
   color: var(--text2);
   font-size: 12.5px;
   transition:
-    background var(--dur-base),
-    color var(--dur-base),
-    box-shadow var(--dur-base),
+    background-color var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
     transform var(--dur-slow) var(--bounce);
 }
 
-.seg button:active {
+.seg button:hover:not(.on, :disabled) {
+  color: var(--text);
+  background: rgb(255 255 255 / 60%);
+}
+
+.seg button:active:not(:disabled) {
   transform: scale(var(--press-sm));
+}
+
+.seg button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .seg button.on {
@@ -189,9 +223,9 @@
   color: var(--text2);
   transition:
     transform var(--dur-slow) var(--bounce),
-    border-color var(--dur-fast),
-    background var(--dur-fast),
-    color var(--dur-fast);
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 
 .chip:hover {

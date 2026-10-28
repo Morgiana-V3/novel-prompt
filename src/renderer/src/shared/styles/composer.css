@@ -10,8 +10,8 @@
   box-shadow: var(--shadow);
   overflow: hidden;
   transition:
-    border-color 0.2s,
-    box-shadow 0.25s;
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-slow) var(--ease-out);
 }
 
 .composer:focus-within {

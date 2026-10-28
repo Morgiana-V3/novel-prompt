@@ -189,7 +189,6 @@ const generationLabel = computed(() => {
 
 .pw-execution > .row {
   gap: 10px;
-  flex-wrap: wrap;
   flex-wrap: nowrap;
   min-height: 34px;
 }
@@ -238,15 +237,11 @@ const generationLabel = computed(() => {
   .pw-execution-summary {
     display: none;
   }
-}
 
-@media (width <= 1250px) {
   .pw-execution {
     gap: 6px;
   }
-}
 
-@media (width <= 1250px) {
   .pw-execution > .btn {
     padding-left: 10px;
     padding-right: 10px;
@@ -272,7 +267,6 @@ const generationLabel = computed(() => {
 }
 
 .pw-execution :deep(.theme-select) {
-  flex: 1;
   flex: 0 1 auto;
   max-width: 210px;
   width: auto;
@@ -289,9 +283,7 @@ const generationLabel = computed(() => {
   .pw-generation-actions {
     gap: 6px;
   }
-}
 
-@media (width <= 800px) {
   .pw-generation-actions .btn {
     padding: 0 10px;
   }

@@ -1250,6 +1250,9 @@ async function beginConfigFromButton() {
   border: 1px solid transparent;
   border-radius: 8px;
   text-align: left;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
 }
 
 .pw-rename b {
@@ -1369,6 +1372,20 @@ async function beginConfigFromButton() {
   background: var(--bg);
   border: 1px solid var(--line2);
   border-radius: 20px;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-slow) var(--bounce);
+}
+
+.pw-regions button:hover:not(.on) {
+  border-color: var(--pink-line);
+  color: var(--text);
+}
+
+.pw-regions button:active {
+  transform: scale(var(--press-sm));
 }
 
 .pw-regions .on {
@@ -1389,11 +1406,6 @@ async function beginConfigFromButton() {
 @media (width <= 1050px) {
   .pw-canvas-column {
     padding: 0 12px;
-  }
-
-  .pw-header {
-    padding: 6px 12px;
-    gap: 8px;
   }
 }
 
@@ -1667,8 +1679,8 @@ async function beginConfigFromButton() {
 .pw-heading .pw-rename .icon {
   opacity: 0;
   transition:
-    opacity 0.15s,
-    color 0.15s;
+    opacity var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 
 .pw-heading .pw-rename:hover .icon,

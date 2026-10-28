@@ -902,15 +902,4 @@ function closeRecipes() {
   margin: 0;
   accent-color: var(--pink);
 }
-
-.viewer .danger-confirm {
-  background: var(--bad);
-  border-color: var(--bad);
-  color: #fff;
-}
-
-.thumb-actions .icon-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
 </style>

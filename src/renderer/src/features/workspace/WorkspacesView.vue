@@ -664,16 +664,17 @@ async function close() {
   border-radius: 18px;
   background: var(--bg);
   color: var(--text);
-  box-shadow: 0 24px 60px rgb(20 20 30 / 22%);
+  box-shadow: var(--shadow-modal);
   overflow: auto;
 }
 
+/* 只做进场：关闭前内容已被 v-if 移除，离场动画会露出空壳 */
 .project-dialog[open] {
   animation: pop var(--dur-slow) var(--ease-out);
 }
 
 .project-dialog::backdrop {
-  background: rgb(16 16 20 / 42%);
+  background: var(--scrim);
   backdrop-filter: blur(3px);
   animation: fade-in var(--dur-base) var(--ease-out);
 }
@@ -784,6 +785,14 @@ async function close() {
   border-radius: 16px;
   overflow: hidden;
   padding: 6px;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+
+.session-card:has(.session-open:hover:not(:disabled)) {
+  border-color: var(--pink-line);
+  box-shadow: var(--shadow);
 }
 
 .session-open {
@@ -793,6 +802,17 @@ async function close() {
   gap: 14px;
   text-align: left;
   padding: 12px;
+  border-radius: 11px;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.session-open:hover:not(:disabled) {
+  background: var(--panel);
+}
+
+.session-open:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .session-open img,
@@ -842,6 +862,9 @@ async function close() {
   border-radius: 7px;
   color: var(--muted);
   background: var(--bg);
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
 }
 
 .session-time {
@@ -857,6 +880,7 @@ async function close() {
 
 .session-delete:hover {
   color: var(--bad);
+  background: var(--bad-soft);
 }
 
 .session-remove {
@@ -922,12 +946,32 @@ async function close() {
   width: 250px;
   max-width: calc(100vw - 16px);
   padding: 14px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line2);
   border-radius: 12px;
   background: var(--bg);
   color: var(--text);
-  box-shadow: 0 8px 28px #24202c20;
+  box-shadow: var(--shadow-pop);
   overflow: visible;
+
+  --pop-y: 4px;
+}
+
+.session-delete-popover[data-above='false'] {
+  --pop-y: -4px;
+}
+
+/* 只做进场：关闭时内容会被同步清空，播放离场反而会闪出空文案 */
+.session-delete-popover:popover-open {
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+
+@starting-style {
+  .session-delete-popover:popover-open {
+    opacity: 0;
+    transform: translateY(var(--pop-y));
+  }
 }
 
 .session-delete-popover::after {
@@ -938,8 +982,8 @@ async function close() {
   width: 8px;
   height: 8px;
   background: var(--bg);
-  border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line2);
+  border-bottom: 1px solid var(--line2);
   transform: rotate(45deg);
 }
 
@@ -947,8 +991,8 @@ async function close() {
   top: -5px;
   bottom: auto;
   border: 0;
-  border-top: 1px solid var(--line);
-  border-left: 1px solid var(--line);
+  border-top: 1px solid var(--line2);
+  border-left: 1px solid var(--line2);
 }
 
 .session-delete-popover::backdrop {

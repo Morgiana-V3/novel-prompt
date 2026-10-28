@@ -188,7 +188,14 @@ const src = computed(() => SRC[props.mood])
 }
 
 .mascot-swap-leave-active {
-  animation: m-pop-in 0.16s ease-in reverse;
+  animation: m-pop-out var(--dur-fast) var(--ease-in) forwards;
+}
+
+@keyframes m-pop-out {
+  to {
+    opacity: 0;
+    transform: scale(0.8) translateY(6px);
+  }
 }
 
 @keyframes m-breathe {

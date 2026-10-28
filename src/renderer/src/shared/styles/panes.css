@@ -146,7 +146,7 @@
 
 .is-ignored {
   opacity: 0.45;
-  transition: opacity 0.2s;
+  transition: opacity var(--dur-base) var(--ease-out);
 }
 
 .is-ignored:focus-within {

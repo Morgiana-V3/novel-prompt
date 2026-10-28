@@ -33,7 +33,7 @@
 }
 
 .wavy {
-  text-decoration: underline wavy rgb(229 72 77 / 45%);
+  text-decoration: underline wavy color-mix(in srgb, var(--bad) 45%, transparent);
   text-underline-offset: 4px;
 }
 
@@ -65,11 +65,19 @@
   cursor: pointer;
   animation: fade-up var(--dur-slow) var(--ease-out) backwards;
   animation-delay: calc(min(var(--i, 0), 12) * 24ms);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+
+.alias-item:hover {
+  border-color: color-mix(in srgb, var(--alias) 35%, #fff);
+  background: var(--alias-soft);
 }
 
 .alias-item .tag-raw {
   color: var(--alias);
-  text-decoration: line-through rgb(201 127 0 / 45%);
+  text-decoration: line-through color-mix(in srgb, var(--alias) 45%, transparent);
 }
 
 .alias-item .tag-card {
@@ -83,7 +91,7 @@
 
 .alias-item:hover .arrow {
   color: var(--alias);
-  animation: nudge 0.8s ease-in-out;
+  animation: nudge 0.8s var(--ease-out);
 }
 
 .nl-item {
@@ -97,6 +105,14 @@
   overflow-wrap: anywhere;
   animation: fade-up var(--dur-slow) var(--ease-out) backwards;
   animation-delay: calc(min(var(--i, 0), 12) * 24ms);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+
+.nl-item:hover {
+  border-color: var(--pink-line);
+  background: var(--panel);
 }
 
 .badge {

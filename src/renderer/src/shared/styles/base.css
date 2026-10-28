@@ -71,7 +71,7 @@ button {
 
 :is(button, a[href], summary, [role='button'], [tabindex]:not([tabindex='-1'])):focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px var(--pink-line);
+  box-shadow: var(--focus-ring);
 }
 
 input,
@@ -150,7 +150,7 @@ select {
   box-shadow: 0 3px 10px #17171f20;
   pointer-events: none;
   user-select: none;
-  animation: tooltip-in 0.12s ease-out;
+  animation: tooltip-in var(--dur-fast) var(--ease-out);
 }
 
 .app-tooltip::before {
@@ -187,12 +187,6 @@ select {
 
   to {
     opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .app-tooltip {
-    animation: none;
   }
 }
 

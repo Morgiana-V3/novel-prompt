@@ -48,7 +48,7 @@ const emit = defineEmits<{ comment: []; mask: []; deleteAnnotation: []; remove: 
   border: 1px solid var(--line2);
   border-radius: 12px;
   background: var(--bg);
-  box-shadow: 0 10px 30px #0002;
+  box-shadow: var(--shadow-pop);
 }
 
 .ip-context-menu button {
@@ -59,6 +59,7 @@ const emit = defineEmits<{ comment: []; mask: []; deleteAnnotation: []; remove: 
   padding: 7px 10px;
   border-radius: 7px;
   font-size: 12px;
+  transition: background-color var(--dur-fast) var(--ease-out);
 }
 
 .ip-context-menu button:hover {

@@ -19,7 +19,7 @@ let timer: ReturnType<typeof setTimeout> | undefined
 
 function close(): void {
   clearTimeout(timer)
-  bubble.value?.hidePopover()
+  // 不主动 hidePopover：留在顶层播放离场过渡，节点移除时浏览器会自动收起 popover。
   opened.value = false
   pinned.value = false
 }
@@ -192,20 +192,22 @@ onBeforeUnmount(() => {
     </svg>
   </button>
   <Teleport to="body">
-    <div
-      v-if="opened"
-      :id="id"
-      ref="bubble"
-      role="tooltip"
-      popover="manual"
-      class="help-tip-bubble"
-      :style="position"
-      :data-side="side"
-      @pointerenter="cancelHide"
-      @pointerleave="leave"
-    >
-      {{ text }}
-    </div>
+    <Transition name="help-tip">
+      <div
+        v-if="opened"
+        :id="id"
+        ref="bubble"
+        role="tooltip"
+        popover="manual"
+        class="help-tip-bubble"
+        :style="position"
+        :data-side="side"
+        @pointerenter="cancelHide"
+        @pointerleave="leave"
+      >
+        {{ text }}
+      </div>
+    </Transition>
   </Teleport>
 </template>
 
@@ -226,8 +228,8 @@ onBeforeUnmount(() => {
   background: transparent;
   cursor: help;
   transition:
-    color var(--dur-fast),
-    background-color var(--dur-fast);
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
 }
 
 .help-tip:hover,
@@ -239,11 +241,6 @@ onBeforeUnmount(() => {
 .help-tip.open {
   color: var(--pink-deep);
   background: var(--pink-soft);
-}
-
-.help-tip:focus-visible {
-  outline: 2px solid var(--pink);
-  outline-offset: 1px;
 }
 
 .help-tip-bubble {
@@ -274,11 +271,29 @@ onBeforeUnmount(() => {
   text-wrap: pretty;
   user-select: text;
   cursor: auto;
-  animation: help-tip-in var(--dur-fast) var(--ease-out);
 }
 
 .help-tip-bubble[data-side='top'] {
   --help-enter-y: 3px;
+}
+
+.help-tip-enter-active {
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.help-tip-leave-active {
+  transition:
+    opacity var(--dur-fast) var(--ease-in),
+    transform var(--dur-fast) var(--ease-in);
+  pointer-events: none;
+}
+
+.help-tip-enter-from,
+.help-tip-leave-to {
+  opacity: 0;
+  transform: translateY(var(--help-enter-y, -3px));
 }
 
 .help-tip-bubble::before {
@@ -305,20 +320,5 @@ onBeforeUnmount(() => {
   border-top: 0;
   border-left: 0;
   border-radius: 0 0 2px;
-}
-
-@keyframes help-tip-in {
-  from {
-    opacity: 0;
-    transform: translateY(var(--help-enter-y, -3px));
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .help-tip,
-  .help-tip-bubble {
-    transition: none;
-    animation: none;
-  }
 }
 </style>
