@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { renderMarkdown } from '../lib/markdown'
+import { renderMarkdown, renderDocumentMarkdown, type MarkdownOptions } from '../lib/markdown'
 import { isWebUrl } from '@shared/web-url'
 import { cleanErr } from '../lib/format'
 import { toast } from '../lib/notifications'
-const props = defineProps<{ text: string }>()
-const html = computed(() => renderMarkdown(props.text))
+const props = defineProps<{ text: string; documentOptions?: MarkdownOptions }>()
+const emit = defineEmits<{ localLink: [href: string] }>()
+const html = computed(() =>
+  props.documentOptions
+    ? renderDocumentMarkdown(props.text, props.documentOptions)
+    : renderMarkdown(props.text),
+)
 async function openLink(event: MouseEvent) {
   const link = (event.target as Element).closest('a')
   if (!link) {
@@ -19,6 +24,8 @@ async function openLink(event: MouseEvent) {
     } catch (error) {
       toast(cleanErr(error))
     }
+  } else if (url && props.documentOptions?.localLinks) {
+    emit('localLink', url)
   }
 }
 </script>
@@ -93,7 +100,8 @@ async function openLink(event: MouseEvent) {
 
 .markdown-text :deep(pre) {
   max-width: 100%;
-  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   padding: 12px;
   background: var(--panel);
   border: 1px solid var(--line);
@@ -105,7 +113,7 @@ async function openLink(event: MouseEvent) {
 .markdown-text :deep(pre code) {
   padding: 0;
   background: none;
-  white-space: pre;
+  white-space: inherit;
 }
 
 .markdown-text :deep(blockquote) {
@@ -141,5 +149,11 @@ async function openLink(event: MouseEvent) {
   border: 0;
   border-top: 1px solid var(--line);
   margin: 1em 0;
+}
+
+.markdown-text :deep(img) {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
 }
 </style>

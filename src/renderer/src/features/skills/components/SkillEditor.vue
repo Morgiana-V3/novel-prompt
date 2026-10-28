@@ -5,7 +5,7 @@ import type { SkillDoc, SkillModel, SkillScope, SkillResource } from '@shared/sk
 import { cleanErr } from '../../../shared/lib/format'
 import { loadSkills } from '../state'
 import { toast } from '../../../shared/lib/notifications'
-import SkillFiles from './SkillFiles.vue'
+import SkillDocument from './SkillDocument.vue'
 import { missingSkillLinks } from '@shared/skills/references'
 import Icon from '../../../shared/ui/Icon.vue'
 
@@ -28,7 +28,6 @@ const TEMPLATE = `# 我的风格
 - 【V5】只在 V5 下生效的规则写在这样标注的条目里
 `
 
-const activeFileTab = ref('entry')
 const form = reactive({
   format: props.doc?.format,
   resources: JSON.parse(JSON.stringify(props.doc?.resources ?? [])) as SkillResource[],
@@ -102,7 +101,7 @@ function close() {
 }
 
 function onKey(event2: KeyboardEvent) {
-  if (!opened.value) {
+  if (!opened.value || event2.defaultPrevented) {
     return
   }
   if (event2.key === 'Escape') {
@@ -210,34 +209,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 </div>
               </div>
             </div>
-            <div class="row">
-              <button
-                class="btn small"
-                :class="{ primary: activeFileTab === 'entry' }"
-                @click="activeFileTab = 'entry'"
-              >
-                入口 SKILL.md
-              </button>
-              <button
-                class="btn small"
-                :class="{ primary: activeFileTab === 'resources' }"
-                @click="activeFileTab = 'resources'"
-              >
-                参考资料（{{ form.resources.length }}）
-              </button>
-            </div>
-            <SkillFiles
-              v-if="activeFileTab === 'resources'"
-              v-model="form.resources"
+            <SkillDocument
+              v-model="form.content"
+              v-model:resources="form.resources"
               :readonly="readonly"
             />
-            <textarea
-              v-else
-              v-model="form.content"
-              class="sk-text"
-              :readonly="readonly"
-              spellcheck="false"
-            ></textarea>
             <div
               v-if="!readonly"
               class="help"
@@ -327,7 +303,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 
 .sk-dialog {
-  width: min(980px, 100%);
+  width: min(1180px, 100%);
   height: min(860px, 100%);
   display: flex;
   flex-direction: column;
@@ -383,32 +359,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .sk-meta label {
   font-size: 12px;
   color: var(--text2);
-}
-
-.sk-text {
-  flex: 1;
-  min-height: 200px;
-  resize: none;
-  width: 100%;
-  padding: 12px 14px;
-  border: 1px solid var(--line2);
-  border-radius: 12px;
-  font-family: var(--mono);
-  font-size: 12.5px;
-  line-height: 1.65;
-  color: var(--text);
-  background: #fff;
-  outline: none;
-  user-select: text;
-}
-
-.sk-text:focus {
-  border-color: var(--pink-line);
-  box-shadow: 0 0 0 3px var(--pink-soft);
-}
-
-.sk-text[readonly] {
-  background: var(--panel);
 }
 
 .help {

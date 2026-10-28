@@ -9,7 +9,7 @@ import { loadSkills } from '../state'
 import { toast } from '../../../shared/lib/notifications'
 import Icon from '../../../shared/ui/Icon.vue'
 import { missingSkillLinks } from '@shared/skills/references'
-import SkillFiles from './SkillFiles.vue'
+import SkillDocument from './SkillDocument.vue'
 import SkillEditor from './SkillEditor.vue'
 
 /** 设置页：Skill 的导入、新建、编辑、复制、删除。启用与优先级在侧栏浮层里设置 */
@@ -55,12 +55,12 @@ const fmtChars = (numericValue: number) =>
 const priorityOf = (skill: SkillConfigItem) =>
   list.value.filter((skill2) => skill2.enabled).findIndex((skill2) => skill2.id === skill.id) + 1
 
-async function open(skill: SkillConfigItem) {
+async function open(skill: SkillConfigItem, readonly = skill.builtin) {
   const doc = await window.api.skillsGet(skill.id)
   if (!doc) {
     return (toast('找不到这份 Skill，可能已被删除'), loadSkills())
   }
-  editing.value = { doc, readonly: skill.builtin }
+  editing.value = { doc, readonly }
 }
 
 async function viewCore() {
@@ -337,6 +337,12 @@ const openPicker = () => (skillsState.skillPanel = true)
         <div class="sm-actions">
           <button
             class="btn ghost small"
+            @click="open(s, true)"
+          >
+            查看
+          </button>
+          <button
+            class="btn ghost small"
             @click="open(s)"
           >
             <Icon
@@ -407,12 +413,9 @@ const openPicker = () => (skillsState.skillPanel = true)
             <p class="muted small">
               {{ importing.input.description || '没有说明，可在导入后编辑。' }} · 导入后默认启用
             </p>
-            <details>
-              <summary>查看入口正文</summary>
-              <pre class="skill-import-entry">{{ importing.input.content }}</pre>
-            </details>
-            <SkillFiles
-              :model-value="importing.input.resources ?? []"
+            <SkillDocument
+              :model-value="importing.input.content"
+              :resources="importing.input.resources ?? []"
               readonly
             />
             <details
@@ -568,7 +571,6 @@ const openPicker = () => (skillsState.skillPanel = true)
   box-shadow: var(--shadow-modal);
 }
 
-.skill-import-entry,
 .skill-import-warnings {
   max-height: 160px;
   overflow: auto;

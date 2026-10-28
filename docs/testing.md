@@ -54,4 +54,4 @@ node scripts/check.mjs isolation
 
 Less 仅在 ThemeSelect 试点。验收包括开发/生产编译、scoped 选择器、主题变量、选择/焦点/禁用状态、对话框内菜单及窗口缩放。是否扩大使用范围由实际复用需求决定，不批量改后缀。
 
-Skill 目录包：构建后运行 `npm run skills:smoke`，或 `node scripts/check.mjs skills`。覆盖目录预览/复制/导出、旧单文件保留、越界及链接拒绝、冻结按需读取和真实界面编辑；合成资料与截图仅写入系统临时目录，不调用真实模型。
+Skill 目录包：构建后运行 `npm run skills:smoke`，或 `node scripts/check.mjs skills`。覆盖目录预览/复制/导出、旧单文件保留、越界及链接拒绝、冻结按需读取和真实界面编辑；界面验证包括 Markdown 排版、包内链接/图片、草稿与撤销隔离、查找框 Esc、Ctrl+S 保存、只读源码、窄窗口布局，以及禁用原生 HTML 和外部图片。合成资料与截图仅写入系统临时目录，不调用真实模型。

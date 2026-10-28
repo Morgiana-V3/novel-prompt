@@ -253,6 +253,13 @@ app.whenReady().then(async () => {
     await wait("!!document.querySelector('#skill-manager')")
     await click('导入 Skill 文件夹')
     await wait("!!document.querySelector('.skill-import-dialog')")
+    assert.equal(
+      await js("document.querySelector('.skill-document-preview h1').textContent"),
+      '入口',
+    )
+    assert.equal(await js("!!document.querySelector('.cm-editor')"), false)
+    await js("document.querySelector('.skill-document-preview a').click()")
+    await wait("document.querySelector('.skill-document-preview h1')?.textContent === '角色参考'")
     assert(
       (await js("document.querySelector('.skill-import-dialog').textContent")).includes('scripts'),
     )
@@ -263,24 +270,100 @@ app.whenReady().then(async () => {
     )
     await click('确认导入')
     await wait("!!document.querySelector('.sk-dialog')")
-    await click('参考资料（2）')
-    await js(
-      "(() => { const select = document.querySelector('.sk-dialog select'); select.value = 'references/角色.md'; select.dispatchEvent(new Event('change', { bubbles: true })); })()",
+    const file = (path) =>
+      js(
+        `[...document.querySelectorAll('.sk-dialog .skill-document-file')].find(button => button.textContent.trim().startsWith(${JSON.stringify(path)})).click()`,
+      )
+    const shortcut = async (keyCode, modifiers = []) => {
+      win.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers })
+      win.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers })
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    await click('references/角色.md')
+    await wait("!!document.querySelector('.cm-content')")
+    const edited =
+      '# 编辑后的参考\n\n**加粗**与 `代码`\n\n| 项目 | 值 |\n| --- | --- |\n| 示例 | 1 |\n\n![包内图片](../example.png)\n\n[返回入口](../SKILL.md#入口)\n\n[缺失](missing.md)\n\n<script>window.SKILL_XSS = true</script>\n\n![远程图片](https://example.invalid/test.png)\n\n[恶意](javascript:alert(1))'
+    await js("document.querySelector('.cm-content').focus()")
+    await shortcut('a', ['control'])
+    await win.webContents.insertText(edited)
+    await wait(
+      "document.querySelector('.skill-document-preview h1')?.textContent === '编辑后的参考'",
     )
-    await wait("!!document.querySelector('.skill-resource-text')")
-    await js(
-      "(() => { const textarea = document.querySelector('.skill-resource-text'); textarea.value = '# 编辑后的参考'; textarea.dispatchEvent(new Event('input', { bubbles: true })); })()",
+    assert.equal(await js("document.querySelectorAll('.skill-document-preview table').length"), 1)
+    assert.equal(await js("document.querySelectorAll('.skill-document-preview strong').length"), 1)
+    assert.equal(await js("document.querySelectorAll('.skill-document-preview img').length"), 1)
+    assert(
+      await js(
+        "document.querySelector('.skill-document-preview img').src.startsWith('data:image/png;base64,')",
+      ),
     )
+    assert.equal(
+      await js(
+        "!!window.SKILL_XSS || !!document.querySelector('.skill-document-preview script, .skill-document-preview a[href^=javascript]')",
+      ),
+      false,
+    )
+    await js(
+      "[...document.querySelectorAll('.skill-document-preview a')].find(a => a.textContent === '缺失').click()",
+    )
+    await wait("document.querySelector('.skill-document-notice')?.textContent.includes('找不到')")
+    await js(
+      "[...document.querySelectorAll('.skill-document-preview a')].find(a => a.textContent === '返回入口').click()",
+    )
+    await wait("document.querySelector('.skill-document-preview h1')?.textContent === '入口'")
+    await click('references/角色.md')
+    await wait("document.querySelector('.cm-content')?.textContent.includes('编辑后的参考')")
+    await js("document.querySelector('.cm-content').focus()")
+    await shortcut('z', ['control'])
+    await wait("document.querySelector('.skill-document-preview h1')?.textContent === '角色参考'")
+    await shortcut('y', ['control'])
+    await wait(
+      "document.querySelector('.skill-document-preview h1')?.textContent === '编辑后的参考'",
+    )
+    await shortcut('f', ['control'])
+    await wait("!!document.querySelector('.cm-search')")
+    await shortcut('Escape')
+    await wait("!document.querySelector('.cm-search')")
+    assert(await js("!!document.querySelector('.sk-dialog')"))
+    await click('预览')
+    assert(await js("document.querySelector('.markdown-editor').style.display === 'none'"))
+    await click('分栏')
+    await click('example.png')
+    await wait("!!document.querySelector('.skill-document-image')")
+    await click('references/角色.md')
+    await wait("document.querySelector('.cm-content')?.textContent.includes('编辑后的参考')")
     await new Promise((resolve) => setTimeout(resolve, 800))
     writeFileSync(
       join(profile, 'resource-editor.png'),
       (await win.webContents.capturePage()).toPNG(),
     )
-    await js("document.querySelector('.sk-foot .btn.primary').click()")
+    await js('void (window.confirm = () => true)')
+    await shortcut('s', ['control'])
     await wait("!document.querySelector('.sk-dialog')")
     const saved = skills.getConfig().find((skill) => skill.name === '目录测试' && skill.enabled)
+    assert(skills.getSkill(saved.id).resources.some((resource) => resource.content === edited))
+    // Inspect the saved package through the user-facing read-only action.
+    await js(
+      `(() => { const row = [...document.querySelectorAll('.sm-item')].find(row => row.textContent.includes('目录测试') && row.textContent.includes('启用 ·') ); const view = [...row.querySelectorAll('button')].find(button => button.textContent.trim() === '查看'); view.click() })()`,
+    )
+    await wait("!!document.querySelector('.sk-dialog .skill-document-preview h1')")
+    assert.equal(await js("!!document.querySelector('.cm-editor')"), false)
+    await click('源码')
+    await wait("!!document.querySelector('.cm-content[contenteditable=false]')")
+    await click('预览')
+    await click('example.png')
+    await wait("!!document.querySelector('.skill-document-image')")
+    await file('SKILL.md')
+    win.setSize(800, 800)
+    await new Promise((resolve) => setTimeout(resolve, 500))
     assert(
-      skills.getSkill(saved.id).resources.some((resource) => resource.content === '# 编辑后的参考'),
+      await js(
+        "(() => { const panel = document.querySelector('.sk-dialog'); return panel.scrollWidth <= panel.clientWidth + 1 })()",
+      ),
+    )
+    writeFileSync(
+      join(profile, 'skill-view-narrow.png'),
+      (await win.webContents.capturePage()).toPNG(),
     )
     console.log(
       `PASS real UI folder preview, import, reference editing and save; screenshots: ${profile}`,
