@@ -261,7 +261,7 @@ defineExpose({
           name="sparkle"
           :size="16"
           class="spin-slow"
-        />正在分析上下文…<button @click="emit('cancelChat')">停止</button>
+        />{{ progress || '正在分析上下文…' }}<button @click="emit('cancelChat')">停止</button>
       </div>
       <div
         v-if="operation === 'generate'"

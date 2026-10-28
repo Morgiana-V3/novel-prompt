@@ -5,6 +5,7 @@ import {
   duplicateSkill,
   getConfig,
   getSkill,
+  listSkillTemplates,
   importSkillFile,
   MODEL_LABEL,
   SCOPE_LABEL,
@@ -59,6 +60,15 @@ export function skillTools(): McpTool[] {
   }
   return [
     {
+      name: 'list_skill_templates',
+      title: '随附场景模板',
+      description:
+        '列出随软件附送的专项 Skill 模板，独立于内置规则和用户启用列表。用 get_skill 查看入口与场景参考资料，用户需要时可通过 create_skill 的 duplicate_from 复制；模板和新副本均不自动启用。',
+      inputSchema: { type: 'object', properties: {} },
+      annotations: READ_ONLY,
+      run: async () => json(listSkillTemplates()),
+    },
+    {
       name: 'list_skills',
       title: 'Skill 列表',
       description:
@@ -71,7 +81,7 @@ export function skillTools(): McpTool[] {
       name: 'get_skill',
       title: '读取 Skill',
       description:
-        '读取一份 Skill 的元信息和正文。id 来自 list_skills；传 core 读取固定的「Skill 使用总则」。',
+        '读取 Skill 入口和参考文件目录（不返回全部参考正文）；命中入口场景时用同一 id 加 resource 相对路径补读。id 来自 list_skills 或 list_skill_templates；core 读取使用总则。查看模板不表示启用。工作台以 get_workspace_context 的冻结资料为准。',
       inputSchema: {
         type: 'object',
         properties: {
@@ -212,7 +222,7 @@ export function skillTools(): McpTool[] {
       name: 'delete_skill',
       title: '删除 Skill',
       description:
-        '删除一份用户 Skill（文件一并删除，不可恢复）。内置 Skill 不能删除，只能在 set_skill_config 里关闭。',
+        '删除用户 Skill（文件一并删除，不可恢复），或从当前用户的随附目录删除场景模板（重启/升级后不重现，已复制的个人 Skill 不受影响）。内置通用 Skill 不能删除，只能在 set_skill_config 里关闭。',
       inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
       annotations: { ...WRITE, destructiveHint: true, idempotentHint: true },
       run: async (argumentsRecord) => {

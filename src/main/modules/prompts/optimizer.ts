@@ -264,6 +264,7 @@ function systemPrompt(version: NaiVersion, skillText: string): string {
 # 程序约定（优先于所有 Skill）
 - 目标模型：**${modelName}**（只使用该版本适用的语法与 tag，Skill 中标注另一版本专用的内容不要使用）
 - 工具：search_tags / validate_tags 查询本地 tag 库；related_tags / tag_wiki 联网查询 Danbooru 共现统计与释义（按需使用，不必每个 tag 都查）。除 NAI 专用质量词和自然语言片段外，**所有 tag 必须来自工具返回的结果**。
+- 查询以已有证据为起点：本地解析已确认的词不重搜；新增的已知拼写批量校验，缺失或语义不确定时才批量搜索。英文关系句不作为 tag 查询。用户明确的年龄等限定必须保留在实际提示词，不能用额外限定年龄或体型的近义词替代；无准确 tag 时保留英文描述。
 - 本软件按以下写法解析提示词：
   - tag 之间用英文逗号分隔；英文自然语言短句的句内不用逗号，以句号结尾（句内逗号会把句子拆碎）。
   - 权重写法：\`{tag}\` / \`[tag]\` / \`1.2::tag::\`。
@@ -627,6 +628,7 @@ export async function optimizePrompt(
     onStep(forced ? 'AI 正在整理最终结果…' : 'AI 思考中…')
     // 始终携带 tools：DeepSeek 思考模式下带 tools 的多轮对话需要完整回传 reasoning_content
     const msg = await chat(messages, {
+      json: true,
       skillSnapshot: skills.snapshot,
       tools: TOOLS,
       temperature: 0.6,

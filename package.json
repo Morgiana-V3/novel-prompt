@@ -68,6 +68,10 @@
     ],
     "extraResources": [
       {
+        "from": "skill-templates",
+        "to": "skill-templates"
+      },
+      {
         "from": "skills",
         "to": "skills"
       },

@@ -68,7 +68,18 @@ export function createWorkspaceActions(context: TaskContext) {
           try {
             progress('正在分析会话上下文…')
             front?.report('正在分析会话上下文…')
-            const result = await discussPage(id, revision, text, region, refs, discussionVersionId)
+            const result = await discussPage(
+              id,
+              revision,
+              text,
+              region,
+              refs,
+              discussionVersionId,
+              (message) => {
+                progress(message)
+                front?.report(message)
+              },
+            )
             progress('讨论完成')
             return result
           } finally {

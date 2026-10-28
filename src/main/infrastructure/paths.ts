@@ -24,11 +24,21 @@ export const BUNDLED_SKILLS = [
 ] as const
 export type BundledSkill = (typeof BUNDLED_SKILLS)[number]
 
-/** 内置 skill 只读，直接读安装包里的文件 */
+export const SKILL_TEMPLATES = ['nai-manga-prompt-design'] as const
+export type SkillTemplate = (typeof SKILL_TEMPLATES)[number]
+
+export function bundledTemplatePath(name: SkillTemplate): string {
+  const root = app.isPackaged ? process.resourcesPath : app.getAppPath()
+  return join(root, 'skill-templates', name, 'SKILL.md')
+}
+
+/** Stable legacy keys resolve to package entries; core remains a standalone document. */
 export function bundledSkillPath(name: BundledSkill): string {
-  return app.isPackaged
-    ? join(process.resourcesPath, 'skills', name)
-    : join(app.getAppPath(), 'skills', name)
+  const root = app.isPackaged
+    ? join(process.resourcesPath, 'skills')
+    : join(app.getAppPath(), 'skills')
+  const entry = join(root, name.replace(/\.md$/, ''), 'SKILL.md')
+  return name !== 'core.md' && existsSync(entry) ? entry : join(root, name)
 }
 
 /** 用户 Skill 目录（每份一个 .md） */
@@ -54,8 +64,9 @@ export const KNOWN_DEFAULTS: Record<'nai-prompt.md' | 'nai-preview.md', string[]
     'bc996c88eb5cd654',
     'bb5958b1e8e40872',
     '8974f19147708d36',
+    '2db7ee1a2f3bfeb5',
   ],
-  'nai-preview.md': ['60de9340e6b762c0', '5ec7316b05f7cffd'],
+  'nai-preview.md': ['60de9340e6b762c0', '5ec7316b05f7cffd', '8e7316a442c036bd'],
 }
 
 export const fingerprint = (text: string) =>

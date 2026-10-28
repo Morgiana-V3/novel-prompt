@@ -275,6 +275,12 @@ const generateTask = computed(() =>
       task.kind === 'page-generate' && task.targetId === work.value.id && taskIsActive(task),
   ),
 )
+const chatProgress = computed(
+  () =>
+    taskState.tasks.find(
+      (task) => task.kind === 'page-chat' && task.targetId === work.value.id && taskIsActive(task),
+    )?.message ?? '',
+)
 const time = (at: number) =>
   new Date(at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 const status = (text: string) =>
@@ -1170,7 +1176,7 @@ async function beginConfigFromButton() {
         :pending-request="pendingRequest"
         :pending-text="pendingText"
         :operation="operation"
-        :progress="progress"
+        :progress="operation === 'chat' ? chatProgress : progress"
         :error="error"
         :editing-prompt="editingPrompt"
         :selected-proposal-id="selectedProposalId"

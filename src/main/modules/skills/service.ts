@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, rmSync } from 'node:fs'
-import { basename, extname, join } from 'node:path'
+import { basename, dirname, extname, join } from 'node:path'
 import type { NaiVersion } from '../../../shared/generation/types'
 import type {
   SkillConfigItem,
@@ -16,6 +16,8 @@ import type { PageSkillSection, PageSkillSnapshot } from '../../../shared/worksp
 import { writeFileAtomic as writeFileSync } from '../../infrastructure/atomic-file'
 import {
   KNOWN_DEFAULTS,
+  SKILL_TEMPLATES,
+  bundledTemplatePath,
   bundledSkillPath,
   fingerprint,
   legacySkillDir,
@@ -161,6 +163,7 @@ const asModel = (value: unknown): SkillModel => {
 /* ---------- 读取 ---------- */
 
 const builtinOf = (id: string) => BUILTINS.find((builtinSkill) => builtinSkill.id === id)
+const templateOf = (id: string) => SKILL_TEMPLATES.find((name) => id === `template:${name}`)
 const packageRoot = (id: string) => join(userSkillDir(), id)
 const userFile = (id: string) => {
   if (!validId(id)) {
@@ -182,7 +185,9 @@ function readBundled(file: BundledSkill): string {
 }
 
 function builtinDoc(builtinSkill: Builtin): SkillDoc {
-  const content = parseFrontmatter(readBundled(builtinSkill.file)).body
+  const file = bundledSkillPath(builtinSkill.file)
+  const bundle = basename(file) === 'SKILL.md' ? readPackage(dirname(file)) : null
+  const content = parseFrontmatter(bundle?.entry ?? readBundled(builtinSkill.file)).body
   let updatedAt = 0
   try {
     updatedAt = statSync(bundledSkillPath(builtinSkill.file)).mtimeMs
@@ -190,6 +195,13 @@ function builtinDoc(builtinSkill: Builtin): SkillDoc {
     /* ignore */
   }
   return {
+    format: bundle ? 'directory' : 'file',
+    resourceCount: bundle?.resources.length ?? 0,
+    resources: bundle?.resources.map((resource) => ({
+      ...resource,
+      content:
+        resource.kind === 'markdown' ? resource.content.replace(/\r\n/g, '\n') : resource.content,
+    })),
     id: builtinSkill.id,
     name: builtinSkill.name,
     description: builtinSkill.description,
@@ -252,8 +264,43 @@ function userIds(): string[] {
 }
 
 export function getSkill(id: string): SkillDoc | null {
+  const template = templateOf(id)
+  if (template) {
+    if (getSettings().deletedSkillTemplates?.includes(id)) {
+      return null
+    }
+    const file = bundledTemplatePath(template)
+    const bundle = readPackage(dirname(file))
+    const { meta, body } = parseFrontmatter(bundle.entry)
+    return {
+      id,
+      source: 'template',
+      builtin: false,
+      format: 'directory',
+      name: meta.name || template,
+      description: meta.description || '',
+      scope: asScope(meta.scope, 'all'),
+      model: asModel(meta.model),
+      content: body,
+      chars: body.length,
+      updatedAt: statSync(file).mtimeMs,
+      resourceCount: bundle.resources.length,
+      resources: bundle.resources.map((resource) => ({
+        ...resource,
+        content:
+          resource.kind === 'markdown' ? resource.content.replace(/\r\n/g, '\n') : resource.content,
+      })),
+    }
+  }
   const builtinSkill = builtinOf(id)
   return builtinSkill ? builtinDoc(builtinSkill) : userDoc(id)
+}
+
+/** 模板只供浏览和复制，不参与配置、优先级和上下文组装。 */
+export function listSkillTemplates(): SkillMeta[] {
+  return SKILL_TEMPLATES.map((name) => getSkill(`template:${name}`))
+    .filter((doc): doc is SkillDoc => !!doc)
+    .map(strip)
 }
 
 function allDocs(): SkillDoc[] {
@@ -412,6 +459,9 @@ export function createSkill(
 }
 
 export function updateSkill(id: string, patch: Partial<SkillInput>): SkillDoc {
+  if (templateOf(id)) {
+    throw new Error('场景模板只读，请先复制为我的 Skill')
+  }
   if (builtinOf(id)) {
     throw new Error('内置 Skill 不能修改，可以先复制为自己的 Skill')
   }
@@ -437,6 +487,12 @@ export function updateSkill(id: string, patch: Partial<SkillInput>): SkillDoc {
 }
 
 export function deleteSkill(id: string): void {
+  if (templateOf(id)) {
+    const deleted = new Set(getSettings().deletedSkillTemplates ?? [])
+    deleted.add(id)
+    saveSettings({ deletedSkillTemplates: [...deleted] })
+    return
+  }
   if (builtinOf(id)) {
     throw new Error('内置 Skill 不能删除，可以在启用设置里关闭')
   }
@@ -527,6 +583,10 @@ export function importSkillFile(path: string, opts: { enabled?: boolean } = {}):
 }
 
 export const skillFilePath = (id: string): string | null => {
+  const template = templateOf(id)
+  if (template) {
+    return getSettings().deletedSkillTemplates?.includes(id) ? null : bundledTemplatePath(template)
+  }
   const builtinSkill = builtinOf(id)
   if (builtinSkill) {
     return bundledSkillPath(builtinSkill.file)

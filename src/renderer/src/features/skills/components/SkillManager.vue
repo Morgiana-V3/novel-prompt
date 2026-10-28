@@ -3,7 +3,7 @@ import HelpTip from '../../../shared/ui/HelpTip.vue'
 import { skillsState } from '../state'
 import { shellState } from '../../../shared/state/shell'
 import { computed, onMounted, ref, watch } from 'vue'
-import type { SkillConfigItem, SkillDoc, SkillImportPreview } from '@shared/skills/types'
+import type { SkillConfigItem, SkillDoc, SkillImportPreview, SkillMeta } from '@shared/skills/types'
 import { cleanErr } from '../../../shared/lib/format'
 import { loadSkills } from '../state'
 import { toast } from '../../../shared/lib/notifications'
@@ -11,6 +11,7 @@ import Icon from '../../../shared/ui/Icon.vue'
 import { missingSkillLinks } from '@shared/skills/references'
 import SkillDocument from './SkillDocument.vue'
 import SkillEditor from './SkillEditor.vue'
+import SkillImportButton from './SkillImportButton.vue'
 
 /** 设置页：Skill 的导入、新建、编辑、复制、删除。启用与优先级在侧栏浮层里设置 */
 
@@ -25,6 +26,17 @@ const MODEL: Record<string, string> = { all: '通用', 'v4.5': 'V4.5', v5: 'V5' 
 const list = computed(() => skillsState.skills)
 const builtins = computed(() => list.value.filter((skill) => skill.builtin))
 const mine = computed(() => list.value.filter((skill) => !skill.builtin))
+const templates = ref<SkillMeta[]>([])
+const templateError = ref('')
+
+async function loadTemplates() {
+  try {
+    templates.value = await window.api.skillsTemplates()
+    templateError.value = ''
+  } catch (error) {
+    templateError.value = cleanErr(error)
+  }
+}
 
 /** 编辑器：undefined = 关闭；null doc = 新建 */
 const editing = ref<{ doc: SkillDoc | null; readonly: boolean; title?: string } | undefined>()
@@ -43,9 +55,10 @@ function prepareUpdate(): void {
 defineExpose({ prepareUpdate })
 
 onMounted(loadSkills)
+onMounted(loadTemplates)
 watch(
   () => shellState.tab,
-  (tab) => tab === 'settings' && loadSkills(),
+  (tab) => tab === 'settings' && Promise.all([loadSkills(), loadTemplates()]),
 )
 
 const fmtChars = (numericValue: number) =>
@@ -55,12 +68,16 @@ const fmtChars = (numericValue: number) =>
 const priorityOf = (skill: SkillConfigItem) =>
   list.value.filter((skill2) => skill2.enabled).findIndex((skill2) => skill2.id === skill.id) + 1
 
-async function open(skill: SkillConfigItem, readonly = skill.builtin) {
+async function open(skill: SkillMeta, readonly = skill.builtin || skill.source === 'template') {
   const doc = await window.api.skillsGet(skill.id)
   if (!doc) {
     return (toast('找不到这份 Skill，可能已被删除'), loadSkills())
   }
-  editing.value = { doc, readonly }
+  editing.value = {
+    doc,
+    readonly,
+    title: skill.source === 'template' ? `场景模板 · ${skill.name}` : undefined,
+  }
 }
 
 async function viewCore() {
@@ -94,6 +111,8 @@ async function duplicate(id: string) {
 }
 
 async function importMd() {
+  importBusy.value = true
+  importError.value = ''
   try {
     const importResult = await window.api.skillsImport()
     await loadSkills()
@@ -101,14 +120,17 @@ async function importMd() {
       toast(`已导入 ${importResult.imported.join('、')}，已启用并放在最高优先级`)
     }
     if (importResult.errors.length) {
-      alert(`以下文件导入失败：\n${importResult.errors.join('\n')}`)
+      importError.value = `以下文件导入失败：\n${importResult.errors.join('\n')}`
     }
   } catch (error) {
     toast(cleanErr(error))
+  } finally {
+    importBusy.value = false
   }
 }
 
 async function importDirectory() {
+  importBusy.value = true
   try {
     importError.value = ''
     importing.value = await window.api.skillsImportDirectory()
@@ -119,14 +141,9 @@ async function importDirectory() {
     }
   } catch (error) {
     toast(cleanErr(error))
+  } finally {
+    importBusy.value = false
   }
-}
-
-// 导入预览离场动画结束后再打开编辑器，避免两个弹窗短暂叠在一起
-let afterImportClosed: (() => void) | undefined
-function importClosed() {
-  afterImportClosed?.()
-  afterImportClosed = undefined
 }
 
 async function confirmImport() {
@@ -135,8 +152,7 @@ async function confirmImport() {
   }
   importBusy.value = true
   try {
-    const doc = await window.api.skillsCreate(JSON.parse(JSON.stringify(importing.value.input)))
-    afterImportClosed = () => (editing.value = { doc, readonly: false })
+    await window.api.skillsCreate(JSON.parse(JSON.stringify(importing.value.input)))
     importing.value = null
     await loadSkills()
     toast('已导入独立副本并启用；原文件夹不会被修改')
@@ -158,7 +174,7 @@ async function exportDirectory(id: string) {
   }
 }
 
-async function remove(skill: SkillConfigItem) {
+async function remove(skill: SkillMeta) {
   if (confirmDel.value !== skill.id) {
     confirmDel.value = skill.id
     setTimeout(() => confirmDel.value === skill.id && (confirmDel.value = ''), 3000)
@@ -168,6 +184,7 @@ async function remove(skill: SkillConfigItem) {
   try {
     await window.api.skillsDelete(skill.id)
     await loadSkills()
+    await loadTemplates()
     toast(`已删除「${skill.name}」`)
   } catch (error) {
     toast(cleanErr(error))
@@ -197,27 +214,16 @@ const openPicker = () => (skillsState.skillPanel = true)
     </div>
 
     <div class="row">
-      <button
-        class="btn primary small"
-        @click="importMd"
-      >
-        <Icon
-          name="upload"
-          :size="14"
-        />导入 .md
-      </button>
-      <button
-        class="btn small"
-        @click="importDirectory"
-      >
-        导入 Skill 文件夹
-      </button>
+      <SkillImportButton
+        :disabled="importBusy"
+        @select="(kind) => (kind === 'file' ? importMd() : importDirectory())"
+      />
       <HelpTip
         label="导入 Skill"
         text="可导入单个 .md，或根目录含 SKILL.md 的文件夹。目录包支持 Markdown 参考资料和图片，脚本不执行。保存独立副本，同名导入不覆盖原 Skill；导入后可调整作用范围和模型。"
       />
       <button
-        class="btn small"
+        class="btn ghost small"
         @click="editing = { doc: null, readonly: false }"
       >
         <Icon
@@ -253,6 +259,14 @@ const openPicker = () => (skillsState.skillPanel = true)
         />打开文件夹
       </button>
     </div>
+
+    <p
+      v-if="importError && !importing"
+      class="error-box"
+      role="alert"
+    >
+      {{ importError }}
+    </p>
 
     <div class="sm-group">
       <div class="sm-group-title">内置（只读）</div>
@@ -295,6 +309,76 @@ const openPicker = () => (skillsState.skillPanel = true)
               name="copy"
               :size="14"
             />复制为我的 Skill
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="templates.length || templateError"
+      class="sm-group"
+    >
+      <div class="sm-group-title">随附场景模板</div>
+      <p class="sm-template-intro muted small">
+        针对特定场景的提示词与定制示例。查看后可复制到「我的 Skill」，修改并启用；模板本身不加载到
+        AI 上下文。
+      </p>
+      <div
+        v-if="templateError"
+        class="error-box"
+        role="alert"
+      >
+        模板加载失败：{{ templateError }}
+        <button
+          class="btn ghost small"
+          @click="loadTemplates"
+        >
+          重试
+        </button>
+      </div>
+      <div
+        v-for="s in templates"
+        :key="s.id"
+        class="sm-template-item"
+      >
+        <div class="sm-main">
+          <div class="sm-name">
+            <b>{{ s.name }}</b
+            ><span class="pill">场景模板 · 只读</span>
+            <span class="muted small"
+              >入口 {{ fmtChars(s.chars) }} · {{ s.resourceCount }} 个参考文件</span
+            >
+          </div>
+          <div class="sm-template-desc">{{ s.description }}</div>
+        </div>
+        <div class="sm-actions">
+          <button
+            class="btn ghost small"
+            @click="open(s)"
+          >
+            <Icon
+              name="eye"
+              :size="14"
+            />查看模板
+          </button>
+          <button
+            class="btn ghost small"
+            @click="duplicate(s.id)"
+          >
+            <Icon
+              name="copy"
+              :size="14"
+            />复制并定制
+          </button>
+          <button
+            :class="['btn small', confirmDel === s.id ? 'danger' : 'ghost']"
+            :title="confirmDel === s.id ? '再点一次确认删除；保留已创建的副本' : '删除模板'"
+            @click="remove(s)"
+          >
+            <Icon
+              name="trash"
+              :size="14"
+            />{{ confirmDel === s.id ? '确认删除' : '删除' }}
           </button>
         </div>
       </div>
@@ -391,10 +475,7 @@ const openPicker = () => (skillsState.skillPanel = true)
     </div>
 
     <Teleport to="body">
-      <Transition
-        name="modal"
-        @after-leave="importClosed"
-      >
+      <Transition name="modal">
         <div
           v-if="importing"
           class="skill-import-mask"
@@ -483,7 +564,8 @@ const openPicker = () => (skillsState.skillPanel = true)
   padding: 2px 2px 0;
 }
 
-.sm-item {
+.sm-item,
+.sm-template-item {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -496,6 +578,21 @@ const openPicker = () => (skillsState.skillPanel = true)
 }
 
 .sm-item:hover {
+  background: var(--panel);
+}
+
+.sm-template-desc {
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.6;
+}
+
+.sm-template-intro {
+  margin: 0 2px 6px;
+}
+
+.sm-template-item {
+  flex-wrap: wrap;
   background: var(--panel);
 }
 

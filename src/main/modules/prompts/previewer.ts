@@ -40,6 +40,7 @@ function systemPrompt(version: NaiVersion, skillText: string): string {
 ---
 # 程序约定（优先于所有 Skill）
 - 你的任务是根据提示词推测成图效果（不是优化提示词）。用户消息里的「本地解析」是程序对每个 tag 的真实查询结果，以它为准。
+- 未看到成图时，正负面冲突只说明压制倾向，不保证某元素消失或变成特定颜色；high 只表示输入依据明确。未提供的细节保持不确定，不能将自己的推断写成引用资料已经证明的机制。
 - 目标模型：**${modelName}**
 - 只输出一个 JSON 对象（不要多余文字），confidence 取值 high / medium / low，risks.level 取值 high / medium / low，basis 取值 rule（可被程序校验的硬规则）/ data（统计数据）/ doc（依据启用的 Skill 或官方文档，evidence 写出 Skill 名称）/ taste（审美判断）：
 {"summary":"整体画面描述","confidence":"整体置信度","style":{"text":"画风与上色","tags":["关键 tag"],"confidence":"medium"},"composition":{"text":"构图、镜头、景别","tags":[],"confidence":"medium"},"scene":{"text":"背景与场景","tags":[],"confidence":"medium"},"lighting":{"text":"光影与色调","tags":[],"confidence":"medium"},"characters":[{"name":"角色称呼，如 角色 1 / 主角","position":"在画面中的位置，可空","text":"外貌、服装、表情、动作","tags":[],"confidence":"high"}],"emphasis":[{"tag":"被强调的 tag","effect":"会带来的效果"}],"suppressed":[{"tag":"负面中的 tag","effect":"被压制或推开的效果"}],"risks":[{"level":"medium","text":"风险说明","tags":["相关 tag"],"basis":"data","evidence":"依据"}],"gap":"与想要效果的差距，未提供期望则为空字符串","suggestions":[{"text":"具体修改建议","basis":"rule","evidence":"依据"}]}
@@ -172,7 +173,7 @@ function collectIssues(sections: Section[], presetTokens: AnalyzedToken[]): Prev
         kind: 'conflict',
         where,
         basis: 'rule',
-        text: `${(analyzedToken.tag ?? analyzedToken.aliasOf)!.display} 同时出现在${against.get(text)}和${where}，会互相抵消`,
+        text: `${(analyzedToken.tag ?? analyzedToken.aliasOf)!.display} 同时出现在${against.get(text)}和${where}，可能互相压制，具体效果需返图确认`,
       })
     }
     return seen
@@ -672,7 +673,12 @@ export async function previewPrompt(
 
   for (let i = 0; i <= MAX_RETRY; i++) {
     onStep(i ? 'AI 重新整理输出格式…' : 'AI 正在想象画面…')
-    const msg = await chat(messages, { skillSnapshot: skills.snapshot, temperature: 0.5, signal })
+    const msg = await chat(messages, {
+      json: true,
+      skillSnapshot: skills.snapshot,
+      temperature: 0.5,
+      signal,
+    })
     try {
       const result = normalize(extractJson<Record<string, unknown>>(msg.content ?? ''))
       if (!result.summary) {

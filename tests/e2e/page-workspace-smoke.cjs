@@ -247,6 +247,7 @@ const handlers = {
     zhCount: 0,
     implicationCount: 0,
   }),
+  'skills:templates': () => [],
   'skills:list': () => skills.getConfig(),
   'mcp:info': () => null,
   'update:check': () => null,

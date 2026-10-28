@@ -198,6 +198,7 @@ app.whenReady().then(async () => {
         preload: join(__dirname, '../../out/preload/index.js'),
         sandbox: false,
         backgroundThrottling: false,
+        offscreen: true,
       },
     })
     require('../../src/main/adapters/ipc/skills.ts').registerSkillsIpc({ getWindow: () => win })
@@ -229,7 +230,13 @@ app.whenReady().then(async () => {
     for (const [channel, handler] of Object.entries(handlers)) {
       ipcMain.handle(channel, handler)
     }
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [source] })
+    let selection = [singleFile]
+    let cancelSelection = false
+    const dialogKinds = []
+    dialog.showOpenDialog = async (_window, options) => {
+      dialogKinds.push(options.properties)
+      return { canceled: cancelSelection, filePaths: cancelSelection ? [] : selection }
+    }
     const js = (code) => win.webContents.executeJavaScript(code, true)
     const wait = async (code) => {
       for (let index = 0; index < 150; index++) {
@@ -244,14 +251,78 @@ app.whenReady().then(async () => {
       js(
         `(() => { const button = [...document.querySelectorAll('button')].find(element => element.textContent.trim() === ${JSON.stringify(text)}); if (!button) throw new Error('Missing button'); button.click() })()`,
       )
-    win.showInactive()
     await win.loadFile(join(__dirname, '../../out/renderer/index.html'))
     await wait(
       "[...document.querySelectorAll('button')].some(element => element.textContent.trim() === '设置 / 数据')",
     )
     await click('设置 / 数据')
     await wait("!!document.querySelector('#skill-manager')")
-    await click('导入 Skill 文件夹')
+    await js("document.querySelector('#skill-manager').scrollIntoView({ block: 'start' })")
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    await js('void (window.confirm = () => { throw new Error("Unexpected native confirmation") })')
+    const beforeTemplate = skills.getConfig().length
+    await wait("document.querySelectorAll('.sm-template-item').length === 1")
+    writeFileSync(
+      join(profile, 'scene-templates.png'),
+      (await win.webContents.capturePage()).toPNG(),
+    )
+    await click('查看模板')
+    await wait("document.querySelector('.sk-dialog h3')?.textContent.includes('场景模板')")
+    assert.equal(await js("!!document.querySelector('.cm-editor')"), false)
+    await js(
+      "[...document.querySelectorAll('.skill-document-preview a')].find(a => a.textContent === '动作与互动').click()",
+    )
+    await wait(
+      "document.querySelector('.skill-document-preview h1')?.textContent === '人物互动与动作结果'",
+    )
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    writeFileSync(
+      join(profile, 'template-reference.png'),
+      (await win.webContents.capturePage()).toPNG(),
+    )
+    await js(
+      "[...document.querySelectorAll('.sk-foot button')].find(button => button.textContent.trim() === '复制并定制').click()",
+    )
+    await wait("document.querySelector('.sk-dialog h3')?.textContent === '编辑副本'")
+    const templateCopy = skills.getConfig().find((s) => s.name === '黑白日式漫画（我的副本）')
+    assert(templateCopy && !templateCopy.enabled)
+    assert.equal(skills.getConfig().length, beforeTemplate + 1)
+    assert.equal(skills.getSkill(templateCopy.id).resources.length, 13)
+    await js("document.querySelector('.sk-head button').click()")
+    await wait("!document.querySelector('.sk-dialog')")
+    skills.deleteSkill(templateCopy.id)
+    await js(
+      "[...document.querySelectorAll('.sm-template-item button')].find(b => b.textContent.trim() === '删除').click()",
+    )
+    await wait("document.querySelector('.sm-template-item')?.textContent.includes('确认删除')")
+    await js(
+      "[...document.querySelectorAll('.sm-template-item button')].find(b => b.textContent.trim() === '确认删除').click()",
+    )
+    await wait("document.querySelectorAll('.sm-template-item').length === 0")
+    assert.equal(skills.listSkillTemplates().length, 0)
+    const beforeImport = skills.getConfig().length
+    await click('导入 Skill')
+    await wait("document.querySelector('.skill-import-menu').matches(':popover-open')")
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    writeFileSync(join(profile, 'import-menu.png'), (await win.webContents.capturePage()).toPNG())
+    await click('Markdown 文件')
+    await wait(
+      `document.querySelectorAll('#skill-manager .sm-item').length === ${beforeImport + 1}`,
+    )
+    assert(dialogKinds.at(-1).includes('openFile'))
+    assert.equal(skills.getConfig().length, beforeImport + 1)
+    assert.equal(await js("!!document.querySelector('.sk-dialog')"), false)
+    selection = [source]
+    cancelSelection = true
+    await click('导入 Skill')
+    await click('Skill 文件夹')
+    await wait("!document.querySelector('#skill-manager .btn.primary').disabled")
+    assert.equal(await js("!!document.querySelector('.skill-import-dialog')"), false)
+    assert.equal(skills.getConfig().length, beforeImport + 1)
+    cancelSelection = false
+    await click('导入 Skill')
+    await click('Skill 文件夹')
+    assert(dialogKinds.at(-1).includes('openDirectory'))
     await wait("!!document.querySelector('.skill-import-dialog')")
     assert.equal(
       await js("document.querySelector('.skill-document-preview h1').textContent"),
@@ -269,6 +340,14 @@ app.whenReady().then(async () => {
       (await win.webContents.capturePage()).toPNG(),
     )
     await click('确认导入')
+    await wait("!document.querySelector('.skill-import-dialog')")
+    assert.equal(await js("!!document.querySelector('.sk-dialog')"), false)
+    const openImported = (action) =>
+      js(`(() => {
+      const row = [...document.querySelectorAll('.sm-item')].find(row => row.textContent.includes('目录测试') && row.textContent.includes('启用 ·'));
+      [...row.querySelectorAll('button')].find(button => button.textContent.trim() === ${JSON.stringify(action)}).click()
+    })()`)
+    await openImported('编辑')
     await wait("!!document.querySelector('.sk-dialog')")
     const file = (path) =>
       js(
@@ -337,11 +416,42 @@ app.whenReady().then(async () => {
       join(profile, 'resource-editor.png'),
       (await win.webContents.capturePage()).toPNG(),
     )
-    await js('void (window.confirm = () => true)')
+    await js("document.querySelector('.sk-head button').click()")
+    await wait("!!document.querySelector('.confirm-dialog[open]')")
+    assert(await js("document.querySelector('.confirm-dialog').contains(document.activeElement)"))
+    writeFileSync(
+      join(profile, 'unsaved-confirm.png'),
+      (await win.webContents.capturePage()).toPNG(),
+    )
+    await shortcut('Escape')
+    await wait("!document.querySelector('.confirm-dialog')")
+    assert(await js("document.querySelector('.cm-content').textContent.includes('编辑后的参考')"))
+    await js("document.querySelector('.sk-head button').click()")
+    await wait("!!document.querySelector('.confirm-dialog[open]')")
+    await click('继续编辑')
+    await wait("!document.querySelector('.confirm-dialog')")
+    await js("document.querySelector('.sk-head button').click()")
+    await wait("!!document.querySelector('.confirm-dialog[open]')")
+    await click('保存并关闭')
+    await wait("document.querySelector('.confirm-dialog h3')?.textContent === '存在失效引用'")
+    await click('返回检查')
+    await wait("!document.querySelector('.confirm-dialog')")
     await shortcut('s', ['control'])
+    await wait("!!document.querySelector('.confirm-dialog[open]')")
+    await click('仍然保存')
     await wait("!document.querySelector('.sk-dialog')")
     const saved = skills.getConfig().find((skill) => skill.name === '目录测试' && skill.enabled)
     assert(skills.getSkill(saved.id).resources.some((resource) => resource.content === edited))
+    await openImported('编辑')
+    await wait("!!document.querySelector('.sk-dialog')")
+    await js(
+      "(() => { const input = document.querySelector('.sk-meta input'); input.value = 'DISCARDED_NAME'; input.dispatchEvent(new Event('input', { bubbles: true })) })()",
+    )
+    await js("document.querySelector('.sk-head button').click()")
+    await wait("!!document.querySelector('.confirm-dialog[open]')")
+    await click('放弃修改')
+    await wait("!document.querySelector('.sk-dialog')")
+    assert.equal(skills.getSkill(saved.id).name, '目录测试')
     // Inspect the saved package through the user-facing read-only action.
     await js(
       `(() => { const row = [...document.querySelectorAll('.sm-item')].find(row => row.textContent.includes('目录测试') && row.textContent.includes('启用 ·') ); const view = [...row.querySelectorAll('button')].find(button => button.textContent.trim() === '查看'); view.click() })()`,
@@ -363,6 +473,26 @@ app.whenReady().then(async () => {
     )
     writeFileSync(
       join(profile, 'skill-view-narrow.png'),
+      (await win.webContents.capturePage()).toPNG(),
+    )
+    await js("document.querySelector('.sk-head button').click()")
+    await wait("!document.querySelector('.sk-dialog')")
+    await click('启用与优先级')
+    await wait("!!document.querySelector('.sp-pop')")
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    const checkAnchor = () =>
+      js(`(() => {
+      const pop = document.querySelector('.sp-pop'), box = pop.getBoundingClientRect();
+      const trigger = document.querySelector('.skill-trigger').getBoundingClientRect();
+      const arrowBottom = parseFloat(getComputedStyle(pop).getPropertyValue('--arrow-bottom'));
+      return Math.abs(box.bottom - arrowBottom - (trigger.top + trigger.height / 2)) < 2 && box.right <= innerWidth && box.top >= 20;
+    })()`)
+    assert(await checkAnchor(), 'Narrow popover should stay in bounds and point at its trigger')
+    win.setSize(1440, 1000)
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    assert(await checkAnchor(), 'Popover arrow must follow resizing')
+    writeFileSync(
+      join(profile, 'skill-picker-arrow.png'),
       (await win.webContents.capturePage()).toPNG(),
     )
     console.log(

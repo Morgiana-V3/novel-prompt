@@ -7,6 +7,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { SkillConfigItem } from '@shared/skills/types'
 import { loadSkills, saveSkillConfig } from '../state'
 import Icon from '../../../shared/ui/Icon.vue'
+import HelpTip from '../../../shared/ui/HelpTip.vue'
 
 /**
  * 侧栏 Skill 入口：只负责启用 / 关闭和优先级（拖动排序）。导入、编辑、删除在设置页。
@@ -41,24 +42,42 @@ const eff = computed(() => ({
 }))
 const fmtChars = (numericValue: number) =>
   numericValue >= 10000
-    ? `${(numericValue / 10000).toFixed(1)} 万字`
-    : `${numericValue.toLocaleString()} 字`
+    ? `${(numericValue / 10000).toFixed(1)} 万字符`
+    : `${numericValue.toLocaleString()} 字符`
 const total = (feature: 'optimize' | 'preview' | 'inpaint' | 'workspace') =>
   eff.value[feature].reduce((a, skill) => a + skill.chars, 0)
-/** 叠加后的正文很长时提醒：会明显增加每次调用的 token 消耗 */
-const LONG = 40000
+const loadingHelp = computed(() =>
+  [
+    '当前模型下，已启用 Skill 的入口正文：',
+    ...(['optimize', 'preview', 'inpaint', 'workspace'] as const).map(
+      (feature) => `${SCOPE[feature]}：${fmtChars(total(feature))}`,
+    ),
+    '不含固定总则、参考目录和对话。目录包的参考正文按需读取；字符数不等于 token 或实际请求总量。',
+  ].join('\n'),
+)
 
 /* ---------- 浮层位置 ---------- */
 const trigger = ref<HTMLElement>()
-const pos = ref({ left: 0, bottom: 0 })
+const pos = ref({ left: 0, bottom: 0, width: 360, maxHeight: 600, arrowBottom: 24 })
 function place() {
   const bounds = trigger.value?.getBoundingClientRect()
   if (!bounds) {
     return
   }
+  const left = bounds.right + 14
+  const bottom = Math.max(12, window.innerHeight - bounds.bottom - 8)
+  const safeTop = Math.max(
+    20,
+    parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--titlebar-safe-height'),
+    ) || 40,
+  )
   pos.value = {
-    left: bounds.right + 12,
-    bottom: Math.max(12, window.innerHeight - bounds.bottom - 8),
+    left,
+    bottom,
+    width: Math.min(360, window.innerWidth - left - 12),
+    maxHeight: Math.max(120, window.innerHeight - bottom - safeTop - 12),
+    arrowBottom: Math.max(20, window.innerHeight - bounds.top - bounds.height / 2 - bottom),
   }
 }
 watch(
@@ -150,10 +169,12 @@ onMounted(() => {
   loadSkills().catch(reportError)
   window.addEventListener('keydown', onKey)
   window.addEventListener('resize', place)
+  window.addEventListener('scroll', place, true)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey)
   window.removeEventListener('resize', place)
+  window.removeEventListener('scroll', place, true)
 })
 </script>
 
@@ -190,10 +211,20 @@ onBeforeUnmount(() => {
         >
           <div
             class="sp-pop modal-panel"
-            :style="{ left: pos.left + 'px', bottom: pos.bottom + 'px' }"
+            :style="{
+              left: pos.left + 'px',
+              bottom: pos.bottom + 'px',
+              width: pos.width + 'px',
+              maxHeight: pos.maxHeight + 'px',
+              '--arrow-bottom': pos.arrowBottom + 'px',
+            }"
           >
             <div class="sp-head">
               <b title="拖动排序，越靠上优先级越高；冲突时采用优先级更高的规则">启用的 Skill</b>
+              <HelpTip
+                label="Skill 加载量"
+                :text="loadingHelp"
+              />
               <span class="pill">{{ version === 'v5' ? 'V5' : 'V4.5' }}</span>
               <button
                 class="icon-btn sm ml-auto"
@@ -293,39 +324,6 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div class="sp-summary">
-              <div
-                v-for="f in ['optimize', 'preview', 'inpaint', 'workspace'] as const"
-                :key="f"
-                class="sp-row"
-              >
-                <span class="sp-feature">{{
-                  f === 'optimize'
-                    ? 'AI 优化'
-                    : f === 'preview'
-                      ? '画面推测'
-                      : f === 'workspace'
-                        ? '工作台'
-                        : '局部重绘'
-                }}</span>
-                <span
-                  v-if="eff[f].length"
-                  class="sp-chain"
-                  >{{ eff[f].map((s) => s.name).join(' › ') }}</span
-                >
-                <span
-                  v-else
-                  class="sp-chain warn"
-                  >没有启用的 Skill，只按通用知识工作</span
-                >
-                <span
-                  :class="['sp-size', { warn: total(f) > LONG }]"
-                  :title="total(f) > LONG ? 'Skill 较长，每次调用消耗的 token 会明显增加' : ''"
-                  >{{ fmtChars(total(f)) }}</span
-                >
-              </div>
-            </div>
-
             <div class="sp-foot">
               <button
                 class="btn ghost small"
@@ -334,7 +332,7 @@ onBeforeUnmount(() => {
                 <Icon
                   name="sliders"
                   :size="13"
-                />导入 / 编辑 Skill
+                />管理 Skill
               </button>
             </div>
           </div>
@@ -429,8 +427,21 @@ onBeforeUnmount(() => {
   border: 1px solid var(--line2);
   border-radius: 16px;
   box-shadow: var(--shadow-pop);
-  overflow: hidden;
   transform-origin: left bottom;
+}
+
+.sp-pop::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  bottom: calc(var(--arrow-bottom) - 6px);
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border-left: 1px solid var(--line2);
+  border-bottom: 1px solid var(--line2);
+  transform: rotate(45deg);
+  pointer-events: none;
 }
 
 .sp-head {
@@ -442,13 +453,6 @@ onBeforeUnmount(() => {
 
 .sp-head b {
   font-size: 13.5px;
-}
-
-.sp-tip {
-  font-size: 11.5px;
-  color: var(--muted);
-  padding: 0 14px 8px;
-  line-height: 1.5;
 }
 
 .sp-list {
@@ -631,47 +635,6 @@ onBeforeUnmount(() => {
   --x: 14px;
 
   background: var(--pink);
-}
-
-.sp-summary {
-  border-top: 1px solid var(--line);
-  padding: 8px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  background: var(--panel);
-}
-
-.sp-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 11.5px;
-}
-
-.sp-feature {
-  color: var(--muted);
-  flex-shrink: 0;
-  width: 52px;
-}
-
-.sp-chain {
-  flex: 1;
-  min-width: 0;
-  color: var(--text2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.sp-chain.warn,
-.sp-size.warn {
-  color: var(--alias);
-}
-
-.sp-size {
-  color: var(--muted);
-  flex-shrink: 0;
 }
 
 .sp-foot {

@@ -65,6 +65,7 @@ const handlers = {
   'settings:get': () => getSettings(),
   'settings:save': (_, p) => saveSettings(p),
   'window:dark-titlebar': () => {},
+  'skills:templates': () => [],
   'skills:list': () => [],
   'mcp:info': () => null,
   'update:check': () => null,

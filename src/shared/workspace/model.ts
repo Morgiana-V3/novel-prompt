@@ -122,6 +122,18 @@ export interface PageSkillSnapshot {
   sections?: PageSkillSection[]
 }
 export interface PageMessage {
+  /** 调度诊断只记录计数/耗时，不保存供应商凭据、思考正文或工具参数。 */
+  toolUsage?: {
+    modelRequests: number
+    referenceRequests: number
+    referenceFiles: number
+    referenceCacheHits: number
+    tagRequests: number
+    tagExecuted: number
+    tagCacheHits: number
+    tagLimited: number
+    elapsedMs: number
+  }
   id: string
   role: 'user' | 'assistant' | 'event'
   text: string

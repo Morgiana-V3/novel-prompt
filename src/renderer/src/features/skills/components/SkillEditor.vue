@@ -8,6 +8,7 @@ import { toast } from '../../../shared/lib/notifications'
 import SkillDocument from './SkillDocument.vue'
 import { missingSkillLinks } from '@shared/skills/references'
 import Icon from '../../../shared/ui/Icon.vue'
+import ConfirmDialog from '../../../shared/ui/ConfirmDialog.vue'
 
 /**
  * Skill 编辑 / 查看弹窗。
@@ -43,6 +44,7 @@ const initial = JSON.stringify(form)
 const dirty = computed(() => !props.readonly && JSON.stringify(form) !== initial)
 const saving = ref(false)
 const error = ref('')
+const confirmation = ref<'discard' | 'links' | null>(null)
 
 const scopes: { v: SkillScope; label: string }[] = [
   { v: 'optimize', label: 'AI 优化' },
@@ -56,7 +58,7 @@ const models: { v: SkillModel; label: string }[] = [
   { v: 'v5', label: 'V5' },
 ]
 
-async function save() {
+async function save(allowBrokenLinks = false) {
   if (!opened.value || saving.value) {
     return
   }
@@ -66,15 +68,13 @@ async function save() {
   if (!form.content.trim()) {
     return (error.value = '正文不能为空')
   }
+  if (linkWarnings.value.length && !allowBrokenLinks) {
+    confirmation.value = 'links'
+    return
+  }
   saving.value = true
   error.value = ''
   try {
-    if (
-      linkWarnings.value.length &&
-      !confirm('存在失效引用，仍要保存吗？\n' + linkWarnings.value.join('\n'))
-    ) {
-      return
-    }
     const input = JSON.parse(JSON.stringify(form))
     const doc = props.doc
       ? await window.api.skillsUpdate(props.doc.id, input)
@@ -94,14 +94,30 @@ function close() {
   if (!opened.value || saving.value) {
     return
   }
-  if (dirty.value && !confirm('有未保存的修改，确定关闭吗？')) {
+  if (dirty.value) {
+    confirmation.value = 'discard'
     return
   }
   opened.value = false
 }
 
+function confirmAction() {
+  const action = confirmation.value
+  confirmation.value = null
+  if (action === 'discard') {
+    opened.value = false
+  } else if (action === 'links') {
+    save(true).catch(reportError)
+  }
+}
+
+function saveAndClose() {
+  confirmation.value = null
+  save().catch(reportError)
+}
+
 function onKey(event2: KeyboardEvent) {
-  if (!opened.value || event2.defaultPrevented) {
+  if (!opened.value || confirmation.value || event2.defaultPrevented) {
     return
   }
   if (event2.key === 'Escape') {
@@ -255,7 +271,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 <Icon
                   name="copy"
                   :size="14"
-                />复制为我的 Skill
+                />{{ doc?.source === 'template' ? '复制并定制' : '复制为我的 Skill' }}
               </button>
               <button
                 class="btn primary small"
@@ -275,7 +291,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               <button
                 class="btn primary small"
                 :disabled="saving"
-                @click="save"
+                @click="save()"
               >
                 <Icon
                   name="check"
@@ -288,6 +304,22 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </div>
     </Transition>
   </Teleport>
+  <ConfirmDialog
+    v-if="confirmation"
+    :title="confirmation === 'discard' ? '保存修改后再关闭？' : '存在失效引用'"
+    :message="
+      confirmation === 'discard'
+        ? '这份 Skill 有未保存的修改。放弃后将无法恢复本次编辑。'
+        : '以下引用无法找到，仍要保存吗？\n' + linkWarnings.join('\n')
+    "
+    :confirm-label="confirmation === 'discard' ? '放弃修改' : '仍然保存'"
+    :cancel-label="confirmation === 'discard' ? '继续编辑' : '返回检查'"
+    :alternate-label="confirmation === 'discard' ? '保存并关闭' : undefined"
+    :danger="confirmation === 'discard'"
+    @cancel="confirmation = null"
+    @confirm="confirmAction"
+    @alternate="saveAndClose"
+  />
 </template>
 
 <style scoped>
