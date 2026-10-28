@@ -15,7 +15,7 @@ Electron 主进程是唯一应用宿主，窗口和 MCP 客户端共享服务、
 | 工作台 | main/modules/workspace/service.ts、discussion.ts、execution.ts | userData/data/page-workspaces/<UUID>.json，schema=2；读取现有 schema=1 的迁移逻辑保留。revision、编辑锁和讨论快照必须保留；删除移入 removed。 |
 | 生成 | main/modules/generation/service.ts、inpaint.ts；main/providers/novelai/ | 先校验额度，再逐张请求、合成和落库，最后核对两类 Anlas；取消等待当前图片保存，不重试未知写入。 |
 | 图片 | main/modules/images/library.ts；workspace/image-references.ts、image-cleanup.ts | userData/image-library 下 saved、temporary、workspaces；保留旧 images 读取。图片旁 JSON 记录 schema=1 的实际生成请求；共享引用阻止误删。 |
-| 规则 | main/modules/skills/service.ts | 安装包 skills 只读；userData/skills/user 保存用户规则；设置保存选择，讨论记录冻结 snapshot。 |
+| 规则 | main/modules/skills/service.ts | 安装包 skills 只读；userData/skills/user 保存单文件规则或含 SKILL.md 的目录包；设置保存选择，讨论记录冻结 snapshot。 |
 | 任务 | main/modules/tasks/task-manager.ts；main/adapters/ipc/tasks.ts | 内存状态；资源互斥、进度、取消模式、目标和 Agent 归属。IPC/MCP 不能各自另建生图队列。 |
 | 设置 | main/modules/settings/service.ts | userData/data/settings.json；原子写入、损坏隔离与备份恢复。 |
 | 收藏 | main/modules/images/recipes.ts | 保持当前保存格式和语义，本轮仅作必要引用调整。 |
@@ -224,3 +224,5 @@ DesktopCommand.type 包含 snapshot、capture-prepare、capture-end、navigate�
 ## 验证
 
 统一入口、运行前提和隔离要求见 testing.md。验收关注行为与保护约束，不以文件数或文件行数判断成功。
+
+Skill 目录包由 modules/skills/package-files.ts 校验和整体写入；入口与 Markdown 参考资料分别冻结到 PageSkillSnapshot 的分段索引，resourcePath 标记按需资源。内置 AI 通过 prompts/chat.ts 的受限读取工具补读当前快照，MCP 通过 skills_ids 补读。图片保留在包内供界面预览，不注入模型上下文。新增 IPC：skills:import-directory（预览）、skills:export（整包导出）。

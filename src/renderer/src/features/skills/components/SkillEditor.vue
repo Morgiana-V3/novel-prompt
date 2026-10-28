@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { reportError } from '../../../shared/lib/notifications'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import type { SkillDoc, SkillModel, SkillScope } from '@shared/skills/types'
+import type { SkillDoc, SkillModel, SkillScope, SkillResource } from '@shared/skills/types'
 import { cleanErr } from '../../../shared/lib/format'
 import { loadSkills } from '../state'
 import { toast } from '../../../shared/lib/notifications'
+import SkillFiles from './SkillFiles.vue'
+import { missingSkillLinks } from '@shared/skills/references'
 import Icon from '../../../shared/ui/Icon.vue'
 
 /**
@@ -26,13 +28,17 @@ const TEMPLATE = `# 我的风格
 - 【V5】只在 V5 下生效的规则写在这样标注的条目里
 `
 
+const activeFileTab = ref('entry')
 const form = reactive({
+  format: props.doc?.format,
+  resources: JSON.parse(JSON.stringify(props.doc?.resources ?? [])) as SkillResource[],
   name: props.doc?.name ?? '',
   description: props.doc?.description ?? '',
   scope: (props.doc?.scope ?? 'optimize') as SkillScope,
   model: (props.doc?.model ?? 'all') as SkillModel,
   content: props.doc?.content ?? TEMPLATE,
 })
+const linkWarnings = computed(() => missingSkillLinks(form.content, form.resources))
 const opened = ref(true)
 const initial = JSON.stringify(form)
 const dirty = computed(() => !props.readonly && JSON.stringify(form) !== initial)
@@ -64,7 +70,13 @@ async function save() {
   saving.value = true
   error.value = ''
   try {
-    const input = { ...form }
+    if (
+      linkWarnings.value.length &&
+      !confirm('存在失效引用，仍要保存吗？\n' + linkWarnings.value.join('\n'))
+    ) {
+      return
+    }
+    const input = JSON.parse(JSON.stringify(form))
     const doc = props.doc
       ? await window.api.skillsUpdate(props.doc.id, input)
       : await window.api.skillsCreate(input)
@@ -198,7 +210,29 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 </div>
               </div>
             </div>
+            <div class="row">
+              <button
+                class="btn small"
+                :class="{ primary: activeFileTab === 'entry' }"
+                @click="activeFileTab = 'entry'"
+              >
+                入口 SKILL.md
+              </button>
+              <button
+                class="btn small"
+                :class="{ primary: activeFileTab === 'resources' }"
+                @click="activeFileTab = 'resources'"
+              >
+                参考资料（{{ form.resources.length }}）
+              </button>
+            </div>
+            <SkillFiles
+              v-if="activeFileTab === 'resources'"
+              v-model="form.resources"
+              :readonly="readonly"
+            />
             <textarea
+              v-else
               v-model="form.content"
               class="sk-text"
               :readonly="readonly"
@@ -212,6 +246,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               prompt_guide。只在某个版本生效的规则，可以在条目里标注【V4.5】/【V5】，或把整份的适用模型设为对应版本。输出格式、Text:
               等语法由软件固定，不需要写。
             </div>
+            <details
+              v-if="linkWarnings.length"
+              class="help"
+            >
+              <summary>发现 {{ linkWarnings.length }} 个失效引用，请在保存前检查</summary>
+              <p
+                v-for="warning in linkWarnings"
+                :key="warning"
+              >
+                {{ warning }}
+              </p>
+            </details>
             <div
               v-if="error"
               class="error-box"

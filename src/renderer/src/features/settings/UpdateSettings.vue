@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HelpTip from '../../shared/ui/HelpTip.vue'
 import { useUpdateSettings } from './use-update-settings'
 import { settingsState } from './state'
 import Icon from '../../shared/ui/Icon.vue'
@@ -14,11 +15,12 @@ const { checking, versionText, updateSub, runCheck } = useUpdateSettings()
     <div class="card-head">
       <span class="card-icon"><Icon name="download" /></span>
       <div>
-        <h2>版本与更新</h2>
-        <div class="card-desc">
-          安装版启动时及每 6
-          小时检查更新，发现新版后后台下载。准备好后点击「重启并更新」，已保存的数据会保留。
-        </div>
+        <h2>
+          版本与更新<HelpTip
+            label="版本与更新"
+            text="安装版启动时及每 6 小时检查更新，发现新版后后台下载。准备好后点击「重启并更新」，已保存的数据会保留。"
+          />
+        </h2>
       </div>
     </div>
     <div class="form-grid">

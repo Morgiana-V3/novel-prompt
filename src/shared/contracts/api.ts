@@ -19,7 +19,13 @@ import type {
   InpaintDraft,
 } from '../prompts/types'
 import type { Settings } from '../settings/types'
-import type { SkillConfigItem, SkillDoc, SkillEntry, SkillInput } from '../skills/types'
+import type {
+  SkillConfigItem,
+  SkillDoc,
+  SkillEntry,
+  SkillInput,
+  SkillImportPreview,
+} from '../skills/types'
 import type { DbStatus, SearchHit, SearchOptions, UpdateProgress } from '../tags/types'
 import type { AiStep, NaiStep, TaskSnapshot } from '../tasks/model'
 import type { UpdateInfo } from '../updates/types'
@@ -137,6 +143,8 @@ export interface Api {
   skillsUpdate: (id: string, patch: Partial<SkillInput>) => Promise<SkillDoc>
   skillsDelete: (id: string) => Promise<void>
   skillsDuplicate: (id: string) => Promise<SkillDoc>
+  skillsImportDirectory: () => Promise<SkillImportPreview | null>
+  skillsExport: (id: string) => Promise<string | null>
   skillsImport: () => Promise<{ imported: string[]; errors: string[] }>
   skillsReveal: (id?: string) => Promise<void>
   copy: (text: string) => Promise<void>
@@ -367,6 +375,14 @@ export interface IpcContract {
   'skills:duplicate': {
     args: Parameters<Api['skillsDuplicate']>
     result: Awaited<ReturnType<Api['skillsDuplicate']>>
+  }
+  'skills:import-directory': {
+    args: Parameters<Api['skillsImportDirectory']>
+    result: Awaited<ReturnType<Api['skillsImportDirectory']>>
+  }
+  'skills:export': {
+    args: Parameters<Api['skillsExport']>
+    result: Awaited<ReturnType<Api['skillsExport']>>
   }
   'skills:import': {
     args: Parameters<Api['skillsImport']>

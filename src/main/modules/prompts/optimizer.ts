@@ -252,13 +252,13 @@ export function tagTool(
 
 export const TAG_TOOL_DEFS = TOOLS
 
-function systemPrompt(version: NaiVersion): string {
+function systemPrompt(version: NaiVersion, skillText: string): string {
   const modelName = version === 'v5' ? 'NAI Diffusion V5' : 'NAI Diffusion V4.5'
   const pos =
     version === 'v5'
       ? '最多 22 条；position 只填归一化坐标「x,y」（0~1，原点左上，如 0.3,0.5）或 5×5 网格 A1~E5，不要写自然语言（程序解析不了，生图时会被忽略）'
       : '最多 6 条；position 只填 5×5 网格坐标 A1~E5（列 A~E 左→右，行 1~5 上→下，C3 为中心）'
-  return `${composeSkills('optimize', version).text}
+  return `${skillText}
 
 ---
 # 程序约定（优先于所有 Skill）
@@ -596,8 +596,9 @@ export async function optimizePrompt(
   const ev = await gatherEvidence(sections, onStep, signal)
   const dataIssues = ev.issues.map((issue) => `- [${issue.where}] ${issue.text}`)
 
+  const skills = composeSkills('optimize', req.version)
   const messages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt(req.version) },
+    { role: 'system', content: systemPrompt(req.version, skills.text) },
     { role: 'user', content: userPrompt(req, rules, dataIssues, ev.block) },
   ]
   const log: ToolLog = {
@@ -625,7 +626,12 @@ export async function optimizePrompt(
     }
     onStep(forced ? 'AI 正在整理最终结果…' : 'AI 思考中…')
     // 始终携带 tools：DeepSeek 思考模式下带 tools 的多轮对话需要完整回传 reasoning_content
-    const msg = await chat(messages, { tools: TOOLS, temperature: 0.6, signal })
+    const msg = await chat(messages, {
+      skillSnapshot: skills.snapshot,
+      tools: TOOLS,
+      temperature: 0.6,
+      signal,
+    })
     messages.push(msg)
 
     if (msg.tool_calls?.length) {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HelpTip from '../../shared/ui/HelpTip.vue'
 import UpdateSettings from './UpdateSettings.vue'
 
 import AgentSettings from './AgentSettings.vue'
@@ -232,10 +233,12 @@ async function translate() {
       <div class="card-head">
         <span class="card-icon"><Icon name="tag" /></span>
         <div>
-          <h2>Danbooru 数据</h2>
-          <div class="card-desc">
-            安装包已内置一份 tag 和中文翻译；点「更新」后会下载到本机用户目录，覆盖内置的数据
-          </div>
+          <h2>
+            Danbooru 数据<HelpTip
+              label="Danbooru 数据"
+              text="安装包已内置一份 tag 和中文翻译；点「更新」后会下载到本机用户目录，覆盖内置的数据"
+            />
+          </h2>
         </div>
       </div>
 
@@ -259,7 +262,12 @@ async function translate() {
                 : '未下载'
             }}
           </div>
-          <div class="tile-label">包含关系</div>
+          <div class="tile-label">
+            包含关系<HelpTip
+              label="包含关系"
+              text="包含关系用于判断冗余（如 white thighhighs 已包含 thighhighs）。AI 优化和画面推测还会联网查 Danbooru 的共现统计（角色默认外观、画师倾向），查过的结果会缓存 30 天，离线时自动降级。"
+            />
+          </div>
         </div>
         <div class="tile">
           <div class="tile-num">{{ tagState.db.zhCount.toLocaleString() }}</div>
@@ -281,17 +289,17 @@ async function translate() {
 
       <div class="form-grid">
         <div class="form-field">
-          <label>最小引用数</label>
+          <label
+            >最小引用数<HelpTip
+              label="最小引用数"
+              text="只收录引用数 ≥ 该值的 tag。10 ≈ 15 万条，1 ≈ 50 万条（更慢）。点「下载 / 更新」时自动保存"
+          /></label>
           <input
             v-model="form.minPostCount"
             class="input"
             type="number"
             min="1"
           />
-          <span class="help"
-            >只收录引用数 ≥ 该值的 tag。10 ≈ 15 万条，1 ≈ 50 万条（更慢）。点「下载 /
-            更新」时自动保存</span
-          >
         </div>
       </div>
 
@@ -328,10 +336,6 @@ async function translate() {
           />取消
         </button>
       </div>
-      <span class="help">
-        包含关系用于判断冗余（如 white thighhighs 已包含 thighhighs）。AI 优化和画面推测还会联网查
-        Danbooru 的共现统计（角色默认外观、画师倾向），查过的结果会缓存 30 天，离线时自动降级。
-      </span>
 
       <div
         v-if="tagState.progress"
@@ -381,8 +385,12 @@ async function translate() {
       <div class="card-head">
         <span class="card-icon blue"><Icon name="key" /></span>
         <div>
-          <h2>DeepSeek</h2>
-          <div class="card-desc">用于 AI 优化、翻译和局部重绘分析，支持 OpenAI 兼容接口</div>
+          <h2>
+            DeepSeek<HelpTip
+              label="DeepSeek"
+              text="用于 AI 优化、翻译和局部重绘分析，支持 OpenAI 兼容接口"
+            />
+          </h2>
         </div>
       </div>
       <div class="form-grid">
@@ -404,19 +412,22 @@ async function translate() {
           />
         </div>
         <div class="form-field">
-          <label>模型</label>
+          <label
+            >模型<HelpTip
+              label="模型"
+              text="默认 deepseek-flash，支持工具调用与图片理解；局部重绘直接复用此模型，无需额外配置。其他模型使用「图片 + 批注」时需支持图片输入。"
+          /></label>
           <input
             v-model="form.model"
             class="input"
           />
-          <span class="help"
-            >默认
-            deepseek-flash，支持工具调用与图片理解；局部重绘直接复用此模型，无需额外配置。其他模型使用「图片
-            + 批注」时需支持图片输入。</span
-          >
         </div>
         <div class="form-field full">
-          <label>思考模式</label>
+          <label
+            >思考模式<HelpTip
+              label="思考模式"
+              text="调整 AI 思考深度；更深的思考可能增加等待时间。批量翻译固定关闭思考。点选后立即生效。"
+          /></label>
           <div class="seg">
             <button
               v-for="option in efforts"
@@ -427,10 +438,6 @@ async function translate() {
               {{ option.label }}
             </button>
           </div>
-          <span class="help"
-            >只影响 AI 优化：思考越深，tag
-            挑得越准，但也越慢。批量翻译固定关闭思考。点选后立即生效</span
-          >
         </div>
       </div>
       <div class="row">
@@ -460,13 +467,21 @@ async function translate() {
       <div class="card-head">
         <span class="card-icon"><Icon name="image" /></span>
         <div>
-          <h2>NovelAI</h2>
-          <div class="card-desc">用于「生图预览」，直接调用 NovelAI 图像接口出图</div>
+          <h2>
+            NovelAI<HelpTip
+              label="NovelAI"
+              text="用于「生图预览」，直接调用 NovelAI 图像接口出图"
+            />
+          </h2>
         </div>
       </div>
       <div class="form-grid">
         <div class="form-field full">
-          <label>Persistent API Token</label>
+          <label
+            >Persistent API Token<HelpTip
+              label="Persistent API Token"
+              text="在 NovelAI 网页「设置 → Account → Get Persistent API Token」获取。只保存在本机，只用于请求头"
+          /></label>
           <input
             v-model="form.naiToken"
             class="input"
@@ -475,13 +490,13 @@ async function translate() {
             placeholder="pst-..."
             autocomplete="off"
           />
-          <span class="help"
-            >在 NovelAI 网页「设置 → Account → Get Persistent API
-            Token」获取。只保存在本机，只用于请求头</span
-          >
         </div>
         <div class="form-field full">
-          <label>只用免费额度</label>
+          <label
+            >只用免费额度<HelpTip
+              label="只用免费额度"
+              text="点选后立即生效。开启后：生成前检查 Opus 会员、免费额度、尺寸（≤ 1024×1024 像素）和步数（≤ 28），不满足就不提交；每张生成后核对 Anlas，发现扣除立即停止。这是调用端的检查，不是服务端保证"
+          /></label>
           <div class="seg">
             <button
               :class="{ on: form.naiFreeOnly }"
@@ -496,11 +511,6 @@ async function translate() {
               允许消耗 Anlas
             </button>
           </div>
-          <span class="help">
-            点选后立即生效。开启后：生成前检查 Opus 会员、免费额度、尺寸（≤ 1024×1024
-            像素）和步数（≤ 28），不满足就不提交；每张生成后核对
-            Anlas，发现扣除立即停止。这是调用端的检查，不是服务端保证
-          </span>
         </div>
       </div>
       <div class="row">
@@ -550,24 +560,27 @@ async function translate() {
       <div class="card-head">
         <span class="card-icon green"><Icon name="translate" /></span>
         <div>
-          <h2>AI 补全中文翻译</h2>
-          <div class="card-desc">
-            社区词库没覆盖的 tag 交给 DeepSeek 翻译（画师 tag 不翻译），手动编辑的翻译优先级最高
-          </div>
+          <h2>
+            AI 补全中文翻译<HelpTip
+              label="AI 补全中文翻译"
+              text="社区词库没覆盖的 tag 交给 DeepSeek 翻译（画师 tag 不翻译），手动编辑的翻译优先级最高"
+            />
+          </h2>
         </div>
       </div>
       <div class="form-grid">
         <div class="form-field">
-          <label>最小引用数</label>
+          <label
+            >最小引用数<HelpTip
+              label="最小引用数"
+              text="只翻译引用数 ≥ 该值的 tag，越小越多、越贵。点「开始 AI 翻译」时自动保存"
+          /></label>
           <input
             v-model="form.translateMinCount"
             class="input"
             type="number"
             min="1"
           />
-          <span class="help"
-            >只翻译引用数 ≥ 该值的 tag，越小越多、越贵。点「开始 AI 翻译」时自动保存</span
-          >
         </div>
       </div>
       <div class="row">
@@ -581,6 +594,7 @@ async function translate() {
             :size="16"
           />开始 AI 翻译
         </button>
+        <span class="muted small">消耗 AI 服务额度</span>
       </div>
     </div>
 

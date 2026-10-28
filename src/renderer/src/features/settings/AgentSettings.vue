@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HelpTip from '../../shared/ui/HelpTip.vue'
 import { useMcpSettings } from './use-mcp-settings'
 import { copy } from '../../shared/lib/notifications'
 import Icon from '../../shared/ui/Icon.vue'
@@ -28,10 +29,12 @@ const emit = defineEmits<{
     <div class="card-head">
       <span class="card-icon blue"><Icon name="wand" /></span>
       <div>
-        <h2>Agent 接入（MCP）</h2>
-        <div class="card-desc">
-          同一套 MCP 支持后台处理与前台可视化操作，由 Agent 按你的要求选择。
-        </div>
+        <h2>
+          Agent 接入（MCP）<HelpTip
+            label="Agent 接入（MCP）"
+            text="支持后台处理与前台可视化操作。告诉 Agent「这次使用前台可视化模式」，即可在界面中展示操作，并随时停止；无需另配服务。"
+          />
+        </h2>
       </div>
     </div>
     <div class="form-grid">
@@ -39,20 +42,23 @@ const emit = defineEmits<{
         v-if="mcp?.runtime"
         class="form-field full"
       >
-        <label>当前环境：{{ mcp.runtime.mode === 'development' ? '开发版' : '安装版' }}</label
-        ><span class="help">数据目录：{{ mcp.runtime.dataPath }}</span
-        ><span class="help">程序目录：{{ mcp.runtime.appPath }}</span
-        ><span class="help">下面的 MCP 配置连接此环境。开发版与安装版的数据分别保存。</span>
+        <label
+          >当前环境：{{ mcp.runtime.mode === 'development' ? '开发版' : '安装版' }}
+          <HelpTip
+            label="当前环境"
+            :text="`数据目录：${mcp.runtime.dataPath}
+程序目录：${mcp.runtime.appPath}
+下面的配置连接此环境。开发版与安装版的数据分别保存。`"
+          />
+        </label>
       </div>
-      <div class="form-field full">
-        <label>两种操作方式</label
-        ><span class="help"
-          >后台模式：查词、检查、处理提示词和图片，可在无窗口时运行。前台模式：打开工作台，填写并提交讨论、展示建议、绘制区域批注、采纳和生成；每一步都在软件界面中显示，可随时停止。告诉
-          Agent「这次使用前台可视化模式」即可，无需另配服务。</span
-        >
-      </div>
+
       <div class="form-field">
-        <label>允许调用 DeepSeek</label>
+        <label
+          >允许调用 DeepSeek<HelpTip
+            label="允许调用 DeepSeek"
+            text="允许 Agent 使用已配置的 AI 服务，包括前台工作台讨论、优化和画面推测，会消耗对应服务额度。仅填写输入、查看或绘制区域无需开启。"
+        /></label>
         <div class="seg">
           <button
             :class="{ on: !allowAi }"
@@ -67,13 +73,18 @@ const emit = defineEmits<{
             开启
           </button>
         </div>
-        <span class="help"
-          >允许 Agent 使用已配置的 AI
-          服务，包括前台工作台讨论、优化和画面推测，会消耗对应服务额度。仅填写输入、查看或绘制区域无需开启。</span
+        <span
+          v-if="allowAi"
+          class="muted small"
+          >已允许消耗 AI 服务额度</span
         >
       </div>
       <div class="form-field">
-        <label>允许生图</label>
+        <label
+          >允许生图<HelpTip
+            label="允许生图"
+            text="前台与后台生图、重绘均检查免费条件，并要求 Agent 取得你的生成授权。"
+        /></label>
         <div class="seg">
           <button
             :class="{ on: !allowGenerate }"
@@ -88,9 +99,6 @@ const emit = defineEmits<{
             开启
           </button>
         </div>
-        <span class="help"
-          >前台与后台生图、重绘均检查免费条件，并要求 Agent 取得你的生成授权。</span
-        >
       </div>
       <div
         v-if="mcp?.portable"
@@ -107,7 +115,11 @@ const emit = defineEmits<{
         v-if="!mcp?.portable"
         class="form-field full"
       >
-        <label for="mcp-scope">接入范围</label>
+        <label for="mcp-scope"
+          >接入范围<HelpTip
+            label="接入范围"
+            text="所选功能在首次连接时即可使用，范围越小，Agent 需要读取的工具说明越少。选择后复制下方新配置并重新连接。“按需加载”适合支持动态刷新工具的客户端。"
+        /></label>
         <ThemeSelect
           id="mcp-scope"
           v-model="mcpScope"
@@ -115,10 +127,6 @@ const emit = defineEmits<{
           aria-label="接入范围"
           :options="scopeOptions"
         />
-        <span class="help"
-          >所选功能在首次连接时即可使用，范围越小，Agent
-          需要读取的工具说明越少。选择后复制下方新配置并重新连接。“按需加载”适合支持动态刷新工具的客户端。</span
-        >
       </div>
       <details
         v-if="!mcp?.portable"
@@ -195,14 +203,12 @@ const emit = defineEmits<{
             <Icon
               name="layers"
               :size="14"
-            />Skill 启用与优先级
-          </button>
+            />Skill 启用与优先级</button
+          ><HelpTip
+            label="Agent 使用 Skill"
+            text="Agent 使用侧栏中启用的 Skill，并按优先级处理冲突；修改后下一次读取生效。Agent 也可以通过管理工具增删改 Skill。"
+          />
         </div>
-        <span class="help"
-          >agent 通过 prompt_guide 读取的规范，就是侧栏「Skill」里为 AI 优化启用的
-          Skill（按优先级），改完下一次读取即生效。agent 也可以用 Skill 管理工具直接增删改
-          Skill。</span
-        >
       </div>
     </div>
     <div class="mcp-log">

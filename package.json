@@ -10,6 +10,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
+    "skills:smoke": "electron tests/integration/skill-packages-smoke.cjs",
     "prompt:smoke": "electron-vite build && electron tests/e2e/prompt-smoke.cjs",
     "tasks:smoke": "electron-vite build && electron tests/e2e/tasks-smoke.cjs",
     "tasks:preview": "electron-vite build && electron tests/e2e/tasks-smoke.cjs --preview",

@@ -28,6 +28,7 @@ const cases = {
   'inpaint:mcp': ['electron', 'tests/integration/inpaint-mcp-smoke.cjs', false],
   retention: ['electron', 'tests/integration/retention-smoke.cjs', false],
   'workspace:cleanup': ['electron', 'tests/integration/workspace-cleanup-smoke.cjs', false],
+  skills: ['electron', 'tests/integration/skill-packages-smoke.cjs', true],
   prompt: ['electron', 'tests/e2e/prompt-smoke.cjs', true],
   tasks: ['electron', 'tests/e2e/tasks-smoke.cjs', true],
   update: ['electron', 'tests/integration/update-smoke.cjs', false],

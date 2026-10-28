@@ -234,7 +234,7 @@ export async function planInpaint(
       { role: 'system', content: system },
       { role: 'user', content: [{ type: 'text', text }, ...visual] },
     ],
-    { thinking: false, temperature: 0.3, signal },
+    { thinking: false, temperature: 0.3, signal, skillSnapshot: skills.snapshot },
   )
   const plans = normalizePlans(extractJson(reply.content ?? ''), req)
   if (tagStore.loaded) {

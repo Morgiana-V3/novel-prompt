@@ -52,6 +52,13 @@
   color: var(--ok);
 }
 
+/* Align the help button to the text line instead of the inline font baseline. */
+.settings :is(h2, label, .tile-label):has(> .help-tip) {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
 .card-desc {
   font-size: 12px;
   color: var(--muted);

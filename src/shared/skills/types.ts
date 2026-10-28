@@ -12,6 +12,8 @@ export interface SkillEntry {
 }
 
 export interface SkillMeta {
+  format?: 'file' | 'directory'
+  resourceCount?: number
   /** 内置为 builtin:xxx，用户 Skill 为文件名（不含 .md） */
   id: string
   name: string
@@ -25,6 +27,7 @@ export interface SkillMeta {
 }
 
 export interface SkillDoc extends SkillMeta {
+  resources?: SkillResource[]
   /** 正文（不含 frontmatter） */
   content: string
 }
@@ -35,9 +38,23 @@ export interface SkillConfigItem extends SkillMeta {
 }
 
 export interface SkillInput {
+  format?: 'file' | 'directory'
+  resources?: SkillResource[]
   name: string
   description?: string
   scope?: SkillScope
   model?: SkillModel
   content: string
+}
+
+export interface SkillResource {
+  path: string
+  kind: 'markdown' | 'image'
+  /** Markdown text or base64 image bytes. Never executable. */
+  content: string
+}
+
+export interface SkillImportPreview {
+  input: SkillInput
+  warnings: string[]
 }

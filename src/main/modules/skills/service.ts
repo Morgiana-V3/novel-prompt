@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, rmSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import type { NaiVersion } from '../../../shared/generation/types'
 import type {
@@ -7,6 +7,7 @@ import type {
   SkillDoc,
   SkillEntry,
   SkillInput,
+  SkillImportPreview,
   SkillMeta,
   SkillModel,
   SkillScope,
@@ -21,6 +22,7 @@ import {
   userSkillDir,
   type BundledSkill,
 } from '../../infrastructure/paths'
+import { readPackage, writePackage, recoverPackage } from './package-files'
 import { getSettings, saveSettings } from '../settings/service'
 
 /**
@@ -92,7 +94,7 @@ const unquote = (text: string) => {
   return /^(['"]).*\1$/.test(text2) ? text2.slice(1, -1) : text2
 }
 
-/** 解析开头的 --- frontmatter（只支持单行 key: value） */
+/** 解析开头的 --- frontmatter（单行字段与常用折叠/多行说明） */
 export function parseFrontmatter(text: string): { meta: Record<string, string>; body: string } {
   const src = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n')
   const match = /^---\n([\s\S]*?)\n---[ \t]*(?:\n|$)/.exec(src)
@@ -100,10 +102,24 @@ export function parseFrontmatter(text: string): { meta: Record<string, string>; 
     return { meta: {}, body: src.trim() }
   }
   const meta: Record<string, string> = {}
-  for (const line of match[1].split('\n')) {
+  const lines = match[1].split('\n')
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]
     const kv = /^([A-Za-z_][\w-]*)\s*:\s*(.*)$/.exec(line)
     if (kv) {
-      meta[kv[1].toLowerCase()] = unquote(kv[2])
+      let value = unquote(kv[2])
+      if (/^[>|][-+]?$/.test(value)) {
+        const folded = value.startsWith('>')
+        const block: string[] = []
+        while (
+          index + 1 < lines.length &&
+          (/^\s/.test(lines[index + 1]) || !lines[index + 1].trim())
+        ) {
+          block.push(lines[++index].trim())
+        }
+        value = block.join(folded ? ' ' : '\n').trim()
+      }
+      meta[kv[1].toLowerCase()] = value
     }
   }
   return { meta, body: src.slice(match[0].length).trim() }
@@ -145,7 +161,16 @@ const asModel = (value: unknown): SkillModel => {
 /* ---------- 读取 ---------- */
 
 const builtinOf = (id: string) => BUILTINS.find((builtinSkill) => builtinSkill.id === id)
-const userFile = (id: string) => join(userSkillDir(), `${id}.md`)
+const packageRoot = (id: string) => join(userSkillDir(), id)
+const userFile = (id: string) => {
+  if (!validId(id)) {
+    throw new Error('Skill 标识无效')
+  }
+  recoverPackage(packageRoot(id))
+  return existsSync(join(packageRoot(id), 'SKILL.md'))
+    ? join(packageRoot(id), 'SKILL.md')
+    : join(userSkillDir(), `${id}.md`)
+}
 const validId = (id: string) => /^[\w-]{1,64}$/.test(id)
 
 function readBundled(file: BundledSkill): string {
@@ -178,12 +203,19 @@ function builtinDoc(builtinSkill: Builtin): SkillDoc {
 }
 
 function userDoc(id: string): SkillDoc | null {
+  if (!validId(id)) {
+    return null
+  }
   const file = userFile(id)
   if (!validId(id) || !existsSync(file)) {
     return null
   }
-  const { meta, body } = parseFrontmatter(readFileSync(file, 'utf8'))
+  const bundle = file.endsWith('SKILL.md') ? readPackage(packageRoot(id)) : null
+  const { meta, body } = parseFrontmatter(bundle?.entry ?? readFileSync(file, 'utf8'))
   return {
+    format: bundle ? 'directory' : 'file',
+    resourceCount: bundle?.resources.length ?? 0,
+    resources: bundle?.resources,
     id,
     name: meta.name?.trim() || id,
     description: meta.description?.trim() ?? '',
@@ -196,13 +228,23 @@ function userDoc(id: string): SkillDoc | null {
   }
 }
 
-const strip = ({ content: _c, ...meta }: SkillDoc): SkillMeta => meta
+const strip = ({ content: _c, resources: _resources, ...meta }: SkillDoc): SkillMeta => meta
 
 function userIds(): string[] {
   try {
+    for (const name of readdirSync(userSkillDir())) {
+      const match = /^([\w-]{1,64})\.backup-[a-f0-9-]{36}$/.exec(name)
+      if (match) {
+        recoverPackage(packageRoot(match[1]))
+      }
+    }
     return readdirSync(userSkillDir())
-      .filter((filename) => filename.toLowerCase().endsWith('.md'))
-      .map((filename) => filename.slice(0, -3))
+      .filter(
+        (filename) =>
+          filename.toLowerCase().endsWith('.md') ||
+          (validId(filename) && existsSync(join(packageRoot(filename), 'SKILL.md'))),
+      )
+      .map((filename) => (filename.endsWith('.md') ? filename.slice(0, -3) : filename))
       .filter(validId)
   } catch {
     return []
@@ -312,7 +354,7 @@ function newId(name: string): string {
     .slice(0, 32)
   const base = slug || 'skill'
   let id = base
-  for (let i = 2; existsSync(userFile(id)); i++) {
+  for (let i = 2; existsSync(userFile(id)) || existsSync(packageRoot(id)); i++) {
     id = `${base}-${i}`
   }
   return id
@@ -322,8 +364,18 @@ function writeUser(
   id: string,
   metadata: { name: string; description: string; scope: SkillScope; model: SkillModel },
   body: string,
+  resources?: SkillInput['resources'],
+  format?: SkillInput['format'],
 ): SkillDoc {
-  writeFileSync(userFile(id), serialize(metadata, body), 'utf8')
+  if (format === 'directory' || resources?.length || userFile(id).endsWith('SKILL.md')) {
+    const previousFile = join(userSkillDir(), `${id}.md`)
+    writePackage(packageRoot(id), serialize(metadata, body), resources ?? [])
+    if (existsSync(previousFile)) {
+      unlinkSync(previousFile)
+    }
+  } else {
+    writeFileSync(userFile(id), serialize(metadata, body), 'utf8')
+  }
   return userDoc(id)!
 }
 
@@ -352,6 +404,8 @@ export function createSkill(
       model: asModel(input.model),
     },
     input.content,
+    input.resources,
+    input.format,
   )
   insertConfig(id, opts.enabled ?? true, (opts.priority ?? 1) - 1)
   return doc
@@ -377,6 +431,8 @@ export function updateSkill(id: string, patch: Partial<SkillInput>): SkillDoc {
       model: asModel(patch.model ?? cur.model),
     },
     content,
+    patch.resources ?? cur.resources,
+    cur.format === 'directory' ? 'directory' : patch.format,
   )
 }
 
@@ -388,7 +444,12 @@ export function deleteSkill(id: string): void {
   if (!validId(id) || !existsSync(file)) {
     throw new Error(`找不到 Skill：${id}`)
   }
-  unlinkSync(file)
+  if (file.endsWith('SKILL.md')) {
+    // validId above constrains deletion to one child of the managed Skill directory.
+    rmSync(packageRoot(id), { recursive: true })
+  } else {
+    unlinkSync(file)
+  }
   saveConfig(getConfig())
 }
 
@@ -406,10 +467,42 @@ export function duplicateSkill(id: string): SkillDoc {
       scope: src.scope,
       model: src.model,
       content: src.content,
+      format: src.format,
+      resources: src.resources,
     },
     { enabled: false, priority: idx + 1 },
   )
   return doc
+}
+
+export function previewSkillDirectory(path: string): SkillImportPreview {
+  const bundle = readPackage(path)
+  const { meta, body } = parseFrontmatter(bundle.entry)
+  return {
+    input: {
+      name: meta.name?.trim() || basename(path),
+      description: meta.description ?? '',
+      scope: asScope(meta.scope, 'all'),
+      model: asModel(meta.model),
+      content: body,
+      format: 'directory',
+      resources: bundle.resources,
+    },
+    warnings: bundle.warnings,
+  }
+}
+
+export function exportSkillDirectory(id: string, parent: string): string {
+  const skill = getSkill(id)
+  if (!skill) {
+    throw new Error('Skill 不存在')
+  }
+  const target = join(parent, id.replace(':', '-'))
+  if (existsSync(target)) {
+    throw new Error('目标文件夹已存在，请选择其他位置，避免覆盖已有内容')
+  }
+  writePackage(target, serialize(skill, skill.content), skill.resources ?? [])
+  return target
 }
 
 /** 导入 .md 文件：有 frontmatter 时读取 name / description / scope / model，否则用文件名作名称 */
@@ -491,7 +584,17 @@ export function composeSkills(
   for (const [i, s] of skills.entries()) {
     text += `\n\n<skill priority="${i + 1}" scope="${s.scope}" name="${s.name.replace(/"/g, "'")}">\n`
     const start = text.length
-    text += s.content
+    const references = (s.resources ?? []).filter((resource) => resource.kind === 'markdown')
+    const entry =
+      s.content +
+      (references.length
+        ? '\n\n按需参考资料（按入口中的条件读取，不自动加载）：\n' +
+          references
+            .map((resource) => `- ${resource.path}（读取标识：${s.id}/${resource.path}）`)
+            .join('\n') +
+          '\n内置 AI 使用 read_skill_reference(id)；外部工作台 Agent 使用 get_workspace_context 的 skills_ids 补读本轮冻结资料；非工作台场景使用 get_skill(id=Skill标识, resource=相对路径) 读取当前资料。'
+        : '')
+    text += entry
     sections.push({
       id: s.id,
       name: s.name,
@@ -501,11 +604,35 @@ export function composeSkills(
       priority: i + 1,
       start,
       end: text.length,
-      digest: hash(s.content),
+      digest: hash(entry),
     })
     text += '\n</skill>'
   }
-  return { text, skills, snapshot: { text, digest: hash(text), sections } }
+  const entryText = text
+  for (const [index, skill] of skills.entries()) {
+    for (const resource of skill.resources ?? []) {
+      if (resource.kind !== 'markdown') {
+        continue
+      }
+      text += '\n'
+      const start = text.length
+      text += resource.content
+      sections.push({
+        id: `${skill.id}/${resource.path}`,
+        skillId: skill.id,
+        resourcePath: resource.path,
+        name: `${skill.name} / ${resource.path}`,
+        description: '按入口说明按需读取的参考资料',
+        scope: skill.scope,
+        model: skill.model,
+        priority: index + 1,
+        start,
+        end: text.length,
+        digest: hash(resource.content),
+      })
+    }
+  }
+  return { text: entryText, skills, snapshot: { text, digest: hash(text), sections } }
 }
 
 /* ---------- 旧版迁移 ---------- */

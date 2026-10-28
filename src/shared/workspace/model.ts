@@ -104,6 +104,8 @@ export interface PageProposal {
   previousTargets?: { id: string; target: number | null }[]
 }
 export interface PageSkillSection {
+  resourcePath?: string
+  skillId?: string
   id: string
   name: string
   description: string

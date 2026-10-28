@@ -110,15 +110,15 @@ export function contextSkills(
   const selected = sections.filter(
     (section) =>
       section.scope === 'core' ||
-      scopes[task].includes(section.scope) ||
+      ((!section.resourcePath || task === 'all') && scopes[task].includes(section.scope)) ||
       requested?.includes(section.id),
   )
   // Overview is discovery, not permission to bypass general user-authored rules.
   const required = sections.filter(
     (section) =>
       section.scope === 'core' ||
-      section.scope === 'all' ||
-      scopes[task].includes(section.scope) ||
+      (!section.resourcePath && section.scope === 'all') ||
+      ((!section.resourcePath || task === 'all') && scopes[task].includes(section.scope)) ||
       requested?.includes(section.id),
   )
   const bodies = selected.filter(

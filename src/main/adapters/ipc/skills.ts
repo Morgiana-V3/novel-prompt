@@ -2,6 +2,8 @@ import { dialog, shell } from 'electron'
 import type { SkillEntry, SkillInput } from '../../../shared/skills/types'
 import { userSkillDir } from '../../infrastructure/paths'
 import {
+  previewSkillDirectory,
+  exportSkillDirectory,
   coreText,
   createSkill,
   deleteSkill,
@@ -48,6 +50,22 @@ export function registerSkillsIpc(context: IpcContext): void {
 
   handle('skills:duplicate', (_e, id: string) => {
     return duplicateSkill(id)
+  })
+
+  handle('skills:import-directory', async () => {
+    const result = await dialog.showOpenDialog(context.getWindow()!, {
+      title: '选择单份 Skill 的文件夹（根目录包含 SKILL.md）',
+      properties: ['openDirectory'],
+    })
+    return result.canceled ? null : previewSkillDirectory(result.filePaths[0])
+  })
+
+  handle('skills:export', async (_event, id: string) => {
+    const result = await dialog.showOpenDialog(context.getWindow()!, {
+      title: '选择导出位置（创建独立 Skill 文件夹）',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    return result.canceled ? null : exportSkillDirectory(id, result.filePaths[0])
   })
 
   handle('skills:import', async () => {

@@ -39,10 +39,13 @@ export function createPromptGuideTool(): McpTool {
     },
     annotations: READ_ONLY,
     run: async (argumentsRecord) => {
-      const text = AGENT_GUIDE + composeSkills('optimize', version(argumentsRecord.version)).text
+      const composed = composeSkills('optimize', version(argumentsRecord.version))
+      const text = AGENT_GUIDE + composed.text
       return argumentsRecord.detail === 'summary'
         ? json({
-            fingerprint: createHash('sha256').update(text).digest('hex'),
+            fingerprint: createHash('sha256')
+              .update(text + composed.snapshot.digest)
+              .digest('hex'),
             version: version(argumentsRecord.version),
             guide:
               '先读 core 与下列启用规则，再查词、编排、analyze_prompt 复核；生成必须获得用户授权。用 get_skill 读取正文，或 prompt_guide(detail:full)。',

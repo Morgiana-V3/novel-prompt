@@ -1,12 +1,15 @@
 <script setup lang="ts">
+import HelpTip from '../../../shared/ui/HelpTip.vue'
 import { skillsState } from '../state'
 import { shellState } from '../../../shared/state/shell'
 import { computed, onMounted, ref, watch } from 'vue'
-import type { SkillConfigItem, SkillDoc } from '@shared/skills/types'
+import type { SkillConfigItem, SkillDoc, SkillImportPreview } from '@shared/skills/types'
 import { cleanErr } from '../../../shared/lib/format'
 import { loadSkills } from '../state'
 import { toast } from '../../../shared/lib/notifications'
 import Icon from '../../../shared/ui/Icon.vue'
+import { missingSkillLinks } from '@shared/skills/references'
+import SkillFiles from './SkillFiles.vue'
 import SkillEditor from './SkillEditor.vue'
 
 /** 设置页：Skill 的导入、新建、编辑、复制、删除。启用与优先级在侧栏浮层里设置 */
@@ -26,7 +29,13 @@ const mine = computed(() => list.value.filter((skill) => !skill.builtin))
 /** 编辑器：undefined = 关闭；null doc = 新建 */
 const editing = ref<{ doc: SkillDoc | null; readonly: boolean; title?: string } | undefined>()
 const confirmDel = ref('')
+const importing = ref<SkillImportPreview | null>(null)
+const importBusy = ref(false)
+const importError = ref('')
 function prepareUpdate(): void {
+  if (importing.value) {
+    throw new Error('请先完成或取消 Skill 导入')
+  }
   if (editing.value && !editing.value.readonly) {
     throw new Error('请先保存或关闭 Skill 编辑器，再重启更新')
   }
@@ -99,6 +108,49 @@ async function importMd() {
   }
 }
 
+async function importDirectory() {
+  try {
+    importError.value = ''
+    importing.value = await window.api.skillsImportDirectory()
+    if (importing.value) {
+      importing.value.warnings.push(
+        ...missingSkillLinks(importing.value.input.content, importing.value.input.resources ?? []),
+      )
+    }
+  } catch (error) {
+    toast(cleanErr(error))
+  }
+}
+
+async function confirmImport() {
+  if (!importing.value || importBusy.value) {
+    return
+  }
+  importBusy.value = true
+  try {
+    const doc = await window.api.skillsCreate(JSON.parse(JSON.stringify(importing.value.input)))
+    importing.value = null
+    await loadSkills()
+    editing.value = { doc, readonly: false }
+    toast('已导入独立副本并启用；原文件夹不会被修改')
+  } catch (error) {
+    importError.value = cleanErr(error)
+  } finally {
+    importBusy.value = false
+  }
+}
+
+async function exportDirectory(id: string) {
+  try {
+    const path = await window.api.skillsExport(id)
+    if (path) {
+      toast(`已导出到 ${path}`)
+    }
+  } catch (error) {
+    toast(cleanErr(error))
+  }
+}
+
 async function remove(skill: SkillConfigItem) {
   if (confirmDel.value !== skill.id) {
     confirmDel.value = skill.id
@@ -128,11 +180,12 @@ const openPicker = () => (skillsState.skillPanel = true)
     <div class="card-head">
       <span class="card-icon"><Icon name="layers" /></span>
       <div>
-        <h2>Skill 管理</h2>
-        <div class="card-desc">
-          Skill 决定内置 AI（AI 优化、画面推测）和
-          agent（prompt_guide）怎么写、怎么读提示词。这里负责导入、编辑和删除；启用哪些、谁优先，在侧栏「Skill」里设置。
-        </div>
+        <h2>
+          Skill 管理<HelpTip
+            label="Skill 管理"
+            text="Skill 决定内置 AI（AI 优化、画面推测）和 agent（prompt_guide）怎么写、怎么读提示词。这里负责导入、编辑和删除；启用哪些、谁优先，在侧栏「Skill」里设置。"
+          />
+        </h2>
       </div>
     </div>
 
@@ -146,6 +199,16 @@ const openPicker = () => (skillsState.skillPanel = true)
           :size="14"
         />导入 .md
       </button>
+      <button
+        class="btn small"
+        @click="importDirectory"
+      >
+        导入 Skill 文件夹
+      </button>
+      <HelpTip
+        label="导入 Skill"
+        text="可导入单个 .md，或根目录含 SKILL.md 的文件夹。目录包支持 Markdown 参考资料和图片，脚本不执行。保存独立副本，同名导入不覆盖原 Skill；导入后可调整作用范围和模型。"
+      />
       <button
         class="btn small"
         @click="editing = { doc: null, readonly: false }"
@@ -198,7 +261,12 @@ const openPicker = () => (skillsState.skillPanel = true)
               s.enabled ? `启用 · 第 ${priorityOf(s)} 位` : '未启用'
             }}</span>
             <span class="pill">{{ SCOPE[s.scope] }}</span>
-            <span class="muted small">{{ fmtChars(s.chars) }}</span>
+            <span class="muted small"
+              >入口 {{ fmtChars(s.chars)
+              }}<template v-if="s.format === 'directory'">
+                · 目录包 · {{ s.resourceCount }} 个参考文件</template
+              ></span
+            >
           </div>
           <div class="sm-desc">{{ s.description }}</div>
         </div>
@@ -231,7 +299,7 @@ const openPicker = () => (skillsState.skillPanel = true)
         v-if="!mine.length"
         class="sm-empty muted"
       >
-        还没有自己的 Skill。可以导入 .md 文件、新建一份，或把内置 Skill 复制一份再改。
+        还没有自己的 Skill。可以导入单个 .md 或包含 SKILL.md 的文件夹，也可以新建或复制内置 Skill。
       </div>
       <div
         v-for="s in mine"
@@ -250,7 +318,12 @@ const openPicker = () => (skillsState.skillPanel = true)
               class="pill"
               >{{ MODEL[s.model] }}</span
             >
-            <span class="muted small">{{ fmtChars(s.chars) }}</span>
+            <span class="muted small"
+              >入口 {{ fmtChars(s.chars)
+              }}<template v-if="s.format === 'directory'">
+                · 目录包 · {{ s.resourceCount }} 个参考文件</template
+              ></span
+            >
           </div>
           <div class="sm-desc">{{ s.description || '（没有说明）' }}</div>
         </div>
@@ -285,6 +358,12 @@ const openPicker = () => (skillsState.skillPanel = true)
             />
           </button>
           <button
+            class="btn ghost small"
+            @click="exportDirectory(s.id)"
+          >
+            导出
+          </button>
+          <button
             :class="['btn small', confirmDel === s.id ? 'danger' : 'ghost']"
             :title="confirmDel === s.id ? '再点一次确认删除' : '删除'"
             @click="remove(s)"
@@ -298,12 +377,72 @@ const openPicker = () => (skillsState.skillPanel = true)
       </div>
     </div>
 
-    <div class="help">
-      只支持 .md 文件。文件开头可以用 frontmatter 写 name / description /
-      scope（optimize、preview、inpaint、all）/
-      model（all、v4.5、v5），导入时会自动读取。也可以直接把 .md 放进 Skill
-      文件夹，放进去的默认不启用。
-    </div>
+    <Teleport to="body">
+      <div
+        v-if="importing"
+        class="skill-import-mask"
+      >
+        <section
+          class="skill-import-dialog modal-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-label="导入 Skill 预览"
+        >
+          <h3>导入 Skill 文件夹</h3>
+          <p>
+            <b>{{ importing.input.name }}</b> · 入口 SKILL.md ·
+            {{ importing.input.resources?.length ?? 0 }} 个参考文件
+          </p>
+          <p class="muted small">
+            {{ importing.input.description || '没有说明，可在导入后编辑。' }} · 导入后默认启用
+          </p>
+          <details>
+            <summary>查看入口正文</summary>
+            <pre class="skill-import-entry">{{ importing.input.content }}</pre>
+          </details>
+          <SkillFiles
+            :model-value="importing.input.resources ?? []"
+            readonly
+          />
+          <details
+            v-if="importing.warnings.length"
+            open
+            class="skill-import-warnings"
+          >
+            <summary>{{ importing.warnings.length }} 项导入提示</summary>
+            <p
+              v-for="warning in importing.warnings"
+              :key="warning"
+            >
+              {{ warning }}
+            </p>
+          </details>
+          <p
+            v-if="importError"
+            class="error-box"
+          >
+            {{ importError }}
+          </p>
+          <div class="row">
+            <span class="muted small">保存独立副本，不修改来源文件夹</span>
+            <button
+              class="btn small ml-auto"
+              :disabled="importBusy"
+              @click="importing = null"
+            >
+              取消
+            </button>
+            <button
+              class="btn primary small"
+              :disabled="importBusy"
+              @click="confirmImport"
+            >
+              {{ importBusy ? '正在导入…' : '确认导入' }}
+            </button>
+          </div>
+        </section>
+      </div>
+    </Teleport>
 
     <SkillEditor
       v-if="editing"
@@ -395,5 +534,37 @@ const openPicker = () => (skillsState.skillPanel = true)
   background: var(--bad);
   color: #fff;
   border-color: var(--bad);
+}
+</style>
+
+<style scoped>
+.skill-import-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 36px;
+  background: rgb(16 16 20 / 42%);
+}
+
+.skill-import-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(900px, 100%);
+  height: min(800px, 90vh);
+  padding: 24px;
+  background: var(--bg);
+  border-radius: 16px;
+}
+
+.skill-import-entry,
+.skill-import-warnings {
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
 }
 </style>

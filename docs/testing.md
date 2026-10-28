@@ -53,3 +53,5 @@ node scripts/check.mjs isolation
 `npm run screenshots` 使用离线演示内容，在临时目录输出截图。开发模式可用独立 NOVELPROMPT_USER_DATA 执行 `npm run dev -- -- --screenshots=<项目外目录>`；截图模式另建临时 profile。不要把 `screenshots:ai` 当作离线验收，它会显式调用模型。
 
 Less 仅在 ThemeSelect 试点。验收包括开发/生产编译、scoped 选择器、主题变量、选择/焦点/禁用状态、对话框内菜单及窗口缩放。是否扩大使用范围由实际复用需求决定，不批量改后缀。
+
+Skill 目录包：构建后运行 `npm run skills:smoke`，或 `node scripts/check.mjs skills`。覆盖目录预览/复制/导出、旧单文件保留、越界及链接拒绝、冻结按需读取和真实界面编辑；合成资料与截图仅写入系统临时目录，不调用真实模型。

@@ -33,9 +33,9 @@ const WEAK_COUNT = 50
 const HEAVY_WEIGHT = 1.6
 const MAX_RETRY = 1
 
-function systemPrompt(version: NaiVersion): string {
+function systemPrompt(version: NaiVersion, skillText: string): string {
   const modelName = version === 'v5' ? 'NAI Diffusion V5' : 'NAI Diffusion V4.5'
-  return `${composeSkills('preview', version).text}
+  return `${skillText}
 
 ---
 # 程序约定（优先于所有 Skill）
@@ -664,14 +664,15 @@ export async function previewPrompt(
   const { sections, issues, tagCount, ev } = await localReview(req, onStep, signal)
   onStep(`共 ${tagCount} 个正向元素，本地发现 ${issues.length} 个问题`)
 
+  const skills = composeSkills('preview', req.version)
   const messages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt(req.version) },
+    { role: 'system', content: systemPrompt(req.version, skills.text) },
     { role: 'user', content: userPrompt(req, sections, issues, ev.block) },
   ]
 
   for (let i = 0; i <= MAX_RETRY; i++) {
     onStep(i ? 'AI 重新整理输出格式…' : 'AI 正在想象画面…')
-    const msg = await chat(messages, { temperature: 0.5, signal })
+    const msg = await chat(messages, { skillSnapshot: skills.snapshot, temperature: 0.5, signal })
     try {
       const result = normalize(extractJson<Record<string, unknown>>(msg.content ?? ''))
       if (!result.summary) {

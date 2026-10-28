@@ -72,7 +72,18 @@ export function skillTools(): McpTool[] {
       title: '读取 Skill',
       description:
         '读取一份 Skill 的元信息和正文。id 来自 list_skills；传 core 读取固定的「Skill 使用总则」。',
-      inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          resource: {
+            type: 'string',
+            description:
+              '包内 Markdown 相对路径；工作台讨论请使用 get_workspace_context 的 skills_ids 读取冻结版本',
+          },
+        },
+        required: ['id'],
+      },
       annotations: READ_ONLY,
       run: async (argumentsRecord) => {
         if (str(argumentsRecord.id) === 'core') {
@@ -82,7 +93,19 @@ export function skillTools(): McpTool[] {
         if (!skill) {
           throw new Error(`找不到 Skill：${str(argumentsRecord.id)}`)
         }
-        return json(skill)
+        if (argumentsRecord.resource) {
+          const resource = skill.resources?.find(
+            (item) => item.path === str(argumentsRecord.resource),
+          )
+          if (!resource || resource.kind !== 'markdown') {
+            throw new Error('未找到 Markdown 参考资料；图片仅支持在应用中预览')
+          }
+          return json({ id: skill.id, path: resource.path, content: resource.content })
+        }
+        return json({
+          ...skill,
+          resources: skill.resources?.map(({ path, kind }) => ({ path, kind })),
+        })
       },
     },
     {

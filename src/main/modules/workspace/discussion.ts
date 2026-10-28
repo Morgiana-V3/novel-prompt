@@ -308,6 +308,7 @@ export async function discussPage(
       | undefined
     for (let round = 0; round < 8; round++) {
       const reply = await chat(messages, {
+        skillSnapshot: skills.snapshot,
         tools: round < 6 && tagStore.loaded ? TAG_TOOL_DEFS : undefined,
         temperature: 0.3,
         signal: ctrl.signal,
