@@ -41,6 +41,8 @@ for (const [label, cwd, folder] of [
     continue
   }
   const target = outsideRepository(join(output, folder))
+  const sourceVersion = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf8')).version
+  const version = label === 'current' ? `${sourceVersion}-acceptance.1` : sourceVersion
   if (!target.startsWith(output + sep)) {
     throw Error('Unsafe build target')
   }
@@ -63,7 +65,7 @@ for (const [label, cwd, folder] of [
       '--config.nsis.createStartMenuShortcut=false',
       '--config.nsis.runAfterFinish=false',
       `--config.nsis.artifactName=${name}`,
-      ...(label === 'current' ? ['--config.extraMetadata.version=0.6.1-acceptance.1'] : []),
+      `--config.extraMetadata.version=${version}`,
     ],
     cwd,
   )
@@ -72,6 +74,7 @@ for (const [label, cwd, folder] of [
     JSON.stringify(
       {
         ...identity,
+        version,
         installer: name,
         sha256: createHash('sha256')
           .update(readFileSync(join(target, name)))

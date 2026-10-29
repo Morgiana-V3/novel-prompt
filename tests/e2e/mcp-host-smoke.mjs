@@ -107,7 +107,7 @@ try {
   await init(fixed)
   assert.equal(
     (await fixed.request('tools/list')).result.tools.length,
-    70,
+    69,
     'first tools/list exposes all configured tools without refresh',
   )
   fixed.child.stdin.end()
@@ -115,6 +115,7 @@ try {
   await init(narrow)
   const narrowTools = (await narrow.request('tools/list')).result.tools.map((t) => t.name)
   assert.ok(narrowTools.includes('search_tags'))
+  assert.ok(!narrowTools.includes('list_skill_templates'))
   assert.ok(!narrowTools.includes('generate_image'))
   narrow.child.stdin.end()
   const invalid = agent('workspace,typo')
@@ -158,7 +159,7 @@ try {
   )
   await assert.rejects(a.data('agent_guide', { topic: 'missing' }), /topic.*overview/)
   assert.equal((await a.data('get_app_state')).visible, false)
-  assert.equal((await a.request('tools/list')).result.tools.length, 70)
+  assert.equal((await a.request('tools/list')).result.tools.length, 69)
   console.log(
     'PASS agent onboarding in initialize; guide topics/resource share content and fingerprint; invalid topic/resource rejected; reading keeps host headless',
   )
@@ -226,12 +227,12 @@ try {
     'replay after host restart must not create another workspace',
   )
   const grouped = await c.data('configure_tools', { groups: ['workspace'] })
-  assert.ok(grouped.exposedToolCount < 70)
+  assert.ok(grouped.exposedToolCount < 69)
   const filtered = (await c.request('tools/list')).result.tools
   assert.ok(filtered.some((t) => t.name === 'get_operation'))
   assert.ok(!filtered.some((t) => t.name === 'generate_image'))
   await c.data('configure_tools', { groups: grouped.groups.map((g) => g.id) })
-  assert.equal((await c.request('tools/list')).result.tools.length, 70)
+  assert.equal((await c.request('tools/list')).result.tools.length, 69)
   console.log(
     'PASS operation result survives actual host termination; same operation does not create twice; tool groups filter and restore through the real proxy',
   )

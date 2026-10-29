@@ -131,7 +131,6 @@ for (const [name, handler] of Object.entries({
   'settings:save': (_, p) => saveSettings(p),
   'db:status': () => tagStore.status(),
   'window:dark-titlebar': () => {},
-  'skills:templates': () => [],
   'skills:list': () => [],
   'mcp:info': () => null,
   'update:check': () => updateInfo,

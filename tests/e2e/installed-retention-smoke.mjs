@@ -29,6 +29,7 @@ const newInstaller = resolve(newArg)
 assert.equal(basename(oldInstaller), 'NovelPrompt-Acceptance-baseline.exe')
 assert.equal(basename(newInstaller), 'NovelPrompt-Acceptance-current.exe')
 // Require build evidence of an isolated app identity before launching either installer.
+const versions = []
 for (const path of [oldInstaller, newInstaller]) {
   const config = JSON.parse(
     readFileSync(join(resolve(path, '..'), 'acceptance-build.json'), 'utf8'),
@@ -39,6 +40,8 @@ for (const path of [oldInstaller, newInstaller]) {
     assert.equal(config[field], false)
   }
   assert.equal(createHash('sha256').update(readFileSync(path)).digest('hex'), config.sha256)
+  assert.match(config.version, /^\d+\.\d+\.\d+(?:-acceptance\.1)?$/)
+  versions.push(config.version)
 }
 const root = temporaryProfile('np-installed-retention-')
 const install = join(root, 'app')
@@ -108,6 +111,9 @@ async function launch() {
       throw Error('App exited: ' + output)
     }
     return /DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/.exec(output)?.[1]
+  }).catch((error) => {
+    writeFileSync(join(root, 'launch-error.log'), output)
+    throw new Error(`${error.message}\n${output}`)
   })
   const target = await wait(async () => {
     try {
@@ -204,8 +210,8 @@ try {
   writeFileSync(join(profile, 'images', 'legacy.png'), bytes)
   writeFileSync(join(profile, 'images', 'ordinary-old.png'), bytes)
   let app = await launch()
-  assert.equal((await app.js('window.api.updateState()')).current, '0.6.0')
-  const oldPage = await app.js(
+  assert.equal((await app.js('window.api.updateState()')).current, versions[0])
+  let oldPage = await app.js(
     `window.api.pagesCreate('legacy.png',${JSON.stringify(params)},'v5',${JSON.stringify(request)})`,
   )
   const ownedImage = oldPage.versions.find(
@@ -213,6 +219,29 @@ try {
   ).image
   assert.ok(ownedImage?.name.startsWith(`ws-${oldPage.id}-`))
   await app.js(`window.api.saveSettings({naiAutoSave:true,naiVersion:'v5'})`)
+  const personal = await app.js(
+    `window.api.skillsCreate(${JSON.stringify({
+      name: '升级保留测试',
+      description: 'personal edited file',
+      scope: 'all',
+      model: 'all',
+      content: 'Preserve this exact personal rule.\n中文用户修改不可覆盖。',
+    })})`,
+  )
+  const configBefore = await app.js(
+    `window.api.skillsSetConfig(${JSON.stringify([
+      { id: personal.id, enabled: true },
+      { id: 'builtin:preview', enabled: false },
+      { id: 'builtin:prompt', enabled: true },
+      { id: 'builtin:inpaint', enabled: false },
+    ])})`,
+  )
+  oldPage = await app.js(`window.api.pagesAgent('${oldPage.id}',${oldPage.revision},'external')`)
+  oldPage = await app.js(
+    `window.api.pagesChat('${oldPage.id}',${oldPage.revision},'冻结升级前规则，只讨论不改图',null,[])`,
+  )
+  const frozen = oldPage.messages.find((m) => m.skillSnapshot)
+  assert.ok(frozen?.skillSnapshot.text.includes(personal.content))
   await app.close()
   mkdirSync(join(profile, 'skills', 'user'), { recursive: true })
   writeFileSync(join(profile, 'skills', 'user', 'acceptance.md'), 'Acceptance fixture skill\n')
@@ -222,7 +251,9 @@ try {
   )
   const settingsBefore = readFileSync(join(profile, 'data', 'settings.json'), 'utf8')
   const oldHash = createHash('sha256').update(readFileSync(exe)).digest('hex')
-  log('baseline 0.6.0 installed, real window created a legacy workspace and exited normally')
+  log(
+    `baseline ${versions[0]} installed; personal Skill, priority, disabled builtins and frozen discussion created through real APIs`,
+  )
   const stale = temp()
   await run(newInstaller, ['/S', `/D=${install}`])
   assert.notEqual(createHash('sha256').update(readFileSync(exe)).digest('hex'), oldHash)
@@ -244,7 +275,7 @@ try {
   lock.stdout.on('data', (b) => (lockOutput += b))
   await wait(() => lockOutput.includes('LOCKED'))
   app = await launch()
-  assert.equal((await app.js('window.api.updateState()')).current, '0.6.1-acceptance.1')
+  assert.equal((await app.js('window.api.updateState()')).current, versions[1])
   assert.ok((await app.js('window.api.imagesCleanupStatus()')).message)
   assert.ok(await app.js('document.body.textContent.includes("重试清理")'))
   assert.equal(
@@ -279,6 +310,26 @@ try {
     readFileSync(join(profile, 'skills', 'user', 'acceptance.md'), 'utf8'),
     'Acceptance fixture skill\n',
   )
+  const configAfter = await app.js('window.api.skillsList()')
+  assert.deepEqual(
+    configAfter
+      .filter((s) => configBefore.some((old) => old.id === s.id))
+      .map(({ id, enabled }) => ({ id, enabled })),
+    configBefore.map(({ id, enabled }) => ({ id, enabled })),
+  )
+  assert.equal((await app.js(`window.api.skillsGet('${personal.id}')`)).content, personal.content)
+  const restoredOld = await app.js(`window.api.pagesRead('${oldPage.id}')`)
+  assert.deepEqual(
+    restoredOld.messages.find((m) => m.id === frozen.id).skillSnapshot,
+    frozen.skillSnapshot,
+  )
+  assert.deepEqual(restoredOld.versions, oldPage.versions)
+  const manga = configAfter.find((s) => s.id === 'nai-manga-prompt-design')
+  assert.ok(manga && !manga.builtin && !manga.enabled)
+  await app.js(`window.api.skillsDelete('${manga.id}')`)
+  log(
+    'user Skill content and priority, builtin switches, all old versions and frozen rules preserved; bundled manga is editable user content, initially disabled',
+  )
   log(
     'actual NSIS overwrite upgrade preserved settings, legacy images, Skill and workspace; locked cache did not block startup and retry succeeded',
   )
@@ -296,6 +347,14 @@ try {
   assert.ok(!existsSync(join(tempDir, ephemeral)))
   assert.ok(existsSync(join(profile, 'image-library', 'saved', retained)))
   app = await launch()
+  assert.ok(!(await app.js('window.api.skillsList()')).some((s) => s.id === manga.id))
+  assert.equal((await app.js(`window.api.skillsGet('${personal.id}')`)).content, personal.content)
+  assert.deepEqual(
+    (await app.js(`window.api.pagesRead('${oldPage.id}')`)).messages.find((m) => m.id === frozen.id)
+      .skillSnapshot,
+    frozen.skillSnapshot,
+  )
+  log('restart did not restore deleted manga or rewrite personal Skill / frozen rules')
   assert.equal((await app.js('window.api.getSettings()')).naiAutoSave, false)
   assert.ok((await app.js('window.api.recipesList()')).some((r) => r.id === savedRecipe.id))
   const restored = await app.js(`window.api.pagesRead('${owned.id}')`)

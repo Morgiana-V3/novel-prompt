@@ -180,7 +180,6 @@ const handlers = {
     zhCount: 0,
     implicationCount: 0,
   }),
-  'skills:templates': () => [],
   'skills:list': () => skillService.getConfig(),
   'mcp:info': () => null,
   'update:check': () => null,

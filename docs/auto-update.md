@@ -34,4 +34,6 @@ Windows NSIS 安装版在启动后和每 6 小时检查 GitHub Releases，发现
 
 v0.6.0 本地验证已覆盖构建、更新下载与校验、打包后应用的 MCP 冷启动/重连/数据持久化、内置资源一致性及更新清单哈希。本次未执行真实 NSIS 覆盖安装；该环节及 v0.6.0 到后续正式版本的完整更新安装仍需在独立 Windows 测试环境验收。
 
+v0.8.0 发布验收已使用独立应用身份，实际完成从 v0.7.0 源码构建的 NSIS 安装包覆盖升级至 v0.8.0 验收包。通过旧版真实接口创建数据，核对升级后的用户 Skill 正文与顺序、内置开关、全部历史版本及冻结规则，检查图库、配方、设置、文件占用后的重试、正常退出与异常恢复，以及漫画删除后不补回。验收身份和 profile 均与真实用户隔离；该测试验证安装和数据保留，不等同于从 GitHub 下载到点击更新的整条线上链路。
+
 参考：[electron-builder 自动更新文档](https://www.electron.build/docs/features/auto-update/)。本项目使用 electron-updater 6.x，与 electron-builder 26.x 配套，调用 `quitAndInstall(true, true)`；升级依赖大版本时需核对 API 变更。

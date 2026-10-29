@@ -1,6 +1,6 @@
 # 验证入口
 
-`npm run check:quick` 先执行全范围格式、ESLint、Stylelint、依赖边界和类型检查，再构建一次，运行测试产物路径、代理启动/重连、工作台索引与图片清理。`npm run check:full` 复用同一次构建运行 20 个离线回归场景。失败立即退出；日志目录在启动时打印，位于系统临时目录。
+`npm run check:quick` 先执行全范围格式、ESLint、Stylelint、依赖边界和类型检查，再构建一次，运行测试产物路径、代理启动/重连、工作台索引与图片清理。`npm run check:full` 复用同一次构建运行 24 个离线回归场景。失败立即退出；日志目录在启动时打印，位于系统临时目录。
 
 定向运行：`node scripts/check.mjs pages mcp:index workspace:cleanup`。窗口场景按需构建一次，纯源码服务场景通过测试专用 TypeScript 加载器运行。定向命令执行类型检查；完整风格检查由 quick/full 负责。
 
@@ -45,6 +45,8 @@ node scripts/check.mjs isolation
 ```
 
 可通过 NP_ACCEPTANCE_OUTPUT 指定其他项目外目录，通过 NP_ACCEPTANCE_TARGET=baseline 或 current 只构建一侧。安装包具有独立 appId/productName，禁用快捷方式及安装后自动运行；测试核对构建记录和文件 hash，再进行安装、覆盖升级、文件占用、重启与异常恢复，结束后卸载自己的验收程序。
+
+验收版本从两侧 package.json 派生并写入构建记录，不再固定为某一历史版本。覆盖升级额外核对用户 Skill 正文与启用顺序、内置开关、历史版本和讨论冻结规则；附带漫画首次默认关闭，删除后重启不恢复。数据夹具通过旧版实际接口创建，真实用户目录不用于覆盖安装测试。
 
 ## 性能与视觉
 
