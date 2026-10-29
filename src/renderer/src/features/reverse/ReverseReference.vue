@@ -161,7 +161,7 @@ defineExpose({ bytes, clear })
       ><Icon
         name="upload"
         :size="28"
-      /><span>拖入图片或点击选择</span><small>PNG / JPEG / WebP · ≤ 25 MB</small></span
+      /><span>拖入、粘贴图片或点击选择</span><small>PNG / JPEG / WebP · ≤ 25 MB</small></span
     >
     <div
       v-if="region && cropEnabled"
@@ -174,12 +174,12 @@ defineExpose({ bytes, clear })
 <style scoped>
 .reverse-drop {
   position: relative;
-  flex: 1;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 220px;
+  height: var(--reverse-image-height, 292px);
   border: 0;
   background: var(--panel);
   color: var(--text2);

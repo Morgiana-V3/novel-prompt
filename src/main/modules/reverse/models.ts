@@ -38,7 +38,7 @@ export class ReverseModels {
   private controller?: AbortController
   private verified = new Set<string>()
   private removing = false
-  private operationBytes?: number
+  private operationBytes = 0
 
   selectedFiles(selection?: ReverseModel[]): ModelFile[] {
     return this.files.filter((file) => !selection || selection.includes(file.model ?? 'k2'))
@@ -77,8 +77,7 @@ export class ReverseModels {
       phase: this.phase,
       ready: models.filter((m) => !selection || selection.includes(m.model)).every((m) => m.ready),
       completedBytes: this.completedBytes,
-      totalBytes:
-        this.operationBytes ?? this.selectedFiles(selection).reduce((n, f) => n + f.bytes, 0),
+      totalBytes: this.operationBytes,
       message: this.message,
       directory: this.directory,
       models,
@@ -107,21 +106,31 @@ export class ReverseModels {
     }
     const controller = new AbortController()
     this.controller = controller
-    this.operationBytes = this.selectedFiles(selection).reduce((sum, f) => sum + f.bytes, 0)
+    this.operationBytes = 0
     this.phase = 'verifying'
     this.message = '正在检查已有模型'
     this.completedBytes = 0
     this.verified.clear()
     try {
       await mkdir(this.directory, { recursive: true })
+      const pending: ModelFile[] = []
       for (const spec of this.selectedFiles(selection)) {
         controller.signal.throwIfAborted()
+        this.message = `正在检查 ${spec.name}`
         const target = join(this.directory, spec.file)
-        if (await verifyFile(target, spec)) {
-          this.completedBytes += spec.bytes
+        const valid = await verifyFile(target, spec)
+        controller.signal.throwIfAborted()
+        if (valid) {
           this.verified.add(spec.file)
-          continue
+        } else {
+          pending.push(spec)
         }
+      }
+      // Existing files are checked first and never counted as transferred bytes.
+      this.operationBytes = pending.reduce((sum, spec) => sum + spec.bytes, 0)
+      for (const spec of pending) {
+        controller.signal.throwIfAborted()
+        const target = join(this.directory, spec.file)
         const partial = target + '.partial'
         const hash = createHash('sha256')
         const startBytes = this.completedBytes
@@ -193,7 +202,6 @@ export class ReverseModels {
         : String(error instanceof Error ? error.message : error)
     } finally {
       this.controller = undefined
-      this.operationBytes = undefined
     }
   }
 
@@ -211,6 +219,7 @@ export class ReverseModels {
       this.phase = 'idle'
       this.message = '已删除本地模型，需要时可重新下载'
       this.completedBytes = 0
+      this.operationBytes = 0
     } finally {
       this.removing = false
     }

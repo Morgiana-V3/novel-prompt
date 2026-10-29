@@ -5,8 +5,6 @@ import { useGallery } from './use-gallery'
 import { reportError } from '../../shared/lib/notifications'
 import { promptState } from '../prompts/state'
 import { imageState } from './state'
-import { artistTrials, runArtistTrials, type ArtistTrial } from './artist-trials'
-import ArtistTrialQueue from './components/ArtistTrialQueue.vue'
 import { activeTask } from '../../shared/state/tasks'
 import { settingsState } from '../settings/state'
 import { shellState } from '../../shared/state/shell'
@@ -77,9 +75,6 @@ watch(
   },
   { flush: 'sync' },
 )
-const pendingTrials = computed(() =>
-  artistTrials.trials.filter((trial) => trial.selected && trial.state === 'pending'),
-)
 const cancelling = ref(false)
 const steps = ref<string[]>([])
 const error = ref('')
@@ -104,29 +99,6 @@ const {
   retain,
   lightbox,
 } = useGallery(last)
-const sortTrialsByScore = ref(false)
-const completedTrials = computed(() => {
-  const trials = artistTrials.trials.filter(
-    (trial) => trial.image && gallery.value.some((image) => image.name === trial.image!.name),
-  )
-  return sortTrialsByScore.value ? trials.sort((a, b) => (b.score ?? -2) - (a.score ?? -2)) : trials
-})
-const currentTrial = computed(() =>
-  artistTrials.trials.find((trial) => trial.image?.name === current.value?.name),
-)
-const referenceOpen = ref(false)
-function showTrial(trial: ArtistTrial) {
-  current.value = gallery.value.find((image) => image.name === trial.image?.name) ?? null
-}
-watch(
-  () => artistTrials.trials,
-  () => {
-    error.value = ''
-    last.value = null
-    current.value = null
-  },
-)
-
 const recipeOpen = ref(false)
 const retentionSaving = ref(false)
 const favoriteId = ref('')
@@ -156,13 +128,6 @@ async function toggleRetention(event: Event) {
 }
 async function favorite(img: NaiImage) {
   try {
-    if (
-      artistTrials.trials.some((trial) => trial.image?.name === img.name) &&
-      img.storage === 'temporary'
-    ) {
-      await window.api.naiRetain(img.name)
-      await refreshGallery()
-    }
     favoriteId.value = (await window.api.recipesCreate(img.name)).id
     toast('已收藏此图的完整生成配置')
     recipeOpen.value = true
@@ -175,9 +140,7 @@ async function applyRecipe(request: NaiGenRequest) {
     return
   }
   try {
-    rememberTrialDraft()
     await importGenerationRequest(request, '已加载收藏配置')
-    artistTrials.active = false
     recipeOpen.value = false
   } catch (error2) {
     toast(cleanErr(error2))
@@ -271,7 +234,6 @@ onMounted(() => {
   window.addEventListener('resize', resizeAll)
 })
 onBeforeUnmount(() => {
-  artistTrials.stopRequested = true
   window.removeEventListener('resize', resizeAll)
 })
 
@@ -304,7 +266,7 @@ watch(hasToken, (value) => {
 /* ---------- 生成 ---------- */
 
 async function run() {
-  if (running.value || inpaintBusy.value) {
+  if (running.value || inpaintBusy.value || imageState.generating) {
     return
   }
   if (!hasToken.value) {
@@ -333,29 +295,6 @@ async function run() {
   const key = workKey()
   try {
     const seed = gen.seed === null || (gen.seed as unknown) === '' ? null : Number(gen.seed)
-    if (artistTrials.active) {
-      const trialSeed = seed ?? crypto.getRandomValues(new Uint32Array(1))[0]
-      gen.seed = trialSeed
-      await runArtistTrials(
-        {
-          ...currentRecipe.value,
-          params: { ...currentRecipe.value.params, seed: trialSeed, count: 1 },
-        },
-        async (result) => {
-          last.value = result
-          if (result.subscription) {
-            sub.value = result.subscription
-          }
-          current.value = result.images[result.images.length - 1]
-          try {
-            await refreshGallery()
-          } catch (e) {
-            toast(`图片已生成，图库刷新失败：${cleanErr(e)}`)
-          }
-        },
-      )
-      return
-    }
     const generationResult = await window.api.naiGenerate({
       base: promptState.prompt,
       negative: promptState.negative,
@@ -389,7 +328,6 @@ async function run() {
 
 async function cancel() {
   cancelling.value = true
-  artistTrials.stopRequested = true
   await window.api.naiCancel()
   toast('会在当前这张完成后停止')
 }
@@ -434,9 +372,7 @@ async function loadFromImage(img: NaiImage) {
   const importedPrompt = await readMeta(img)
   if (importedPrompt) {
     try {
-      rememberTrialDraft()
       await importImagePrompt(importedPrompt, '已加载原图')
-      artistTrials.active = false
     } catch (error) {
       reportError(error)
     }
@@ -451,9 +387,7 @@ async function previewImage(img: NaiImage) {
     return
   }
   try {
-    rememberTrialDraft()
     await importImagePrompt(importedPrompt, '已加载原图')
-    artistTrials.active = false
     shellState.tab = 'preview'
   } catch (error) {
     reportError(error)
@@ -498,29 +432,6 @@ function openImageWorkspace() {
 function closeRecipes() {
   recipeOpen.value = false
   favoriteId.value = ''
-}
-function rememberTrialDraft() {
-  if (artistTrials.active) {
-    artistTrials.draft = JSON.parse(JSON.stringify(currentRecipe.value))
-  }
-}
-function leaveTrials() {
-  if (running.value) {
-    return
-  }
-  rememberTrialDraft()
-  artistTrials.active = false
-}
-async function resumeTrials() {
-  if (running.value || inpaintBusy.value || !artistTrials.draft) {
-    return
-  }
-  try {
-    await importGenerationRequest(artistTrials.draft, '已恢复试图内容')
-    artistTrials.active = true
-  } catch (e) {
-    error.value = cleanErr(e)
-  }
 }
 </script>
 
@@ -599,26 +510,10 @@ async function resumeTrials() {
           </div>
         </div>
 
-        <ArtistTrialQueue
-          v-if="artistTrials.active"
-          :disabled="running || inpaintBusy"
-          @leave="leaveTrials"
-        />
-        <template v-else>
-          <button
-            v-if="artistTrials.trials.length"
-            class="btn small"
-            :disabled="running || inpaintBusy"
-            @click="resumeTrials"
-          >
-            查看画师试图
-          </button>
-          <WorkspaceBar />
-        </template>
+        <WorkspaceBar />
 
         <PromptEditor
           :disabled="running"
-          :base-label="artistTrials.active ? '基础提示词（不含画师串）' : undefined"
           char-hint="点「编辑位置」可在画布上拖动角色"
         />
 
@@ -646,7 +541,6 @@ async function resumeTrials() {
           :gen="gen"
           :params="params"
           :disabled="running"
-          :hide-count="artistTrials.active"
           @change-gen="updateGenerationOptions"
           @change-params="updatePromptParameters"
         />
@@ -732,7 +626,7 @@ async function resumeTrials() {
             </button>
             <button
               class="btn accent"
-              :disabled="running || inpaintBusy || (artistTrials.active && !pendingTrials.length)"
+              :disabled="running || inpaintBusy || imageState.generating"
               :title="`生成（${runKeyLabel}）`"
               @click="run"
             >
@@ -741,14 +635,7 @@ async function resumeTrials() {
                 :size="17"
                 :class="{ 'spin-slow': running }"
               />
-              {{
-                running
-                  ? '正在生成'
-                  : artistTrials.active
-                    ? `生成所选 ${pendingTrials.length} 张`
-                    : gen.count > 1
-                      ? `生成 ${gen.count} 张`
-                      : '生成'
+              {{ running ? '正在生成' : gen.count > 1 ? `生成 ${gen.count} 张` : '生成'
               }}<span
                 v-if="!running"
                 class="kbd"
@@ -762,68 +649,6 @@ async function resumeTrials() {
 
     <section class="pane right scroll">
       <div
-        v-if="artistTrials.active && completedTrials.length"
-        class="trial-results-head"
-      >
-        <strong>试图结果</strong>
-        <label
-          ><input
-            v-model="sortTrialsByScore"
-            type="checkbox"
-          />按评分排序</label
-        >
-      </div>
-      <div
-        v-if="artistTrials.active"
-        class="trial-results"
-      >
-        <button
-          v-if="artistTrials.referenceUrl"
-          class="trial-reference"
-          @click="referenceOpen = !referenceOpen"
-        >
-          <img
-            :src="artistTrials.referenceUrl"
-            alt="试图参考图"
-          />
-          <span>{{ referenceOpen ? '收起参考图' : '查看参考图' }}</span>
-        </button>
-        <button
-          v-for="trial in completedTrials"
-          :key="trial.id"
-          class="trial-image"
-          :class="{ selected: current?.name === trial.image?.name }"
-          :aria-label="`查看方案 ${trial.id}`"
-          @click="showTrial(trial)"
-        >
-          <img
-            :src="trial.image!.url"
-            :alt="`方案 ${trial.id}`"
-          />
-          <span
-            >{{ trial.id
-            }}<template v-if="trial.score !== undefined">
-              · {{ trial.score.toFixed(3) }}</template
-            ></span
-          >
-        </button>
-      </div>
-      <img
-        v-if="artistTrials.active && referenceOpen"
-        class="trial-reference-expanded"
-        :src="artistTrials.referenceUrl"
-        alt="试图参考图"
-      />
-      <p
-        v-if="artistTrials.active && currentTrial"
-        class="trial-current-label"
-      >
-        方案 {{ currentTrial.id
-        }}<span v-if="currentTrial.score !== undefined">
-          · 风格评分 {{ currentTrial.score.toFixed(3) }}</span
-        ><span v-if="currentTrial.error"> · {{ currentTrial.error }}</span>
-      </p>
-      <div
         v-if="running && !current"
         class="empty"
       >
@@ -834,12 +659,6 @@ async function resumeTrials() {
         <p>
           NovelAI 正在画<span class="dots"><i></i><i></i><i></i></span>
         </p>
-      </div>
-      <div
-        v-else-if="artistTrials.active && !current"
-        class="empty trial-empty"
-      >
-        <p>已载入 {{ artistTrials.trials.length }} 个组合，点击生成开始试图。</p>
       </div>
       <div
         v-else-if="!current && !gallery.length"
@@ -958,7 +777,7 @@ async function resumeTrials() {
         </div>
 
         <div
-          v-if="gallery.length && !artistTrials.active"
+          v-if="gallery.length"
           class="group"
         >
           <div class="group-head">
@@ -1087,66 +906,6 @@ async function resumeTrials() {
 </template>
 
 <style scoped>
-.trial-results-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 12px;
-  margin-bottom: 8px;
-}
-
-.trial-results {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-  overflow-x: auto;
-  margin-bottom: 12px;
-  flex-shrink: 0;
-}
-
-.trial-reference,
-.trial-image {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  flex: 0 0 82px;
-  padding: 5px;
-  background: var(--bg);
-  color: var(--text2);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 11px;
-}
-
-.trial-image.selected {
-  border-color: var(--text);
-}
-
-.trial-results img {
-  width: 70px;
-  height: 76px;
-  object-fit: contain;
-}
-
-.trial-reference-expanded {
-  width: 100%;
-  max-height: 55vh;
-  object-fit: contain;
-  margin-bottom: 12px;
-}
-
-.trial-current-label {
-  font-size: 12px;
-  color: var(--text2);
-  overflow-wrap: anywhere;
-}
-
-.trial-empty {
-  min-height: 160px;
-}
-
 .retention-toggle {
   display: inline-flex;
   align-items: center;

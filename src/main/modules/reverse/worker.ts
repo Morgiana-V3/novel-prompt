@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import sharp from 'sharp'
-import { InferenceSession, Tensor } from 'onnxruntime-node'
+import type Sharp from 'sharp'
+import type * as Onnx from 'onnxruntime-node'
 import {
   reverseModels,
   type ReverseResult,
@@ -12,8 +12,10 @@ import {
 import { decodeWdTags } from './wd-tags'
 
 const send = (value: unknown) => process.parentPort?.postMessage(value)
+let sharp: typeof Sharp
+let onnx: typeof Onnx
 
-async function tensor(image: Buffer, kind: ReverseModel): Promise<Tensor> {
+async function tensor(image: Buffer, kind: ReverseModel): Promise<Onnx.Tensor> {
   const { width = 0, height = 0 } = await sharp(image).metadata()
   if (!width || !height) {
     throw new Error('无法读取图片尺寸')
@@ -44,7 +46,7 @@ async function tensor(image: Buffer, kind: ReverseModel): Promise<Tensor> {
         values[c * size * size + p] = data[p * 3 + c] / 127.5 - 1
       }
     }
-    return new Tensor('float32', values, [1, 3, size, size])
+    return new onnx.Tensor('float32', values, [1, 3, size, size])
   }
   if (kind === 'wd') {
     const side = Math.max(width, height)
@@ -69,7 +71,7 @@ async function tensor(image: Buffer, kind: ReverseModel): Promise<Tensor> {
       values[i + 1] = data[i + 1]
       values[i + 2] = data[i]
     }
-    return new Tensor('float32', values, [1, 448, 448, 3])
+    return new onnx.Tensor('float32', values, [1, 448, 448, 3])
   }
   const scale = 512 / Math.min(width, height)
   const w = Math.floor(width * scale)
@@ -94,12 +96,26 @@ async function tensor(image: Buffer, kind: ReverseModel): Promise<Tensor> {
       values[c * size * size + p] = (data[p * 3 + c] / 255 - mean[c]) / std[c]
     }
   }
-  return new Tensor('float32', values, [1, 3, size, size])
+  return new onnx.Tensor('float32', values, [1, 3, size, size])
 }
 
 async function main(): Promise<void> {
   const [directory, input, selected] = process.argv.slice(2)
   const start = Date.now()
+  send({ stage: '正在加载本地识别引擎' })
+  // Load native dependencies inside the error boundary so startup failures reach the UI.
+  try {
+    sharp = (await import('sharp')).default
+    onnx = await import('onnxruntime-node')
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      '本地识别引擎加载失败（sharp / onnxruntime-node）。' +
+        '开发版请在项目目录运行 npm install 补全依赖；安装版请重新安装软件。' +
+        '重新下载模型无法修复此问题。\n' +
+        reason,
+    )
+  }
   sharp.concurrency(2)
   const bytes = await readFile(input)
   const metadata = await sharp(bytes, { limitInputPixels: 24_000_000 }).metadata()
@@ -129,7 +145,7 @@ async function main(): Promise<void> {
       k3: '画师风格（K3）',
     }
     send({ stage: `正在识别${stages[kind]}` })
-    const session = await InferenceSession.create(join(directory, kind + '.onnx'), {
+    const session = await onnx.InferenceSession.create(join(directory, kind + '.onnx'), {
       executionProviders: ['cpu'],
       intraOpNumThreads: 4,
       interOpNumThreads: 1,

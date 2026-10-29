@@ -70,9 +70,14 @@ export class ReverseService extends ReverseModels {
             }
           },
         )
-        child.on('exit', () => {
+        child.on('exit', (code) => {
           clearTimeout(timer)
-          reject(new Error('本地识别进程已退出；请检查可用内存或重新下载模型'))
+          reject(
+            new Error(
+              `本地识别进程异常退出（退出码 ${code}）。模型文件已通过校验，` +
+                '请检查识别引擎是否完整安装及可用内存，无需反复下载模型。',
+            ),
+          )
         })
       })
     } finally {

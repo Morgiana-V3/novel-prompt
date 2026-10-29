@@ -32,7 +32,9 @@ export interface ReverseResult {
 export interface ReverseStatus {
   phase: 'idle' | 'downloading' | 'verifying' | 'running' | 'error'
   ready: boolean
+  /** Bytes transferred by the current or most recent install/import, excluding existing files. */
   completedBytes: number
+  /** Total missing/damaged bytes for that operation; zero while checking existing files. */
   totalBytes: number
   message: string
   directory: string

@@ -12,7 +12,6 @@ const props = defineProps<{
 const threshold = defineModel<number>('threshold', { required: true })
 const base = defineModel<string>('base', { required: true })
 const characters = defineModel<CharDraft[]>('characters', { required: true })
-const emit = defineEmits<{ adopt: [] }>()
 const draft = ref('')
 const target = ref('base')
 const candidates = computed(() =>
@@ -200,13 +199,7 @@ function apply() {
       <span>{{
         characters.length ? `已分配 ${characters.length} 个角色` : '角色身份需自行确认'
       }}</span>
-      <button
-        class="btn small primary"
-        :disabled="busy || (!base.trim() && !characters.some((role) => role.prompt.trim()))"
-        @click="emit('adopt')"
-      >
-        写入提示词
-      </button>
+      <span>角色分配用于本页的下一轮试图</span>
     </footer>
   </section>
 </template>

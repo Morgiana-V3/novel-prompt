@@ -13,6 +13,7 @@ const output = temporaryProfile('novel-prompt-check-')
 const cases = {
   artifacts: ['node', 'tests/unit/artifact-paths.cjs', false],
   'electron:errors': ['node', 'tests/unit/electron-errors-smoke.cjs', false],
+  'reverse:models': ['node', 'tests/unit/reverse-models-smoke.cjs', false],
   'mcp:launch': ['node', 'tests/unit/mcp-launch-smoke.cjs', false],
   'mcp:relay': ['node', 'tests/integration/mcp-relay-smoke.cjs', false],
   'mcp:recovery': ['electron', 'tests/integration/mcp-recovery-smoke.cjs', false],

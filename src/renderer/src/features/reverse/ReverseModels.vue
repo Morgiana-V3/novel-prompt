@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { ReverseModel, ReverseStatus } from '@shared/reverse/types'
 import Icon from '../../shared/ui/Icon.vue'
+import { modelSize as size, summarizeReverseModels } from './model-summary'
 
 const props = defineProps<{
   status?: ReverseStatus
@@ -9,34 +10,13 @@ const props = defineProps<{
   busy: boolean
   error: string
 }>()
-const descriptions: Record<ReverseModel, { name: string; purpose: string }> = {
-  wd: { name: 'WD', purpose: '识别服装、动作、场景和角色标签' },
-  k3: { name: 'Kaloscope 3', purpose: '推荐画师，比较试图与参考图的风格' },
-  k2: { name: 'Kaloscope 2', purpose: '补充另一组画师候选' },
-  pixai: { name: 'PixAI', purpose: '识别角色，补充较新的角色标签' },
-}
 const files = computed(
   () => props.status?.models.filter((file) => props.selection.includes(file.model)) ?? [],
 )
-const models = computed(() =>
-  (['wd', 'k3', 'k2', 'pixai'] as const)
-    .filter((id) => props.selection.includes(id))
-    .map((id) => {
-      const entries = files.value.filter((file) => file.model === id)
-      return {
-        id,
-        ...descriptions[id],
-        ready: entries.length > 0 && entries.every((file) => file.ready),
-        partial: entries.some((file) => file.ready) && entries.some((file) => !file.ready),
-        bytes: entries.reduce((total, file) => total + file.bytes, 0),
-      }
-    }),
-)
+const models = computed(() => summarizeReverseModels(props.status, props.selection))
 const allReady = computed(
   () => models.value.length > 0 && models.value.every((model) => model.ready),
 )
-const size = (bytes: number) =>
-  bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(2)} GB` : `${Math.ceil(bytes / 1024 ** 2)} MB`
 const emit = defineEmits<{
   close: []
   manage: [action: 'install' | 'import' | 'remove' | 'cancel']
@@ -144,7 +124,7 @@ onBeforeUnmount(() => dialog.value?.close())
           :disabled="busy || !status || !models.length"
           @click="emit('manage', 'install')"
         >
-          {{ allReady ? '检查并修复' : '下载所选模型' }}
+          {{ allReady ? '检查并修复' : '下载缺少的模型' }}
         </button>
         <button
           v-if="status?.models.some((m) => selection.includes(m.model) && m.ready)"
