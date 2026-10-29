@@ -12,8 +12,6 @@ export interface SkillEntry {
 }
 
 export interface SkillMeta {
-  /** 随附场景模板独立于启用列表，复制后才成为用户 Skill。 */
-  source?: 'template'
   format?: 'file' | 'directory'
   resourceCount?: number
   /** 内置为 builtin:xxx，用户 Skill 为文件名（不含 .md） */

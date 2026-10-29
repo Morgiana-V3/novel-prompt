@@ -4,12 +4,10 @@ import type {
   SkillEntry,
   SkillInput,
   SkillImportPreview,
-  SkillMeta,
 } from '../../shared/skills/types'
 import { invoke } from './bridge'
 
 export const skillsApi = {
-  skillsTemplates: (): Promise<SkillMeta[]> => invoke('skills:templates'),
   skillsList: (): Promise<SkillConfigItem[]> => invoke('skills:list'),
   skillsGet: (id: string): Promise<SkillDoc | null> => invoke('skills:get', id),
   skillsCore: (): Promise<string> => invoke('skills:core'),

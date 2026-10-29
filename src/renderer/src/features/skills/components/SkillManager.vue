@@ -26,18 +26,6 @@ const MODEL: Record<string, string> = { all: '通用', 'v4.5': 'V4.5', v5: 'V5' 
 const list = computed(() => skillsState.skills)
 const builtins = computed(() => list.value.filter((skill) => skill.builtin))
 const mine = computed(() => list.value.filter((skill) => !skill.builtin))
-const templates = ref<SkillMeta[]>([])
-const templateError = ref('')
-
-async function loadTemplates() {
-  try {
-    templates.value = await window.api.skillsTemplates()
-    templateError.value = ''
-  } catch (error) {
-    templateError.value = cleanErr(error)
-  }
-}
-
 /** 编辑器：undefined = 关闭；null doc = 新建 */
 const editing = ref<{ doc: SkillDoc | null; readonly: boolean; title?: string } | undefined>()
 const confirmDel = ref('')
@@ -55,10 +43,9 @@ function prepareUpdate(): void {
 defineExpose({ prepareUpdate })
 
 onMounted(loadSkills)
-onMounted(loadTemplates)
 watch(
   () => shellState.tab,
-  (tab) => tab === 'settings' && Promise.all([loadSkills(), loadTemplates()]),
+  (tab) => tab === 'settings' && loadSkills(),
 )
 
 const fmtChars = (numericValue: number) =>
@@ -68,7 +55,7 @@ const fmtChars = (numericValue: number) =>
 const priorityOf = (skill: SkillConfigItem) =>
   list.value.filter((skill2) => skill2.enabled).findIndex((skill2) => skill2.id === skill.id) + 1
 
-async function open(skill: SkillMeta, readonly = skill.builtin || skill.source === 'template') {
+async function open(skill: SkillMeta, readonly = skill.builtin) {
   const doc = await window.api.skillsGet(skill.id)
   if (!doc) {
     return (toast('找不到这份 Skill，可能已被删除'), loadSkills())
@@ -76,7 +63,6 @@ async function open(skill: SkillMeta, readonly = skill.builtin || skill.source =
   editing.value = {
     doc,
     readonly,
-    title: skill.source === 'template' ? `场景模板 · ${skill.name}` : undefined,
   }
 }
 
@@ -184,7 +170,6 @@ async function remove(skill: SkillMeta) {
   try {
     await window.api.skillsDelete(skill.id)
     await loadSkills()
-    await loadTemplates()
     toast(`已删除「${skill.name}」`)
   } catch (error) {
     toast(cleanErr(error))
@@ -314,78 +299,8 @@ const openPicker = () => (skillsState.skillPanel = true)
       </div>
     </div>
 
-    <div
-      v-if="templates.length || templateError"
-      class="sm-group"
-    >
-      <div class="sm-group-title">随附场景模板</div>
-      <p class="sm-template-intro muted small">
-        针对特定场景的提示词与定制示例。查看后可复制到「我的 Skill」，修改并启用；模板本身不加载到
-        AI 上下文。
-      </p>
-      <div
-        v-if="templateError"
-        class="error-box"
-        role="alert"
-      >
-        模板加载失败：{{ templateError }}
-        <button
-          class="btn ghost small"
-          @click="loadTemplates"
-        >
-          重试
-        </button>
-      </div>
-      <div
-        v-for="s in templates"
-        :key="s.id"
-        class="sm-template-item"
-      >
-        <div class="sm-main">
-          <div class="sm-name">
-            <b>{{ s.name }}</b
-            ><span class="pill">场景模板 · 只读</span>
-            <span class="muted small"
-              >入口 {{ fmtChars(s.chars) }} · {{ s.resourceCount }} 个参考文件</span
-            >
-          </div>
-          <div class="sm-template-desc">{{ s.description }}</div>
-        </div>
-        <div class="sm-actions">
-          <button
-            class="btn ghost small"
-            @click="open(s)"
-          >
-            <Icon
-              name="eye"
-              :size="14"
-            />查看模板
-          </button>
-          <button
-            class="btn ghost small"
-            @click="duplicate(s.id)"
-          >
-            <Icon
-              name="copy"
-              :size="14"
-            />复制并定制
-          </button>
-          <button
-            :class="['btn small', confirmDel === s.id ? 'danger' : 'ghost']"
-            :title="confirmDel === s.id ? '再点一次确认删除；保留已创建的副本' : '删除模板'"
-            @click="remove(s)"
-          >
-            <Icon
-              name="trash"
-              :size="14"
-            />{{ confirmDel === s.id ? '确认删除' : '删除' }}
-          </button>
-        </div>
-      </div>
-    </div>
-
     <div class="sm-group">
-      <div class="sm-group-title">我的 Skill</div>
+      <div class="sm-group-title">用户 Skill</div>
       <div
         v-if="!mine.length"
         class="sm-empty muted"
@@ -564,8 +479,7 @@ const openPicker = () => (skillsState.skillPanel = true)
   padding: 2px 2px 0;
 }
 
-.sm-item,
-.sm-template-item {
+.sm-item {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -578,21 +492,6 @@ const openPicker = () => (skillsState.skillPanel = true)
 }
 
 .sm-item:hover {
-  background: var(--panel);
-}
-
-.sm-template-desc {
-  font-size: 12px;
-  color: var(--text2);
-  line-height: 1.6;
-}
-
-.sm-template-intro {
-  margin: 0 2px 6px;
-}
-
-.sm-template-item {
-  flex-wrap: wrap;
   background: var(--panel);
 }
 

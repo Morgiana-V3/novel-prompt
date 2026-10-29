@@ -14,6 +14,8 @@ const { missingSkillLinks } = require('../../src/shared/skills/references.ts')
 const { renderDocumentMarkdown } = require('../../src/renderer/src/shared/lib/markdown.ts')
 const { skillTools } = require('../../src/main/adapters/mcp/tools/skills.ts')
 const { contextSkills } = require('../../src/main/adapters/mcp/skills-cache.ts')
+const { saveSettings } = require('../../src/main/modules/settings/service.ts')
+const { bundledUserSkillPath } = require('../../src/main/infrastructure/paths.ts')
 const baseline = require('../fixtures/manga-template-baseline.json')
 const merge = require('../fixtures/manga-template-merge.json')
 const { checkSkillDocuments } = require('../support/skill-document-checks.cjs')
@@ -23,19 +25,15 @@ app.whenReady().then(async () => {
   try {
     const before = skills.getConfig()
     const beforeContext = skills.composeSkills('workspace', 'v5').text
-    const templates = skills.listSkillTemplates()
-    assert.equal(templates.length, 1)
-    const id = 'template:nai-manga-prompt-design'
+    const id = 'nai-manga-prompt-design'
     const doc = skills.getSkill(id)
-    assert.equal(doc.source, 'template')
     assert.equal(doc.builtin, false)
     assert.equal(doc.format, 'directory')
     assert.equal(doc.resources.length, 0)
-    assert(!('resources' in templates[0]))
+    assert.equal(before.find((s) => s.id === id).enabled, false)
+    assert.equal(before.filter((s) => s.id === id).length, 1)
     assert.equal(skills.getSkill('template:../../secrets'), null)
-    assert.deepEqual(skills.setConfig([{ id, enabled: true }]), before)
     assert.equal(skills.composeSkills('workspace', 'v5').text, beforeContext)
-    assert.throws(() => skills.updateSkill(id, { content: 'overwrite' }), /只读/)
     assert.deepEqual(missingSkillLinks(doc.content, doc.resources), [])
 
     const files = new Map([
@@ -93,14 +91,14 @@ app.whenReady().then(async () => {
     assert(!corpus.includes('用户已确认采用的默认漫画画风'))
 
     const tools = skillTools()
-    const catalog = await tools.find((tool) => tool.name === 'list_skill_templates').run({})
+    assert(!tools.some((tool) => tool.name === 'list_skill_templates'))
+    const catalog = await tools.find((tool) => tool.name === 'list_skills').run({})
     assert(JSON.stringify(catalog).includes(id))
     const read = tools.find((tool) => tool.name === 'get_skill')
     const reference = await read.run({ id })
     assert(JSON.stringify(reference).includes('人物互动、手别与动作结果'))
 
     const copy = skills.duplicateSkill(id)
-    assert.equal(copy.source, undefined)
     assert.equal(copy.builtin, false)
     assert.deepEqual(copy.resources, doc.resources)
     assert.equal(skills.getConfig().find((s) => s.id === copy.id).enabled, false)
@@ -146,20 +144,48 @@ app.whenReady().then(async () => {
       Object.defineProperty(process, 'resourcesPath', { configurable: true, value: packagedRoot })
       assert.equal(skills.getSkill(id).content, doc.content)
       assert.deepEqual(skills.getSkill(id).resources, doc.resources)
-      assert(skills.skillFilePath(id).startsWith(packagedRoot))
+      assert(bundledUserSkillPath(id).startsWith(packagedRoot))
+      assert(
+        readFileSync(bundledUserSkillPath(id), 'utf8').replace(/\r\n/g, '\n').includes(doc.content),
+      )
+      assert(!skills.skillFilePath(id).startsWith(packagedRoot))
     } finally {
       Object.defineProperty(app, 'isPackaged', packaged)
       Object.defineProperty(process, 'resourcesPath', resources)
     }
     const keptCopy = skills.duplicateSkill(id)
+    skills.setConfig(before.map(({ id, enabled }) => ({ id, enabled })))
+    skills.updateSkill(id, { content: '# Personal manga rules' })
+    assert.equal(skills.getSkill(id).content, '# Personal manga rules')
+    assert.equal(skills.getConfig().find((s) => s.id === id).enabled, false)
+    const beforeDelete = skills.composeSkills('workspace', 'v5')
     skills.deleteSkill(id)
-    skills.deleteSkill(id)
-    assert.equal(skills.listSkillTemplates().length, 0)
+    assert(!skills.getConfig().some((s) => s.id === id))
     assert.equal(skills.getSkill(id), null)
     assert.throws(() => skills.duplicateSkill(id), /找不到/)
     assert.equal(skills.getSkill(keptCopy.id).content, doc.content)
+    const afterDelete = skills.composeSkills('workspace', 'v5')
+    assert.deepEqual(
+      afterDelete,
+      beforeDelete,
+      'Deleting a template must not change active rules or snapshots',
+    )
+    assert.deepEqual(
+      contextSkills(afterDelete.snapshot, { skills_task: 'all', skills_mode: 'full' }),
+      contextSkills(beforeDelete.snapshot, { skills_task: 'all', skills_mode: 'full' }),
+    )
     const savedSettings = JSON.parse(readFileSync(join(profile, 'data/settings.json'), 'utf8'))
-    assert.deepEqual(savedSettings.deletedSkillTemplates, [id])
+    assert(savedSettings.initializedUserSkills.includes(id))
+    // An old deletion is a lasting choice, even before the new migration has run.
+    saveSettings({ initializedUserSkills: [], deletedSkillTemplates: [`template:${id}`] })
+    assert(!skills.getConfig().some((s) => s.id === id))
+    // Existing personal copies retain their text, enabled state and position.
+    skills.updateSkill(keptCopy.id, { content: '# Existing custom manga' })
+    skills.setConfig([{ id: keptCopy.id, enabled: true }])
+    const configBeforeMigration = skills.getConfig()
+    saveSettings({ initializedUserSkills: [], deletedSkillTemplates: [] })
+    assert.deepEqual(skills.getConfig(), configBeforeMigration)
+    assert.equal(skills.getSkill(keptCopy.id).content, '# Existing custom manga')
     console.log(
       JSON.stringify({
         entryChars: doc.chars,

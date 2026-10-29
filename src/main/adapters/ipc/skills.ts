@@ -10,7 +10,6 @@ import {
   duplicateSkill,
   getConfig,
   getSkill,
-  listSkillTemplates,
   importSkillFile,
   setConfig,
   skillFilePath,
@@ -20,7 +19,6 @@ import type { IpcContext } from './context'
 import { handle } from './handle'
 
 export function registerSkillsIpc(context: IpcContext): void {
-  handle('skills:templates', () => listSkillTemplates())
   /* ---------- Skill ---------- */
   handle('skills:list', () => {
     return getConfig()

@@ -141,7 +141,6 @@ for (const [name, handler] of Object.entries({
   'settings:save': (_, p) => settings.saveSettings(p),
   'db:status': () => tagStore.status(),
   'window:dark-titlebar': () => {},
-  'skills:templates': () => [],
   'skills:list': () => [],
   'mcp:info': () => ({
     command: process.execPath,
@@ -332,15 +331,16 @@ app.whenReady().then(async () => {
     assert.equal((await a.request('tools/list')).result.tools.length, 6)
     const grouped = await a.data('configure_tools', { groups: ['tags', 'skills'] })
     const groupedNames = grouped.groups.flatMap((g) => g.tools)
-    assert.equal(new Set(groupedNames).size, 70)
-    assert.equal(groupedNames.length, 70)
+    assert.equal(new Set(groupedNames).size, 69)
+    assert.equal(groupedNames.length, 69)
+    assert(!groupedNames.includes('list_skill_templates'))
     assert.ok(grouped.exposedToolCount < 25)
     assert.equal((await b.request('tools/list')).result.tools.length, 6)
     for (const c of [a, b]) {
       await c.data('configure_tools', { groups: grouped.groups.map((g) => g.id) })
     }
     const schemas = (await a.request('tools/list')).result.tools
-    assert.equal(schemas.length, 70)
+    assert.equal(schemas.length, 69)
     for (const tool of schemas) {
       assert.equal(
         tool.outputSchema.title,

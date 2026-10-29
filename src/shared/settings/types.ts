@@ -29,6 +29,8 @@ export interface Settings {
   skills?: SkillEntry[]
   /** 旧版「可直接修改的内置 Skill」是否已迁移为用户 Skill */
   skillsMigrated?: boolean
-  /** 用户删除的随附模板；升级与重启后不重新添加，不影响已复制的 Skill。 */
+  /** 已处理的附带用户 Skill；删除或修改后不重新添加、不覆盖。 */
+  initializedUserSkills?: string[]
+  /** 旧版模板删除记录，仅用于迁移时尊重已有删除选择。 */
   deletedSkillTemplates?: string[]
 }

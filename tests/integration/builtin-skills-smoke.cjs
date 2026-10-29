@@ -72,7 +72,10 @@ app.whenReady().then(async () => {
     ]
     saveSettings({ skillsMigrated: true, skills: config, apiKey: 'fixture' })
     assert.deepEqual(
-      skills.getConfig().map(({ id, enabled }) => ({ id, enabled })),
+      skills
+        .getConfig()
+        .filter((s) => s.builtin)
+        .map(({ id, enabled }) => ({ id, enabled })),
       config,
     )
     for (const [id, name] of Object.entries(names)) {
@@ -167,6 +170,93 @@ app.whenReady().then(async () => {
       Object.defineProperty(app, 'isPackaged', packaged)
       Object.defineProperty(process, 'resourcesPath', resources)
     }
+    // Every enabled subset is valid; task selection must never revive a disabled entry.
+    const ids = Object.keys(names)
+    const featureScopes = {
+      optimize: 'optimize',
+      preview: 'preview',
+      inpaint: 'inpaint',
+    }
+    const taskScopes = {
+      prompt: ['all', 'optimize'],
+      preview: ['all', 'preview'],
+      inpaint: ['all', 'optimize', 'inpaint'],
+      all: ['all', 'optimize', 'preview', 'inpaint'],
+    }
+    for (let mask = 0; mask < 1 << ids.length; mask++) {
+      skills.setConfig(ids.map((id, i) => ({ id, enabled: !!(mask & (1 << i)) })))
+      for (const model of ['v4.5', 'v5']) {
+        for (const feature of ['optimize', 'preview', 'inpaint', 'workspace']) {
+          const expected = ids.filter(
+            (id, i) =>
+              !!(mask & (1 << i)) &&
+              (feature === 'workspace' || skills.getSkill(id).scope === featureScopes[feature]),
+          )
+          const combined = skills.composeSkills(feature, model)
+          assert.deepEqual(
+            combined.skills.map((s) => s.id),
+            expected,
+          )
+          assert.deepEqual(
+            combined.snapshot.sections
+              .filter((s) => s.scope !== 'core' && !s.resourcePath)
+              .map((s) => s.id),
+            expected,
+          )
+          for (const id of ids.filter((id) => !expected.includes(id))) {
+            assert(!combined.text.includes(skills.getSkill(id).content))
+          }
+          for (const [task, scopes] of Object.entries(taskScopes)) {
+            const context = contextSkills(combined.snapshot, {
+              skills_task: task,
+              skills_mode: 'full',
+            })
+            assert.deepEqual(
+              context.requiredIds.filter((id) => id !== 'builtin:core' && !id.includes('/')),
+              expected.filter((id) => scopes.includes(skills.getSkill(id).scope)),
+            )
+            assert.deepEqual(context.missingRequiredIds, [])
+            assert(
+              context.selectedIds.every(
+                (id) =>
+                  id === 'builtin:core' ||
+                  expected.some((entry) => id === entry || id.startsWith(entry + '/')),
+              ),
+            )
+          }
+        }
+      }
+    }
+    const onlyUser = skills.createSkill(
+      { name: '独立用户规则', scope: 'all', model: 'v5', content: '# USER_ONLY_SCOPE_RULE' },
+      { enabled: false },
+    )
+    skills.setConfig([
+      { id: onlyUser.id, enabled: true },
+      ...ids.map((id) => ({ id, enabled: false })),
+    ])
+    for (const feature of ['optimize', 'preview', 'inpaint', 'workspace']) {
+      assert.deepEqual(
+        skills.composeSkills(feature, 'v5').skills.map((s) => s.id),
+        [onlyUser.id],
+      )
+      assert.deepEqual(skills.composeSkills(feature, 'v4.5').skills, [])
+    }
+    const frozenUser = skills.composeSkills('workspace', 'v5').snapshot
+    skills.setConfig([{ id: onlyUser.id, enabled: false }])
+    assert.deepEqual(skills.composeSkills('workspace', 'v5').skills, [])
+    assert(contextSkills(frozenUser, { skills_task: 'all' }).selectedIds.includes(onlyUser.id))
+    assert.throws(
+      () =>
+        contextSkills(skills.composeSkills('workspace', 'v5').snapshot, {
+          skills_ids: [onlyUser.id],
+        }),
+      /不在本轮冻结目录/,
+    )
+    skills.deleteSkill(onlyUser.id)
+    console.log(
+      'PASS 8 enablement subsets × 4 features × 2 models; task selection, user-only and frozen settings',
+    )
     skills.setConfig(config.map((s) => ({ ...s, enabled: true })))
     const reports = []
     for (const feature of ['optimize', 'preview', 'inpaint', 'workspace']) {

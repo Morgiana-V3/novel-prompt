@@ -260,44 +260,40 @@ app.whenReady().then(async () => {
     await js("document.querySelector('#skill-manager').scrollIntoView({ block: 'start' })")
     await new Promise((resolve) => setTimeout(resolve, 500))
     await js('void (window.confirm = () => { throw new Error("Unexpected native confirmation") })')
-    const beforeTemplate = skills.getConfig().length
-    await wait("document.querySelectorAll('.sm-template-item').length === 1")
-    writeFileSync(
-      join(profile, 'scene-templates.png'),
-      (await win.webContents.capturePage()).toPNG(),
+    const mangaRow =
+      "[...document.querySelectorAll('#skill-manager .sm-item')].find(e => e.querySelector('.sm-name b')?.textContent === '黑白日式漫画')"
+    await wait(mangaRow)
+    assert.equal(await js("document.querySelectorAll('.sm-group-title').length"), 2)
+    await js(
+      '[...' +
+        mangaRow +
+        ".querySelectorAll('button')].find(b => b.textContent.trim() === '查看').click()",
     )
-    await click('查看模板')
-    await wait("document.querySelector('.sk-dialog h3')?.textContent.includes('场景模板')")
+    await wait("!!document.querySelector('.sk-dialog')")
     assert.equal(await js("!!document.querySelector('.cm-editor')"), false)
     await js(
       "[...document.querySelectorAll('.skill-document-preview a')].find(a => a.textContent === '动作与连续性').click()",
     )
-    await wait('!!document.querySelector(\'.skill-document-preview h2[id="动作互动与连续性"]\')')
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    await wait("!!document.querySelector('.skill-document-preview h2[id=动作互动与连续性]')")
     writeFileSync(
-      join(profile, 'template-reference.png'),
+      join(profile, 'user-manga-preview.png'),
       (await win.webContents.capturePage()).toPNG(),
     )
-    await js(
-      "[...document.querySelectorAll('.sk-foot button')].find(button => button.textContent.trim() === '复制并定制').click()",
-    )
-    await wait("document.querySelector('.sk-dialog h3')?.textContent === '编辑副本'")
-    const templateCopy = skills.getConfig().find((s) => s.name === '黑白日式漫画（我的副本）')
-    assert(templateCopy && !templateCopy.enabled)
-    assert.equal(skills.getConfig().length, beforeTemplate + 1)
-    assert.equal(skills.getSkill(templateCopy.id).resources.length, 0)
     await js("document.querySelector('.sk-head button').click()")
     await wait("!document.querySelector('.sk-dialog')")
-    skills.deleteSkill(templateCopy.id)
     await js(
-      "[...document.querySelectorAll('.sm-template-item button')].find(b => b.textContent.trim() === '删除').click()",
+      '[...' +
+        mangaRow +
+        ".querySelectorAll('button')].find(b => b.textContent.trim() === '编辑').click()",
     )
-    await wait("document.querySelector('.sm-template-item')?.textContent.includes('确认删除')")
-    await js(
-      "[...document.querySelectorAll('.sm-template-item button')].find(b => b.textContent.trim() === '确认删除').click()",
-    )
-    await wait("document.querySelectorAll('.sm-template-item').length === 0")
-    assert.equal(skills.listSkillTemplates().length, 0)
+    await wait("!!document.querySelector('.cm-editor')")
+    await js("document.querySelector('.sk-head button').click()")
+    await wait("!document.querySelector('.sk-dialog')")
+    await js(mangaRow + ".querySelector('button[title=删除]').click()")
+    await wait(mangaRow + ".textContent.includes('确认删除')")
+    await js(mangaRow + ".querySelector('button[title=再点一次确认删除]').click()")
+    await wait('!(' + mangaRow + ')')
+    assert(!skills.getConfig().some((s) => s.id === 'nai-manga-prompt-design'))
     const beforeImport = skills.getConfig().length
     await click('导入 Skill')
     await wait("document.querySelector('.skill-import-menu').matches(':popover-open')")

@@ -384,7 +384,6 @@ const namedSchemas: Record<string, Schema> = {
       shape({ id: str, name: str, enabled: bool, priority: int }, ['id', 'name', 'enabled']),
     ),
   }),
-  list_skill_templates: shape({ items: array(shape({ id: str, name: str, description: str })) }),
   get_skill: {
     anyOf: [
       report,

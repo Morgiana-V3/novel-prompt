@@ -271,7 +271,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 <Icon
                   name="copy"
                   :size="14"
-                />{{ doc?.source === 'template' ? '复制并定制' : '复制为我的 Skill' }}
+                />复制为我的 Skill
               </button>
               <button
                 class="btn primary small"

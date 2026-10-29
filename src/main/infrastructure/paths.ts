@@ -24,10 +24,11 @@ export const BUNDLED_SKILLS = [
 ] as const
 export type BundledSkill = (typeof BUNDLED_SKILLS)[number]
 
-export const SKILL_TEMPLATES = ['nai-manga-prompt-design'] as const
-export type SkillTemplate = (typeof SKILL_TEMPLATES)[number]
+export const BUNDLED_USER_SKILLS = ['nai-manga-prompt-design'] as const
+export type BundledUserSkill = (typeof BUNDLED_USER_SKILLS)[number]
 
-export function bundledTemplatePath(name: SkillTemplate): string {
+/** Installation seeds only; once copied, these are ordinary editable user Skills. */
+export function bundledUserSkillPath(name: BundledUserSkill): string {
   const root = app.isPackaged ? process.resourcesPath : app.getAppPath()
   return join(root, 'skill-templates', name, 'SKILL.md')
 }

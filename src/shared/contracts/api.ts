@@ -25,7 +25,6 @@ import type {
   SkillEntry,
   SkillInput,
   SkillImportPreview,
-  SkillMeta,
 } from '../skills/types'
 import type { DbStatus, SearchHit, SearchOptions, UpdateProgress } from '../tags/types'
 import type { AiStep, NaiStep, TaskSnapshot } from '../tasks/model'
@@ -137,7 +136,6 @@ export interface Api {
   optimize: (req: AiOptimizeRequest) => Promise<AiOptimizeResult>
   preview: (req: AiPreviewRequest) => Promise<AiPreviewResult>
   skillsList: () => Promise<SkillConfigItem[]>
-  skillsTemplates: () => Promise<SkillMeta[]>
   skillsGet: (id: string) => Promise<SkillDoc | null>
   skillsCore: () => Promise<string>
   skillsSetConfig: (entries: SkillEntry[]) => Promise<SkillConfigItem[]>
@@ -349,10 +347,6 @@ export interface IpcContract {
   'skills:list': {
     args: Parameters<Api['skillsList']>
     result: Awaited<ReturnType<Api['skillsList']>>
-  }
-  'skills:templates': {
-    args: Parameters<Api['skillsTemplates']>
-    result: Awaited<ReturnType<Api['skillsTemplates']>>
   }
   'skills:get': {
     args: Parameters<Api['skillsGet']>
