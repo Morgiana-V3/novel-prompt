@@ -5,7 +5,15 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   main: {
     // Keep the launch entry present during rebuilds; Electron may cold-start via MCP.
-    build: { emptyOutDir: false },
+    build: {
+      emptyOutDir: false,
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/main/index.ts'),
+          'reverse-worker': resolve(__dirname, 'src/main/modules/reverse/worker.ts'),
+        },
+      },
+    },
     plugins: [externalizeDepsPlugin({ exclude: ['pinyin-pro'] })],
   },
   preload: {

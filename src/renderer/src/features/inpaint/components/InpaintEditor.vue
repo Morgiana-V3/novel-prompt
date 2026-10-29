@@ -667,7 +667,13 @@ async function loadSource(image: NaiImage, readPrompt = true) {
         draft.characters = toDrafts(meta.characters)
         settings.qualityTags = false
         settings.ucPreset = 'none'
-        promptNote.value = '已读取原图提示词，只需改动想调整的描述。'
+        if (meta.request && !props.initialEditor) {
+          Object.assign(settings, meta.request.params, { count: 1 })
+          version.value = meta.request.version
+          promptNote.value = '已读取原图提示词和生成参数。'
+        } else {
+          promptNote.value = '已读取原图提示词。'
+        }
       } catch {
         promptNote.value = '原图没有可读取的提示词，已使用当前工作区内容，请核对后修改。'
       }

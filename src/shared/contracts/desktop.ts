@@ -9,6 +9,7 @@ export const APP_TABS = [
   'ai',
   'preview',
   'generate',
+  'reverse',
   'workspace',
   'search',
   'settings',

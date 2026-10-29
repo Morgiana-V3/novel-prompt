@@ -4,6 +4,7 @@ import { applicationApi } from './api/application'
 import { desktopApi } from './api/desktop'
 import { generationApi } from './api/generation'
 import { imagesApi } from './api/images'
+import { reverseApi } from './api/reverse'
 import { promptsApi } from './api/prompts'
 import { skillsApi } from './api/skills'
 import { tagsApi } from './api/tags'
@@ -16,6 +17,7 @@ const api: Api = {
   ...tasksApi,
   ...workspaceApi,
   ...imagesApi,
+  ...reverseApi,
   ...generationApi,
   ...tagsApi,
   ...promptsApi,

@@ -1,6 +1,6 @@
 import type { NaiGenParams } from '@shared/generation/types'
 import type { NaiImage } from '@shared/images/types'
-import { reactive } from 'vue'
+import { reactive, watch } from 'vue'
 
 /** 只属于生图的参数；画幅、质量词、UC 预设与画面推测共用（promptState.params） */
 export type GenOnly = Omit<NaiGenParams, 'width' | 'height' | 'qualityTags' | 'ucPreset'>
@@ -33,7 +33,18 @@ export function loadGenParams(): GenOnly {
   }
 }
 
+/** Shared by every import entry point, including imports before the generation view opens. */
+export const generationParams = reactive<GenOnly>(loadGenParams())
+watch(
+  generationParams,
+  (params) => {
+    localStorage.setItem(GEN_PARAMS_KEY, JSON.stringify({ ...params, seed: null }))
+  },
+  { deep: true },
+)
+
 export const imageState = reactive({
+  generating: false,
   /** 生成的图片 → 生成时的提示词 key，用于和推测结果对照 */
   imageKeys: {} as Record<string, string>,
 

@@ -80,7 +80,7 @@ const deleteLabel = computed(() => {
         </button>
         <button
           class="icon-btn sm"
-          title="读回这张图的提示词，替换当前提示词（可在历史里撤销）"
+          title="加载这张图的提示词和生成参数"
           @click="emit('loadPrompt', current)"
         >
           <Icon
@@ -90,7 +90,7 @@ const deleteLabel = computed(() => {
         </button>
         <button
           class="icon-btn sm"
-          title="读回这张图的提示词并推测画面"
+          title="加载这张图的配置并推测画面"
           @click="emit('preview', current)"
         >
           <Icon
@@ -153,7 +153,7 @@ const deleteLabel = computed(() => {
     <div
       v-if="current.storage === 'temporary'"
       class="row"
-      style="padding: 10px 12px"
+      style="padding: 10px 12px; flex-wrap: wrap"
     >
       <span class="muted small">满意这张？留存后下次启动仍可查看。</span
       ><button
@@ -234,3 +234,10 @@ const deleteLabel = computed(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.result-head,
+.result-head .actions {
+  flex-wrap: wrap;
+}
+</style>

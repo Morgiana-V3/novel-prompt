@@ -19,6 +19,7 @@ import type {
   InpaintDraft,
 } from '../prompts/types'
 import type { Settings } from '../settings/types'
+import type { ReverseModel, ReverseResult, ReverseStatus } from '../reverse/types'
 import type {
   SkillConfigItem,
   SkillDoc,
@@ -41,6 +42,13 @@ import type { DesktopCommand, DesktopReply, DesktopState } from './desktop'
 import type { McpInfo } from './mcp'
 
 export interface Api {
+  reverseScore: (reference: number[], name: string) => Promise<number>
+  reverseStatus: (models?: ReverseModel[]) => Promise<ReverseStatus>
+  reverseInstall: (models?: ReverseModel[]) => Promise<ReverseStatus>
+  reverseImport: (models?: ReverseModel[]) => Promise<ReverseStatus>
+  reverseCancel: () => Promise<void>
+  reverseRemove: (models?: ReverseModel[]) => Promise<void>
+  reverseAnalyze: (bytes: Uint8Array, models?: ReverseModel[]) => Promise<ReverseResult>
   publishDesktop: (state: DesktopState) => void
   replyDesktop: (reply: DesktopReply) => void
   onDesktopCommand: (cb: (command: DesktopCommand) => void) => () => void
@@ -178,6 +186,13 @@ export interface Api {
 }
 
 export interface IpcContract {
+  'reverse:status': { args: [ReverseModel[]?]; result: ReverseStatus }
+  'reverse:install': { args: [ReverseModel[]?]; result: ReverseStatus }
+  'reverse:import': { args: [ReverseModel[]?]; result: ReverseStatus }
+  'reverse:cancel': { args: []; result: void }
+  'reverse:remove': { args: [ReverseModel[]?]; result: void }
+  'reverse:analyze': { args: [Uint8Array, ReverseModel[]?]; result: ReverseResult }
+  'reverse:score': { args: [number[], string]; result: number }
   'tasks:list': {
     args: Parameters<Api['tasksList']>
     result: Awaited<ReturnType<Api['tasksList']>>

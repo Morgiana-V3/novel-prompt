@@ -2,7 +2,11 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { pageCurrent, type PageWorkspace } from '../../../shared/workspace/model'
 import { dataDir } from '../../infrastructure/paths'
-import { ownedWorkspaceImages, trashLibraryImage } from '../images/library'
+import {
+  ownedWorkspaceImages,
+  pruneWorkspaceImageDirectories,
+  trashLibraryImage,
+} from '../images/library'
 import { workspaceImageNames } from './image-references'
 import { pageLocks } from './locks'
 import { deletePage, readPage, savePage } from './repository'
@@ -104,6 +108,7 @@ export async function deletePageWithImages(id: string, revision: number): Promis
   pageLocks.set(id, new AbortController())
   try {
     await clean(names, shared)
+    pruneWorkspaceImageDirectories({ owner: id })
     pageLocks.delete(id)
     deletePage(id, revision)
   } finally {
@@ -149,7 +154,9 @@ export async function cleanRemovedPageImages(): Promise<number> {
     pageLocks.set(id, new AbortController())
   }
   try {
-    return await clean(names, active)
+    const count = await clean(names, active)
+    pruneWorkspaceImageDirectories({ keep: activeIds })
+    return count
   } finally {
     for (const id of cleanupIds) {
       pageLocks.delete(id)

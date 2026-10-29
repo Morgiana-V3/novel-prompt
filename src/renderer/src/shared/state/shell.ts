@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 
-export type Tab = 'compare' | 'ai' | 'preview' | 'generate' | 'workspace' | 'search' | 'settings'
+export type Tab =
+  'compare' | 'ai' | 'preview' | 'generate' | 'reverse' | 'workspace' | 'search' | 'settings'
 
 export const shellState = reactive({
   tab: 'compare' as Tab,

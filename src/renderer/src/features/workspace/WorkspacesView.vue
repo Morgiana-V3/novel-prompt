@@ -11,7 +11,7 @@ import type { NaiImage } from '@shared/images/types'
 import type { NaiGenParams } from '@shared/generation/types'
 import { cleanErr } from '../../shared/lib/format'
 import { toast } from '../../shared/lib/notifications'
-import { loadGenParams } from '../generation/state'
+import { generationParams } from '../generation/state'
 import PageWorkspace from './components/PageWorkspace.vue'
 import Icon from '../../shared/ui/Icon.vue'
 import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
@@ -226,7 +226,12 @@ async function create() {
   error.value = ''
   try {
     // 沿用生图预览里的步数、Guidance、采样器等设置（种子随机、每次一张），不再悄悄换成默认值
-    const params: NaiGenParams = { ...promptState.params, ...loadGenParams(), count: 1, seed: null }
+    const params: NaiGenParams = {
+      ...promptState.params,
+      ...generationParams,
+      count: 1,
+      seed: null,
+    }
     const draft =
       start.value === 'current'
         ? {
@@ -357,7 +362,7 @@ async function remove(id: string) {
   try {
     if (id === 'removed-images') {
       const count = await window.api.pagesCleanupRemovedImages()
-      toast(count ? `已清理 ${count} 张遗留图片，移入系统回收站` : '没有可清理的遗留图片')
+      toast(count ? `已清理 ${count} 张遗留图片，空目录一并移除` : '已检查并清理遗留图片和空目录')
     } else {
       const doc = await window.api.pagesRead(id)
       await window.api.pagesDelete(id, doc.revision)

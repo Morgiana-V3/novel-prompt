@@ -8,3 +8,9 @@ dist
 
 # Local planning document
 /TODO.md
+
+# Local model experiments, downloaded weights and generated comparisons
+/experiments/
+
+# Temporary config bundle created by electron-vite
+/electron.vite.config.ts.*.mjs

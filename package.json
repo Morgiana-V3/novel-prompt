@@ -49,6 +49,10 @@
     "acceptance:build": "node scripts/build-acceptance-packages.mjs"
   },
   "build": {
+    "asarUnpack": [
+      "node_modules/onnxruntime-node/bin/**",
+      "node_modules/@img/**"
+    ],
     "appId": "com.holyxie.novelprompt",
     "productName": "NovelPrompt",
     "publish": [
@@ -64,6 +68,9 @@
     },
     "files": [
       "out/**/*",
+      "!node_modules/onnxruntime-node/bin/napi-v6/linux/**",
+      "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
+      "!node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**",
       "!**/TODO.md"
     ],
     "extraResources": [
@@ -123,8 +130,10 @@
     "codemirror": "^6.0.2",
     "electron-updater": "^6.8.11",
     "markdown-it": "^15.0.3",
+    "onnxruntime-node": "^1.31.1",
     "pinyin-pro": "^3.29.5",
     "pngjs": "^7.0.0",
+    "sharp": "^0.35.5",
     "vue": "^3.5.44"
   },
   "devDependencies": {

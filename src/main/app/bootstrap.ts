@@ -7,6 +7,7 @@ import { taskIsActive } from '../../shared/tasks/model'
 import { DesktopBridge } from '../adapters/desktop/bridge'
 import { registerApplicationIpc } from '../adapters/ipc/application'
 import { registerImagesIpc } from '../adapters/ipc/images'
+import { registerReverseIpc } from '../adapters/ipc/reverse'
 import { registerSettingsIpc } from '../adapters/ipc/settings'
 import { registerSkillsIpc } from '../adapters/ipc/skills'
 import { registerTagsIpc } from '../adapters/ipc/tags'
@@ -91,6 +92,7 @@ export function startApplication(): void {
     registerSkillsIpc(context)
     registerUpdatesIpc(context)
     registerImagesIpc(context)
+    registerReverseIpc(context)
     registerWorkspaceIpc(context)
   }
 

@@ -1,6 +1,9 @@
+import { fromMetadata, recipeFromTexts } from '../images/metadata'
+import type { NaiGenRequest } from '../generation/types'
 import type { AiCharacter } from './types'
 
 export interface ImportedPrompt {
+  request?: NaiGenRequest
   base: string
   negative: string
   characters: AiCharacter[]
@@ -124,87 +127,6 @@ function parseSections(text: string): ImportedPrompt {
 
 /* ---------- NAI 元数据 JSON ---------- */
 
-interface NaiCaption {
-  base_caption?: string
-  char_captions?: { char_caption?: string; centers?: { x?: number; y?: number }[] }[]
-}
-interface NaiMeta {
-  input?: string
-  prompt?: string
-  uc?: string
-  negative_prompt?: string
-  width?: number
-  height?: number
-  v4_prompt?: { caption?: NaiCaption; use_coords?: boolean }
-  v4_negative_prompt?: { caption?: NaiCaption }
-  parameters?: NaiMeta
-}
-
-const trimText = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
-const positiveInteger = (value: unknown) =>
-  typeof value === 'number' && value > 0 ? Math.round(value) : undefined
-
-/**
- * NAI 角色中心点（0~1）→ 位置写法。正好落在 5×5 网格中心（如 0.3,0.5）时写成网格 B3，
- * 否则保留原坐标「0.231,0.467」，避免有损转换。
- */
-function positionOf(position?: { x?: number; y?: number }): string {
-  if (typeof position?.x !== 'number' || typeof position?.y !== 'number') {
-    return ''
-  }
-  const cell = (pixelValue: number) => {
-    const i = Math.round(pixelValue * 5 - 0.5)
-    return i >= 0 && i <= 4 && Math.abs((i + 0.5) / 5 - pixelValue) < 1e-6 ? i : -1
-  }
-  const cx = cell(position.x)
-  const cy = cell(position.y)
-  if (cx >= 0 && cy >= 0) {
-    return `${'ABCDE'[cx]}${cy + 1}`
-  }
-  const fmt = (pixelValue: number) =>
-    String(Number(Math.min(1, Math.max(0, pixelValue)).toFixed(4)))
-  return `${fmt(position.x)},${fmt(position.y)}`
-}
-
-function fromMetadata(raw: unknown): ImportedPrompt | null {
-  if (!raw || typeof raw !== 'object') {
-    return null
-  }
-  const metadata = raw as NaiMeta
-  const metadata2 =
-    metadata.parameters && typeof metadata.parameters === 'object'
-      ? { ...metadata.parameters, input: metadata.input }
-      : metadata
-  const cap = metadata2.v4_prompt?.caption
-  const ncap = metadata2.v4_negative_prompt?.caption
-  const base =
-    trimText(cap?.base_caption) || trimText(metadata2.prompt) || trimText(metadata2.input)
-  const negative =
-    trimText(ncap?.base_caption) || trimText(metadata2.uc) || trimText(metadata2.negative_prompt)
-  const useCoords = metadata2.v4_prompt?.use_coords === true
-  const characters = (cap?.char_captions ?? []).map((caption, i) => ({
-    prompt: trimText(caption.char_caption),
-    negative: trimText(ncap?.char_captions?.[i]?.char_caption),
-    position: useCoords ? positionOf(caption.centers?.[0]) : '',
-  }))
-  if (
-    !base &&
-    !negative &&
-    !characters.some((character) => character.prompt || character.negative)
-  ) {
-    return null
-  }
-  return {
-    base,
-    negative,
-    characters,
-    width: positiveInteger(metadata2.width),
-    height: positiveInteger(metadata2.height),
-    fromMetadata: true,
-    structured: true,
-  }
-}
-
 /** 解析粘贴的文本：NAI 元数据 JSON → 分节文本 → 整段作为主提示词 */
 export function parsePromptText(text: string): ImportedPrompt {
   const text2 = text.trim()
@@ -241,10 +163,13 @@ async function readPngText(buf: Uint8Array, inflate: InflateText): Promise<Recor
     throw new Error('不是 PNG 图片')
   }
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength)
-  const out: Record<string, string> = {}
+  const out: Record<string, string> = Object.create(null)
   let off = 8
   while (off + 8 <= buf.length) {
     const len = view.getUint32(off)
+    if (off + 12 + len > buf.length) {
+      throw new Error('PNG 数据不完整')
+    }
     const type = String.fromCharCode(...buf.subarray(off + 4, off + 8))
     const data = buf.subarray(off + 8, off + 8 + len)
     off += 12 + len
@@ -259,6 +184,9 @@ async function readPngText(buf: Uint8Array, inflate: InflateText): Promise<Recor
       continue
     }
     const key = decode(data.subarray(0, z))
+    if (key === 'NovelPrompt' && out[key] !== undefined) {
+      throw new Error('图片包含冲突的生成记录')
+    }
     try {
       if (type === 'tEXt') {
         out[key] = decode(data.subarray(z + 1))
@@ -269,12 +197,15 @@ async function readPngText(buf: Uint8Array, inflate: InflateText): Promise<Recor
         const lang = data.indexOf(0, z + 3) // 语言标签结束
         const tkey = lang < 0 ? -1 : data.indexOf(0, lang + 1) // 翻译后的关键字结束
         if (tkey < 0) {
-          continue
+          throw new Error('PNG 文本记录不完整')
         }
         const body = data.subarray(tkey + 1)
         out[key] = decode(compressed ? await inflate(body) : body)
       }
     } catch {
+      if (key === 'NovelPrompt') {
+        throw new Error('图片生成记录损坏')
+      }
       /* 单个文本块损坏时跳过 */
     }
   }
@@ -287,6 +218,19 @@ export async function parsePngPrompt(
   inflate: InflateText,
 ): Promise<ImportedPrompt> {
   const texts = await readPngText(bytes, inflate)
+  const recipe = recipeFromTexts(texts)
+  if (recipe) {
+    return {
+      base: recipe.request.base,
+      negative: recipe.request.negative,
+      characters: recipe.request.characters,
+      request: recipe.request,
+      width: recipe.request.params.width,
+      height: recipe.request.params.height,
+      fromMetadata: true,
+      structured: true,
+    }
+  }
   let badComment = false
   if (texts.Comment) {
     try {

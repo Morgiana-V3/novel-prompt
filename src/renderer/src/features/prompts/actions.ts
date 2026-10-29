@@ -1,10 +1,12 @@
 import type { ImportedPrompt } from '@shared/prompts/import'
+import type { NaiGenRequest } from '@shared/generation/types'
 import type { TagCategory } from '@shared/tags/types'
 import { watch } from 'vue'
-import { toast } from '../../shared/lib/notifications'
-import { settingsState } from '../settings/state'
+import { toast, reportError } from '../../shared/lib/notifications'
+import { settingsState, saveSettings } from '../settings/state'
+import { DEFAULT_GEN, generationParams } from '../generation/state'
 import type { FieldRef, Persisted, Snapshot } from './state'
-import { MAX_HISTORY, promptState, STORE_KEY, toDrafts } from './state'
+import { DEFAULT_PARAMS, MAX_HISTORY, promptState, STORE_KEY, toDrafts } from './state'
 
 export let saveTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -275,7 +277,55 @@ export function clearWorkspace(): void {
   toast('已清空，可在历史里找回')
 }
 
-/** 导入一整套提示词（分节文本 / 元数据 / 原图） */
+/** Apply full image/favorite settings through one path, with a complete undo snapshot. */
+export async function importGenerationRequest(
+  request: NaiGenRequest,
+  source: string,
+): Promise<void> {
+  const before = {
+    content: current('导入前'),
+    params: { ...promptState.params },
+    generation: { ...generationParams },
+    version: settingsState.settings?.naiVersion ?? 'v4.5',
+  }
+  // Persist the model first: a failed save must not leave half an import applied.
+  if (before.version !== request.version) {
+    await saveSettings({ naiVersion: request.version })
+  }
+  applyWorkspace(request, '导入生成配置前')
+  for (const field of Object.keys(DEFAULT_PARAMS) as (keyof typeof DEFAULT_PARAMS)[]) {
+    ;(promptState.params as unknown as Record<string, unknown>)[field] = request.params[field]
+  }
+  for (const field of Object.keys(DEFAULT_GEN) as (keyof typeof DEFAULT_GEN)[]) {
+    ;(generationParams as unknown as Record<string, unknown>)[field] = request.params[field]
+  }
+  const undo = async () => {
+    if (settingsState.settings?.naiVersion !== before.version) {
+      await saveSettings({ naiVersion: before.version })
+    }
+    pushHistory('撤销导入前')
+    setContent(before.content)
+    Object.assign(promptState.params, before.params)
+    Object.assign(generationParams, before.generation)
+    toast('已恢复导入前的提示词、模型和生成参数')
+  }
+  toast(`${source}：提示词、模型和生成参数`, {
+    label: '撤销导入',
+    run: () => {
+      void undo().catch(reportError)
+    },
+  })
+}
+
+export async function importImagePrompt(imported: ImportedPrompt, source: string): Promise<void> {
+  if (imported.request) {
+    await importGenerationRequest(imported.request, source)
+  } else {
+    importPrompt(imported, `${source}（无完整生成参数）`)
+  }
+}
+
+/** 导入提示词文本；没有完整记录时只修改能确定的字段。 */
 export function importPrompt(importedPrompt: ImportedPrompt, source: string): void {
   applyWorkspace(importedPrompt, '导入前')
   const before = { ...promptState.params }

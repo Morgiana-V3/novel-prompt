@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { toast, copy } from '../../../shared/lib/notifications'
 import {
   importPrompt,
+  importImagePrompt,
   clearWorkspace,
   restoreHistory,
   undoWorkspace,
@@ -48,7 +49,7 @@ async function onFilePicked(event2: Event) {
     return
   }
   try {
-    importPrompt(await readPngPrompt(file), '已读取原图')
+    await importImagePrompt(await readPngPrompt(file), '已读取原图')
   } catch (error) {
     toast(cleanErr(error))
   }
@@ -104,7 +105,7 @@ const preview = (text: string) => text.replace(/\s+/g, ' ').trim().slice(0, 60) 
       </button>
       <button
         class="icon-btn sm"
-        title="读取 NovelAI 原图"
+        title="从 PNG 加载提示词和生成参数"
         @click="fileInput?.click()"
       >
         <Icon

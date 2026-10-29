@@ -5,9 +5,12 @@ import { useGallery } from './use-gallery'
 import { reportError } from '../../shared/lib/notifications'
 import { promptState } from '../prompts/state'
 import { imageState } from './state'
+import { artistTrials, runArtistTrials, type ArtistTrial } from './artist-trials'
+import ArtistTrialQueue from './components/ArtistTrialQueue.vue'
+import { activeTask } from '../../shared/state/tasks'
 import { settingsState } from '../settings/state'
 import { shellState } from '../../shared/state/shell'
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type {
   NaiFreeCheck,
   NaiGenParams,
@@ -16,16 +19,15 @@ import type {
 } from '@shared/generation/types'
 import type { NaiImage } from '@shared/images/types'
 import { toast } from '../../shared/lib/notifications'
-import { importPrompt, workKey } from '../prompts/actions'
+import { importImagePrompt, importGenerationRequest, workKey } from '../prompts/actions'
 import { cleanErr } from '../../shared/lib/format'
 import { DEFAULT_PARAMS } from '../prompts/state'
-import { DEFAULT_GEN, GEN_PARAMS_KEY, loadGenParams, type GenOnly } from './state'
+import { DEFAULT_GEN, generationParams } from './state'
 import { resizeWithin } from '../../shared/lib/autosize'
 import { readPngPrompt } from '../prompts/png-import'
 import { type ImportedPrompt } from '@shared/prompts/import'
 import RecipeLibrary from './components/RecipeLibrary.vue'
 import type { NaiGenRequest } from '@shared/generation/types'
-import { applyWorkspace } from '../prompts/actions'
 import { saveSettings } from '../settings/state'
 import Icon from '../../shared/ui/Icon.vue'
 import Mascot from '../../shared/ui/Mascot.vue'
@@ -38,13 +40,7 @@ import ImageViewer from '../../shared/ui/ImageViewer.vue'
 import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 import { usePageShortcuts, runKeyLabel, runKeyShort } from '../../shared/lib/shortcuts'
 
-const PARAMS_KEY = GEN_PARAMS_KEY
-const loadGen = loadGenParams
-
-const gen = reactive<GenOnly>(loadGen())
-watch(gen, (p) => localStorage.setItem(PARAMS_KEY, JSON.stringify({ ...p, seed: null })), {
-  deep: true,
-})
+const gen = generationParams
 const params = promptState.params
 
 /** 种子留空即默认，不参与比较 */
@@ -74,6 +70,16 @@ const subLoading = ref(false)
 const check = ref<NaiFreeCheck | null>(null)
 
 const running = ref(false)
+watch(
+  running,
+  (value) => {
+    imageState.generating = value
+  },
+  { flush: 'sync' },
+)
+const pendingTrials = computed(() =>
+  artistTrials.trials.filter((trial) => trial.selected && trial.state === 'pending'),
+)
 const cancelling = ref(false)
 const steps = ref<string[]>([])
 const error = ref('')
@@ -98,6 +104,28 @@ const {
   retain,
   lightbox,
 } = useGallery(last)
+const sortTrialsByScore = ref(false)
+const completedTrials = computed(() => {
+  const trials = artistTrials.trials.filter(
+    (trial) => trial.image && gallery.value.some((image) => image.name === trial.image!.name),
+  )
+  return sortTrialsByScore.value ? trials.sort((a, b) => (b.score ?? -2) - (a.score ?? -2)) : trials
+})
+const currentTrial = computed(() =>
+  artistTrials.trials.find((trial) => trial.image?.name === current.value?.name),
+)
+const referenceOpen = ref(false)
+function showTrial(trial: ArtistTrial) {
+  current.value = gallery.value.find((image) => image.name === trial.image?.name) ?? null
+}
+watch(
+  () => artistTrials.trials,
+  () => {
+    error.value = ''
+    last.value = null
+    current.value = null
+  },
+)
 
 const recipeOpen = ref(false)
 const retentionSaving = ref(false)
@@ -128,6 +156,13 @@ async function toggleRetention(event: Event) {
 }
 async function favorite(img: NaiImage) {
   try {
+    if (
+      artistTrials.trials.some((trial) => trial.image?.name === img.name) &&
+      img.storage === 'temporary'
+    ) {
+      await window.api.naiRetain(img.name)
+      await refreshGallery()
+    }
     favoriteId.value = (await window.api.recipesCreate(img.name)).id
     toast('已收藏此图的完整生成配置')
     recipeOpen.value = true
@@ -136,17 +171,14 @@ async function favorite(img: NaiImage) {
   }
 }
 async function applyRecipe(request: NaiGenRequest) {
+  if (running.value) {
+    return
+  }
   try {
-    await saveSettings({ naiVersion: request.version })
-    applyWorkspace(request, '加载收藏配置前')
-    for (const field of Object.keys(params) as (keyof typeof params)[]) {
-      ;(params as Record<string, unknown>)[field] = request.params[field]
-    }
-    for (const field2 of Object.keys(gen) as (keyof GenOnly)[]) {
-      ;(gen as unknown as Record<string, unknown>)[field2] = request.params[field2]
-    }
+    rememberTrialDraft()
+    await importGenerationRequest(request, '已加载收藏配置')
+    artistTrials.active = false
     recipeOpen.value = false
-    toast('配置已加载，可调整后生成')
   } catch (error2) {
     toast(cleanErr(error2))
   }
@@ -239,6 +271,7 @@ onMounted(() => {
   window.addEventListener('resize', resizeAll)
 })
 onBeforeUnmount(() => {
+  artistTrials.stopRequested = true
   window.removeEventListener('resize', resizeAll)
 })
 
@@ -278,6 +311,10 @@ async function run() {
     error.value = '请先在「设置 / 数据」中填写 NovelAI API Token'
     return
   }
+  if (activeTask('generate') || activeTask('inpaint') || activeTask('page-generate')) {
+    error.value = '请等待当前生图任务完成'
+    return
+  }
   if (
     !promptState.prompt.trim() &&
     !promptState.characters.some((character) => character.prompt.trim())
@@ -296,6 +333,29 @@ async function run() {
   const key = workKey()
   try {
     const seed = gen.seed === null || (gen.seed as unknown) === '' ? null : Number(gen.seed)
+    if (artistTrials.active) {
+      const trialSeed = seed ?? crypto.getRandomValues(new Uint32Array(1))[0]
+      gen.seed = trialSeed
+      await runArtistTrials(
+        {
+          ...currentRecipe.value,
+          params: { ...currentRecipe.value.params, seed: trialSeed, count: 1 },
+        },
+        async (result) => {
+          last.value = result
+          if (result.subscription) {
+            sub.value = result.subscription
+          }
+          current.value = result.images[result.images.length - 1]
+          try {
+            await refreshGallery()
+          } catch (e) {
+            toast(`图片已生成，图库刷新失败：${cleanErr(e)}`)
+          }
+        },
+      )
+      return
+    }
     const generationResult = await window.api.naiGenerate({
       base: promptState.prompt,
       negative: promptState.negative,
@@ -329,6 +389,7 @@ async function run() {
 
 async function cancel() {
   cancelling.value = true
+  artistTrials.stopRequested = true
   await window.api.naiCancel()
   toast('会在当前这张完成后停止')
 }
@@ -348,6 +409,7 @@ async function readMeta(img: NaiImage): Promise<ImportedPrompt | null> {
     const recipe = await window.api.naiRecipe(img.name)
     if (recipe) {
       return {
+        request: recipe.request,
         base: recipe.request.base,
         negative: recipe.request.negative,
         characters: recipe.request.characters,
@@ -366,18 +428,36 @@ async function readMeta(img: NaiImage): Promise<ImportedPrompt | null> {
 }
 /** 图片里存的是实际发送的提示词（已含质量词和 UC 预设），导入时会自动关掉这两项避免重复 */
 async function loadFromImage(img: NaiImage) {
+  if (running.value) {
+    return
+  }
   const importedPrompt = await readMeta(img)
   if (importedPrompt) {
-    importPrompt(importedPrompt, '已从图片读回提示词')
+    try {
+      rememberTrialDraft()
+      await importImagePrompt(importedPrompt, '已加载原图')
+      artistTrials.active = false
+    } catch (error) {
+      reportError(error)
+    }
   }
 }
 async function previewImage(img: NaiImage) {
+  if (running.value) {
+    return
+  }
   const importedPrompt = await readMeta(img)
   if (!importedPrompt) {
     return
   }
-  importPrompt(importedPrompt, '已从图片读回提示词')
-  shellState.tab = 'preview'
+  try {
+    rememberTrialDraft()
+    await importImagePrompt(importedPrompt, '已加载原图')
+    artistTrials.active = false
+    shellState.tab = 'preview'
+  } catch (error) {
+    reportError(error)
+  }
 }
 
 const fmtTime = (t: number) =>
@@ -418,6 +498,29 @@ function openImageWorkspace() {
 function closeRecipes() {
   recipeOpen.value = false
   favoriteId.value = ''
+}
+function rememberTrialDraft() {
+  if (artistTrials.active) {
+    artistTrials.draft = JSON.parse(JSON.stringify(currentRecipe.value))
+  }
+}
+function leaveTrials() {
+  if (running.value) {
+    return
+  }
+  rememberTrialDraft()
+  artistTrials.active = false
+}
+async function resumeTrials() {
+  if (running.value || inpaintBusy.value || !artistTrials.draft) {
+    return
+  }
+  try {
+    await importGenerationRequest(artistTrials.draft, '已恢复试图内容')
+    artistTrials.active = true
+  } catch (e) {
+    error.value = cleanErr(e)
+  }
 }
 </script>
 
@@ -496,9 +599,28 @@ function closeRecipes() {
           </div>
         </div>
 
-        <WorkspaceBar />
+        <ArtistTrialQueue
+          v-if="artistTrials.active"
+          :disabled="running || inpaintBusy"
+          @leave="leaveTrials"
+        />
+        <template v-else>
+          <button
+            v-if="artistTrials.trials.length"
+            class="btn small"
+            :disabled="running || inpaintBusy"
+            @click="resumeTrials"
+          >
+            查看画师试图
+          </button>
+          <WorkspaceBar />
+        </template>
 
-        <PromptEditor char-hint="点「编辑位置」可在画布上拖动角色" />
+        <PromptEditor
+          :disabled="running"
+          :base-label="artistTrials.active ? '基础提示词（不含画师串）' : undefined"
+          char-hint="点「编辑位置」可在画布上拖动角色"
+        />
 
         <div class="field-head gen-params-head">
           <label class="field-label">生成参数</label>
@@ -510,7 +632,7 @@ function closeRecipes() {
           </button>
           <button
             class="btn ghost small"
-            :disabled="isDefault"
+            :disabled="running || isDefault"
             title="步数、Guidance、采样器、画幅等全部恢复默认"
             @click="resetDefaults"
           >
@@ -523,6 +645,8 @@ function closeRecipes() {
         <GenerationParameters
           :gen="gen"
           :params="params"
+          :disabled="running"
+          :hide-count="artistTrials.active"
           @change-gen="updateGenerationOptions"
           @change-params="updatePromptParameters"
         />
@@ -608,7 +732,7 @@ function closeRecipes() {
             </button>
             <button
               class="btn accent"
-              :disabled="running || inpaintBusy"
+              :disabled="running || inpaintBusy || (artistTrials.active && !pendingTrials.length)"
               :title="`生成（${runKeyLabel}）`"
               @click="run"
             >
@@ -617,7 +741,14 @@ function closeRecipes() {
                 :size="17"
                 :class="{ 'spin-slow': running }"
               />
-              {{ running ? '正在生成' : gen.count > 1 ? `生成 ${gen.count} 张` : '生成'
+              {{
+                running
+                  ? '正在生成'
+                  : artistTrials.active
+                    ? `生成所选 ${pendingTrials.length} 张`
+                    : gen.count > 1
+                      ? `生成 ${gen.count} 张`
+                      : '生成'
               }}<span
                 v-if="!running"
                 class="kbd"
@@ -631,6 +762,68 @@ function closeRecipes() {
 
     <section class="pane right scroll">
       <div
+        v-if="artistTrials.active && completedTrials.length"
+        class="trial-results-head"
+      >
+        <strong>试图结果</strong>
+        <label
+          ><input
+            v-model="sortTrialsByScore"
+            type="checkbox"
+          />按评分排序</label
+        >
+      </div>
+      <div
+        v-if="artistTrials.active"
+        class="trial-results"
+      >
+        <button
+          v-if="artistTrials.referenceUrl"
+          class="trial-reference"
+          @click="referenceOpen = !referenceOpen"
+        >
+          <img
+            :src="artistTrials.referenceUrl"
+            alt="试图参考图"
+          />
+          <span>{{ referenceOpen ? '收起参考图' : '查看参考图' }}</span>
+        </button>
+        <button
+          v-for="trial in completedTrials"
+          :key="trial.id"
+          class="trial-image"
+          :class="{ selected: current?.name === trial.image?.name }"
+          :aria-label="`查看方案 ${trial.id}`"
+          @click="showTrial(trial)"
+        >
+          <img
+            :src="trial.image!.url"
+            :alt="`方案 ${trial.id}`"
+          />
+          <span
+            >{{ trial.id
+            }}<template v-if="trial.score !== undefined">
+              · {{ trial.score.toFixed(3) }}</template
+            ></span
+          >
+        </button>
+      </div>
+      <img
+        v-if="artistTrials.active && referenceOpen"
+        class="trial-reference-expanded"
+        :src="artistTrials.referenceUrl"
+        alt="试图参考图"
+      />
+      <p
+        v-if="artistTrials.active && currentTrial"
+        class="trial-current-label"
+      >
+        方案 {{ currentTrial.id
+        }}<span v-if="currentTrial.score !== undefined">
+          · 风格评分 {{ currentTrial.score.toFixed(3) }}</span
+        ><span v-if="currentTrial.error"> · {{ currentTrial.error }}</span>
+      </p>
+      <div
         v-if="running && !current"
         class="empty"
       >
@@ -641,6 +834,12 @@ function closeRecipes() {
         <p>
           NovelAI 正在画<span class="dots"><i></i><i></i><i></i></span>
         </p>
+      </div>
+      <div
+        v-else-if="artistTrials.active && !current"
+        class="empty trial-empty"
+      >
+        <p>已载入 {{ artistTrials.trials.length }} 个组合，点击生成开始试图。</p>
       </div>
       <div
         v-else-if="!current && !gallery.length"
@@ -759,7 +958,7 @@ function closeRecipes() {
         </div>
 
         <div
-          v-if="gallery.length"
+          v-if="gallery.length && !artistTrials.active"
           class="group"
         >
           <div class="group-head">
@@ -888,6 +1087,66 @@ function closeRecipes() {
 </template>
 
 <style scoped>
+.trial-results-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.trial-results {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  overflow-x: auto;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.trial-reference,
+.trial-image {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 82px;
+  padding: 5px;
+  background: var(--bg);
+  color: var(--text2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.trial-image.selected {
+  border-color: var(--text);
+}
+
+.trial-results img {
+  width: 70px;
+  height: 76px;
+  object-fit: contain;
+}
+
+.trial-reference-expanded {
+  width: 100%;
+  max-height: 55vh;
+  object-fit: contain;
+  margin-bottom: 12px;
+}
+
+.trial-current-label {
+  font-size: 12px;
+  color: var(--text2);
+  overflow-wrap: anywhere;
+}
+
+.trial-empty {
+  min-height: 160px;
+}
+
 .retention-toggle {
   display: inline-flex;
   align-items: center;

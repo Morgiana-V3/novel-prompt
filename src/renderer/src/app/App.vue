@@ -9,7 +9,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } f
 import { refreshDb } from '../features/tags/state'
 import { loadSkills } from '../features/skills/state'
 import { saveSettings, checkUpdate, dismissUpdate, receiveUpdate } from '../features/settings/state'
-import { importPrompt, flushWorkspace, applyWorkspace } from '../features/prompts/actions'
+import { importImagePrompt, flushWorkspace, applyWorkspace } from '../features/prompts/actions'
 import { cleanErr } from '../shared/lib/format'
 import { toast, runToastAction } from '../shared/lib/notifications'
 import { type Tab } from '../shared/state/shell'
@@ -26,6 +26,7 @@ import SearchView from '../features/tags/SearchView.vue'
 import AiView from '../features/prompts/AiView.vue'
 import PreviewView from '../features/prompts/PreviewView.vue'
 import GenerateView from '../features/generation/GenerateView.vue'
+import ReverseView from '../features/reverse/ReverseView.vue'
 import WorkspacesView from '../features/workspace/WorkspacesView.vue'
 import SettingsView from '../features/settings/SettingsView.vue'
 import Icon from '../shared/ui/Icon.vue'
@@ -55,6 +56,12 @@ const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: bool
   },
   { key: 'preview', label: '画面推测', icon: 'eye', desc: '让 AI 猜猜当前提示词会画成什么样' },
   { key: 'generate', label: '生图预览', icon: 'image', desc: '用 NovelAI 接口直接出图看效果' },
+  {
+    key: 'reverse',
+    label: '图片反推',
+    icon: 'search',
+    desc: '在本机识别基础提示词与画师风格，不上传图片',
+  },
   {
     key: 'workspace',
     label: 'AI 工作台',
@@ -100,6 +107,7 @@ let offSkills: (() => void) | undefined
 let updateTimer: ReturnType<typeof setTimeout> | undefined
 const workspaceView = ref<InstanceType<typeof WorkspacesView>>()
 const settingsView = ref<InstanceType<typeof SettingsView>>()
+const reverseView = ref<InstanceType<typeof ReverseView>>()
 const generateView = ref<InstanceType<typeof GenerateView>>()
 const contentEl = ref<HTMLElement>()
 
@@ -365,6 +373,7 @@ async function desktopCommand(command: DesktopCommand) {
 }
 provide(prepareUpdateKey, async () => {
   await nextTick()
+  reverseView.value?.prepareUpdate()
   settingsView.value?.prepareUpdate()
   generateView.value?.prepareUpdate()
   if (!(await workspaceView.value?.prepareUpdate())) {
@@ -442,10 +451,13 @@ function setVersion(modelVersion: NaiVersion) {
   saveSettings({ naiVersion: modelVersion }).catch(reportError)
 }
 
-/* ---------- 把 NovelAI 原图拖进窗口任意位置，读取里面的提示词 ---------- */
+/* ---------- 拖入原图，读取提示词与生成参数 ---------- */
 const dragDepth = ref(0)
 const hasFile = (event2: DragEvent) => !!event2.dataTransfer?.types.includes('Files')
 function onDragEnter(event2: DragEvent) {
+  if (shellState.tab === 'reverse') {
+    return
+  }
   if (hasFile(event2)) {
     dragDepth.value++
   }
@@ -462,6 +474,11 @@ function onDragLeave(event2: DragEvent) {
   }
 }
 async function onDrop(event2: DragEvent) {
+  if (shellState.tab === 'reverse') {
+    event2.preventDefault()
+    dragDepth.value = 0
+    return
+  }
   if (!hasFile(event2)) {
     return
   }
@@ -472,7 +489,7 @@ async function onDrop(event2: DragEvent) {
     return
   }
   try {
-    importPrompt(await readPngPrompt(file), '已读取原图')
+    await importImagePrompt(await readPngPrompt(file), '已读取原图')
   } catch (err) {
     toast(cleanErr(err))
   }
@@ -677,6 +694,10 @@ async function onDrop(event2: DragEvent) {
         :inert="frontend?.status === 'running'"
       >
         <CompareView v-show="shellState.tab === 'compare'" />
+        <ReverseView
+          v-show="shellState.tab === 'reverse'"
+          ref="reverseView"
+        />
         <SearchView v-show="shellState.tab === 'search'" />
         <AiView v-show="shellState.tab === 'ai'" />
         <PreviewView v-show="shellState.tab === 'preview'" />
@@ -705,8 +726,8 @@ async function onDrop(event2: DragEvent) {
             name="image"
             :size="30"
           />
-          <b>松手读取原图里的提示词</b>
-          <span>会替换当前提示词，原来的内容自动存进历史</span>
+          <b>松手加载图片配置</b>
+          <span>读取提示词和生成参数，可撤销</span>
         </div>
       </div>
     </transition>

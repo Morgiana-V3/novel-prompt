@@ -15,6 +15,7 @@ const props = withDefaults(
     params: Pick<NaiGenParams, 'width' | 'height' | 'qualityTags' | 'ucPreset'>
     disabled?: boolean
     sizeLocked?: boolean
+    hideCount?: boolean
   }>(),
   { disabled: false, sizeLocked: false },
 )
@@ -83,7 +84,10 @@ const advancedChanged = computed(
       :only="['size']"
       @change-params="emit('changeParams', $event)"
     />
-    <div class="param">
+    <div
+      v-if="!hideCount"
+      class="param"
+    >
       <span class="side-label">张数（逐张生成）</span>
       <div class="seg block">
         <button

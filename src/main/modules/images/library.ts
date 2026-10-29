@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import {
   closeSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -10,11 +11,13 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
+  rmdirSync,
   statSync,
   unlinkSync,
 } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { PNG } from 'pngjs'
+import { embedRecipe, readPngRecipe } from './png-record'
 import type { ImageRecipe, NaiImage } from '../../../shared/images/types'
 import { writeFileAtomic } from '../../infrastructure/atomic-file'
 import { pngSize } from '../../providers/novelai/png-response'
@@ -85,7 +88,7 @@ export function imageInfo(name: string, references?: Set<string>): NaiImage | nu
   try {
     seed = readImageRecipe(name)?.request.params.seed ?? undefined
   } catch {
-    /* Old images have no sidecar. */
+    /* A damaged record must not hide an otherwise viewable image. */
   }
   const legacySeed = /^\d{8}-\d{6}-(\d+)/.exec(name)?.[1]
   seed ??= legacySeed === undefined ? undefined : Number(legacySeed)
@@ -99,25 +102,26 @@ export function imageInfo(name: string, references?: Set<string>): NaiImage | nu
     storage,
   }
 }
+const recipeCache = new Map<string, { stamp: string; recipe: ImageRecipe | null }>()
 export function readImageRecipe(name: string): ImageRecipe | null {
-  if (typeof name !== 'string' || !safeName.test(name) || name.includes('..')) {
-    return null
-  }
-  const path = [
-    workspacePath(name),
-    join(saved(), name),
-    join(temporary(), name),
-    join(legacyImageDir(), name),
-  ].find((path2) => path2 && existsSync(`${path2}.json`))
+  const path = libraryImagePath(name)
   if (!path) {
     return null
   }
-  const recipe = JSON.parse(readFileSync(`${path}.json`, 'utf8')) as ImageRecipe
-  if (recipe.schema !== 1 || !recipe.request?.params) {
-    throw new Error('图片生成记录损坏，不能用当前草稿替代')
+  const stat = statSync(path)
+  const stamp = `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`
+  const cached = recipeCache.get(path)
+  if (cached?.stamp === stamp) {
+    return structuredClone(cached.recipe)
   }
-  return recipe
+  const recipe = readPngRecipe(readFileSync(path), stat.mtimeMs)
+  if (recipeCache.size >= 128) {
+    recipeCache.clear()
+  }
+  recipeCache.set(path, { stamp, recipe })
+  return structuredClone(recipe)
 }
+
 export function storeGeneratedImage(
   bytes: Buffer,
   recipe: ImageRecipe,
@@ -142,10 +146,9 @@ export function storeGeneratedImage(
   if (storage === 'temporary') {
     liveTemporaryImages.add(name)
   }
-  // Publish metadata first; a visible PNG always has its exact generation record.
-  writeFileAtomic(`${dest}.json`, JSON.stringify(recipe))
-  writeFileAtomic(dest, bytes)
-  return { ...imageInfo(name)!, contentHash: createHash('sha256').update(bytes).digest('hex') }
+  const png = embedRecipe(bytes, recipe)
+  writeFileAtomic(dest, png)
+  return { ...imageInfo(name)!, contentHash: createHash('sha256').update(png).digest('hex') }
 }
 export function retainImage(name: string): NaiImage {
   const image = imageInfo(name)
@@ -157,9 +160,6 @@ export function retainImage(name: string): NaiImage {
     return image
   }
   const dest = join(saved(), name)
-  if (existsSync(`${src}.json`)) {
-    writeFileAtomic(`${dest}.json`, readFileSync(`${src}.json`))
-  }
   writeFileAtomic(dest, readFileSync(src))
   // A cleanup failure must not report a successfully retained image as unsaved.
   try {
@@ -185,9 +185,6 @@ export function ownWorkspaceImage(name: string, owner: string): NaiImage {
   }
   const newName = `ws-${owner}-${randomUUID()}.png`
   const dest = join(ensure(join(workspaceRoot(), owner)), newName)
-  if (existsSync(`${src}.json`)) {
-    writeFileAtomic(`${dest}.json`, readFileSync(`${src}.json`))
-  }
   writeFileAtomic(dest, readFileSync(src))
   return {
     ...imageInfo(newName)!,
@@ -299,6 +296,49 @@ export function ownedWorkspaceImages(owner?: string): string[] {
   })
 }
 
+/** Remove only empty, directly owned folders. Never recurse or follow directory links. */
+export function pruneWorkspaceImageDirectories(
+  options: { owner?: string; keep?: ReadonlySet<string> } = {},
+): number {
+  if (options.owner && !uuid.test(options.owner)) {
+    throw new Error('工作台标识无效')
+  }
+  const root = join(imageLibraryDir(), 'workspaces')
+  if (
+    !existsSync(root) ||
+    lstatSync(root).isSymbolicLink() ||
+    realpathSync(root) !== resolve(root)
+  ) {
+    return 0
+  }
+  const owners = options.owner ? [options.owner] : readdirSync(root)
+  let removed = 0
+  for (const owner of owners) {
+    if (!uuid.test(owner) || options.keep?.has(owner)) {
+      continue
+    }
+    const dir = join(root, owner)
+    try {
+      const stat = lstatSync(dir)
+      if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(dir) !== resolve(dir)) {
+        continue
+      }
+      if (readdirSync(dir).length) {
+        continue
+      }
+      // rmdir itself refuses a folder populated after the emptiness check.
+      rmdirSync(dir)
+      removed++
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code !== 'ENOENT' && code !== 'ENOTEMPTY') {
+        throw new Error(`空目录 ${owner} 清理失败，请释放占用或检查权限后重试。`)
+      }
+    }
+  }
+  return removed
+}
+
 /** Move both the PNG and its generation recipe to the system recycle bin. */
 export async function trashLibraryImage(name: string): Promise<boolean> {
   if (typeof name !== 'string' || !safeName.test(name) || name.includes('..')) {
@@ -320,6 +360,10 @@ export async function trashLibraryImage(name: string): Promise<boolean> {
         removed = true
       }
     }
+  }
+  const owner = /^ws-([a-f0-9-]{36})-/.exec(name)?.[1]
+  if (owner) {
+    pruneWorkspaceImageDirectories({ owner })
   }
   return removed
 }
