@@ -130,7 +130,7 @@ for (const [name, handler] of Object.entries({
   'settings:get': () => getSettings(),
   'settings:save': (_, p) => saveSettings(p),
   'db:status': () => tagStore.status(),
-  'window:dark-titlebar': () => {},
+  'window:image-preview': () => {},
   'skills:list': () => [],
   'mcp:info': () => null,
   'update:check': () => updateInfo,

@@ -18,6 +18,7 @@ export class ReverseService extends ReverseModels {
     bytes: Uint8Array,
     workerPath: string,
     selection?: ReverseModel[],
+    report?: (message: string) => void,
   ): Promise<ReverseResult> {
     if (this.busy) {
       throw new Error('请等待当前操作完成')
@@ -27,6 +28,7 @@ export class ReverseService extends ReverseModels {
     }
     this.phase = 'running'
     this.message = '正在检查本地模型'
+    report?.(this.message)
     let cancelled = false
     this.cancelRun = () => {
       cancelled = true
@@ -59,6 +61,7 @@ export class ReverseService extends ReverseModels {
           (message: { stage?: string; result?: ReverseResult; error?: string }) => {
             if (message.stage) {
               this.message = message.stage
+              report?.(message.stage)
             }
             if (message.result) {
               clearTimeout(timer)

@@ -6,20 +6,18 @@ import { isWebUrl } from '../../../shared/web-url'
 import { readLog } from '../mcp/call-log'
 import type { IpcContext } from './context'
 import { handle } from './handle'
+import { setImagePreviewActive } from './image-preview'
 
 export function registerApplicationIpc(context: IpcContext): void {
   const { runtimeInfo } = context
   const runtimeData = context.runtimeData
   const bridgeProfile = context.bridgeProfile
 
-  handle('window:dark-titlebar', (event, dark: boolean) => {
+  handle('window:image-preview', (event, active: boolean) => {
     const win = context.getWindow()
 
-    if (win && event.sender === win.webContents && process.platform !== 'darwin') {
-      win.setTitleBarOverlay({
-        color: '#00000000',
-        symbolColor: dark === true ? '#f7f7f9' : '#6b6c75',
-      })
+    if (win && event.sender === win.webContents && typeof active === 'boolean') {
+      setImagePreviewActive(win, active)
     }
   })
 

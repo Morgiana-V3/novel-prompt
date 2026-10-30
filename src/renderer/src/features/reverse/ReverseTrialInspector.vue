@@ -71,7 +71,6 @@ const styleLabel = computed(() => {
     :aria-label="`方案 ${index + 1} 信息`"
   >
     <header>
-      <span class="inspector-eyebrow">当前方案</span>
       <div>
         <h3>方案 {{ index + 1 }}</h3>
         <span>{{ status }}</span>
@@ -84,14 +83,11 @@ const styleLabel = computed(() => {
         :title="styleLabel"
         >{{ styleLabel }}</span
       >
-      <span v-if="trial?.score !== undefined">风格相似度 {{ trial.score.toFixed(3) }}</span>
-      <small v-if="trial?.score !== undefined">仅辅助比较，不代表还原百分比</small>
-      <p
-        v-if="!trial?.image"
-        class="inspector-hint"
+      <span
+        v-if="trial?.score !== undefined"
+        title="仅辅助比较，不代表还原百分比"
+        >风格相似度 {{ trial.score.toFixed(3) }}</span
       >
-        生成完成后，可在这里留存图片、收藏或采用配置。
-      </p>
       <span
         v-if="trial?.error"
         class="preview-error"
@@ -156,27 +152,29 @@ const styleLabel = computed(() => {
           质量词{{ trial.request.params.qualityTags ? '开启' : '关闭' }} · UC
           {{ trial.request.params.ucPreset }}
         </p>
-        <label
-          >主提示词<textarea
-            :value="trial.request.base"
-            readonly
-            rows="4"
-          />
-        </label>
-        <label
-          >负面提示词<textarea
-            :value="trial.request.negative"
-            readonly
-            rows="2"
-          />
-        </label>
+        <section
+          class="prompt-card"
+          aria-label="主提示词"
+        >
+          <h4>主提示词</h4>
+          <p class="prompt-text">{{ trial.request.base || '无' }}</p>
+        </section>
+        <section
+          class="prompt-card"
+          aria-label="负面提示词"
+        >
+          <h4>负面提示词</h4>
+          <p class="prompt-text">{{ trial.request.negative || '无' }}</p>
+        </section>
         <div
           v-for="(character, roleIndex) in trial.request.characters"
           :key="roleIndex"
+          class="prompt-card"
         >
-          <p>角色 {{ roleIndex + 1 }} · 位置 {{ character.position || '自动' }}</p>
-          <p>{{ character.prompt }}</p>
-          <p>负面：{{ character.negative || '无' }}</p>
+          <h4>角色 {{ roleIndex + 1 }} · 位置 {{ character.position || '自动' }}</h4>
+          <p class="prompt-text">{{ character.prompt }}</p>
+          <h4>负面提示词</h4>
+          <p class="prompt-text">{{ character.negative || '无' }}</p>
         </div>
       </details>
     </div>
@@ -187,8 +185,10 @@ const styleLabel = computed(() => {
 .reverse-trial-inspector {
   height: 100%;
   min-width: 0;
+  min-height: 0;
   padding: 20px;
-  overflow: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   scrollbar-gutter: stable;
   background: var(--bg);
   font-size: 12px;
@@ -239,11 +239,6 @@ header > div > span {
   font-family: var(--mono);
 }
 
-.inspector-hint {
-  margin: 12px 0;
-  color: var(--muted);
-}
-
 .preview-error {
   color: var(--bad);
 }
@@ -278,15 +273,24 @@ header > div > span {
   color: var(--text2);
 }
 
-.preview-details textarea {
-  display: block;
-  width: 100%;
-  resize: vertical;
-  padding: 8px;
+.prompt-card {
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.prompt-card h4 {
+  margin: 0 0 8px;
+  color: var(--text2);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.prompt-card .prompt-text {
+  margin: 0 0 10px;
   color: var(--text);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  font: 11px/1.7 var(--mono);
+  font: 11px/1.8 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
 }
 </style>

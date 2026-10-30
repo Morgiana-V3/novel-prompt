@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { ReverseResult } from '@shared/reverse/types'
+import ArtistWeights from './ArtistWeights.vue'
 import { proposeArtistStrings } from '@shared/reverse/candidates'
 
 const props = defineProps<{
@@ -102,14 +103,20 @@ watch(
             :disabled="locked"
           />{{ trial.id }}</label
         >
-        <textarea
-          v-model="trial.style"
-          :aria-label="'方案 ' + trial.id + ' 画师串'"
-          rows="2"
-          placeholder="无画师对照"
-          :disabled="locked"
-          spellcheck="false"
-        />
+        <div class="trial-style-editor">
+          <ArtistWeights
+            v-model="trial.style"
+            :disabled="locked"
+          />
+          <textarea
+            v-model="trial.style"
+            :aria-label="'方案 ' + trial.id + ' 画师串'"
+            rows="2"
+            placeholder="无画师对照"
+            :disabled="locked"
+            spellcheck="false"
+          />
+        </div>
         <button
           class="icon-btn sm"
           :disabled="locked"
@@ -132,7 +139,6 @@ watch(
   flex-direction: column;
   gap: 12px;
   min-width: 0;
-  overflow: auto;
   padding: 16px;
 }
 
@@ -180,10 +186,18 @@ footer {
   font-size: 12px;
 }
 
+.trial-style-editor {
+  flex: 1;
+  min-width: 0;
+}
+
 .trial-candidate textarea {
   flex: 1;
   min-width: 0;
-  resize: vertical;
+  resize: none;
+  field-sizing: content;
+  overflow: hidden;
+  width: 100%;
   font-size: 12px;
   line-height: 1.6;
   padding: 6px 8px;

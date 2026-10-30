@@ -4,17 +4,19 @@ import type { ReverseModel, ReverseResult, ReverseStatus } from '@shared/reverse
 import { shellState } from '../../shared/state/shell'
 import { toast } from '../../shared/lib/notifications'
 import { cleanErr } from '../../shared/lib/format'
-import { DEFAULT_PARAMS, type CharDraft } from '../prompts/state'
-import { DEFAULT_GEN, imageState } from '../generation/state'
-import type { NaiGenParams, NaiVersion } from '@shared/generation/types'
+import type { CharDraft } from '../prompts/state'
+import { imageState } from '../generation/state'
+import { settingsState } from '../settings/state'
+import { reverseTrialParams } from './trial-defaults'
 import Icon from '../../shared/ui/Icon.vue'
 import ReverseModels from './ReverseModels.vue'
 import ReverseCharacters from './ReverseCharacters.vue'
 import ReverseReference from './ReverseReference.vue'
 import ReverseTrials from './ReverseTrials.vue'
+import ArtistWeights from './ArtistWeights.vue'
+import { removeStyleArtist, styleArtists } from './artist-weights'
 import ReverseComparison from './ReverseComparison.vue'
 import { useReverseTrials, type ReverseTrial } from './use-reverse-trials'
-import ReverseGenerationSettings from './ReverseGenerationSettings.vue'
 import { modelSize as size, summarizeReverseModels } from './model-summary'
 import { loadReversePreferences, saveReversePreferences } from './preferences'
 
@@ -56,12 +58,6 @@ const {
   clear: clearTrials,
 } = useReverseTrials()
 const previewTrials = computed(() => trialsState.trials)
-const generationDraft = ref<{ version: NaiVersion; negative: string; params: NaiGenParams }>({
-  version: 'v5',
-  negative: '',
-  params: { ...DEFAULT_GEN, ...DEFAULT_PARAMS },
-})
-const scoreEnabled = ref(true)
 const models = computed(() => summarizeReverseModels(status.value, selection.value))
 const missingModels = computed(() => models.value.filter((model) => !model.ready))
 const missingBytes = computed(() =>
@@ -172,7 +168,7 @@ const recognitionMessage = computed(() => {
   if (result.value) {
     return `已识别 ${filteredTags.value.length} 个标签 · ${result.value.seconds.toFixed(1)} 秒`
   }
-  return image.value ? '图片已载入，点击「开始识别」继续' : '先选择、拖入或粘贴一张参考图'
+  return ''
 })
 const recognitionLabel = computed(() => {
   if (running.value) {
@@ -297,8 +293,10 @@ function paste(event: ClipboardEvent) {
     select(file)
   }
 }
-function drop(event: DragEvent) {
-  select(event.dataTransfer?.files[0])
+function rejectDrop(event: DragEvent) {
+  if (event.dataTransfer?.types.includes('Files')) {
+    event.dataTransfer.dropEffect = 'none'
+  }
 }
 function picked(event: Event) {
   const input = event.target as HTMLInputElement
@@ -394,13 +392,13 @@ async function preview() {
       style,
       request: {
         base: [style, promptContent.value.trim()].filter(Boolean).join(', '),
-        negative: generationDraft.value.negative,
+        negative: '',
         characters: characters.value.map((role) => ({ ...role })),
-        version: generationDraft.value.version,
-        params: { ...generationDraft.value.params, count: 1 },
+        version: settingsState.settings?.naiVersion ?? 'v4.5',
+        params: reverseTrialParams(settingsState.settings?.naiVersion ?? 'v4.5'),
       },
     })),
-    scoreEnabled.value ? result.value.style : undefined,
+    result.value.style,
   )
 }
 async function retryTrial(trial: ReverseTrial) {
@@ -417,7 +415,7 @@ async function retryTrial(trial: ReverseTrial) {
         },
       },
     ],
-    scoreEnabled.value ? result.value?.style : undefined,
+    result.value?.style,
   )
 }
 function clearCrop() {
@@ -426,25 +424,20 @@ function clearCrop() {
   croppedResult.value = undefined
   cropEnabled.value = false
 }
-function isArtistEntry(entry: string, name: string) {
-  // Compare complete tags; artist:a must not match artist:ab.
-  const plain = entry.trim().replace(/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)::(.+)::$/, '$1')
-  return plain.trim() === `artist:${name}`
-}
 function hasArtist(name: string) {
-  return style.value.split(',').some((entry) => isArtistEntry(entry, name))
+  return styleArtists(style.value).some((artist) => artist.core === name)
 }
 function toggleArtist(name: string) {
-  const tag = `artist:${name}`
-  if (hasArtist(name)) {
-    style.value = style.value
-      .split(',')
-      .filter((entry) => !isArtistEntry(entry, name))
-      .map((entry) => entry.trim())
-      .filter(Boolean)
-      .join(', ')
+  if (busy.value) {
+    return
+  }
+  const matching = styleArtists(style.value).filter((artist) => artist.core === name)
+  if (matching.length) {
+    for (const artist of matching.reverse()) {
+      style.value = removeStyleArtist(style.value, artist.index)
+    }
   } else {
-    style.value = [style.value.trim(), tag].filter(Boolean).join(', ')
+    style.value = [style.value.trim(), `artist:${name}`].filter(Boolean).join(', ')
   }
 }
 async function copy(text: string) {
@@ -474,270 +467,85 @@ async function source(url: string) {
 <template>
   <section
     class="reverse-view"
+    :class="{ 'is-recognition': stage === 'recognition' }"
     @dragenter.stop.prevent
-    @dragover.stop.prevent
+    @dragover.stop.prevent="rejectDrop"
     @dragleave.stop.prevent
-    @drop.stop.prevent="drop"
+    @drop.stop.prevent
   >
-    <div class="reverse-heading">
-      <div>
-        <h2>参考图试验台</h2>
-        <p>
-          {{
-            stage === 'recognition'
-              ? '先识别参考图，核对提示词和画师组合，再进入试图。'
-              : '用确认后的方案试图，与原图比较效果。'
-          }}
+    <div class="reverse-topbar">
+      <nav
+        class="reverse-steps"
+        aria-label="图片反推步骤"
+      >
+        <button
+          :class="{ active: stage === 'recognition' }"
+          :aria-current="stage === 'recognition' ? 'step' : undefined"
+          :disabled="busy"
+          @click="stage = 'recognition'"
+        >
+          1 · 识别与提示词
+        </button>
+        <span aria-hidden="true">→</span>
+        <button
+          :class="{ active: stage === 'trials' }"
+          :aria-current="stage === 'trials' ? 'step' : undefined"
+          :disabled="busy || !result || !previewStyles.length || previewStyles.length > 6"
+          @click="startTrials"
+        >
+          2 · 试图与对比
+        </button>
+      </nav>
+      <div
+        v-show="stage === 'trials'"
+        class="reverse-execution"
+      >
+        <div class="reverse-preview-actions">
+          <button
+            class="btn small"
+            :disabled="!result || busy"
+            @click="openTrials"
+          >
+            调整组合
+          </button>
+          <button
+            class="btn primary"
+            :disabled="
+              !result ||
+              busy ||
+              imageState.generating ||
+              !previewStyles.length ||
+              previewStyles.length > 6
+            "
+            @click="preview"
+          >
+            {{ trialsState.running ? '正在生成…' : `生成 ${previewStyles.length || 3} 张预览` }}
+          </button>
+          <button
+            v-if="trialsState.running"
+            class="btn"
+            :disabled="trialsState.stopRequested"
+            @click="stopTrials"
+          >
+            {{ trialsState.stopRequested ? '正在停止…' : '停止试图' }}
+          </button>
+        </div>
+        <p
+          v-if="trialsState.running && trialsState.progress"
+          class="reverse-trial-progress"
+          role="status"
+        >
+          {{ trialsState.progress }}
+        </p>
+        <p
+          v-if="trialsState.error"
+          class="reverse-error"
+          role="alert"
+        >
+          {{ trialsState.error }}
         </p>
       </div>
-      <span class="reverse-local-note">{{
-        stage === 'recognition' ? '本地识别 · 不消耗 Anlas' : 'NovelAI 试图 · 沿用免费 / Anlas 设置'
-      }}</span>
     </div>
-    <nav
-      class="reverse-steps"
-      aria-label="图片反推步骤"
-    >
-      <button
-        :class="{ active: stage === 'recognition' }"
-        :aria-current="stage === 'recognition' ? 'step' : undefined"
-        :disabled="busy"
-        @click="stage = 'recognition'"
-      >
-        1 · 识别与提示词
-      </button>
-      <span aria-hidden="true">→</span>
-      <button
-        :class="{ active: stage === 'trials' }"
-        :aria-current="stage === 'trials' ? 'step' : undefined"
-        :disabled="busy || !result || !previewStyles.length || previewStyles.length > 6"
-        @click="startTrials"
-      >
-        2 · 试图与对比
-      </button>
-    </nav>
-    <div
-      v-show="stage === 'recognition'"
-      class="reverse-toolbar"
-    >
-      <input
-        ref="picker"
-        type="file"
-        accept="image/png,image/jpeg,image/webp"
-        hidden
-        @change="picked"
-      />
-      <button
-        class="btn small"
-        :disabled="busy"
-        @click="picker?.click()"
-      >
-        <Icon
-          name="image"
-          :size="15"
-        />{{ image ? '更换图片' : '选择图片' }}
-      </button>
-      <button
-        v-if="image"
-        class="btn small primary reverse-run"
-        :disabled="!image || !selectedReady || busy"
-        @click="analyze"
-      >
-        <Icon
-          name="search"
-          :size="14"
-        />{{ recognitionLabel }}
-      </button>
-      <button
-        v-if="running || actionBusy || modelOperation"
-        class="btn small"
-        :disabled="cancelRequested"
-        @click="manage('cancel')"
-      >
-        {{ running || status?.phase === 'running' ? '取消识别' : '取消下载' }}
-      </button>
-      <span
-        class="reverse-stage"
-        role="status"
-        >{{ recognitionMessage }}</span
-      >
-      <button
-        class="btn small ghost reverse-model-toggle"
-        :disabled="trialsState.running"
-        aria-label="模型管理"
-        :title="selectedReady ? '本地模型已就绪' : '管理本地模型'"
-        @click="modelsOpen = true"
-      >
-        <span
-          class="model-dot"
-          :class="{ ready: selectedReady }"
-        ></span
-        >模型<Icon
-          name="sliders"
-          :size="14"
-        />
-      </button>
-    </div>
-
-    <div
-      v-show="stage === 'recognition'"
-      class="reverse-options"
-    >
-      <label
-        v-for="option in [
-          ['wd', '内容 / 角色'],
-          ['k2', 'K2 画师'],
-          ['k3', 'K3 画师 / 评分'],
-          ['pixai', 'PixAI 角色'],
-        ] as const"
-        :key="option[0]"
-      >
-        <input
-          v-model="selection"
-          type="checkbox"
-          :value="option[0]"
-          :disabled="busy || (selection.length === 1 && selection.includes(option[0]))"
-        />{{ option[1] }}
-      </label>
-    </div>
-    <div
-      v-if="stage === 'recognition' && status && !selectedReady && !modelOperation"
-      class="reverse-setup"
-    >
-      <div class="reverse-setup-heading">
-        <div>
-          <strong
-            >还需要 {{ missingModels.length }} 个本地模型 · 待下载 {{ size(missingBytes) }}</strong
-          >
-          <p>
-            {{
-              image
-                ? '参考图已保留，模型就绪后点击「开始识别」。'
-                : '首次使用需下载所选模型，之后可离线识别。'
-            }}
-          </p>
-        </div>
-        <button
-          class="btn small primary"
-          :disabled="busy"
-          @click="manage('install')"
-        >
-          下载并启用
-        </button>
-      </div>
-      <ul class="reverse-missing-models">
-        <li
-          v-for="model in missingModels"
-          :key="model.id"
-        >
-          <strong>{{ model.name }}</strong>
-          <span>{{ model.purpose }}</span>
-          <span>{{ model.partial ? '待补全' : '待下载' }} · {{ size(model.missingBytes) }}</span>
-        </li>
-      </ul>
-    </div>
-    <div
-      v-if="modelOperation && status"
-      class="reverse-download"
-    >
-      <template v-if="status.totalBytes > 0">
-        <progress
-          :value="progress"
-          max="100"
-          aria-label="本次模型传输进度"
-        /><span>本次传输 {{ size(status.completedBytes) }} / {{ size(status.totalBytes) }}</span>
-      </template>
-      <span v-else>正在检查本地文件，确认本次需要下载或导入的大小…</span>
-    </div>
-    <p
-      v-if="error || status?.phase === 'error'"
-      class="reverse-error"
-      role="alert"
-    >
-      {{ error || status?.message }}
-    </p>
-
-    <div
-      v-show="stage === 'trials'"
-      class="reverse-execution"
-    >
-      <div class="reverse-preview-actions">
-        <div>
-          <strong>{{ previewTrials.length ? '本轮方案' : '准备试图' }}</strong>
-          <p v-if="previewTrials.length">点击下方缩略图切换方案，与原图并排对比。</p>
-          <p v-else-if="result && previewStyles.length < 3">
-            当前有 {{ previewStyles.length }} 个方案，可返回调整添加画师组合或无画师对照。
-          </p>
-          <p v-else>同轮使用相同内容和种子；点击生成后才会提交 NovelAI 请求。</p>
-        </div>
-        <button
-          class="btn small"
-          :disabled="!result || busy"
-          @click="openTrials"
-        >
-          返回调整方案
-        </button>
-        <button
-          class="btn primary"
-          :disabled="
-            !result ||
-            busy ||
-            imageState.generating ||
-            !previewStyles.length ||
-            previewStyles.length > 6
-          "
-          @click="preview"
-        >
-          {{ trialsState.running ? '正在生成…' : `生成 ${previewStyles.length || 3} 张预览` }}
-        </button>
-        <button
-          v-if="trialsState.running"
-          class="btn"
-          :disabled="trialsState.stopRequested"
-          @click="stopTrials"
-        >
-          {{ trialsState.stopRequested ? '正在停止…' : '停止试图' }}
-        </button>
-      </div>
-      <p
-        v-if="trialsState.progress"
-        class="reverse-trial-progress"
-        role="status"
-      >
-        {{ trialsState.progress
-        }}<span v-if="trialsState.cost !== null"> · Anlas 变化 {{ trialsState.cost }}</span>
-      </p>
-      <p
-        v-if="trialsState.error"
-        class="reverse-error"
-        role="alert"
-      >
-        {{ trialsState.error }}
-      </p>
-    </div>
-    <details
-      v-show="stage === 'trials'"
-      class="reverse-trial-settings"
-    >
-      <summary>
-        生图设置 · {{ generationDraft.version.toUpperCase() }} ·
-        {{ generationDraft.params.width }}×{{ generationDraft.params.height }} ·
-        {{ generationDraft.params.steps }} 步
-      </summary>
-      <ReverseGenerationSettings
-        v-model="generationDraft"
-        :disabled="busy"
-      />
-      <label
-        v-if="result?.style"
-        class="reverse-score-toggle"
-        ><input
-          v-model="scoreEnabled"
-          type="checkbox"
-          :disabled="busy"
-        />生成后比较风格（仅辅助比较，不是还原百分比）</label
-      >
-    </details>
     <ReverseComparison
       v-show="stage === 'trials'"
       :reference-url="imageUrl"
@@ -764,14 +572,24 @@ async function source(url: string) {
             :title="image.name"
             >{{ image.name }}</span
           >
+          <button
+            v-if="result"
+            class="btn small ghost"
+            :disabled="busy"
+            title="调整角色 / 框选人物"
+            @click="openCharacters"
+          >
+            角色
+          </button>
         </div>
         <ReverseReference
           ref="reference"
           :url="imageUrl"
           :file="image"
-          :disabled="busy"
+          :disabled="busy || modelsOpen || stage !== 'recognition' || shellState.tab !== 'reverse'"
           :crop-enabled="cropEnabled && pane === 'characters' && stage === 'recognition'"
           @choose="picker?.click()"
+          @file="select"
           @selected="cropSelected"
         />
         <div
@@ -805,25 +623,158 @@ async function source(url: string) {
           }}</span>
           <span v-else-if="cropEnabled && !hasCrop">在图上拖动框选</span>
         </div>
-        <div
-          v-else
-          class="reverse-reference-footer"
-        >
-          <span>支持拖入、Ctrl+V 粘贴或点击选择</span>
-          <button
-            v-if="result && stage === 'recognition'"
-            class="btn small ghost"
-            :disabled="busy"
-            @click="openCharacters"
-          >
-            调整角色 / 框选人物
-          </button>
-        </div>
       </section>
       <section
         v-show="stage === 'recognition'"
         class="reverse-adjustments"
       >
+        <div
+          v-show="stage === 'recognition'"
+          class="reverse-toolbar"
+        >
+          <input
+            ref="picker"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            hidden
+            @change="picked"
+          />
+          <button
+            class="btn small"
+            :disabled="busy"
+            @click="picker?.click()"
+          >
+            <Icon
+              name="image"
+              :size="15"
+            />{{ image ? '更换图片' : '选择图片' }}
+          </button>
+          <button
+            v-if="image"
+            class="btn small primary reverse-run"
+            :disabled="!image || !selectedReady || busy"
+            @click="analyze"
+          >
+            <Icon
+              name="search"
+              :size="14"
+            />{{ recognitionLabel }}
+          </button>
+          <button
+            v-if="running || actionBusy || modelOperation"
+            class="btn small"
+            :disabled="cancelRequested"
+            @click="manage('cancel')"
+          >
+            {{ running || status?.phase === 'running' ? '取消识别' : '取消下载' }}
+          </button>
+          <span
+            v-if="recognitionMessage"
+            class="reverse-stage"
+            role="status"
+            >{{ recognitionMessage }}</span
+          >
+          <button
+            class="btn small ghost reverse-model-toggle"
+            :disabled="trialsState.running"
+            aria-label="模型管理"
+            :title="selectedReady ? '本地模型已就绪' : '管理本地模型'"
+            @click="modelsOpen = true"
+          >
+            <span
+              class="model-dot"
+              :class="{ ready: selectedReady }"
+            ></span
+            >模型<Icon
+              name="sliders"
+              :size="14"
+            />
+          </button>
+        </div>
+
+        <div
+          v-show="stage === 'recognition'"
+          class="reverse-options"
+        >
+          <label
+            v-for="option in [
+              ['wd', '内容 / 角色'],
+              ['k2', 'K2 画师'],
+              ['k3', 'K3 画师 / 评分'],
+              ['pixai', 'PixAI 角色'],
+            ] as const"
+            :key="option[0]"
+          >
+            <input
+              v-model="selection"
+              type="checkbox"
+              :value="option[0]"
+              :disabled="busy || (selection.length === 1 && selection.includes(option[0]))"
+            />{{ option[1] }}
+          </label>
+        </div>
+        <div
+          v-if="stage === 'recognition' && status && !selectedReady && !modelOperation"
+          class="reverse-setup"
+        >
+          <div class="reverse-setup-heading">
+            <div>
+              <strong
+                >还需要 {{ missingModels.length }} 个本地模型 · 待下载
+                {{ size(missingBytes) }}</strong
+              >
+              <p>
+                {{
+                  image
+                    ? '参考图已保留，模型就绪后点击「开始识别」。'
+                    : '首次使用需下载所选模型，之后可离线识别。'
+                }}
+              </p>
+            </div>
+            <button
+              class="btn small primary"
+              :disabled="busy"
+              @click="manage('install')"
+            >
+              下载并启用
+            </button>
+          </div>
+          <ul class="reverse-missing-models">
+            <li
+              v-for="model in missingModels"
+              :key="model.id"
+            >
+              <strong>{{ model.name }}</strong>
+              <span>{{ model.purpose }}</span>
+              <span
+                >{{ model.partial ? '待补全' : '待下载' }} · {{ size(model.missingBytes) }}</span
+              >
+            </li>
+          </ul>
+        </div>
+        <div
+          v-if="modelOperation && status"
+          class="reverse-download"
+        >
+          <template v-if="status.totalBytes > 0">
+            <progress
+              :value="progress"
+              max="100"
+              aria-label="本次模型传输进度"
+            /><span
+              >本次传输 {{ size(status.completedBytes) }} / {{ size(status.totalBytes) }}</span
+            >
+          </template>
+          <span v-else>正在检查本地文件，确认本次需要下载或导入的大小…</span>
+        </div>
+        <p
+          v-if="error || status?.phase === 'error'"
+          class="reverse-error"
+          role="alert"
+        >
+          {{ error || status?.message }}
+        </p>
+
         <div
           v-if="!result"
           class="reverse-recognition-empty"
@@ -832,16 +783,7 @@ async function source(url: string) {
             name="search"
             :size="30"
           />
-          <strong>{{ running ? '正在识别参考图…' : '先识别，再整理提示词' }}</strong>
-          <p v-if="running">完成后可在这里核对标签、角色和画师候选。</p>
-          <p v-else>
-            {{
-              image
-                ? '确认参考图和所选模型后，点击上方「开始识别」。'
-                : '选择、拖入或粘贴图片后，在这里查看并编辑识别结果。'
-            }}
-          </p>
-          <span>导入图片和下载模型都不会自动开始识别。</span>
+          <strong>{{ running ? '正在识别参考图…' : '等待识别' }}</strong>
         </div>
         <div
           v-show="!!result"
@@ -987,7 +929,7 @@ async function source(url: string) {
                 <label for="reverse-style">画师串</label
                 ><button
                   class="icon-btn sm"
-                  :disabled="!style"
+                  :disabled="!style || busy"
                   title="清空画师串"
                   aria-label="清空画师串"
                   @click="style = ''"
@@ -1009,6 +951,10 @@ async function source(url: string) {
                   />
                 </button>
               </div>
+              <ArtistWeights
+                v-model="style"
+                :disabled="!result || busy"
+              />
               <textarea
                 id="reverse-style"
                 v-model="style"
@@ -1048,12 +994,11 @@ async function source(url: string) {
           :disabled="busy"
           @selection-change="previewStyles = $event"
         />
-        <footer class="reverse-next-step">
-          <span>{{
-            result
-              ? `已选 ${previewStyles.length} 个画师组合；可先检查或调整，再进入试图。`
-              : '识别完成后，可核对标签、角色与画师组合。'
-          }}</span>
+        <footer
+          v-if="result"
+          class="reverse-next-step"
+        >
+          <span>已选 {{ previewStyles.length }} 个方案</span>
           <button
             class="btn primary"
             :disabled="busy || !result || !previewStyles.length || previewStyles.length > 6"
@@ -1079,13 +1024,14 @@ async function source(url: string) {
 
 <style scoped>
 .reverse-view {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 12px;
   height: 100%;
   min-height: 0;
   padding: 16px 20px;
-  overflow: auto;
+  overflow: hidden;
   scrollbar-gutter: stable;
 }
 
@@ -1098,31 +1044,21 @@ async function source(url: string) {
   flex-wrap: wrap;
 }
 
-.reverse-heading {
+.reverse-topbar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
   flex-wrap: wrap;
-  gap: 8px;
+  background: var(--bg);
 }
 
-.reverse-heading h2 {
-  margin: 0;
-  font-size: 18px;
-}
-
-.reverse-heading p,
-.reverse-preview-actions p,
 .reverse-setup p {
   margin: 6px 0 0;
   color: var(--text2);
   font-size: 12px;
   line-height: 1.6;
-}
-
-.reverse-local-note {
-  color: var(--text2);
-  font-size: 11px;
 }
 
 .reverse-steps {
@@ -1132,8 +1068,6 @@ async function source(url: string) {
   justify-content: flex-start;
   gap: 10px;
   flex-shrink: 0;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--line);
   color: var(--muted);
 }
 
@@ -1194,9 +1128,7 @@ async function source(url: string) {
 .reverse-stage {
   font-size: 12px;
   color: var(--text2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .reverse-model-toggle {
@@ -1272,22 +1204,17 @@ progress {
   accent-color: var(--pink-deep);
 }
 
-.reverse-workspace {
-  --reverse-image-height: clamp(240px, 34vh, 420px);
-
-  display: grid;
-  align-items: start;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  flex-shrink: 0;
-  min-height: 370px;
+.reverse-view.is-recognition {
+  overflow: hidden;
 }
 
 .reverse-workspace.is-recognition {
-  --reverse-image-height: clamp(300px, 55vh, 620px);
-
+  display: grid;
   grid-template-columns: minmax(240px, 0.8fr) minmax(380px, 1.2fr);
-  min-height: 450px;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
 }
 
 .reverse-preview-actions {
@@ -1300,66 +1227,37 @@ progress {
 }
 
 .reverse-execution {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  align-items: flex-end;
+  gap: 6px;
+  margin-left: auto;
+  min-width: 0;
 }
 
-.reverse-preview-actions > div {
-  flex: 1;
-  min-width: 220px;
-}
-
-.reverse-trial-progress,
-.reverse-score-toggle {
+.reverse-trial-progress {
   margin: 0;
   color: var(--text2);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.6;
-}
-
-.reverse-score-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 12px;
-}
-
-.reverse-trial-settings {
-  flex-shrink: 0;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-}
-
-.reverse-trial-settings > summary {
-  padding: 12px 14px;
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--text2);
-}
-
-.reverse-trial-settings :deep(.reverse-generation-settings) {
-  border: 0;
-  border-top: 1px solid var(--line);
-  border-radius: 0;
 }
 
 .reverse-adjustments {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  flex-shrink: 0;
+  min-height: 0;
+  gap: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+.reverse-adjustments > * {
+  flex-shrink: 0;
 }
 
 .reverse-recognition-empty {
@@ -1408,20 +1306,7 @@ progress {
 
 .reverse-adjustment-tabs {
   width: fit-content;
-  margin-bottom: 14px;
-}
-
-.reverse-reference-footer {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  min-height: 64px;
-  padding: 10px 12px;
-  border-top: 1px solid var(--line);
-  color: var(--text2);
-  font-size: 11px;
-  line-height: 1.6;
+  margin-bottom: 0;
 }
 
 .reverse-input,
@@ -1437,6 +1322,17 @@ progress {
 .reverse-input {
   display: flex;
   flex-direction: column;
+  min-height: 0;
+}
+
+.reverse-input :deep(.reverse-drop) {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
+.reverse-input > :not(.reverse-drop) {
+  flex-shrink: 0;
 }
 
 .reverse-panel-head {
@@ -1499,8 +1395,7 @@ progress {
 .reverse-content-panel {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-height: 150px;
+  flex: none;
 }
 
 .reverse-output textarea {
@@ -1511,6 +1406,8 @@ progress {
   background: var(--bg);
   border: 0;
   resize: none;
+  field-sizing: content;
+  overflow: hidden;
   font: 12px/1.7 var(--mono);
   border-radius: 0;
 }
@@ -1527,23 +1424,18 @@ progress {
 }
 
 #reverse-content {
-  flex: 1;
   min-height: 100px;
 }
 
 .reverse-style-panel {
-  flex: 1.4;
-  max-height: 350px;
+  flex: none;
   display: flex;
   flex-direction: column;
-  min-height: 294px;
 }
 
 .reverse-artists {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  overflow: auto;
-  flex: 1;
 }
 
 .reverse-artist-group {
@@ -1625,8 +1517,7 @@ progress {
 .reverse-artists-empty {
   display: grid;
   place-items: center;
-  flex: 1;
-  min-height: 150px;
+  flex: none;
   color: var(--muted);
   font-size: 12px;
 }
@@ -1675,33 +1566,25 @@ progress {
   .reverse-view {
     padding: 12px;
   }
-
-  .reverse-workspace {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
-@media (width <= 650px) {
-  .reverse-workspace,
+@media (width <= 1000px) {
+  .reverse-view.is-recognition {
+    overflow: auto;
+  }
+
   .reverse-workspace.is-recognition {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
     flex: none;
   }
 
   .reverse-input {
-    min-height: 280px;
+    height: clamp(280px, 45vh, 480px);
   }
 
-  .reverse-output {
-    min-height: 500px;
-  }
-}
-
-@media (width <= 1000px) {
-  .reverse-workspace.is-recognition {
-    --reverse-image-height: clamp(280px, 40vh, 400px);
-
-    grid-template-columns: 1fr;
+  .reverse-adjustments {
+    overflow: visible;
   }
 }
 </style>

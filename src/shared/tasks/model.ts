@@ -10,6 +10,8 @@ export const TASK_LABELS = {
   generate: '生成图片',
   inpaint: '局部重绘',
   'page-generate': '生成会话候选',
+  'reverse-analyze': '本地图片识别',
+  'reverse-score': '比较画面风格',
 } as const
 
 export type TaskKind = keyof typeof TASK_LABELS

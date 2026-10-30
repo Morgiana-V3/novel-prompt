@@ -27,6 +27,7 @@ import AiView from '../features/prompts/AiView.vue'
 import PreviewView from '../features/prompts/PreviewView.vue'
 import GenerateView from '../features/generation/GenerateView.vue'
 import ReverseView from '../features/reverse/ReverseView.vue'
+import SubscriptionStatus from '../features/generation/components/SubscriptionStatus.vue'
 import WorkspacesView from '../features/workspace/WorkspacesView.vue'
 import SettingsView from '../features/settings/SettingsView.vue'
 import Icon from '../shared/ui/Icon.vue'
@@ -55,13 +56,13 @@ const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: bool
     desc: '让 AI 帮你挑 tag、排顺序，采用后写回当前提示词',
   },
   { key: 'preview', label: '画面推测', icon: 'eye', desc: '让 AI 猜猜当前提示词会画成什么样' },
-  { key: 'generate', label: '生图预览', icon: 'image', desc: '用 NovelAI 接口直接出图看效果' },
   {
     key: 'reverse',
     label: '图片反推',
     icon: 'search',
     desc: '在本机识别基础提示词与画师风格，不上传图片',
   },
+  { key: 'generate', label: '生图预览', icon: 'image', desc: '用 NovelAI 接口直接出图看效果' },
   {
     key: 'workspace',
     label: 'AI 工作台',
@@ -447,8 +448,20 @@ onMounted(async () => {
   updateTimer = setTimeout(() => void checkUpdate().catch(reportError), 3000)
 })
 
-function setVersion(modelVersion: NaiVersion) {
-  saveSettings({ naiVersion: modelVersion }).catch(reportError)
+const switchingVersion = ref(false)
+async function setVersion(modelVersion: NaiVersion) {
+  if (switchingVersion.value || settingsState.settings?.naiVersion === modelVersion) {
+    return
+  }
+  switchingVersion.value = true
+  try {
+    await saveSettings({ naiVersion: modelVersion })
+    toast(`已切换至 NovelAI ${modelVersion.toUpperCase()}`)
+  } catch (error) {
+    reportError(error)
+  } finally {
+    switchingVersion.value = false
+  }
 }
 
 /* ---------- 拖入原图，读取提示词与生成参数 ---------- */
@@ -567,48 +580,21 @@ async function onDrop(event2: DragEvent) {
           <div class="seg block">
             <button
               :class="{ on: settingsState.settings.naiVersion === 'v4.5' }"
+              :disabled="switchingVersion"
               @click="setVersion('v4.5')"
             >
               V4.5
             </button>
             <button
               :class="{ on: settingsState.settings.naiVersion === 'v5' }"
+              :disabled="switchingVersion"
               @click="setVersion('v5')"
             >
               V5
             </button>
           </div>
         </div>
-        <div
-          v-if="tagState.db"
-          class="db-card"
-        >
-          <div class="db-status">
-            <span :class="['status-dot', { off: !tagState.db.loaded }]"></span>
-            {{ tagState.db.loaded ? 'tag 库已就绪' : '尚未下载 tag 库' }}
-          </div>
-          <template v-if="tagState.db.loaded">
-            <div class="db-row">
-              <span>Tag</span><b>{{ tagState.db.tagCount.toLocaleString() }}</b>
-            </div>
-            <div class="db-row">
-              <span>别名</span><b>{{ tagState.db.aliasCount.toLocaleString() }}</b>
-            </div>
-            <div class="db-row">
-              <span>中文</span><b>{{ tagState.db.zhCount.toLocaleString() }}</b>
-            </div>
-          </template>
-          <button
-            v-else
-            class="btn small accent"
-            @click="shellState.tab = 'settings'"
-          >
-            <Icon
-              name="download"
-              :size="14"
-            />去下载
-          </button>
-        </div>
+        <SubscriptionStatus v-if="settingsState.settings" />
       </div>
     </aside>
 

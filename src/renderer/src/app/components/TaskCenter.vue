@@ -46,6 +46,9 @@ function percent(task: AppTask) {
 }
 function visit(task: AppTask) {
   const resolveTab = () => {
+    if (task.kind.startsWith('reverse-')) {
+      return 'reverse' as const
+    }
     if (task.kind.startsWith('db-')) {
       return 'settings' as const
     }

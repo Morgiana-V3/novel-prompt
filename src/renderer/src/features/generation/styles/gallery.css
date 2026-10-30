@@ -3,21 +3,6 @@
   display: flex;
 }
 
-.import-zone.quota {
-  border-style: solid;
-  border-width: 1px;
-}
-
-.import-zone.quota.warn {
-  border-color: #f8e7c4;
-}
-
-.quota-sep {
-  color: var(--muted);
-  margin: 0 6px;
-  font-weight: 400;
-}
-
 .gen-params {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));

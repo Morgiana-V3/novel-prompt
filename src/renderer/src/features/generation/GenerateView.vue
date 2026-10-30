@@ -5,16 +5,12 @@ import { useGallery } from './use-gallery'
 import { reportError } from '../../shared/lib/notifications'
 import { promptState } from '../prompts/state'
 import { imageState } from './state'
+import { refreshSubscription as refreshSub, subscriptionState } from './subscription'
 import { activeTask } from '../../shared/state/tasks'
 import { settingsState } from '../settings/state'
 import { shellState } from '../../shared/state/shell'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type {
-  NaiFreeCheck,
-  NaiGenParams,
-  NaiGenResult,
-  NaiSubscription,
-} from '@shared/generation/types'
+import type { NaiFreeCheck, NaiGenParams, NaiGenResult } from '@shared/generation/types'
 import type { NaiImage } from '@shared/images/types'
 import { toast } from '../../shared/lib/notifications'
 import { importImagePrompt, importGenerationRequest, workKey } from '../prompts/actions'
@@ -62,9 +58,7 @@ const hasToken = computed(() => !!settingsState.settings?.naiToken?.trim())
 const freeOnly = computed(() => settingsState.settings?.naiFreeOnly !== false)
 const version = computed(() => settingsState.settings?.naiVersion ?? 'v4.5')
 
-const sub = ref<NaiSubscription | null>(null)
-const subError = ref('')
-const subLoading = ref(false)
+const sub = computed(() => subscriptionState.subscription)
 const check = ref<NaiFreeCheck | null>(null)
 
 const running = ref(false)
@@ -158,9 +152,6 @@ defineExpose({ prepareUpdate })
 
 async function onInpaintGenerated(response: NaiGenResult) {
   last.value = response
-  if (response.subscription) {
-    sub.value = response.subscription
-  }
   if (response.images.length) {
     current.value = response.images[response.images.length - 1]
   }
@@ -174,17 +165,6 @@ async function onInpaintGenerated(response: NaiGenResult) {
 const leftPane = ref<HTMLElement>()
 const resizeAll = () => resizeWithin(leftPane.value)
 
-const anlas = computed(() => {
-  const subscription = sub.value
-  if (
-    !subscription ||
-    (subscription.anlasFixed === undefined && subscription.anlasPurchased === undefined)
-  ) {
-    return undefined
-  }
-  return (subscription.anlasFixed ?? 0) + (subscription.anlasPurchased ?? 0)
-})
-
 /** 当前图片是用最近一次推测过的那套提示词生成的：可以把推测和实际出图放在一起看 */
 const matchedPreview = computed(() => {
   const lp = promptState.lastPreview
@@ -193,21 +173,6 @@ const matchedPreview = computed(() => {
   }
   return imageState.imageKeys[current.value.name] === lp.key ? lp.result : null
 })
-
-async function refreshSub() {
-  if (!hasToken.value) {
-    return
-  }
-  subLoading.value = true
-  subError.value = ''
-  try {
-    sub.value = await window.api.naiSubscription()
-  } catch (error2) {
-    subError.value = cleanErr(error2)
-  } finally {
-    subLoading.value = false
-  }
-}
 
 let checkTimer: ReturnType<typeof setTimeout> | undefined
 watch(
@@ -245,24 +210,12 @@ watch(
     }
     await nextTick()
     resizeAll()
-    if (hasToken.value && !sub.value && !subLoading.value) {
-      refreshSub().catch(reportError)
-    }
   },
 )
 watch(
   () => promptState.characters.length,
   () => nextTick(resizeAll),
 )
-watch(hasToken, (value) => {
-  if (value && shellState.tab === 'generate') {
-    refreshSub().catch(reportError)
-  }
-  if (!value) {
-    sub.value = null
-  }
-})
-
 /* ---------- 生成 ---------- */
 
 async function run() {
@@ -307,9 +260,6 @@ async function run() {
     last.value = generationResult
     for (const img of generationResult.images) {
       imageState.imageKeys[img.name] = key
-    }
-    if (generationResult.subscription) {
-      sub.value = generationResult.subscription
     }
     if (generationResult.images.length) {
       current.value = generationResult.images[generationResult.images.length - 1]
@@ -401,15 +351,6 @@ const fmtTime = (t: number) =>
     hour: '2-digit',
     minute: '2-digit',
   })
-const fmtHours = (seconds?: number) => {
-  if (seconds === undefined) {
-    return '' as const
-  }
-  if (seconds >= 3600) {
-    return `${(seconds / 3600).toFixed(1)} 小时`
-  }
-  return `${Math.ceil(seconds / 60)} 分钟`
-}
 const RISK_CLS = { high: 'bad', medium: 'alias', low: '' } as const
 const RISK_TEXT = { high: '高', medium: '中', low: '低' } as const
 function updateGenerationOptions(patch: Partial<typeof gen>) {
@@ -442,74 +383,6 @@ function closeRecipes() {
         ref="leftPane"
         class="pane-body scroll"
       >
-        <div :class="['import-zone quota', { warn: freeOnly && check && !check.ok }]">
-          <span class="group-badge pink"
-            ><Icon
-              name="key"
-              :size="16"
-          /></span>
-          <div class="import-text">
-            <template v-if="!hasToken">
-              <b>还没有配置 NovelAI Token</b>
-              <span>在「设置 / 数据」里填写 Persistent API Token 后就能直接出图</span>
-            </template>
-            <template v-else-if="subError">
-              <b>查询会员状态失败</b>
-              <span>{{ subError }}</span>
-            </template>
-            <template v-else-if="sub">
-              <b>
-                {{
-                  sub.active
-                    ? sub.tier === 3
-                      ? 'Opus 会员'
-                      : `会员等级 ${sub.tier ?? '未知'}`
-                    : '没有有效订阅'
-                }}
-                <span class="quota-sep">·</span>Anlas
-                {{ anlas !== undefined ? anlas.toLocaleString() : '未知' }}
-              </b>
-              <span>
-                <template v-if="sub.usagePercent !== undefined">
-                  V5 免费额度约 {{ sub.usagePercent }}%{{ sub.usageNegative ? '（负值）' : '' }}
-                  <template v-if="sub.usageNextSeconds">
-                    · {{ fmtHours(sub.usageNextSeconds) }}后恢复 1%</template
-                  >
-                </template>
-                <template v-else>接口没有返回 V5 免费额度</template>
-                · {{ freeOnly ? '只用免费额度' : '允许消耗 Anlas' }}
-              </span>
-            </template>
-            <template v-else>
-              <b>正在查询会员状态…</b>
-              <span>&nbsp;</span>
-            </template>
-          </div>
-          <div class="actions">
-            <button
-              v-if="!hasToken"
-              class="btn small primary"
-              @click="shellState.tab = 'settings'"
-            >
-              <Icon
-                name="sliders"
-                :size="14"
-              />去设置
-            </button>
-            <button
-              v-else
-              class="icon-btn"
-              title="刷新余额"
-              @click="refreshSub"
-            >
-              <Icon
-                name="swap"
-                :class="{ spin: subLoading }"
-              />
-            </button>
-          </div>
-        </div>
-
         <WorkspaceBar />
 
         <PromptEditor

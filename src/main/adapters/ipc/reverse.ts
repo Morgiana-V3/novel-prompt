@@ -18,6 +18,20 @@ export function registerReverseIpc(
     net.fetch.bind(net),
   )
   app.on('before-quit', () => service.cancel())
+  const trackRecognition = <T>(
+    kind: 'reverse-analyze' | 'reverse-score',
+    work: (signal: AbortSignal, report: (message: string) => void) => Promise<T>,
+  ) =>
+    context.tasks.run(
+      kind,
+      async ({ signal, progress }) => {
+        signal.throwIfAborted()
+        const result = await work(signal, (message) => progress(message))
+        progress(kind === 'reverse-score' ? '风格比较完成' : '图片识别完成')
+        return result
+      },
+      { resource: 'reverse', onCancel: () => service.cancel() },
+    )
   handle('reverse:status', (_event, models) => service.status(reverseModels(models)))
   handle('reverse:install', async (_event, models) => {
     const selected = reverseModels(models)
@@ -44,10 +58,15 @@ export function registerReverseIpc(
     }
     return service.status()
   })
-  handle('reverse:cancel', () => service.cancel())
+  handle('reverse:cancel', () => {
+    context.tasks.cancelResource('reverse')
+    service.cancel()
+  })
   handle('reverse:remove', (_event, models) => service.remove(reverseModels(models)))
   handle('reverse:analyze', (_event, bytes, models) =>
-    service.analyze(bytes, workerPath, reverseModels(models)),
+    trackRecognition('reverse-analyze', (_signal, report) =>
+      service.analyze(bytes, workerPath, reverseModels(models), report),
+    ),
   )
   handle('reverse:score', async (_event, reference, name) => {
     styleSimilarity(reference, reference)
@@ -55,10 +74,14 @@ export function registerReverseIpc(
     if (!path) {
       throw new Error('候选图片已不存在')
     }
-    const result = await service.analyze(new Uint8Array(await readFile(path)), workerPath, ['k3'])
-    if (!result.style) {
-      throw new Error('模型没有输出风格特征，请修复 K3 模型')
-    }
-    return styleSimilarity(reference, result.style)
+    return trackRecognition('reverse-score', async (signal, report) => {
+      const bytes = new Uint8Array(await readFile(path))
+      signal.throwIfAborted()
+      const result = await service.analyze(bytes, workerPath, ['k3'], report)
+      if (!result.style) {
+        throw new Error('模型没有输出风格特征，请修复 K3 模型')
+      }
+      return styleSimilarity(reference, result.style)
+    })
   })
 }

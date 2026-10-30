@@ -64,7 +64,7 @@ const handlers = {
   'images:cleanup-status': () => ({ pending: 0, message: '' }),
   'settings:get': () => getSettings(),
   'settings:save': (_, p) => saveSettings(p),
-  'window:dark-titlebar': () => {},
+  'window:image-preview': () => {},
   'skills:list': () => [],
   'mcp:info': () => null,
   'update:check': () => null,
@@ -315,9 +315,21 @@ app.whenReady().then(async () => {
     const created = pages.listPages().map((s) => pages.readPage(s.id))
     assert.ok(created.length >= 1)
     await click('.nav-item', '生图预览')
-    await js(
-      `localStorage.setItem('np-gen-params', JSON.stringify({steps:28,scale:6.5,cfgRescale:0.2,sampler:'k_dpmpp_2m',noiseSchedule:'karras',count:4}))`,
-    )
+    // Change the live controls: writing storage directly does not update the mounted state.
+    await js(`(() => {
+      document.querySelector('.gen-advanced').open = true;
+      for (const [label, value] of [['步数', 28], ['Prompt Guidance', 6.5], ['Guidance Rescale', 0.2]]) {
+        const input = document.querySelector('input[aria-label="' + label + '"]');
+        input.value = value;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      const count = [...document.querySelectorAll('.gen-params .seg button')].find(button => button.textContent.trim() === '4');
+      count.click();
+      document.querySelector('[aria-label="采样器"]').click();
+    })()`)
+    await click('.theme-select-option', 'DPM++ 2M')
+    await js(`document.querySelector('[aria-label="噪声调度"]').click()`)
+    await click('.theme-select-option', 'karras')
     await click('.nav-item', 'AI 工作台')
     await js(`document.querySelector('.pw-back[aria-label="返回项目"]').click()`)
     await waitUI(`!!document.querySelector('.sessions-home header button')`)

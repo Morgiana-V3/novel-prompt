@@ -11,7 +11,7 @@ export const applicationApi = {
   onSkillsChanged: (cb: () => void) => on('skills:changed', cb),
   onTasks: (cb: (snapshot: TaskSnapshot) => void) => on('tasks:changed', cb),
   onAgentConnections: (cb: (agents: PageAgentIdentity[]) => void) => on('agents:changed', cb),
-  setDarkTitlebar: (dark: boolean): Promise<void> => invoke('window:dark-titlebar', dark),
+  setImagePreviewActive: (active: boolean): Promise<void> => invoke('window:image-preview', active),
   cancelTask: (): Promise<void> => invoke('task:cancel'),
   getSettings: (): Promise<Settings> => invoke('settings:get'),
   saveSettings: (patch: Partial<Settings>): Promise<Settings> => invoke('settings:save', patch),

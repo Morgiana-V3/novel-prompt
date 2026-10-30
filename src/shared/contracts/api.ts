@@ -128,7 +128,7 @@ export interface Api {
     execution: PageExecution,
     actionId?: string,
   ) => Promise<PageWorkspace>
-  setDarkTitlebar: (dark: boolean) => Promise<void>
+  setImagePreviewActive: (active: boolean) => Promise<void>
   dbStatus: () => Promise<DbStatus>
   dbUpdate: () => Promise<DbStatus>
   aiTranslate: () => Promise<DbStatus>
@@ -317,9 +317,9 @@ export interface IpcContract {
     args: Parameters<Api['pagesGenerate']>
     result: Awaited<ReturnType<Api['pagesGenerate']>>
   }
-  'window:dark-titlebar': {
-    args: Parameters<Api['setDarkTitlebar']>
-    result: Awaited<ReturnType<Api['setDarkTitlebar']>>
+  'window:image-preview': {
+    args: Parameters<Api['setImagePreviewActive']>
+    result: Awaited<ReturnType<Api['setImagePreviewActive']>>
   }
   'db:status': { args: Parameters<Api['dbStatus']>; result: Awaited<ReturnType<Api['dbStatus']>> }
   'db:update': { args: Parameters<Api['dbUpdate']>; result: Awaited<ReturnType<Api['dbUpdate']>> }

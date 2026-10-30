@@ -79,7 +79,7 @@ export function getSettings(): Settings {
 }
 
 export function saveSettings(patch: Partial<Settings>): Settings {
-  cache = { ...getSettings(), ...patch }
+  const nextSettings = { ...getSettings(), ...patch }
   const file = dataFile('settings.json')
   // 保留上一份完好的设置作为备份，主文件意外损坏时可从这里恢复
   if (existsSync(file) && parseFile(file)) {
@@ -89,7 +89,8 @@ export function saveSettings(patch: Partial<Settings>): Settings {
       /* 备份失败不阻止保存 */
     }
   }
-  writeFileAtomic(file, JSON.stringify(cache, null, 2))
+  writeFileAtomic(file, JSON.stringify(nextSettings, null, 2))
+  cache = nextSettings
   cacheMtime = mtimeOf(file)
   return cache
 }

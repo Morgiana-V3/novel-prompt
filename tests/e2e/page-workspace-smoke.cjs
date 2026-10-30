@@ -239,7 +239,7 @@ const handlers = {
   'images:cleanup-retry': () => ({ pending: 0, message: '' }),
   'settings:get': () => getSettings(),
   'settings:save': (_, v) => saveSettings(v),
-  'window:dark-titlebar': () => {},
+  'window:image-preview': () => {},
   'db:status': () => ({
     loaded: true,
     tagCount: 0,

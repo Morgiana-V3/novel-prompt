@@ -5,12 +5,14 @@ import UpdateSettings from './UpdateSettings.vue'
 import AgentSettings from './AgentSettings.vue'
 
 import { reportError } from '../../shared/lib/notifications'
+import { cleanErr } from '../../shared/lib/format'
 import { settingsState } from './state'
 import { skillsState } from '../skills/state'
 import { tagState } from '../tags/state'
 import { shellState } from '../../shared/state/shell'
 import { reactive, ref, watch, computed, nextTick } from 'vue'
 import { saveSettings } from './state'
+import { refreshSubscription, subscriptionState } from '../generation/subscription'
 import { refreshDb } from '../tags/state'
 import { toast } from '../../shared/lib/notifications'
 import Icon from '../../shared/ui/Icon.vue'
@@ -50,17 +52,20 @@ const efforts: { v: ReasoningEffort; label: string }[] = [
   { v: 'max', label: '最高' },
 ]
 
-// 只在首次拿到设置时填充表单；之后侧边栏切换版本等操作也会刷新 settingsState.settings，
-// 若每次都覆盖会把用户尚未保存的输入（如刚填的 API Key）冲掉
+// Only copy editable scalar fields. Nested settings become Vue proxies and cannot cross IPC.
+// Refresh pristine fields while preserving drafts when another settings control saves.
 let filled = false
 watch(
   () => settingsState.settings,
-  (settings) => {
-    if (!settings || filled) {
+  (settings, previous) => {
+    if (!settings) {
       return
     }
-    const { naiVersion: _v, inpaintVision: _legacyVision, ...rest } = settings
-    Object.assign(form, rest)
+    for (const key of editableKeys) {
+      if (!filled || (previous && form[key] === previous[key])) {
+        Object.assign(form, { [key]: settings[key] })
+      }
+    }
     filled = true
   },
   { immediate: true },
@@ -95,6 +100,15 @@ watch(
 )
 
 const naiInfo = ref('')
+const naiError = ref('')
+const naiBusy = ref(false)
+watch(
+  () => form.naiToken,
+  () => {
+    naiInfo.value = ''
+    naiError.value = ''
+  },
+)
 
 async function setMcp(key: 'mcpAllowAi' | 'mcpAllowGenerate', enabled: boolean) {
   form[key] = enabled
@@ -147,42 +161,45 @@ watch(
   },
 )
 
-async function testNai() {
-  await save(true)
-  naiInfo.value = '查询中…'
+async function saveNai(testConnection = false, clearToken = false) {
+  if (naiBusy.value) {
+    return
+  }
+  const draftToken = form.naiToken
+  const token = clearToken ? '' : draftToken.trim()
+  naiBusy.value = true
+  naiInfo.value = ''
+  naiError.value = ''
+  let saved = false
   try {
-    const subscription = await window.api.naiSubscription()
-    const anlas =
-      subscription.anlasFixed !== undefined || subscription.anlasPurchased !== undefined
-        ? (subscription.anlasFixed ?? 0) + (subscription.anlasPurchased ?? 0)
-        : undefined
-    const resolveValue2 = () => {
-      if (subscription.active) {
-        if (subscription.tier === 3) {
-          return 'Opus 会员' as const
-        }
-        return `会员等级 ${subscription.tier ?? '未知'}`
-      }
-      return '没有有效订阅' as const
+    await saveSettings({ naiToken: token })
+    saved = true
+    if (form.naiToken === draftToken) {
+      form.naiToken = token
     }
-    naiInfo.value = [
-      resolveValue2(),
-      anlas !== undefined && `Anlas ${anlas.toLocaleString()}`,
-      subscription.usagePercent !== undefined && `V5 免费额度约 ${subscription.usagePercent}%`,
-    ]
-      .filter(Boolean)
-      .join(' · ')
+    toast(token ? 'NovelAI Token 已保存' : '已清除本机保存的 NovelAI Token')
+    if (testConnection && token) {
+      naiInfo.value = '查询中…'
+      await refreshSubscription()
+      if (subscriptionState.error) {
+        throw new Error(subscriptionState.error)
+      }
+      naiInfo.value = '连接成功'
+    }
   } catch (error) {
-    naiInfo.value = String(error).replace(
-      /^Error: (Error invoking remote method '[^']+': )?(Error: )?/,
-      '',
-    )
+    naiInfo.value = ''
+    const message = cleanErr(error)
+    const safeMessage = token ? message.split(token).join('[已隐藏]') : message
+    naiError.value = `${saved ? 'Token 已保存，连接测试失败' : '保存失败'}：${safeMessage}`
+    toast(saved ? 'Token 已保存，但连接测试失败' : 'Token 保存失败，请查看错误信息')
+  } finally {
+    naiBusy.value = false
   }
 }
 
 async function save(silent = false) {
   await saveSettings({
-    ...form,
+    ...Object.fromEntries(editableKeys.map((key) => [key, form[key]])),
     minPostCount: Number(form.minPostCount),
     translateMinCount: Number(form.translateMinCount),
   })
@@ -446,7 +463,7 @@ async function translate() {
       <div class="row">
         <button
           class="btn primary"
-          @click="save()"
+          @click="save().catch(reportError)"
         >
           <Icon
             name="check"
@@ -464,6 +481,7 @@ async function translate() {
     <SkillManager ref="skillManager" />
 
     <div
+      id="nai"
       class="card"
       style="--d: 105ms"
     >
@@ -473,7 +491,7 @@ async function translate() {
           <h2>
             NovelAI<HelpTip
               label="NovelAI"
-              text="用于「生图预览」，直接调用 NovelAI 图像接口出图"
+              text="用于生图、反推试图和局部重绘，共用侧边栏账户状态"
             />
           </h2>
         </div>
@@ -489,6 +507,8 @@ async function translate() {
             v-model="form.naiToken"
             class="input"
             type="password"
+            :disabled="naiBusy"
+            aria-label="NovelAI Persistent API Token"
             data-mcp-private
             placeholder="pst-..."
             autocomplete="off"
@@ -519,7 +539,8 @@ async function translate() {
       <div class="row">
         <button
           class="btn primary"
-          @click="save()"
+          :disabled="naiBusy"
+          @click="saveNai()"
         >
           <Icon
             name="check"
@@ -528,13 +549,20 @@ async function translate() {
         </button>
         <button
           class="btn"
-          :disabled="!form.naiToken"
-          @click="testNai"
+          :disabled="naiBusy || !form.naiToken.trim()"
+          @click="saveNai(true)"
         >
           <Icon
             name="key"
             :size="15"
           />保存并测试连接
+        </button>
+        <button
+          class="btn ghost"
+          :disabled="naiBusy || (!form.naiToken && !settingsState.settings?.naiToken)"
+          @click="saveNai(false, true)"
+        >
+          清除 Token
         </button>
         <span
           v-if="dirty.nai"
@@ -547,6 +575,13 @@ async function translate() {
           >{{ naiInfo }}</span
         >
       </div>
+      <p
+        v-if="naiError"
+        class="error-box"
+        role="alert"
+      >
+        {{ naiError }}
+      </p>
     </div>
 
     <AgentSettings

@@ -59,7 +59,9 @@ const { lastRemoval, remember, restoreRemoval } = useMaskHistory(
 const promptNote = ref('')
 const width = ref(0)
 const height = ref(0)
-const version = ref<NaiVersion>(props.initialModel ?? settingsState.settings?.naiVersion ?? 'v4.5')
+const version = computed<NaiVersion>(
+  () => props.initialModel ?? settingsState.settings?.naiVersion ?? 'v4.5',
+)
 const draft = reactive({
   base: promptState.prompt,
   negative: promptState.negative,
@@ -669,7 +671,6 @@ async function loadSource(image: NaiImage, readPrompt = true) {
         settings.ucPreset = 'none'
         if (meta.request && !props.initialEditor) {
           Object.assign(settings, meta.request.params, { count: 1 })
-          version.value = meta.request.version
           promptNote.value = '已读取原图提示词和生成参数。'
         } else {
           promptNote.value = '已读取原图提示词。'
@@ -1561,16 +1562,12 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                   </div>
                   <div class="ip-param-grid">
                     <label
-                      >模型<ThemeSelect
-                        v-model="version"
-                        class="sm"
-                        :disabled="selectionOnly"
-                        :options="[
-                          { value: 'v4.5', label: 'V4.5 Full' },
-                          { value: 'v5', label: 'V5 Full' },
-                        ]"
-                        aria-label="重绘模型"
-                    /></label>
+                      >模型<span
+                        class="input sm"
+                        :title="initialModel ? '当前工作台的模型' : '在侧边栏切换目标模型'"
+                        >{{ version.toUpperCase() }}</span
+                      ></label
+                    >
                     <label
                       >步数<input
                         v-model.number="settings.steps"

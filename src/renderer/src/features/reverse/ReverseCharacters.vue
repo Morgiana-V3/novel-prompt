@@ -253,7 +253,9 @@ textarea {
 
 textarea {
   width: 100%;
-  resize: vertical;
+  resize: none;
+  field-sizing: content;
+  overflow: hidden;
   font: 12px/1.6 var(--mono);
 }
 
@@ -262,8 +264,6 @@ textarea {
   flex-wrap: wrap;
   gap: 6px;
   padding: 12px;
-  max-height: 160px;
-  overflow: auto;
   flex-shrink: 0;
 }
 
@@ -289,7 +289,6 @@ footer span {
 
 .character-assigned {
   flex: 1;
-  overflow: auto;
   min-height: 65px;
   padding: 12px;
   border-top: 1px solid var(--line);

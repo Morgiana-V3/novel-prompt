@@ -116,7 +116,7 @@ function enlargeReference() {
     <div class="comparison-main">
       <div class="comparison-images">
         <figure>
-          <figcaption><strong>参考图</strong><span>原始图片</span></figcaption>
+          <figcaption><strong>参考图</strong></figcaption>
           <button
             class="comparison-canvas"
             aria-label="放大参考图"
@@ -170,8 +170,6 @@ function enlargeReference() {
               :size="32"
             />
             <strong>{{ imageFailed ? '图片无法加载' : stateLabel(selected?.trial) }}</strong>
-            <span v-if="running">完成后会在这里显示，可先查看其他方案。</span>
-            <span v-else>点击上方生成，或在下方选择已完成的方案。</span>
           </div>
         </figure>
       </div>
@@ -197,7 +195,7 @@ function enlargeReference() {
               上一轮
             </button>
           </div>
-          <span>{{ completedCount }} / {{ visibleItems.length }} 已完成 · 点击切换对比</span>
+          <span>{{ completedCount }} / {{ visibleItems.length }} 已完成</span>
         </div>
         <div
           class="trial-thumbnails"
@@ -229,7 +227,6 @@ function enlargeReference() {
                   name="check"
                   :size="12"
               /></strong>
-              <span :title="item.style || '无画师对照'">{{ item.style || '无画师对照' }}</span>
               <small>{{ stateLabel(item.trial) }}</small>
             </span>
           </button>
@@ -265,11 +262,11 @@ function enlargeReference() {
 
 <style scoped>
 .reverse-comparison {
-  --comparison-image-height: clamp(280px, calc(100vh - 550px), 660px);
-
   display: grid;
   grid-template-columns: minmax(0, 1fr) 260px;
-  flex-shrink: 0;
+  grid-template-rows: minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -277,17 +274,26 @@ function enlargeReference() {
 }
 
 .comparison-main {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 .comparison-images {
   display: grid;
+  flex: 1;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 figure {
+  display: flex;
+  flex-direction: column;
   margin: 0;
   min-width: 0;
+  min-height: 0;
 }
 
 figure + figure {
@@ -300,6 +306,7 @@ figcaption {
   justify-content: space-between;
   gap: 8px;
   height: 44px;
+  flex-shrink: 0;
   padding: 0 16px;
   font-size: 12px;
 }
@@ -315,7 +322,9 @@ figcaption > span {
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: var(--comparison-image-height);
+  flex: 1;
+  min-height: 0;
+  height: 0;
   padding: 18px;
   border: 0;
   background: var(--panel);
@@ -367,7 +376,7 @@ button.comparison-canvas {
 }
 
 .comparison-filmstrip {
-  height: 144px;
+  flex: 0 0 144px;
   padding: 12px 14px;
   border-top: 1px solid var(--line);
 }
@@ -415,6 +424,9 @@ button.comparison-canvas {
 .trial-thumbnail {
   display: flex;
   flex: 0 0 180px;
+  width: 180px;
+  min-width: 0;
+  max-width: 180px;
   align-items: center;
   gap: 10px;
   height: 76px;
@@ -479,25 +491,29 @@ button.comparison-canvas {
 
 .comparison-inspector {
   min-width: 0;
-  height: calc(var(--comparison-image-height) + 188px);
+  min-height: 0;
+  overflow: hidden;
   border-left: 1px solid var(--line);
 }
 
 @media (width <= 1100px) {
   .reverse-comparison {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) 230px;
   }
 
-  .comparison-inspector {
-    height: 320px;
-    border-left: 0;
-    border-top: 1px solid var(--line);
+  .comparison-inspector :deep(.reverse-trial-inspector) {
+    padding: 14px;
   }
 }
 
 @media (width <= 700px) {
   .reverse-comparison {
-    --comparison-image-height: 300px;
+    grid-template-columns: minmax(0, 1fr) minmax(160px, 0.75fr);
+  }
+
+  .comparison-images {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(2, minmax(0, 1fr));
   }
 
   .comparison-canvas {

@@ -165,11 +165,11 @@ net.fetch = async (url, init) => {
 }
 const handlers = {
   'tasks:list': () => ({ revision: 0, tasks: [] }),
-  'window:dark-titlebar': (event, dark) =>
-    BrowserWindow.fromWebContents(event.sender)?.setTitleBarOverlay({
-      color: '#00000000',
-      symbolColor: dark ? '#f7f7f9' : '#6b6c75',
-    }),
+  'window:image-preview': (event, active) =>
+    require('../../src/main/adapters/ipc/image-preview.ts').setImagePreviewActive(
+      BrowserWindow.fromWebContents(event.sender),
+      active,
+    ),
   'images:cleanup-status': () => ({ pending: 0, message: '' }),
   'settings:get': () => getSettings(),
   'settings:save': (_, p) => saveSettings(p),

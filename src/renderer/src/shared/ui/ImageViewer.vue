@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reportError } from '../lib/notifications'
+import { enterImagePreview } from './image-preview-state'
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { NaiImage } from '@shared/images/types'
 import ImageViewport from './ImageViewport.vue'
@@ -22,6 +22,35 @@ const failed = ref(false)
 const viewport = ref<InstanceType<typeof ImageViewport>>()
 const dialog = ref<HTMLElement>()
 const previousFocus = document.activeElement as HTMLElement | null
+let leavePreview: (() => void) | undefined
+let dismissPointer: { id: number; x: number; y: number } | undefined
+function isBackdrop(event: PointerEvent) {
+  const target = document.elementFromPoint(event.clientX, event.clientY)
+  return (
+    !!target && !!dialog.value?.contains(target) && !target.closest('.iv-toolbar, .image-stage')
+  )
+}
+function startDismiss(event: PointerEvent) {
+  dismissPointer = undefined
+  if (event.button === 0 && event.isPrimary && isBackdrop(event)) {
+    dismissPointer = { id: event.pointerId, x: event.clientX, y: event.clientY }
+  }
+}
+function moveDismiss(event: PointerEvent) {
+  if (
+    dismissPointer &&
+    Math.hypot(event.clientX - dismissPointer.x, event.clientY - dismissPointer.y) > 5
+  ) {
+    dismissPointer = undefined
+  }
+}
+function finishDismiss(event: PointerEvent) {
+  moveDismiss(event)
+  if (dismissPointer?.id === event.pointerId && isBackdrop(event)) {
+    close()
+  }
+  dismissPointer = undefined
+}
 const close = () => {
   opened.value = false
 }
@@ -97,12 +126,12 @@ function key(event2: KeyboardEvent) {
   }
 }
 onMounted(() => {
-  void window.api.setDarkTitlebar(true).catch(reportError)
+  leavePreview = enterImagePreview()
   window.addEventListener('keydown', key)
   dialog.value?.focus({ preventScroll: true })
 })
 onBeforeUnmount(() => {
-  void window.api.setDarkTitlebar(false).catch(reportError)
+  leavePreview?.()
   window.removeEventListener('keydown', key)
   if (previousFocus?.isConnected) {
     previousFocus.focus()
@@ -125,6 +154,10 @@ onBeforeUnmount(() => {
         role="dialog"
         aria-modal="true"
         aria-label="图片查看器"
+        @pointerdown.capture="startDismiss"
+        @pointermove.capture="moveDismiss"
+        @pointerup.capture="finishDismiss"
+        @pointercancel.capture="dismissPointer = undefined"
       >
         <div class="iv-toolbar modal-panel">
           <button
@@ -186,7 +219,8 @@ onBeforeUnmount(() => {
           </button>
           <button
             class="icon-btn sm"
-            title="关闭（Esc）"
+            title="关闭图片预览（Esc）"
+            aria-label="关闭图片预览"
             @click="close"
           >
             <Icon
@@ -223,7 +257,8 @@ onBeforeUnmount(() => {
         <div class="iv-hint">
           滚轮缩放 · 拖动移动 · 空格 / 中键也可拖动 · ← → 切换<span v-if="canDelete">
             · {{ confirmDelete ? '再按 Delete 确认删除' : 'Delete 删除' }}</span
-          ><span v-else-if="canDelete === false"> · 工作台引用中，无法从图库删除</span> · Esc 关闭
+          ><span v-else-if="canDelete === false"> · 工作台引用中，无法从图库删除</span> · 点击空白或
+          Esc 返回
         </div>
       </div>
     </Transition>
@@ -234,7 +269,8 @@ onBeforeUnmount(() => {
 .image-viewer {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: 300;
+  -webkit-app-region: no-drag;
   padding: calc(var(--titlebar-safe-height) + 16px) 16px 16px;
   display: flex;
   flex-direction: column;

@@ -13,6 +13,11 @@
   flex-direction: column;
   padding: 8px 10px 14px;
   gap: 14px;
+  overflow-y: auto;
+}
+
+.sidebar > * {
+  flex-shrink: 0;
 }
 
 .brand {
@@ -107,43 +112,6 @@ nav {
   padding: 0 4px 6px;
 }
 
-.db-card {
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 10px 12px;
-  font-size: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.db-status {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-weight: 600;
-  margin-bottom: 3px;
-  color: var(--text);
-}
-
-.db-row {
-  display: flex;
-  justify-content: space-between;
-  color: var(--text2);
-}
-
-.db-row b {
-  font-weight: 600;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-
-.db-card .btn {
-  margin-top: 4px;
-  justify-content: center;
-}
-
 .update-card {
   background: linear-gradient(180deg, var(--pink-soft), #fff);
   border: 1px solid var(--pink-line);
@@ -202,21 +170,6 @@ nav {
   overflow-wrap: anywhere;
   color: var(--text2);
   user-select: text;
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ok);
-  box-shadow: 0 0 0 3px var(--ok-soft);
-}
-
-/* 只有需要用户处理（未下载 tag 库）时才持续脉冲，就绪状态保持静止 */
-.status-dot.off {
-  background: var(--pink);
-  box-shadow: none;
-  animation: pulse-pink 2.2s infinite;
 }
 
 .main {

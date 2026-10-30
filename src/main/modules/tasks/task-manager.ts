@@ -9,7 +9,7 @@ import {
 
 interface TaskOptions {
   key?: string
-  resource?: 'database' | 'generation'
+  resource?: 'database' | 'generation' | 'reverse'
   targetId?: string
   cancelMode?: AppTask['cancelMode']
   onCancel?: () => void

@@ -3,8 +3,34 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from '../../shared/ui/Icon.vue'
 
 const props = defineProps<{ url: string; file?: File; disabled: boolean; cropEnabled: boolean }>()
-const emit = defineEmits<{ choose: []; selected: [value: boolean] }>()
+const emit = defineEmits<{ choose: []; selected: [value: boolean]; file: [file: File] }>()
 const host = ref<HTMLElement>()
+const dragDepth = ref(0)
+const dragging = computed(() => dragDepth.value > 0 && !props.disabled)
+function resetDrag() {
+  dragDepth.value = 0
+}
+function dragEnter(event: DragEvent) {
+  if (!props.disabled && event.dataTransfer?.types.includes('Files')) {
+    dragDepth.value++
+  }
+}
+function dragOver(event: DragEvent) {
+  if (event.dataTransfer?.types.includes('Files')) {
+    event.dataTransfer.dropEffect = props.disabled ? 'none' : 'copy'
+  }
+}
+function dragLeave() {
+  dragDepth.value = Math.max(0, dragDepth.value - 1)
+}
+function drop(event: DragEvent) {
+  resetDrag()
+  const file = event.dataTransfer?.files[0]
+  if (file && !props.disabled) {
+    emit('file', file)
+  }
+}
+watch(() => props.disabled, resetDrag)
 const img = ref<HTMLImageElement>()
 const bounds = ref({ left: 0, top: 0, width: 0, height: 0 })
 const region = ref<{ x: number; y: number; width: number; height: number }>()
@@ -22,12 +48,18 @@ function measure() {
   bounds.value = { left: (width - w) / 2 + 16, top: (height - h) / 2 + 16, width: w, height: h }
 }
 onMounted(() => {
+  window.addEventListener('dragend', resetDrag)
+  window.addEventListener('blur', resetDrag)
   observer = new ResizeObserver(measure)
   if (host.value) {
     observer.observe(host.value)
   }
 })
-onBeforeUnmount(() => observer?.disconnect())
+onBeforeUnmount(() => {
+  observer?.disconnect()
+  window.removeEventListener('dragend', resetDrag)
+  window.removeEventListener('blur', resetDrag)
+})
 function clear() {
   region.value = undefined
   start = undefined
@@ -135,11 +167,16 @@ defineExpose({ bytes, clear })
   <div
     ref="host"
     class="reverse-drop"
-    :class="{ 'has-image': url, cropping: cropEnabled }"
+    :class="{ 'has-image': url, cropping: cropEnabled, dragging }"
     role="button"
     :tabindex="disabled ? -1 : 0"
     :aria-disabled="disabled"
     aria-label="选择或更换参考图片"
+    title="PNG / JPEG / WebP · ≤ 25 MB"
+    @dragenter.stop.prevent="dragEnter"
+    @dragover.stop.prevent="dragOver"
+    @dragleave.stop.prevent="dragLeave"
+    @drop.stop.prevent="drop"
     @click="!disabled && !cropEnabled && emit('choose')"
     @keydown.enter.prevent="!disabled && !cropEnabled && emit('choose')"
     @pointerdown="down"
@@ -161,8 +198,19 @@ defineExpose({ bytes, clear })
       ><Icon
         name="upload"
         :size="28"
-      /><span>拖入、粘贴图片或点击选择</span><small>PNG / JPEG / WebP · ≤ 25 MB</small></span
+      /><span>选择参考图</span></span
     >
+    <div
+      v-if="dragging"
+      class="reverse-drop-feedback"
+      role="status"
+    >
+      <Icon
+        name="upload"
+        :size="30"
+      />
+      <strong>{{ url ? '松开替换参考图' : '松开导入参考图' }}</strong>
+    </div>
     <div
       v-if="region && cropEnabled"
       class="reverse-crop-box"
@@ -228,8 +276,25 @@ img {
   font-size: 13px;
 }
 
-small {
-  font-size: 11px;
-  color: var(--muted);
+.reverse-drop-feedback {
+  position: absolute;
+  inset: 8px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  border: 2px dashed var(--pink-deep);
+  border-radius: 8px;
+  color: var(--pink-deep);
+  background: color-mix(in srgb, var(--pink-soft) 90%, transparent);
+  backdrop-filter: blur(3px);
+  pointer-events: none;
+  font-size: 13px;
+}
+
+.reverse-drop.dragging::after {
+  display: none;
 }
 </style>
