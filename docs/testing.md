@@ -1,22 +1,34 @@
 # 验证入口
 
-`npm run check:quick` 先执行全范围格式、ESLint、Stylelint、依赖边界和类型检查，再构建一次，运行测试产物路径、代理启动/重连、工作台索引与图片清理。`npm run check:full` 复用同一次构建运行 24 个离线回归场景。失败立即退出；日志目录在启动时打印，位于系统临时目录。
+`npm run check:quick` 先执行全范围格式、ESLint、Stylelint、依赖边界和类型检查，再构建一次，运行测试产物路径、代理启动/重连、工作台索引与图片清理。`npm run check:full` 复用同一次构建运行统一入口登记的全部离线回归场景（当前 30 个）。失败立即退出；日志目录在启动时打印，位于系统临时目录。
 
 定向运行：`node scripts/check.mjs pages mcp:index workspace:cleanup`。窗口场景按需构建一次，纯源码服务场景通过测试专用 TypeScript 加载器运行。定向命令执行类型检查；完整风格检查由 quick/full 负责。
 
-| 场景 | 运行方式 | 前提 |
-| --- | --- | --- |
-| artifacts、electron:errors、mcp:launch、mcp:relay | Node；异常验证额外启动隔离 Electron | 不需要构建 |
-| mcp:recovery、mcp:context、mcp:index、mcp:preview-cache、desktop:lifecycle、inpaint:mcp、retention、workspace:cleanup、update | Electron + TS 源码 | 不需要构建 |
-| prompt、tasks、pages、inpaint、desktop | Electron + TS 服务与真实渲染页 | 先构建一次 |
-| mcp:host、startup | Node 启动真实应用与代理 | 先构建一次 |
-| isolation | 开发程序与打包程序同时运行 | 设置 NP_PACKAGED_EXECUTABLE；统一入口会构建 |
-| mcp:performance | Electron + TS 服务与 MCP 调度 | 独立运行同规模合成数据基准 |
-| installed-retention | 两个隔离身份 NSIS 安装包 | 先运行 acceptance:build；不能使用正式安装包 |
+| 场景                                                                                                                                                                                                 | 运行方式                            | 前提                                        |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------- |
+| artifacts、electron:errors、reverse:models、mcp:launch、mcp:relay                                                                                                                                    | Node；异常验证额外启动隔离 Electron | 不需要构建                                  |
+| mcp:recovery、mcp:context、mcp:index、mcp:preview-cache、desktop:lifecycle、inpaint:mcp、retention、workspace:cleanup、tasks:background、skills:builtins、skills:templates、discussion:tools、update | Electron + TS 源码                  | 不需要构建                                  |
+| prompt、tasks、pages、inpaint、desktop、favorites、settings、reverse:recommendations、skills                                                                                                         | Electron + TS 服务与真实渲染页      | 先构建一次                                  |
+| favorites:dev                                                                                                                                                                                        | 临时 Vite 服务 + Electron           | 开发模式真实渲染页                          |
+| mcp:host、startup                                                                                                                                                                                    | Node 启动真实应用与代理             | 先构建一次                                  |
+| isolation                                                                                                                                                                                            | 开发程序与打包程序同时运行          | 设置 NP_PACKAGED_EXECUTABLE；统一入口会构建 |
+| mcp:performance                                                                                                                                                                                      | Electron + TS 服务与 MCP 调度       | 独立运行同规模合成数据基准                  |
+| installed-retention                                                                                                                                                                                  | 两个隔离身份 NSIS 安装包            | 先运行 acceptance:build；不能使用正式安装包 |
 
 环境隔离场景必须在构建完成后启动；不要与改写 out/ 的 dev/build 并行，否则开发窗口可能在重载时丢失正在等待的 CDP 请求。
 
 完整离线回归不请求真实供应商。安装/升级与性能单独执行，避免普通开发重复打包或跑大规模夹具。未知结果的写入不自动重试。
+
+## 本次发布整理
+
+- 删除 `tests/integration/mcp-smoke.mjs`：旧手工脚本连接真实开发 profile，协议与宿主检查已由隔离的 `mcp:host`、`mcp:relay` 和 `mcp:context` 覆盖。`npm run mcp:smoke` 改为统一入口的 `mcp:host`。
+- 删除 `tests/integration/mcp-read-smoke.mjs`：面向已有真实项目的只读测量脚本不作为发版回归；保留合成数据的 `mcp:context`、`mcp:index` 和可选 `mcp:performance`。
+- 将账户设置回归 `settings` 加入完整检查，覆盖 Token 保存、清空、失败回滚及余额刷新。
+- 增加 `favorites:dev`：独立启动临时 Vite 服务和隔离 Electron，复用收藏测试，直接验证开发模式初始化。生产与开发两种模式均将前端错误视为失败，防止页面看似可用却隐藏运行异常。
+- 保留收藏、任务、图片清理、Skill 内容指纹、安装升级和更新器测试；这些分别覆盖数据与用户操作风险，不能通过删除失败测试使发版通过。
+- 统一文本换行，避免 Windows 检出 CRLF 与 Prettier 的 LF 要求冲突。
+
+`node scripts/check.mjs favorites favorites:dev settings` 验证本版主要交互。测试覆盖 v0.8 旁置 JSON 图片记录、独立收藏、种子分组、普通图库、搜索、滚动位置恢复、气泡确认、提示消息、参数载入、悬停状态和窄窗口布局。不下载真实识别模型，也不调用付费生图。
 
 ## 日志、异常与产物
 
@@ -60,9 +72,7 @@ Skill 目录包：构建后运行 `npm run skills:smoke`，或 `node scripts/che
 
 内置 Skill 完整交付：`node scripts/check.mjs skills:builtins` 校验历史及合并前全部段落的内容指纹、稳定 ID/启用/顺序、完整复制导出、模拟安装资源路径、内置 AI 首次全文交付及 MCP 完整入口读取。编排仅组合示例按需，预览与重绘不需要额外参考读取。历史 `builtin-skills-baseline.json` / `builtin-skills-revisions.json` / `builtin-skills-content.json` 保留不改；`builtin-skills-precision-revisions.json` 记录此前精度修订；`builtin-skills-merge-baseline.json` 保存合并前正文段落和代码块指纹，`builtin-skills-merge-revisions.json` 记录逐段替代和理由。检查沿修订链追踪旧内容，验证代码块完整保留，并确认原必需参考的规则已经出现在首次正文中；删除关键段落的故障样例必须被拒绝。frontmatter 由加载后的名称、scope/model 与配置行为检查，正文指纹不包含 YAML。仅执行流程和编排顺序使用有序列表，引用不使用数字章节。内置包与漫画包均通过实际 Markdown 渲染验证文件和标题锚点。字符数报告与合成工具场景不能证明真实模型遵循或成图质量，不以缩减上下文比例作为通过门槛。
 
-
 附带用户 Skill：`node scripts/check.mjs skills:templates skills` 验证首次初始化默认关闭、直接编辑/启用/导出/删除、重启不补回、旧模板删除记录迁移、已有副本不覆盖及顺序保留、完整正文和 Markdown 链接、安装资源路径。保留原漫画内容指纹与修订记录。界面验证只有内置与用户两组，漫画可直接编辑与删除。测试使用临时 profile，不改真实用户数据，也不调用真实模型。
-
 
 工作台工具调度：`node scripts/check.mjs discussion:tools` 覆盖一次超过 8 个工具调用、批量参考读取、混合资料/标签调用的应答完整性、重复查询去重、最多 4 个查询并发、48 次唯一查询上限、6 轮查询后收束作答和取消清理。参考读取预算在同一轮讨论中共享，不在每次标签查询后重置。测试使用假供应商与临时用户目录。
 

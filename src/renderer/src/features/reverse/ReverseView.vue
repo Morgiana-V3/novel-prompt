@@ -14,6 +14,7 @@ import ReverseCharacters from './ReverseCharacters.vue'
 import ReverseReference from './ReverseReference.vue'
 import ReverseTrials from './ReverseTrials.vue'
 import ArtistWeights from './ArtistWeights.vue'
+import ArtistRecommendations from './ArtistRecommendations.vue'
 import { removeStyleArtist, styleArtists } from './artist-weights'
 import ReverseComparison from './ReverseComparison.vue'
 import { useReverseTrials, type ReverseTrial } from './use-reverse-trials'
@@ -424,9 +425,6 @@ function clearCrop() {
   croppedResult.value = undefined
   cropEnabled.value = false
 }
-function hasArtist(name: string) {
-  return styleArtists(style.value).some((artist) => artist.core === name)
-}
 function toggleArtist(name: string) {
   if (busy.value) {
     return
@@ -530,13 +528,6 @@ async function source(url: string) {
             {{ trialsState.stopRequested ? '正在停止…' : '停止试图' }}
           </button>
         </div>
-        <p
-          v-if="trialsState.running && trialsState.progress"
-          class="reverse-trial-progress"
-          role="status"
-        >
-          {{ trialsState.progress }}
-        </p>
         <p
           v-if="trialsState.error"
           class="reverse-error"
@@ -863,67 +854,14 @@ async function source(url: string) {
             </p>
           </div>
           <div class="reverse-style-panel">
-            <div class="reverse-panel-head">
-              <span>画师候选</span
-              ><label
-                v-if="result?.artists.length"
-                class="reverse-threshold"
-                >阈值<input
-                  v-model.number="artistThreshold"
-                  aria-label="画师候选阈值"
-                  type="number"
-                  min="0"
-                  max="1"
-                  step="0.001"
-                  :disabled="busy" /></label
-              ><span
-                class="reverse-meta"
-                title="候选表示风格接近，不代表原作者；排名分数不是画师权重。"
-                >排名分数</span
-              >
-            </div>
-            <div
-              v-if="result"
-              class="reverse-artists"
-            >
-              <div
-                v-for="group in result.artists"
-                :key="group.model"
-                class="reverse-artist-group"
-              >
-                <div class="reverse-model-name">{{ group.model }}</div>
-                <ol>
-                  <li
-                    v-for="tag in group.tags
-                      .filter((tag) => tag.score >= artistThreshold)
-                      .slice(0, 10)"
-                    :key="tag.name"
-                  >
-                    <button
-                      class="reverse-artist"
-                      :disabled="busy"
-                      :class="{ selected: hasArtist(tag.name) }"
-                      :aria-pressed="hasArtist(tag.name)"
-                      :title="`${hasArtist(tag.name) ? '移除' : '加入'} artist:${tag.name}`"
-                      @click="toggleArtist(tag.name)"
-                    >
-                      <span>{{ tag.name }}</span
-                      ><small>{{ tag.score.toFixed(3) }}</small
-                      ><Icon
-                        :name="hasArtist(tag.name) ? 'check' : 'plus'"
-                        :size="12"
-                      />
-                    </button>
-                  </li>
-                </ol>
-              </div>
-            </div>
-            <div
-              v-else
-              class="reverse-artists-empty"
-            >
-              {{ running ? '识别中…' : '暂无画师候选' }}
-            </div>
+            <ArtistRecommendations
+              v-model:threshold="artistThreshold"
+              :result="result"
+              :selected="styleArtists(style).map((artist) => artist.core)"
+              :busy="busy"
+              :running="running"
+              @toggle="toggleArtist"
+            />
             <div class="reverse-style-editor">
               <div class="reverse-panel-head">
                 <label for="reverse-style">画师串</label
@@ -1233,13 +1171,6 @@ progress {
   gap: 6px;
   margin-left: auto;
   min-width: 0;
-}
-
-.reverse-trial-progress {
-  margin: 0;
-  color: var(--text2);
-  font-size: 11px;
-  line-height: 1.6;
 }
 
 .reverse-adjustments {

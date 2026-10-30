@@ -3,7 +3,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { NaiGenRequest, NaiGenParams } from '@shared/generation/types'
 import type { SavedRecipe } from '@shared/images/types'
 import { cleanErr } from '../../../shared/lib/format'
+import { favorites, refreshFavorites, removeFavorite } from '../../../shared/state/favorites'
 const props = defineProps<{
+  manageOnly?: boolean
   workspace?: boolean
   currentRequest?: NaiGenRequest
   initialId?: string
@@ -59,7 +61,8 @@ const filtered = computed(() =>
 )
 async function refresh() {
   try {
-    items.value = await window.api.recipesList()
+    await refreshFavorites()
+    items.value = favorites.items
   } catch (error2) {
     error.value = cleanErr(error2)
   }
@@ -132,7 +135,7 @@ async function remove() {
   }
   busy.value = true
   try {
-    await window.api.recipesDelete(selected.value.id)
+    await removeFavorite(selected.value)
     selected.value = null
     await refresh()
   } catch (error2) {
@@ -320,7 +323,7 @@ function apply() {
             </p>
           </div>
           <footer
-            v-if="selected"
+            v-if="selected && !manageOnly"
             class="recipe-load"
           >
             <label class="seed-option"

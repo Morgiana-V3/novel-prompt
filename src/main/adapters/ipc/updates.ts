@@ -6,13 +6,40 @@ import { handle } from './handle'
 
 export function registerUpdatesIpc(context: IpcContext): void {
   const { send, tasks } = context
+  let reportDownload: ((message: string, current?: number, total?: number) => boolean) | undefined
 
   const updater = createAppUpdater(
-    (info) => send('update:state', info),
+    (info) => {
+      send('update:state', info)
+      if (info.stage === 'downloading') {
+        reportDownload?.(`正在下载更新 · ${Math.round(info.percent ?? 0)}%`, info.percent, 100)
+      }
+    },
     () => tasks.snapshot().tasks.some(taskIsActive),
   )
+  let checking: ReturnType<typeof updater.check> | undefined
+  const check = (force: boolean) => {
+    checking ??= tasks
+      .run(
+        'update-check',
+        async ({ progress }) => {
+          progress('正在检查新版本…')
+          const result = await updater.check(force)
+          if (result.error) {
+            throw new Error(result.error)
+          }
+          progress(result.newer ? `发现新版本 ${result.latest}` : '当前已是最新版本')
+          return result
+        },
+        { cancelMode: 'none' },
+      )
+      .finally(() => {
+        checking = undefined
+      })
+    return checking
+  }
   const updateTimer = setInterval(
-    () => void updater.check(true).catch((error) => console.error(error)),
+    () => void check(true).catch((error) => console.error(error)),
     6 * 60 * 60 * 1000,
   )
   updateTimer.unref()
@@ -21,11 +48,27 @@ export function registerUpdatesIpc(context: IpcContext): void {
   })
 
   handle('update:check', (_e, force?: boolean) => {
-    return updater.check(!!force)
+    return check(!!force)
   })
 
   handle('update:download', () => {
-    return updater.download()
+    return tasks.run(
+      'update-download',
+      async ({ progress }) => {
+        reportDownload = progress
+        try {
+          await updater.download()
+          const state = updater.snapshot()
+          if (state.error) {
+            throw new Error(state.error)
+          }
+          progress('更新已下载，可重启安装', 100, 100)
+        } finally {
+          reportDownload = undefined
+        }
+      },
+      { cancelMode: 'none' },
+    )
   })
 
   handle('update:install', async () => {

@@ -140,11 +140,21 @@ app.whenReady().then(async () => {
       negative: '',
       characters: [],
     })
-    page = await discussPage(page.id, page.revision, '五格战斗漫画方案', null, [])
+    const progress = []
+    page = await discussPage(
+      page.id,
+      page.revision,
+      '五格战斗漫画方案',
+      null,
+      [],
+      undefined,
+      (message) => progress.push(message),
+    )
     assert.equal(page.messages.at(-1).role, 'assistant')
     assert.equal(executed, 10)
     assert.equal(page.messages.at(-1).toolUsage.tagCacheHits, 2)
     assert.equal(page.messages.at(-1).toolUsage.referenceFiles, 2)
+    assert(progress.includes('正在整理方案（已读取 2 份 Skill 参考资料）…'))
 
     // Six rounds of discovery end in an explicit no-tools synthesis, not a discarded turn.
     modelCalls = 0
@@ -157,9 +167,15 @@ app.whenReady().then(async () => {
       assert(messages.at(-1).content.includes('停止调用工具'))
       return final
     }
-    page = await discussPage(page.id, page.revision, '继续核对', null, [])
+    progress.length = 0
+    page = await discussPage(page.id, page.revision, '继续核对', null, [], undefined, (message) =>
+      progress.push(message),
+    )
     assert.equal(modelCalls, 7)
     assert.equal(page.messages.at(-1).role, 'assistant')
+    assert.equal(page.messages.at(-1).toolUsage.referenceFiles, 0)
+    assert(progress.includes('正在整理方案…'))
+    assert(!progress.some((message) => message.includes('0 份')))
 
     // Total unique-call cap is still enforced, then answered from existing evidence.
     modelCalls = 0

@@ -1,7 +1,7 @@
 import { isUcPreset, isNaiNoiseSchedule, isNaiSampler } from '../../../shared/generation/types'
 import { nativeImage } from 'electron'
-import { randomUUID } from 'node:crypto'
-import { mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs'
+import { randomUUID, createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import type { NaiGenRequest } from '../../../shared/generation/types'
 import type { ImageRecipe, SavedRecipe } from '../../../shared/images/types'
@@ -10,6 +10,7 @@ import { dataDir } from '../../infrastructure/paths'
 import { readPage } from '../workspace/repository'
 import { checkDraft, checkPageParams } from '../workspace/validation'
 import { libraryImagePath, readImageRecipe } from './library'
+import { embedRecipe } from './png-record'
 
 const directory = () => {
   const path = join(dataDir(), 'recipes')
@@ -22,13 +23,47 @@ const file = (id: string) => {
   }
   return join(directory(), `${id}.json`)
 }
+const pictureFile = (id: string) => {
+  file(id)
+  const path = join(directory(), 'images')
+  mkdirSync(path, { recursive: true })
+  return join(path, `${id}.png`)
+}
+export function favoriteImagePath(id: string): string | null {
+  if (!/^[a-f0-9-]{36}$/.test(id)) {
+    return null
+  }
+  const path = pictureFile(id)
+  return existsSync(file(id)) && existsSync(path) ? path : null
+}
+function withImage(record: SavedRecipe): SavedRecipe {
+  // Upgrade old configuration favorites while their original image is still available.
+  const path = pictureFile(record.id)
+  if (!existsSync(path) && record.sourceImage) {
+    const original = libraryImagePath(record.sourceImage)
+    if (original) {
+      const bytes = embedRecipe(readFileSync(original), record.recipe)
+      writeFileAtomic(path, bytes)
+      record.contentHash = createHash('sha256').update(bytes).digest('hex')
+      writeFileAtomic(file(record.id), JSON.stringify(record))
+    }
+  }
+  return { ...record, imageUrl: existsSync(path) ? `np-img://favorite/${record.id}` : undefined }
+}
 export function listRecipes(): SavedRecipe[] {
   return readdirSync(directory())
     .filter((imageName) => /^[a-f0-9-]{36}\.json$/.test(imageName))
     .flatMap((imageName) => {
       try {
         const record = JSON.parse(readFileSync(join(directory(), imageName), 'utf8'))
-        return record.recipe?.schema === 1 ? [record as SavedRecipe] : []
+        if (record.recipe?.schema !== 1) {
+          return []
+        }
+        try {
+          return [withImage(record)]
+        } catch {
+          return [{ ...record, imageUrl: undefined }]
+        }
       } catch {
         return []
       }
@@ -98,6 +133,18 @@ export function createWorkspaceRecipe(id: string, versionId: string): SavedRecip
 }
 function saveRecipe(imageName: string, recipe: ImageRecipe): SavedRecipe {
   const path = libraryImagePath(imageName)
+  const bytes = path ? embedRecipe(readFileSync(path), recipe) : undefined
+  const contentHash = bytes ? createHash('sha256').update(bytes).digest('hex') : undefined
+  if (contentHash) {
+    const existing = listRecipes().find((item) => item.contentHash === contentHash)
+    if (existing) {
+      existing.sourceImages = [
+        ...new Set([...(existing.sourceImages ?? []), existing.sourceImage, imageName]),
+      ]
+      writeFileAtomic(file(existing.id), JSON.stringify(existing))
+      return existing
+    }
+  }
   const image = path ? nativeImage.createFromPath(path) : null
   const size = image?.getSize()
   const resolveR = () => {
@@ -117,9 +164,21 @@ function saveRecipe(imageName: string, recipe: ImageRecipe): SavedRecipe {
     sourceImage: imageName,
     thumbnail: resolveR(),
     recipe,
+    contentHash,
+    sourceImages: imageName ? [imageName] : [],
   }
-  writeFileAtomic(file(recipe2.id), JSON.stringify(recipe2))
-  return recipe2
+  if (bytes) {
+    writeFileAtomic(pictureFile(recipe2.id), bytes)
+  }
+  try {
+    writeFileAtomic(file(recipe2.id), JSON.stringify(recipe2))
+  } catch (error) {
+    if (bytes) {
+      unlinkSync(pictureFile(recipe2.id))
+    }
+    throw error
+  }
+  return withImage(recipe2)
 }
 export function updateRecipe(
   id: string,
@@ -144,8 +203,12 @@ export function updateRecipe(
     tags: patch.tags.map((text) => text.trim()).filter(Boolean),
   })
   writeFileAtomic(file(id), JSON.stringify(recipe))
-  return recipe
+  return withImage(recipe)
 }
 export function deleteRecipe(id: string): void {
+  const image = pictureFile(id)
   unlinkSync(file(id))
+  if (existsSync(image)) {
+    unlinkSync(image)
+  }
 }

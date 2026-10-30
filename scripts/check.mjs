@@ -14,6 +14,7 @@ const cases = {
   artifacts: ['node', 'tests/unit/artifact-paths.cjs', false],
   'electron:errors': ['node', 'tests/unit/electron-errors-smoke.cjs', false],
   'reverse:models': ['node', 'tests/unit/reverse-models-smoke.cjs', false],
+  'reverse:recommendations': ['electron', 'tests/e2e/reverse-recommendations-smoke.cjs', true],
   'mcp:launch': ['node', 'tests/unit/mcp-launch-smoke.cjs', false],
   'mcp:relay': ['node', 'tests/integration/mcp-relay-smoke.cjs', false],
   'mcp:recovery': ['electron', 'tests/integration/mcp-recovery-smoke.cjs', false],
@@ -26,6 +27,9 @@ const cases = {
   'desktop:lifecycle': ['electron', 'tests/e2e/desktop-lifecycle-smoke.cjs', false],
   pages: ['electron', 'tests/e2e/page-workspace-smoke.cjs', true],
   inpaint: ['electron', 'tests/e2e/inpaint-smoke.cjs', true],
+  favorites: ['electron', 'tests/e2e/favorites-smoke.cjs', true],
+  'favorites:dev': ['node', 'tests/e2e/favorites-dev-smoke.mjs', true],
+  settings: ['electron', 'tests/e2e/settings-save-smoke.cjs', true],
   'inpaint:mcp': ['electron', 'tests/integration/inpaint-mcp-smoke.cjs', false],
   retention: ['electron', 'tests/integration/retention-smoke.cjs', false],
   'workspace:cleanup': ['electron', 'tests/integration/workspace-cleanup-smoke.cjs', false],
@@ -35,6 +39,7 @@ const cases = {
   'discussion:tools': ['electron', 'tests/integration/discussion-tools-smoke.cjs', false],
   prompt: ['electron', 'tests/e2e/prompt-smoke.cjs', true],
   tasks: ['electron', 'tests/e2e/tasks-smoke.cjs', true],
+  'tasks:background': ['electron', 'tests/integration/background-tasks-smoke.cjs', false],
   update: ['electron', 'tests/integration/update-smoke.cjs', false],
 }
 const optionalCases = {

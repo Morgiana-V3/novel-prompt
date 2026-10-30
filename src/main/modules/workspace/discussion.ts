@@ -344,7 +344,11 @@ export async function discussPage(
           if (usage.modelRequests === 1) {
             report?.('正在理解需求与选择资料…')
           } else if (canQuery) {
-            report?.(`正在整理方案（已查阅 ${usage.referenceFiles} 份资料）…`)
+            report?.(
+              usage.referenceFiles > 0
+                ? `正在整理方案（已读取 ${usage.referenceFiles} 份 Skill 参考资料）…`
+                : '正在整理方案…',
+            )
           } else {
             report?.('正在汇总已有资料，生成最终方案…')
           }

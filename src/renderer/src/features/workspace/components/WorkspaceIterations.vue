@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { pageConfigurationChanges, type PageWorkspace } from '@shared/workspace/model'
 import { reviewDrafts } from '../../prompts/prompt-review'
 import PromptReview from '../../prompts/components/PromptReview.vue'
+import FavoriteButton from '../../../shared/ui/FavoriteButton.vue'
 
 const props = defineProps<{ work: PageWorkspace; versionId: string; compareId: string }>()
 const iteration = computed(() =>
@@ -85,6 +86,10 @@ const maskUrl = computed(() => {
           </div>
           <figcaption>
             对比对象{{ iteration.source ? ' · ' + name(iteration.source.id) : '' }}
+            <FavoriteButton
+              v-if="iteration.source?.image && !iteration.source.image.missing"
+              :image="iteration.source.image"
+            />
           </figcaption>
         </figure>
         <figure>
@@ -100,7 +105,13 @@ const maskUrl = computed(() => {
           >
             {{ iteration.version?.image ? '图片缺失 · 文字记录保留' : '暂无图片' }}
           </div>
-          <figcaption>正在查看 · {{ name(versionId) }}</figcaption>
+          <figcaption>
+            正在查看 · {{ name(versionId) }}
+            <FavoriteButton
+              v-if="iteration.version?.image && !iteration.version.image.missing"
+              :image="iteration.version.image"
+            />
+          </figcaption>
         </figure>
       </div>
       <p
@@ -260,6 +271,10 @@ const maskUrl = computed(() => {
 }
 
 .wi-images figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   text-align: center;
   font-size: 11px;
   color: var(--text2);

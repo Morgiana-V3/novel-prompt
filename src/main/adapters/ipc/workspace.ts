@@ -47,7 +47,15 @@ export function registerWorkspaceIpc(context: IpcContext): void {
 
   handle('pages:delete', async (_e, id: string, revision: number) => {
     try {
-      await deletePageWithImages(id, revision)
+      await context.tasks.run(
+        'page-cleanup',
+        async ({ progress }) => {
+          progress('正在归档项目并清理图片…')
+          await deletePageWithImages(id, revision)
+          progress('项目归档与图片清理完成')
+        },
+        { key: `page-cleanup:${id}`, targetId: id, cancelMode: 'none' },
+      )
     } finally {
       send('gallery:changed', null)
       notifyAppChanged()
@@ -56,7 +64,16 @@ export function registerWorkspaceIpc(context: IpcContext): void {
 
   handle('pages:clear-image', async (_e, id: string, revision: number, versionId: string) => {
     try {
-      return await clearPageImage(id, revision, versionId)
+      return await context.tasks.run(
+        'page-cleanup',
+        async ({ progress }) => {
+          progress('正在清理版本图片…')
+          const result = await clearPageImage(id, revision, versionId)
+          progress('版本图片清理完成')
+          return result
+        },
+        { key: `page-cleanup:${id}`, targetId: id, cancelMode: 'none' },
+      )
     } finally {
       send('gallery:changed', null)
       notifyAppChanged()
@@ -65,7 +82,16 @@ export function registerWorkspaceIpc(context: IpcContext): void {
 
   handle('pages:cleanup-removed-images', async () => {
     try {
-      return await cleanRemovedPageImages()
+      return await context.tasks.run(
+        'page-cleanup',
+        async ({ progress }) => {
+          progress('正在清理已移除项目的图片…')
+          const result = await cleanRemovedPageImages()
+          progress('已移除项目的图片清理完成')
+          return result
+        },
+        { cancelMode: 'none' },
+      )
     } finally {
       send('gallery:changed', null)
       notifyAppChanged()

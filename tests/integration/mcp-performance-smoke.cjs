@@ -245,7 +245,12 @@ app.whenReady().then(async () => {
     png.data.fill(255)
     const image = library.storeGeneratedImage(
       PNG.sync.write(png),
-      { schema: 1, request: { ...draft, version: 'v5', params }, sourceKind: 'generate' },
+      {
+        schema: 1,
+        createdAt: Date.now(),
+        request: { ...draft, version: 'v5', params },
+        sourceKind: 'generate',
+      },
       'temporary',
     )
     template = await pages.createPage(image.name, params, 'v5', draft)

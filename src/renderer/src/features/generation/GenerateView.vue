@@ -21,6 +21,7 @@ import { resizeWithin } from '../../shared/lib/autosize'
 import { readPngPrompt } from '../prompts/png-import'
 import { type ImportedPrompt } from '@shared/prompts/import'
 import RecipeLibrary from './components/RecipeLibrary.vue'
+import FavoriteButton from '../../shared/ui/FavoriteButton.vue'
 import type { NaiGenRequest } from '@shared/generation/types'
 import { saveSettings } from '../settings/state'
 import Icon from '../../shared/ui/Icon.vue'
@@ -118,15 +119,6 @@ async function toggleRetention(event: Event) {
     ;(event.target as HTMLInputElement).checked = !!settingsState.settings?.naiAutoSave
   } finally {
     retentionSaving.value = false
-  }
-}
-async function favorite(img: NaiImage) {
-  try {
-    favoriteId.value = (await window.api.recipesCreate(img.name)).id
-    toast('已收藏此图的完整生成配置')
-    recipeOpen.value = true
-  } catch (error2) {
-    toast(cleanErr(error2))
   }
 }
 async function applyRecipe(request: NaiGenRequest) {
@@ -599,7 +591,6 @@ function closeRecipes() {
           @save="saveAs"
           @lightbox="lightbox = true"
           @retain="retain"
-          @favorite="favorite"
           @remove="remove"
           @inpaint="inpaintSource = $event"
           @positions="editImagePositions"
@@ -698,6 +689,7 @@ function closeRecipes() {
                 draggable="false"
               />
               <div class="thumb-actions">
+                <FavoriteButton :image="image" />
                 <button
                   class="icon-btn sm"
                   title="下载"

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import FavoriteButton from '../../shared/ui/FavoriteButton.vue'
 import type { ReverseTrial } from './use-reverse-trials'
 import { importGenerationRequest } from '../prompts/actions'
 import { imageState } from '../generation/state'
@@ -17,8 +18,7 @@ const emit = defineEmits<{ retry: [] }>()
 const actionBusy = ref(false)
 const actionError = ref('')
 const retained = ref(false)
-const favorited = ref(false)
-async function act(action: 'retain' | 'favorite' | 'adopt') {
+async function act(action: 'retain' | 'adopt') {
   const trial = props.trial
   if (!trial?.image || props.disabled || actionBusy.value) {
     return
@@ -39,10 +39,6 @@ async function act(action: 'retain' | 'favorite' | 'adopt') {
         await window.api.naiRetain(trial.image.name)
       }
       retained.value = true
-      if (action === 'favorite') {
-        await window.api.recipesCreate(trial.image.name)
-        favorited.value = true
-      }
     }
   } catch (error) {
     actionError.value = cleanErr(error)
@@ -54,7 +50,6 @@ watch(
   () => [props.trial?.image?.name, props.trial?.image?.url],
   () => {
     retained.value = props.trial?.image?.storage === 'saved'
-    favorited.value = false
     actionError.value = ''
   },
   { immediate: true },
@@ -104,13 +99,7 @@ const styleLabel = computed(() => {
         >
           {{ retained ? '已留存' : '留存' }}
         </button>
-        <button
-          class="btn small"
-          :disabled="disabled || actionBusy || favorited"
-          @click="act('favorite')"
-        >
-          {{ favorited ? '已收藏' : '收藏配置' }}
-        </button>
+        <FavoriteButton :image="trial.image" />
         <button
           class="btn small"
           :disabled="disabled || actionBusy"

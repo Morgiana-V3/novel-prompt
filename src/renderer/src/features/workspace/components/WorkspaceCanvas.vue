@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import type { PageVersion, PageRegion } from '@shared/workspace/model'
 import Icon from '../../../shared/ui/Icon.vue'
+import FavoriteButton from '../../../shared/ui/FavoriteButton.vue'
 import ImageViewport from '../../../shared/ui/ImageViewport.vue'
 const props = defineProps<{
   viewed: PageVersion
@@ -66,6 +67,10 @@ defineExpose({ reset: () => viewport.value?.reset() })
     </button>
   </div>
   <div class="pw-canvas-actions">
+    <FavoriteButton
+      v-if="viewed.image && !viewed.image.missing"
+      :image="viewed.image"
+    />
     <button
       class="btn accent small"
       :disabled="busy || historical || !current.image || current.image.missing"

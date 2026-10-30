@@ -7,11 +7,13 @@ import { imagePath, listImages } from '../../modules/images/access'
 import {
   clearTemporaryImages,
   imageLibraryDir,
+  imageBytesWithRecipe,
   readImageRecipe,
   retainImage,
   temporaryCleanupStatus,
 } from '../../modules/images/library'
 import {
+  favoriteImagePath,
   createConfigRecipe,
   createRecipe,
   createWorkspaceRecipe,
@@ -53,6 +55,22 @@ export function registerImagesIpc(context: IpcContext): void {
   handle('recipes:list', () => {
     return listRecipes()
   })
+  handle('recipes:export', async (_e, id) => {
+    const src = favoriteImagePath(id)
+    const win = context.getWindow()
+    if (!src || !win) {
+      throw new Error('收藏原图不存在')
+    }
+    const result = await dialog.showSaveDialog(win, {
+      defaultPath: `favorite-${id}.png`,
+      filters: [{ name: 'PNG 图片（含生成记录）', extensions: ['png'] }],
+    })
+    if (result.canceled || !result.filePath) {
+      return false
+    }
+    copyFileSync(src, result.filePath)
+    return true
+  })
 
   handle('recipes:create', (_e, name: string) => {
     return createRecipe(name)
@@ -90,7 +108,7 @@ export function registerImagesIpc(context: IpcContext): void {
     if (!src) {
       throw new Error('图片不存在或已被删除')
     }
-    return new Uint8Array(readFileSync(src))
+    return new Uint8Array(imageBytesWithRecipe(name))
   })
 
   handle('nai:saveAs', async (_e, name: string) => {
@@ -107,6 +125,7 @@ export function registerImagesIpc(context: IpcContext): void {
     if (saveDialogResult.canceled || !saveDialogResult.filePath) {
       return false
     }
+    // Historical workspace recovery verifies the exact original file hash.
     copyFileSync(src, saveDialogResult.filePath)
     return true
   })

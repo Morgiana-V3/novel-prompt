@@ -1,5 +1,7 @@
 /** 自绘线性图标，24×24 画布，统一圆头描边 */
 export const ICONS = {
+  star: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9z"/>',
+  tasks: '<path d="M9 6h11M9 12h11M9 18h11M3 6h1M3 12h1M3 18h1"/>',
   compare:
     '<rect x="3" y="4" width="8" height="11" rx="2.6"/><rect x="13" y="9" width="8" height="11" rx="2.6"/><path d="M6.5 18.5c0 1 .8 1.6 2 1.6h1.8"/><path d="M17.5 5.5c0-1-.8-1.6-2-1.6h-1.8"/>',
   search:

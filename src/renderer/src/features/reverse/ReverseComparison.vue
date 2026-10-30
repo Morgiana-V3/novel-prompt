@@ -41,8 +41,25 @@ const items = computed(() => {
     })),
   ]
 })
-const visibleItems = computed(() => items.value.filter((item) => item.round === round.value))
-const selected = computed(() => visibleItems.value[selectedIndex.value] ?? visibleItems.value[0])
+const sortByScore = ref(false)
+const visibleItems = computed(() => {
+  const list = items.value.filter((item) => item.round === round.value)
+  return sortByScore.value && !props.running
+    ? list.sort(
+        (a, b) =>
+          (b.trial?.score ?? -Infinity) - (a.trial?.score ?? -Infinity) || a.index - b.index,
+      )
+    : list
+})
+const ranked = computed(() =>
+  items.value
+    .filter((item) => item.round === round.value && Number.isFinite(item.trial?.score))
+    .sort((a, b) => b.trial!.score! - a.trial!.score! || a.index - b.index),
+)
+const selected = computed(
+  () =>
+    visibleItems.value.find((item) => item.index === selectedIndex.value) ?? visibleItems.value[0],
+)
 const completedCount = computed(() => visibleItems.value.filter((item) => item.trial?.image).length)
 watch(
   () => props.trials,
@@ -90,16 +107,18 @@ function moveSelection(event: KeyboardEvent) {
   }
   event.preventDefault()
   const last = visibleItems.value.length - 1
+  let position = visibleItems.value.findIndex((item) => item.index === selectedIndex.value)
   if (event.key === 'Home') {
-    selectedIndex.value = 0
+    position = 0
   } else if (event.key === 'End') {
-    selectedIndex.value = last
+    position = last
   } else {
     const direction = event.key === 'ArrowRight' ? 1 : -1
-    selectedIndex.value = (selectedIndex.value + direction + last + 1) % (last + 1)
+    position = (position + direction + last + 1) % (last + 1)
   }
+  selectedIndex.value = visibleItems.value[position]?.index ?? 0
   const strip = event.currentTarget as HTMLElement
-  strip.querySelectorAll<HTMLButtonElement>('button')[selectedIndex.value]?.focus()
+  strip.querySelectorAll<HTMLButtonElement>('button')[position]?.focus()
 }
 function enlargeReference() {
   if (props.referenceUrl) {
@@ -196,6 +215,15 @@ function enlargeReference() {
             </button>
           </div>
           <span>{{ completedCount }} / {{ visibleItems.length }} 已完成</span>
+          <button
+            v-if="ranked.length > 1"
+            class="score-sort"
+            :disabled="running"
+            :aria-pressed="sortByScore"
+            @click="sortByScore = !sortByScore"
+          >
+            {{ sortByScore ? '恢复生成顺序' : '按试图效果排序' }}
+          </button>
         </div>
         <div
           class="trial-thumbnails"
@@ -228,6 +256,12 @@ function enlargeReference() {
                   :size="12"
               /></strong>
               <small>{{ stateLabel(item.trial) }}</small>
+              <small
+                v-if="item.trial?.score !== undefined"
+                title="本轮已评分图片的余弦相似度，不是还原百分比"
+                >{{ !running && ranked[0]?.key === item.key ? '本轮最接近 · ' : ''
+                }}{{ item.trial.score.toFixed(3) }}</small
+              >
             </span>
           </button>
         </div>
@@ -392,6 +426,11 @@ button.comparison-canvas {
 .filmstrip-heading > span {
   color: var(--muted);
   font-size: 10px;
+}
+
+.score-sort {
+  color: var(--pink-deep);
+  font-size: 11px;
 }
 
 .round-switch {

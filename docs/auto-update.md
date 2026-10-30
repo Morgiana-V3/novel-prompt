@@ -6,9 +6,9 @@ Windows NSIS 安装版在启动后和每 6 小时检查 GitHub Releases，发现
 
 ## 发布步骤
 
-1. 用 `npm version <新版本号> --no-git-tag-version` 同步更新 package.json 和 package-lock.json。版本必须递增；例如从 0.5.0 发布到 0.5.1。
-2. 执行 `npm ci`、`npm run typecheck`、`npm run update:smoke` 和项目功能回归，再运行 `npm run dist`。
-3. 在 `Morgiana-V3/novel-prompt` 创建与版本号对应的 GitHub Release（例如 `v0.5.1`），先保存为草稿。
+1. 用 `npm version <新版本号> --no-git-tag-version` 同步更新 package.json 和 package-lock.json。版本必须递增；例如从 0.8.0 发布到 0.9.0。
+2. 执行 `npm ci` 和 `npm run check:full`，按 [测试说明](testing.md) 完成独立覆盖升级验收，再运行 `npm run dist`。不要与同目录的开发服务并行改写构建输出。
+3. 提交全部源码、文档和新增文件，以对应提交创建版本标签；在 `Morgiana-V3/novel-prompt` 创建 GitHub Release（例如 `v0.9.0`），先保存为草稿。
 4. 将同一次构建的以下文件一起上传，保持原名：
    - `release/NovelPrompt-Setup-<版本>.exe`
    - `release/NovelPrompt-Setup-<版本>.exe.blockmap`
@@ -35,5 +35,7 @@ Windows NSIS 安装版在启动后和每 6 小时检查 GitHub Releases，发现
 v0.6.0 本地验证已覆盖构建、更新下载与校验、打包后应用的 MCP 冷启动/重连/数据持久化、内置资源一致性及更新清单哈希。本次未执行真实 NSIS 覆盖安装；该环节及 v0.6.0 到后续正式版本的完整更新安装仍需在独立 Windows 测试环境验收。
 
 v0.8.0 发布验收已使用独立应用身份，实际完成从 v0.7.0 源码构建的 NSIS 安装包覆盖升级至 v0.8.0 验收包。通过旧版真实接口创建数据，核对升级后的用户 Skill 正文与顺序、内置开关、全部历史版本及冻结规则，检查图库、配方、设置、文件占用后的重试、正常退出与异常恢复，以及漫画删除后不补回。验收身份和 profile 均与真实用户隔离；该测试验证安装和数据保留，不等同于从 GitHub 下载到点击更新的整条线上链路。
+
+v0.9.0 发布准备已通过 30 项离线回归，并使用独立身份实际完成 v0.8.0 → v0.9.0 验收包覆盖升级。正式本地包通过 MCP、环境隔离、本地引擎加载和更新清单 SHA-512 校验；附件、数据保留结果及验证边界见 [v0.9.0 发布记录](v0.9.0-release.md)。尚未验证 GitHub 线上更新的完整链路。
 
 参考：[electron-builder 自动更新文档](https://www.electron.build/docs/features/auto-update/)。本项目使用 electron-updater 6.x，与 electron-builder 26.x 配套，调用 `quitAndInstall(true, true)`；升级依赖大版本时需核对 API 变更。

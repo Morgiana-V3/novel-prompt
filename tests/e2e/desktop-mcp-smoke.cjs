@@ -155,9 +155,12 @@ for (const [name, handler] of Object.entries({
     log: [],
   }),
   'update:check': () => null,
+  'reverse:status': () => ({ phase: 'idle', ready: false, models: [] }),
+  'recipes:list': () => [],
   'update:state': () => null,
   'nai:list': () => client.listImages(),
   'nai:freeCheck': () => ({ ok: true, reasons: [], notes: [] }),
+  'nai:subscription': () => ({ active: true, tier: 3, anlasFixed: 1000, anlasPurchased: 0 }),
   'nai:readImage': (_, name) => new Uint8Array(readFileSync(client.imagePath(name))),
   'pages:removed': () => pages.listRemovedPages(),
   'pages:list': () => pages.listPages(),
@@ -1816,6 +1819,7 @@ app.whenReady().then(async () => {
     fixturePng.data.fill(255)
     const fixtureRecipe = {
       schema: 1,
+      createdAt: Date.now(),
       request: { ...fixtureDraft, version: 'v5', params },
       sourceKind: 'generate',
     }

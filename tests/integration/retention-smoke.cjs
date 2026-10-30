@@ -237,9 +237,9 @@ app.whenReady().then(async () => {
     )
     const missing = pageCurrent(w).image
     const missingPath = client.imagePath(missing.name)
+    const originalBytes = fs.readFileSync(missingPath)
     fs.unlinkSync(missingPath)
     w = pages.readPage(w.id)
-    fs.unlinkSync(missingPath + '.json')
     const recoveredRecipe = recipes.createWorkspaceRecipe(w.id, second)
     assert.deepEqual(
       recoveredRecipe.recipe.request.params,
@@ -277,7 +277,7 @@ app.whenReady().then(async () => {
     fs.writeFileSync(wrong, Buffer.from('wrong'))
     assert.throws(() => pages.recoverPageImage(w.id, w.revision, second, wrong), /不同/)
     const backup = join(profile, 'original.png')
-    fs.writeFileSync(backup, bytes)
+    fs.writeFileSync(backup, originalBytes)
     w = pages.recoverPageImage(w.id, w.revision, second, backup)
     assert.ok(!pageCurrent(w).image.missing)
     pages.deletePage(w.id, w.revision)

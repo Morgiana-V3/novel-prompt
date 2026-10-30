@@ -44,7 +44,7 @@ export class TaskManager {
   }
   cancel(id: string): void {
     const entry = this.active.get(id)
-    if (!entry || entry.task.status !== 'running') {
+    if (!entry || entry.task.status !== 'running' || entry.task.cancelMode === 'none') {
       return
     }
     entry.task.status = 'cancelling'

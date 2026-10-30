@@ -11,6 +11,7 @@ export const APP_TABS = [
   'reverse',
   'generate',
   'workspace',
+  'favorites',
   'search',
   'settings',
 ] as const

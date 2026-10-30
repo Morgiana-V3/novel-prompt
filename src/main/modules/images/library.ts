@@ -17,7 +17,8 @@ import {
 } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { PNG } from 'pngjs'
-import { embedRecipe, readPngRecipe } from './png-record'
+import { embedRecipe, pngTexts } from './png-record'
+import { recipeFromTexts, validRecipe } from '../../../shared/images/metadata'
 import type { ImageRecipe, NaiImage } from '../../../shared/images/types'
 import { writeFileAtomic } from '../../infrastructure/atomic-file'
 import { pngSize } from '../../providers/novelai/png-response'
@@ -109,17 +110,43 @@ export function readImageRecipe(name: string): ImageRecipe | null {
     return null
   }
   const stat = statSync(path)
-  const stamp = `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`
+  const sidecar = existsSync(`${path}.json`) ? statSync(`${path}.json`) : null
+  const stamp = `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}:${sidecar?.mtimeMs}:${sidecar?.ctimeMs}:${sidecar?.size}`
   const cached = recipeCache.get(path)
   if (cached?.stamp === stamp) {
     return structuredClone(cached.recipe)
   }
-  const recipe = readPngRecipe(readFileSync(path), stat.mtimeMs)
+  const texts = pngTexts(readFileSync(path))
+  let recipe: ImageRecipe | null
+  // v0.8 stored the actual request beside the PNG. Keep embedded NovelPrompt records authoritative.
+  if (sidecar && texts.NovelPrompt === undefined) {
+    const legacy: unknown = JSON.parse(readFileSync(`${path}.json`, 'utf8'))
+    if (!validRecipe(legacy)) {
+      throw new Error('旧版图片生成记录损坏，无法恢复准确配置')
+    }
+    recipe = legacy
+  } else {
+    recipe = recipeFromTexts(texts, stat.mtimeMs)
+  }
   if (recipeCache.size >= 128) {
     recipeCache.clear()
   }
   recipeCache.set(path, { stamp, recipe })
   return structuredClone(recipe)
+}
+
+/** Copies/exports of v0.8 images carry their sidecar record inside the new PNG. */
+export function imageBytesWithRecipe(name: string): Buffer {
+  const path = libraryImagePath(name)
+  if (!path) {
+    throw new Error('图片不存在或已被删除')
+  }
+  const bytes = readFileSync(path)
+  if (!existsSync(`${path}.json`)) {
+    return bytes
+  }
+  const recipe = readImageRecipe(name)
+  return recipe ? embedRecipe(bytes, recipe) : bytes
 }
 
 export function storeGeneratedImage(
@@ -160,7 +187,7 @@ export function retainImage(name: string): NaiImage {
     return image
   }
   const dest = join(saved(), name)
-  writeFileAtomic(dest, readFileSync(src))
+  writeFileAtomic(dest, imageBytesWithRecipe(name))
   // A cleanup failure must not report a successfully retained image as unsaved.
   try {
     unlinkSync(src)
@@ -185,7 +212,7 @@ export function ownWorkspaceImage(name: string, owner: string): NaiImage {
   }
   const newName = `ws-${owner}-${randomUUID()}.png`
   const dest = join(ensure(join(workspaceRoot(), owner)), newName)
-  writeFileAtomic(dest, readFileSync(src))
+  writeFileAtomic(dest, imageBytesWithRecipe(name))
   return {
     ...imageInfo(newName)!,
     contentHash: createHash('sha256').update(readFileSync(dest)).digest('hex'),

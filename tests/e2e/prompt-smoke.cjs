@@ -68,6 +68,8 @@ const handlers = {
   'skills:list': () => [],
   'mcp:info': () => null,
   'update:check': () => null,
+  'reverse:status': () => ({ phase: 'idle', ready: false, models: [] }),
+  'recipes:list': () => [],
   'update:state': () => null,
   'db:status': () => ({
     loaded: true,

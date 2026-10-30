@@ -29,7 +29,12 @@ const params = {
   ucPreset: 'none',
 }
 const draft = { base: 'cat', negative: 'blurry', characters: [] }
-const recipe = { schema: 1, request: { ...draft, version: 'v5', params }, sourceKind: 'generate' }
+const recipe = {
+  schema: 1,
+  createdAt: Date.now(),
+  request: { ...draft, version: 'v5', params },
+  sourceKind: 'generate',
+}
 const png = new PNG({ width: 64, height: 64 })
 png.data.fill(255)
 const bytes = PNG.sync.write(png)
@@ -149,6 +154,8 @@ app.whenReady().then(async () => {
     const fullName = pageCurrent(full).image.name
     const fullPath = library.libraryImagePath(fullName)
     const extra = library.storeGeneratedImage(bytes, recipe, 'workspace', full.id)
+    // A v0.8 sidecar can remain after its PNG was successfully removed.
+    fs.writeFileSync(fullPath + '.json', JSON.stringify(recipe))
     failPath = fullPath + '.json'
     await assert.rejects(cleanup.deletePageWithImages(full.id, full.revision), /清理失败/)
     assert.ok(

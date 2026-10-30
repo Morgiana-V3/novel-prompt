@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { shellState } from '../../shared/state/shell'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { TASK_LABELS, taskIsActive, type AppTask } from '@shared/tasks/model'
-import { taskState, cancelTask } from '../../shared/state/tasks'
+import { taskState, trialActivity, cancelTask } from '../../shared/state/tasks'
 import { cleanErr } from '../../shared/lib/format'
 import { toast } from '../../shared/lib/notifications'
 import { type Tab } from '../../shared/state/shell'
@@ -16,6 +16,39 @@ const trigger = ref<HTMLButtonElement>()
 const now = ref(Date.now())
 const active = computed(() => taskState.tasks.filter(taskIsActive))
 const recent = computed(() => taskState.tasks.filter((task) => !taskIsActive(task)))
+const activeCount = computed(
+  () =>
+    active.value.length +
+    (trialActivity.running &&
+    !active.value.some((task) => task.kind === 'generate' || task.kind === 'reverse-score')
+      ? 1
+      : 0),
+)
+const summary = computed(() => {
+  if (trialActivity.running) {
+    return trialActivity.message || '正在准备试图…'
+  }
+  const task = active.value[0]
+  return task ? `${task.label || TASK_LABELS[task.kind]} · ${task.message || '正在处理…'}` : ''
+})
+const triggerLabel = computed(() =>
+  activeCount.value ? `${activeCount.value} 个任务进行中，打开任务详情` : '打开任务详情',
+)
+// Bridge short gaps between queued tasks instead of repeatedly collapsing the control.
+const visualCount = ref(activeCount.value)
+const lastCount = ref(activeCount.value || 1)
+let settleTimer: ReturnType<typeof setTimeout> | undefined
+watch(activeCount, (count) => {
+  clearTimeout(settleTimer)
+  if (count) {
+    visualCount.value = count
+    lastCount.value = count
+  } else {
+    settleTimer = setTimeout(() => {
+      visualCount.value = 0
+    }, 400)
+  }
+})
 const statusText = {
   running: '进行中',
   cancelling: '正在停止',
@@ -49,7 +82,7 @@ function visit(task: AppTask) {
     if (task.kind.startsWith('reverse-')) {
       return 'reverse' as const
     }
-    if (task.kind.startsWith('db-')) {
+    if (task.kind.startsWith('db-') || task.kind.startsWith('update-')) {
       return 'settings' as const
     }
     if (task.kind.startsWith('page-')) {
@@ -102,6 +135,7 @@ onMounted(() => {
   document.addEventListener('keydown', key, true)
 })
 onBeforeUnmount(() => {
+  clearTimeout(settleTimer)
   clearInterval(timer)
   document.removeEventListener('pointerdown', outside)
   document.removeEventListener('keydown', key, true)
@@ -117,22 +151,43 @@ function closePanel() {
     ref="root"
     class="task-center"
   >
+    <span
+      class="task-summary"
+      role="status"
+      :title="summary"
+      >{{ summary }}</span
+    >
     <button
       ref="trigger"
       class="task-trigger"
-      :class="{ working: active.length, opened }"
+      :class="{ working: visualCount, opened }"
+      :aria-label="triggerLabel"
+      :title="triggerLabel"
       :aria-expanded="opened"
       aria-controls="task-panel"
       @click="opened = !opened"
     >
-      <Icon
-        :name="active.length ? 'sparkle' : 'layers'"
-        :size="15"
-        :class="{ 'spin-slow': active.length }"
-      />
-      <span>{{ active.length ? `${active.length} 个任务进行中` : '任务' }}</span>
       <span
-        v-if="!active.length && recent.some((t) => t.status === 'failed')"
+        class="task-surface"
+        aria-hidden="true"
+      >
+        <span class="task-glyph">
+          <Icon
+            name="tasks"
+            :size="16"
+            class="task-idle-icon"
+          />
+          <span class="task-loading"><i></i></span>
+        </span>
+        <span class="task-count">{{ lastCount > 99 ? '99+' : lastCount }}</span>
+        <Icon
+          name="chevron"
+          :size="10"
+          class="task-chevron"
+        />
+      </span>
+      <span
+        v-if="!activeCount && recent.some((t) => t.status === 'failed')"
         class="task-attention"
         aria-label="有未完成任务"
       ></span>
@@ -160,8 +215,20 @@ function closePanel() {
             </button>
           </header>
           <div class="task-list scroll">
+            <p
+              v-if="trialActivity.running"
+              class="task-batch-summary"
+            >
+              {{ trialActivity.message }}
+              <button
+                class="task-cancel"
+                @click="trialActivity.stop?.()"
+              >
+                停止试图
+              </button>
+            </p>
             <div
-              v-if="!taskState.tasks.length"
+              v-if="!taskState.tasks.length && !trialActivity.running"
               class="task-empty"
             >
               <Icon
@@ -231,7 +298,7 @@ function closePanel() {
                       · {{ Math.round(percent(task)!) }}%</template
                     ></span
                   ><button
-                    v-if="taskIsActive(task)"
+                    v-if="taskIsActive(task) && task.cancelMode !== 'none'"
                     class="task-cancel"
                     :disabled="task.status === 'cancelling'"
                     @click="cancelTask(task.id)"
@@ -244,7 +311,7 @@ function closePanel() {
                           : '取消任务'
                     }}</button
                   ><button
-                    v-else
+                    v-else-if="!taskIsActive(task)"
                     class="task-visit"
                     @click="visit(task)"
                   >
@@ -267,44 +334,196 @@ function closePanel() {
 
 <style scoped>
 .task-center {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex: 0 1 350px;
+  min-width: 76px;
   margin-left: auto;
   -webkit-app-region: no-drag;
 }
 
-.task-trigger {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  height: 30px;
-  padding: 0 12px;
-  border: 1px solid var(--line2);
-  border-radius: 20px;
-  font-size: 12px;
+.task-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
   color: var(--text2);
-  background: var(--bg);
-  transition:
-    background-color var(--dur-fast) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out),
-    transform var(--dur-slow) var(--bounce);
+  font-size: 11px;
 }
 
-.task-trigger:hover,
-.task-trigger.opened {
+.task-count {
+  position: absolute;
+  right: 17px;
+  top: 0;
+  width: 24px;
+  line-height: 30px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  opacity: 0;
+  transform: translateX(6px);
+  transition:
+    opacity 180ms ease,
+    transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.task-chevron {
+  position: absolute;
+  right: 6px;
+  top: 10px;
+  transform: rotate(90deg);
+  opacity: 0;
+  transition:
+    opacity 180ms ease,
+    transform 280ms ease;
+}
+
+.working .task-count {
+  opacity: 1;
+  transform: translateX(0);
+  transition-delay: 80ms;
+}
+
+.working .task-chevron {
+  opacity: 0.45;
+  transition-delay: 80ms;
+}
+
+.opened .task-chevron {
+  transform: rotate(-90deg);
+}
+
+.task-trigger:focus-visible {
+  outline: 2px solid var(--pink);
+  outline-offset: 3px;
+}
+
+.task-batch-summary {
+  font-size: 12px;
+  color: var(--text2);
+  overflow-wrap: anywhere;
+}
+
+.task-trigger {
+  position: relative;
+  flex: 0 0 76px;
+  width: 76px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  font-size: 12px;
+  color: var(--text2);
+  background: transparent;
+}
+
+/* Only this inset surface morphs; the header keeps a stable footprint. */
+.task-surface {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 32px;
+  height: 32px;
+  overflow: hidden;
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  background: var(--panel);
+  transition:
+    width 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 200ms ease,
+    transform 200ms ease;
+}
+
+.task-trigger:hover .task-surface,
+.task-trigger.opened .task-surface {
   background: var(--hover);
 }
 
-.task-trigger:active {
+.task-trigger:active .task-surface {
   transform: scale(var(--press));
 }
 
-.task-trigger.working {
-  color: var(--pink-deep);
-  border-color: var(--pink-line);
-  background: var(--pink-soft);
+.working .task-surface {
+  width: 76px;
+  border-radius: 16px;
+}
+
+.task-glyph {
+  position: absolute;
+  left: 7px;
+  top: 7px;
+  width: 16px;
+  height: 16px;
+}
+
+.task-idle-icon,
+.task-loading {
+  position: absolute;
+  inset: 0;
+  transition:
+    opacity 220ms ease,
+    transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.task-loading {
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+.task-loading i {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--line2);
+  border-top-color: var(--pink-deep);
+  border-right-color: var(--pink-deep);
+  border-radius: 50%;
+  animation: task-loading-turn 900ms linear infinite;
+  animation-play-state: paused;
+}
+
+.working .task-loading {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.working .task-loading i {
+  animation-play-state: running;
+}
+
+.working .task-idle-icon {
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+@keyframes task-loading-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-surface,
+  .task-count,
+  .task-chevron,
+  .task-idle-icon,
+  .task-loading {
+    transition: none;
+  }
+
+  .task-loading i {
+    animation: none;
+  }
 }
 
 .task-attention {
+  position: absolute;
+  top: 1px;
+  right: 1px;
   width: 6px;
   height: 6px;
   border-radius: 50%;

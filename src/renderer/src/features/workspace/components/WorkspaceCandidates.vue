@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Icon from '../../../shared/ui/Icon.vue'
+import FavoriteButton from '../../../shared/ui/FavoriteButton.vue'
 import type { PageWorkspace } from '@shared/workspace/model'
 import type { useVersionBrowser } from '../use-version-browser'
 defineProps<{
@@ -81,6 +82,11 @@ const emit = defineEmits<{
           :size="14"
         />
       </button>
+      <FavoriteButton
+        v-if="versionItem.image && !versionItem.image.missing"
+        :image="versionItem.image"
+        class="candidate-favorite"
+      />
       <Transition name="popover">
         <div
           v-if="clearingImage === versionItem.id"
@@ -119,6 +125,13 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
+.pw-candidate :deep(.candidate-favorite) {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  background: var(--bg);
+}
+
 .pw-candidate-list {
   position: absolute;
   top: 100%;

@@ -1,9 +1,9 @@
-import { onBeforeUnmount, reactive } from 'vue'
+import { onBeforeUnmount, reactive, watchEffect } from 'vue'
 import type { NaiGenRequest } from '@shared/generation/types'
 import type { NaiImage } from '@shared/images/types'
 import { imageState } from '../generation/state'
 import { settingsState } from '../settings/state'
-import { activeTask } from '../../shared/state/tasks'
+import { activeTask, trialActivity } from '../../shared/state/tasks'
 import { cleanErr } from '../../shared/lib/format'
 
 export interface ReverseTrial {
@@ -27,6 +27,11 @@ export function useReverseTrials() {
     cost: null as number | null,
   })
   let requesting = false
+  watchEffect(() => {
+    trialActivity.running = state.running
+    trialActivity.message = state.running ? state.progress : ''
+    trialActivity.stop = state.running ? stop : null
+  })
 
   function clear() {
     if (state.running) {
@@ -174,6 +179,9 @@ export function useReverseTrials() {
   }
   onBeforeUnmount(() => {
     state.stopRequested = true
+    trialActivity.running = false
+    trialActivity.message = ''
+    trialActivity.stop = null
   })
   return { state, run, stop, clear }
 }

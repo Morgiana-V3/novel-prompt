@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { NaiImage } from '@shared/images/types'
 import Icon from '../../shared/ui/Icon.vue'
+import FavoriteButton from '../../shared/ui/FavoriteButton.vue'
 import { copy } from '../../shared/lib/notifications'
 const props = defineProps<{
   current: NaiImage
@@ -21,7 +22,6 @@ const emit = defineEmits<{
   save: [image: NaiImage]
   lightbox: []
   retain: [images: NaiImage[]]
-  favorite: [image: NaiImage]
   remove: [image: NaiImage]
   inpaint: [image: NaiImage]
   positions: []
@@ -173,12 +173,7 @@ const deleteLabel = computed(() => {
       class="row"
       style="padding: 10px 12px; flex-wrap: wrap"
     >
-      <button
-        class="btn small"
-        @click="emit('favorite', current)"
-      >
-        收藏此图配置
-      </button>
+      <FavoriteButton :image="current" />
       <button
         class="btn small gallery-delete"
         :class="{ 'danger-confirm': pendingDelete === current.name }"

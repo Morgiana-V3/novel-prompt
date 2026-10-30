@@ -211,6 +211,8 @@ app.whenReady().then(async () => {
       'window:image-preview': () => {},
       'mcp:info': () => null,
       'update:check': () => null,
+      'reverse:status': () => ({ phase: 'idle', ready: false, models: [] }),
+      'recipes:list': () => [],
       'update:state': () => null,
       'db:status': () => ({
         loaded: true,

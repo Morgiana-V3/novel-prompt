@@ -3,6 +3,7 @@ import type { SavedRecipe } from '../../shared/images/types'
 import { invoke } from './bridge'
 
 export const imagesApi = {
+  recipesExport: (id: string): Promise<boolean> => invoke('recipes:export', id),
   recipesList: (): Promise<SavedRecipe[]> => invoke('recipes:list'),
   recipesCreate: (name: string): Promise<SavedRecipe> => invoke('recipes:create', name),
   recipesCreateConfig: (request: NaiGenRequest): Promise<SavedRecipe> =>

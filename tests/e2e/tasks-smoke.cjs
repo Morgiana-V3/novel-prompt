@@ -134,6 +134,8 @@ for (const [name, handler] of Object.entries({
   'skills:list': () => [],
   'mcp:info': () => null,
   'update:check': () => updateInfo,
+  'reverse:status': () => ({ phase: 'idle', ready: false, models: [] }),
+  'recipes:list': () => [],
   'update:state': () => updateInfo,
   'update:download': () => {
     downloadRequests++
@@ -262,6 +264,9 @@ app.whenReady().then(async () => {
     await win.loadFile(join(__dirname, '../../out/renderer/index.html'))
     await ui(`document.querySelector('.side-bottom .seg')?.textContent.includes('V5')`)
     const avatar = await js(`document.querySelector('.brand-avatar img').src`)
+    const idleSurface = await js(
+      `(()=>{const s=document.querySelector('.task-surface'); return { width:s.getBoundingClientRect().width, color:getComputedStyle(s).backgroundColor }})()`,
+    )
     pushUpdate({ stage: 'downloading', percent: 37 })
     await ui(`document.querySelector('.update-card').textContent.includes('37%')`)
     assert.ok(await js(`document.querySelector('.update-card .accent').disabled`))
@@ -307,7 +312,44 @@ app.whenReady().then(async () => {
     await wait(() => pending.preview.length === 1)
     await apiStart('dbUpdate')
     await wait(() => pending.database.length === 1)
-    await ui(`document.querySelector('.task-trigger').textContent.includes('3 个任务')`)
+    await ui(
+      `document.querySelector('.task-trigger').getAttribute('aria-label').includes('3 个任务')`,
+    )
+    const taskBounds = () =>
+      js(`(()=>{
+      const trigger=document.querySelector('.task-trigger').getBoundingClientRect();
+      const content=document.querySelector('.content').getBoundingClientRect();
+      return { x:trigger.x, width:trigger.width, height:trigger.height, contentTop:content.top };
+    })()`)
+    const beforeProgress = await taskBounds()
+    await pause(500)
+    const runningSurface = await js(
+      `(()=>{const s=document.querySelector('.task-surface'); return { width:s.getBoundingClientRect().width, color:getComputedStyle(s).backgroundColor }})()`,
+    )
+    assert.ok(runningSurface.width > idleSurface.width)
+    assert.equal(
+      runningSurface.color,
+      idleSurface.color,
+      'starting work must not replace the surface color',
+    )
+    assert.equal(
+      await js(`getComputedStyle(document.querySelector('.task-loading i')).animationPlayState`),
+      'running',
+    )
+    pending.database[0].progress({
+      stage: 'tags',
+      message: '正在更新标签库 · 很长的实时进度信息'.repeat(12),
+    })
+    await ui(`document.querySelector('.task-summary').textContent.includes('很长的实时进度信息')`)
+    assert.deepEqual(await taskBounds(), beforeProgress)
+    assert.ok(
+      await js(
+        `(()=>{const s=document.querySelector('.task-summary');return s.scrollWidth>s.clientWidth&&s.title===s.textContent})()`,
+      ),
+    )
+    console.log(
+      'PASS long task progress is truncated without moving the task trigger or page content',
+    )
     assert.equal(await js(`document.querySelector('.brand-avatar img').src`), avatar)
     assert.ok(await js(`document.querySelector('.brand-avatar').classList.contains('m-avatar')`))
     assert.ok(await js(`document.querySelector('.update-card .accent').disabled`))
@@ -409,6 +451,16 @@ app.whenReady().then(async () => {
 
     await js(`window.api.tasksClear()`)
     await wait(() => manager.snapshot().tasks.length === 0)
+    await pause(900)
+    assert.equal(
+      await js(`document.querySelector('.task-surface').getBoundingClientRect().width`),
+      idleSurface.width,
+    )
+    assert.equal(
+      await js(`getComputedStyle(document.querySelector('.task-loading i')).animationPlayState`),
+      'paused',
+    )
+    console.log('PASS task control morphs and spins while active, then returns to its idle shape')
     await click('.nav-item', 'AI 优化')
     await click(
       '.ai .run-bar .btn.accent',

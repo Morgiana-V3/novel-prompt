@@ -23,6 +23,9 @@ export interface ImageRecipe {
 }
 
 export interface SavedRecipe {
+  imageUrl?: string
+  contentHash?: string
+  sourceImages?: string[]
   id: string
   name: string
   note: string

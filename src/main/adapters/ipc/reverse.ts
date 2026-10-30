@@ -33,11 +33,27 @@ export function registerReverseIpc(
       { resource: 'reverse', onCancel: () => service.cancel() },
     )
   handle('reverse:status', (_event, models) => service.status(reverseModels(models)))
+  const install = (selected: ReturnType<typeof reverseModels>, paths?: string[]) =>
+    context.tasks.run(
+      'reverse-install',
+      async ({ progress }) => {
+        const report = () => progress(service.message || '正在准备模型…', service.completedBytes)
+        const timer = setInterval(report, 300)
+        try {
+          await service.install(paths, selected)
+          if (service.phase === 'error') {
+            throw new Error(service.message)
+          }
+          report()
+        } finally {
+          clearInterval(timer)
+        }
+      },
+      { resource: 'reverse', onCancel: () => service.cancel() },
+    )
   handle('reverse:install', async (_event, models) => {
     const selected = reverseModels(models)
-    service
-      .install(undefined, selected)
-      .catch((error) => console.error('Local models:', String(error)))
+    install(selected).catch((error) => console.error('Local models:', String(error)))
     return service.status()
   })
   handle('reverse:import', async (_event, models) => {
@@ -52,9 +68,9 @@ export function registerReverseIpc(
       filters: [{ name: '本地模型文件', extensions: ['onnx', 'json', 'csv', 'md'] }],
     })
     if (!result.canceled) {
-      service
-        .install(result.filePaths, selected)
-        .catch((error) => console.error('Local models:', String(error)))
+      install(selected, result.filePaths).catch((error) =>
+        console.error('Local models:', String(error)),
+      )
     }
     return service.status()
   })
@@ -62,7 +78,17 @@ export function registerReverseIpc(
     context.tasks.cancelResource('reverse')
     service.cancel()
   })
-  handle('reverse:remove', (_event, models) => service.remove(reverseModels(models)))
+  handle('reverse:remove', (_event, models) =>
+    context.tasks.run(
+      'reverse-remove',
+      async ({ progress }) => {
+        progress('正在删除本地模型文件…')
+        await service.remove(reverseModels(models))
+        progress('已删除本地模型')
+      },
+      { resource: 'reverse', cancelMode: 'none' },
+    ),
+  )
   handle('reverse:analyze', (_event, bytes, models) =>
     trackRecognition('reverse-analyze', (_signal, report) =>
       service.analyze(bytes, workerPath, reverseModels(models), report),

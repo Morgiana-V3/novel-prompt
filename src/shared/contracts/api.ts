@@ -69,6 +69,7 @@ export interface Api {
     versionId: string,
   ) => Promise<PageWorkspace | null>
   recipesList: () => Promise<SavedRecipe[]>
+  recipesExport: (id: string) => Promise<boolean>
   recipesCreate: (name: string) => Promise<SavedRecipe>
   recipesCreateConfig: (request: NaiGenRequest) => Promise<SavedRecipe>
   recipesCreateWorkspace: (id: string, versionId: string) => Promise<SavedRecipe>
@@ -225,6 +226,7 @@ export interface IpcContract {
     args: Parameters<Api['recipesList']>
     result: Awaited<ReturnType<Api['recipesList']>>
   }
+  'recipes:export': { args: [id: string]; result: boolean }
   'recipes:create': {
     args: Parameters<Api['recipesCreate']>
     result: Awaited<ReturnType<Api['recipesCreate']>>

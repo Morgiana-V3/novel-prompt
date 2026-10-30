@@ -208,6 +208,7 @@ try {
   await run(oldInstaller, ['/S', `/D=${install}`])
   assert.ok(existsSync(exe))
   writeFileSync(join(profile, 'images', 'legacy.png'), bytes)
+  writeFileSync(join(profile, 'images', 'legacy.png.json'), JSON.stringify(recipe))
   writeFileSync(join(profile, 'images', 'ordinary-old.png'), bytes)
   let app = await launch()
   assert.equal((await app.js('window.api.updateState()')).current, versions[0])
@@ -218,6 +219,12 @@ try {
     (version) => version.id === oldPage.currentVersionId,
   ).image
   assert.ok(ownedImage?.name.startsWith(`ws-${oldPage.id}-`))
+  const oldImageFavorite = await app.js(
+    `window.api.recipesCreate(${JSON.stringify(ownedImage.name)})`,
+  )
+  const oldConfigFavorite = await app.js(
+    `window.api.recipesCreateConfig(${JSON.stringify(request)})`,
+  )
   await app.js(`window.api.saveSettings({naiAutoSave:true,naiVersion:'v5'})`)
   const personal = await app.js(
     `window.api.skillsCreate(${JSON.stringify({
@@ -283,6 +290,27 @@ try {
     oldPage.currentVersionId,
   )
   const images = await app.js('window.api.naiList()')
+  const upgradedFavorites = await app.js('window.api.recipesList()')
+  for (const previous of [oldImageFavorite, oldConfigFavorite]) {
+    const current = upgradedFavorites.find((item) => item.id === previous.id)
+    assert.ok(current, 'existing favorite survives the installation upgrade')
+    assert.deepEqual(current.recipe, previous.recipe)
+  }
+  const upgradedFavorite = upgradedFavorites.find((item) => item.id === oldImageFavorite.id)
+  assert.equal(upgradedFavorite.imageUrl, `np-img://favorite/${oldImageFavorite.id}`)
+  const favoriteBytes = readFileSync(
+    join(profile, 'data', 'recipes', 'images', oldImageFavorite.id + '.png'),
+  )
+  assert.deepEqual(PNG.sync.read(favoriteBytes).data, PNG.sync.read(bytes).data)
+  assert.equal(
+    createHash('sha256').update(favoriteBytes).digest('hex'),
+    upgradedFavorite.contentHash,
+  )
+  assert.equal(
+    upgradedFavorites.find((item) => item.id === oldConfigFavorite.id).imageUrl,
+    undefined,
+  )
+  log('v0.8 image/config favorites retain exact recipes; image favorite gains an independent PNG')
   // The baseline already copies imported originals into workspace-owned images.
   // Verify both retained originals and the actual owned copy after upgrade.
   assert.equal(images.find((i) => i.name === 'legacy.png').storage, 'saved')

@@ -250,6 +250,7 @@ const handlers = {
   'skills:list': () => skills.getConfig(),
   'mcp:info': () => null,
   'update:check': () => null,
+  'reverse:status': () => ({ phase: 'idle', ready: false, models: [] }),
   'update:state': () => null,
   'prompt:analyze': () => ({
     tokens: [],
@@ -907,7 +908,13 @@ app.whenReady().then(async () => {
         offscreen: true,
       },
     })
-    const js = (code) => win.webContents.executeJavaScript(code, true)
+    const js = async (code) => {
+      try {
+        return await win.webContents.executeJavaScript(code, true)
+      } catch (error) {
+        throw new Error(code + ': ' + error.message)
+      }
+    }
     const run = async (code) => {
       const v = await js(code)
       await pause(100)
@@ -973,7 +980,11 @@ app.whenReady().then(async () => {
     await run(
       `[...document.querySelectorAll('.gallery .thumb')].find(e=>e.querySelector('img').src.includes('${ordinary.images[0].name}')).click()`,
     )
-    await click('.viewer button', '收藏此图配置')
+    await run(`document.querySelector('.viewer .favorite-button').click()`)
+    await wait(
+      `document.querySelector('.viewer .favorite-button')?.getAttribute('aria-pressed')==='true'`,
+    )
+    await click('.gen-params-head button', '配置收藏')
     await wait(`!!document.querySelector('.recipe-dialog')`)
     await click('.recipe-item', 'grey shirt')
     await input('.recipe-columns article input', '可复用的灰衣配方')
@@ -993,7 +1004,7 @@ app.whenReady().then(async () => {
       require('../../src/main/modules/images/library.ts').imageInfo(ordinary.images[0].name)
         .storage,
       'temporary',
-      'favorite does not retain full image',
+      'favorite keeps an independent copy without changing source retention',
     )
     await click('.viewer button', '留存图片')
     assert.equal(
@@ -1602,9 +1613,7 @@ app.whenReady().then(async () => {
     const missingVersion = pageCurrent(missingDoc)
     const missingPath = client.imagePath(missingVersion.image.name)
     const missingBytes = readFileSync(missingPath)
-    const missingMetadata = readFileSync(missingPath + '.json')
     require('node:fs').unlinkSync(missingPath)
-    require('node:fs').unlinkSync(missingPath + '.json')
     await click('.session-open', '通用创作会话测试')
     await wait(`document.querySelector('.pw-blank')?.textContent.includes('图片文件缺失')`)
     assert.equal(
@@ -1617,7 +1626,6 @@ app.whenReady().then(async () => {
     await shot('15-missing-image.png')
     await run(`document.querySelector('[aria-label="返回项目"]').click()`)
     writeFileSync(missingPath, missingBytes)
-    writeFileSync(missingPath + '.json', missingMetadata)
     const beforeRolls = pages.readPage(ui.id)
     pages.editPage(ui.id, beforeRolls.revision, {
       type: 'execution',
@@ -1921,7 +1929,7 @@ app.whenReady().then(async () => {
       ),
     )
     await shot('24-protected-gallery-delete.png')
-    await run(`document.querySelector('.image-viewer [title="关闭（Esc）"]').click()`)
+    await run(`document.querySelector('.image-viewer [aria-label="关闭图片预览"]').click()`)
     await wait(`!document.querySelector('.image-viewer')`)
     console.log(
       'PASS gallery preview and fullscreen deletion, confirmation reset, failure recovery, repeat-key guard, adjacent selection, last-image close and workspace protection',

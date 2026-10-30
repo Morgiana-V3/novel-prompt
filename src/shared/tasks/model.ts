@@ -12,6 +12,11 @@ export const TASK_LABELS = {
   'page-generate': '生成会话候选',
   'reverse-analyze': '本地图片识别',
   'reverse-score': '比较画面风格',
+  'reverse-install': '准备识别模型',
+  'reverse-remove': '删除识别模型',
+  'update-check': '检查应用更新',
+  'update-download': '下载应用更新',
+  'page-cleanup': '清理项目图片',
 } as const
 
 export type TaskKind = keyof typeof TASK_LABELS
@@ -25,7 +30,7 @@ export interface AppTask {
   endedAt?: number
   current?: number
   total?: number
-  cancelMode: 'abort' | 'after-current'
+  cancelMode: 'abort' | 'after-current' | 'none'
   targetId?: string
   origin?: 'agent'
   label?: string

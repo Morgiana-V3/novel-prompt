@@ -26,6 +26,7 @@ import SearchView from '../features/tags/SearchView.vue'
 import AiView from '../features/prompts/AiView.vue'
 import PreviewView from '../features/prompts/PreviewView.vue'
 import GenerateView from '../features/generation/GenerateView.vue'
+import FavoritesView from '../features/generation/FavoritesView.vue'
 import ReverseView from '../features/reverse/ReverseView.vue'
 import SubscriptionStatus from '../features/generation/components/SubscriptionStatus.vue'
 import WorkspacesView from '../features/workspace/WorkspacesView.vue'
@@ -68,6 +69,13 @@ const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: bool
     label: 'AI 工作台',
     icon: 'chat',
     desc: '围绕一个目标持续讨论、生成和调整，保留每次尝试',
+  },
+  {
+    key: 'favorites',
+    label: '收藏',
+    icon: 'star',
+    desc: '查看收藏图片与生成记录，按需载入提示词',
+    tool: true,
   },
   {
     key: 'search',
@@ -695,6 +703,7 @@ async function onDrop(event2: DragEvent) {
           v-show="shellState.tab === 'workspace'"
           ref="workspaceView"
         />
+        <FavoritesView v-show="shellState.tab === 'favorites'" />
         <SettingsView
           v-show="shellState.tab === 'settings'"
           ref="settingsView"

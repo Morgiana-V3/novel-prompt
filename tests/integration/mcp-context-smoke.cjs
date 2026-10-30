@@ -86,7 +86,12 @@ app.whenReady().then(async () => {
     const library = require('../../src/main/modules/images/library.ts')
     const image = library.storeGeneratedImage(
       PNG.sync.write(png),
-      { schema: 1, request: { ...draft, version: 'v5', params }, sourceKind: 'generate' },
+      {
+        schema: 1,
+        createdAt: Date.now(),
+        request: { ...draft, version: 'v5', params },
+        sourceKind: 'generate',
+      },
       'temporary',
     )
     let w = await pages.createPage(image.name, params, 'v5', draft)
