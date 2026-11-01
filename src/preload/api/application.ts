@@ -6,7 +6,17 @@ import type { UpdateInfo } from '../../shared/updates/types'
 import type { PageAgentIdentity } from '../../shared/workspace/model'
 import { invoke, on } from './bridge'
 
+import type { SnippetInput } from '../../shared/prompts/snippets'
+
 export const applicationApi = {
+  storageInfo: () => invoke('storage:info'),
+  storageChoose: () => invoke('storage:choose'),
+  storageSchedule: (path: string) => invoke('storage:schedule', path),
+  storageCancel: () => invoke('storage:cancel'),
+  storageOpen: () => invoke('storage:open'),
+  snippetsList: () => invoke('snippets:list'),
+  snippetsSave: (input: SnippetInput) => invoke('snippets:save', input),
+  snippetsDelete: (id: string) => invoke('snippets:delete', id),
   onGalleryChanged: (cb: () => void) => on('gallery:changed', cb),
   onSkillsChanged: (cb: () => void) => on('skills:changed', cb),
   onTasks: (cb: (snapshot: TaskSnapshot) => void) => on('tasks:changed', cb),

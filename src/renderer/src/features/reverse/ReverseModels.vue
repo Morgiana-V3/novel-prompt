@@ -161,12 +161,13 @@ onBeforeUnmount(() => dialog.value?.close())
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--line2);
-  border-radius: 12px;
+  border-radius: 18px;
   box-shadow: var(--shadow-modal);
 }
 
 .reverse-model-dialog::backdrop {
   background: var(--scrim);
+  backdrop-filter: blur(3px);
 }
 
 header,

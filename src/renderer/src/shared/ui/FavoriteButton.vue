@@ -24,6 +24,8 @@ const trigger = ref<HTMLButtonElement>()
 const bubble = ref<HTMLElement>()
 const pending = ref<SavedRecipe>()
 const opened = ref(false)
+/** 刚收藏成功时播放一次星星闪动，只给这次操作反馈，不在列表初次渲染时播放 */
+const justSaved = ref(false)
 const position = ref({ left: '0px', top: '0px' })
 onMounted(() => {
   if (!favorites.loaded) {
@@ -49,6 +51,7 @@ async function activate() {
   try {
     if (props.image) {
       await saveFavorite(props.image)
+      justSaved.value = !!selected.value
     }
   } catch (error) {
     toast(`收藏失败：${cleanErr(error)}`)
@@ -72,13 +75,14 @@ async function confirm() {
     ref="trigger"
     v-bind="$attrs"
     class="icon-btn sm favorite-button"
-    :class="{ selected: !!selected }"
+    :class="{ selected: !!selected, 'just-saved': justSaved }"
     :aria-pressed="!!selected"
     :aria-expanded="opened"
     :aria-label="selected ? '取消收藏' : '收藏图片'"
     :title="selected ? '取消收藏（原图保留）' : '收藏图片与生成记录'"
     :disabled="image?.missing || busy"
     @click.stop="activate"
+    @animationend="justSaved = false"
   >
     <Icon
       name="star"
@@ -145,6 +149,10 @@ async function confirm() {
   fill: currentcolor;
 }
 
+.favorite-button.just-saved :deep(svg) {
+  animation: twinkle 0.5s var(--bounce);
+}
+
 .favorite-confirm {
   position: fixed;
   inset: auto;
@@ -155,8 +163,12 @@ async function confirm() {
   border-radius: 12px;
   background: var(--bg);
   color: var(--text);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-pop);
   font-size: 12px;
+}
+
+.favorite-confirm:popover-open {
+  animation: pop var(--dur-base) var(--ease-out);
 }
 
 .favorite-confirm p {

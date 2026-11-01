@@ -398,9 +398,6 @@ export function activeSkills(feature: SkillFeature, version: NaiVersion): SkillD
     .filter((skill): skill is SkillDoc => !!skill)
 }
 
-export const isActive = (id: string, feature: SkillFeature, version: NaiVersion) =>
-  activeSkills(feature, version).some((skill) => skill.id === id)
-
 /* ---------- 增删改 ---------- */
 
 function newId(name: string): string {

@@ -158,6 +158,12 @@ select.input:not(.sm) {
   min-height: 36px;
 }
 
+/* 搜索框统一用页面自己的样式，不显示 Chromium 自带的蓝色清除叉 */
+input[type='search']::-webkit-search-cancel-button,
+input[type='search']::-webkit-search-decoration {
+  appearance: none;
+}
+
 .input:focus {
   border-color: var(--pink-line);
   box-shadow: 0 0 0 3px var(--pink-soft);

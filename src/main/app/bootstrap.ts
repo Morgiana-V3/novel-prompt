@@ -1,4 +1,6 @@
-import { app, BrowserWindow, protocol } from 'electron'
+import { migrateStorageOnStartup } from '../modules/settings/storage'
+import { readStorageLocation, storageRoot } from '../infrastructure/storage-root'
+import { app, BrowserWindow, protocol, dialog } from 'electron'
 import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -34,6 +36,7 @@ export function startApplication(): void {
   let tasks: TaskManager
   let bridge: Awaited<ReturnType<typeof startMcpBridge>> | undefined
   let changeTimer: ReturnType<typeof setTimeout> | undefined
+  let migratingStorage = false
   function notifyAppChanged() {
     if (changeTimer) {
       return
@@ -60,7 +63,7 @@ export function startApplication(): void {
   let bridgeProfile = !app.isPackaged || process.env.NOVELPROMPT_USER_DATA ? runtimeData : ''
   const runtimeInfo = () => ({
     mode: app.isPackaged ? ('installed' as const) : ('development' as const),
-    dataPath: app.getPath('userData'),
+    dataPath: storageRoot(),
     appPath: app.getAppPath(),
   })
   const APP_ID = app.isPackaged ? 'com.holyxie.novelprompt' : 'com.holyxie.novelprompt.dev'
@@ -154,7 +157,7 @@ export function startApplication(): void {
       app.quit()
     } else {
       app.on('second-instance', (_event, argv) => {
-        if (!argv.includes('--mcp-host')) {
+        if (!argv.includes('--mcp-host') && !migratingStorage) {
           void app
             .whenReady()
             .then(createWindow)
@@ -164,6 +167,39 @@ export function startApplication(): void {
       app
         .whenReady()
         .then(async () => {
+          if (readStorageLocation().pending) {
+            migratingStorage = true
+            const migrationWindow = new BrowserWindow({
+              width: 520,
+              height: 220,
+              resizable: false,
+              closable: false,
+              autoHideMenuBar: true,
+              webPreferences: { sandbox: true },
+            })
+            await migrationWindow.loadURL(
+              'data:text/html;charset=utf-8,' +
+                encodeURIComponent(
+                  '<body style="font:14px/1.8 system-ui;padding:28px;background:#fff8fb;color:#3d3340"><h2>正在迁移数据</h2><p>正在复制并校验图片、模型和工作台数据，请稍候。<br>原目录中的文件会保留。完成后自动打开工作台。</p></body>',
+                ),
+            )
+            try {
+              await migrateStorageOnStartup((current, total) =>
+                migrationWindow.setTitle(
+                  `数据迁移 · ${total ? Math.round((current / total) * 100) : 0}%`,
+                ),
+              )
+            } finally {
+              migrationWindow.destroy()
+              migratingStorage = false
+            }
+            const failure = readStorageLocation().error
+            if (failure) {
+              dialog.showErrorBox('数据迁移未完成', failure)
+            }
+          } else {
+            storageRoot()
+          }
           clearTemporaryImages(false)
           // 让 Windows 任务栏 / Alt+Tab 使用窗口图标，而不是 electron.exe 的默认图标
           if (process.platform === 'win32') {
@@ -219,10 +255,14 @@ export function startApplication(): void {
         })
         .catch((candidate) => {
           console.error('应用服务启动失败', candidate)
+          dialog.showErrorBox('无法打开数据目录', String(candidate))
           app.exit(1)
         })
 
       app.on('window-all-closed', () => {
+        if (migratingStorage) {
+          return
+        }
         // Connected agents and in-flight work retain their shared host when the window closes.
         if (
           process.platform !== 'darwin' &&

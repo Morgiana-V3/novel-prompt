@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SnippetButton from './SnippetButton.vue'
 import { promptState } from '../state'
 import { computed } from 'vue'
 import type { InpaintDraft } from '@shared/prompts/types'
@@ -27,7 +28,8 @@ const props = withDefaults(
     draft: undefined,
     model: undefined,
     params: undefined,
-    image: null,
+    // 未指定时沿用生图预览；显式 null 表示独立草稿没有参考图。
+    image: undefined,
     baseLabel: '主提示词',
     baseHint: '各页面共用，粘贴分节文本会自动拆分',
     charLabel: '角色提示词',
@@ -87,6 +89,7 @@ function onPaste(event2: ClipboardEvent) {
       >{{ baseLabel }}</label
     >
     <div class="composer short">
+      <SnippetButton :disabled="disabled" />
       <textarea
         v-model="base"
         v-autosize
@@ -110,6 +113,7 @@ function onPaste(event2: ClipboardEvent) {
       >负面提示词（UC）</label
     >
     <div class="composer short neg">
+      <SnippetButton :disabled="disabled" />
       <textarea
         v-model="negative"
         v-autosize

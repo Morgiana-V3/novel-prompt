@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SnippetButton from '../prompts/components/SnippetButton.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ReverseModel, ReverseResult, ReverseStatus } from '@shared/reverse/types'
 import { shellState } from '../../shared/state/shell'
@@ -837,6 +838,7 @@ async function source(url: string) {
                 />
               </button>
             </div>
+            <SnippetButton :disabled="!result || busy" />
             <textarea
               id="reverse-content"
               v-model="content"
@@ -893,6 +895,7 @@ async function source(url: string) {
                 v-model="style"
                 :disabled="!result || busy"
               />
+              <SnippetButton :disabled="!result || busy" />
               <textarea
                 id="reverse-style"
                 v-model="style"

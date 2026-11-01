@@ -96,6 +96,10 @@ function select(kind: 'file' | 'directory') {
   box-shadow: var(--shadow-pop);
 }
 
+.skill-import-menu:popover-open {
+  animation: pop var(--dur-base) var(--ease-out);
+}
+
 .skill-import-menu button {
   display: flex;
   align-items: center;

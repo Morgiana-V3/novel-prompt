@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SnippetButton from './SnippetButton.vue'
 import { promptState } from '../state'
 import { settingsState } from '../../settings/state'
 import type { AiCharacter } from '@shared/prompts/types'
@@ -28,7 +29,8 @@ const props = withDefaults(
     characters: undefined,
     model: undefined,
     params: undefined,
-    image: null,
+    // 保留 undefined，让位置编辑器读取当前生图预览。
+    image: undefined,
   },
 )
 
@@ -151,6 +153,7 @@ function remove(i: number) {
         </button>
       </div>
       <div class="composer short mini">
+        <SnippetButton :disabled="disabled" />
         <textarea
           v-model="character.prompt"
           v-autosize
@@ -162,6 +165,7 @@ function remove(i: number) {
         ></textarea>
       </div>
       <div class="composer short mini neg">
+        <SnippetButton :disabled="disabled" />
         <textarea
           v-model="character.negative"
           v-autosize

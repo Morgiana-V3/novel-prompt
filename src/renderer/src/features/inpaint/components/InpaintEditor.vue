@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SnippetButton from '../../prompts/components/SnippetButton.vue'
 import { useInpaintAnalysis } from '../use-analysis'
 import RegionComment from './RegionComment.vue'
 import RegionContextMenu from './RegionContextMenu.vue'
@@ -1488,6 +1489,7 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                     for="ip-prompt"
                     >重绘提示词</label
                   >
+                  <SnippetButton :disabled="loading || running || analyzing" />
                   <textarea
                     id="ip-prompt"
                     v-model="editDraft.base"
@@ -1501,6 +1503,7 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                     for="ip-negative"
                     >负面提示词</label
                   >
+                  <SnippetButton :disabled="loading || running || analyzing" />
                   <textarea
                     id="ip-negative"
                     v-model="editDraft.negative"
@@ -1525,6 +1528,7 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                         >角色 {{ index + 1 }}
                         <span class="muted">{{ character.position || '自动位置' }}</span></label
                       >
+                      <SnippetButton :disabled="loading || running || analyzing" />
                       <textarea
                         :id="'ip-char-' + index"
                         v-model="character.prompt"
@@ -1533,6 +1537,7 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                         :aria-label="`角色 ${index + 1} 提示词`"
                         spellcheck="false"
                       ></textarea>
+                      <SnippetButton :disabled="loading || running || analyzing" />
                       <textarea
                         v-model="character.negative"
                         v-autosize

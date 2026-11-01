@@ -1,9 +1,12 @@
 import type { NaiVersion } from '../generation/types'
 import type { SkillEntry } from '../skills/types'
+import type { AiPreset } from './ai-presets'
 
 export type ReasoningEffort = 'off' | 'low' | 'high' | 'max'
 
 export interface Settings {
+  aiPreset?: AiPreset
+  workspaceAiCollapsed?: boolean
   /** Legacy profile data; inpainting now uses the shared AI configuration. */
   inpaintVision?: { apiKey: string; baseUrl: string; model: string }
   apiKey: string

@@ -1,4 +1,5 @@
-import { app, shell } from 'electron'
+import { storageRoot } from '../../infrastructure/storage-root'
+import { shell } from 'electron'
 import { createHash, randomUUID } from 'node:crypto'
 import {
   closeSync,
@@ -31,8 +32,8 @@ const ensure = (path: string) => {
   mkdirSync(path, { recursive: true })
   return path
 }
-export const legacyImageDir = () => ensure(join(app.getPath('userData'), 'images'))
-export const imageLibraryDir = () => ensure(join(app.getPath('userData'), 'image-library'))
+export const legacyImageDir = () => ensure(join(storageRoot(), 'images'))
+export const imageLibraryDir = () => ensure(join(storageRoot(), 'image-library'))
 const root = imageLibraryDir
 const temporary = () => ensure(join(root(), 'temporary'))
 const saved = () => ensure(join(root(), 'saved'))

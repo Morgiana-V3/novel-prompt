@@ -1,10 +1,11 @@
+import { storageRoot } from './storage-root'
 import { app } from 'electron'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 export function dataDir(): string {
-  const dir = join(app.getPath('userData'), 'data')
+  const dir = join(storageRoot(), 'data')
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })
   }
@@ -44,7 +45,7 @@ export function bundledSkillPath(name: BundledSkill): string {
 
 /** 用户 Skill 目录（每份一个 .md） */
 export function userSkillDir(): string {
-  const dir = join(app.getPath('userData'), 'skills', 'user')
+  const dir = join(storageRoot(), 'skills', 'user')
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true })
   }
@@ -52,7 +53,7 @@ export function userSkillDir(): string {
 }
 
 /** 旧版本把内置 skill 复制到这里供用户直接修改；现在只用于迁移 */
-export const legacySkillDir = () => join(app.getPath('userData'), 'skills')
+export const legacySkillDir = () => join(storageRoot(), 'skills')
 
 /**
  * 历史版本里随安装包发布过的 skill 内容指纹（换行统一为 \n 后 sha256 的前 16 位）。

@@ -58,6 +58,14 @@ function analysis(text) {
     ),
   }
 }
+const positionReference = {
+  name: 'position-reference.png',
+  url: `data:image/png;base64,${PNG.sync.write(new PNG({ width: 2, height: 2 })).toString('base64')}`,
+  width: 2,
+  height: 2,
+  storage: 'temporary',
+  time: 1,
+}
 const handlers = {
   'agents:list': () => [],
   'tasks:list': () => ({ revision: 0, tasks: [] }),
@@ -78,7 +86,7 @@ const handlers = {
     zhCount: 0,
     implicationCount: 0,
   }),
-  'nai:list': () => [],
+  'nai:list': () => [positionReference],
   'nai:freeCheck': () => ({ ok: false, reasons: [], notes: [] }),
   'clipboard:write': (_, text) => {
     copied = text
@@ -290,7 +298,7 @@ app.whenReady().then(async () => {
     await paste(
       '[Prompt]\noutdoors\n[Character 1 @ B3]\nsilver hair\n[Character 1 Undesired Content]\nglasses\n[Undesired Content]\nblurry',
     )
-    await click('.nav-item', 'AI 工作台')
+    await click('.nav-item', '工作台')
     await click('.sessions-home header button', '新建项目')
     // Select the current shared prompt as the new session's starting point.
     await js(`document.querySelector('.session-create .theme-select').click()`)
@@ -332,7 +340,7 @@ app.whenReady().then(async () => {
     await click('.theme-select-option', 'DPM++ 2M')
     await js(`document.querySelector('[aria-label="噪声调度"]').click()`)
     await click('.theme-select-option', 'karras')
-    await click('.nav-item', 'AI 工作台')
+    await click('.nav-item', '工作台')
     await js(`document.querySelector('.pw-back[aria-label="返回项目"]').click()`)
     await waitUI(`!!document.querySelector('.sessions-home header button')`)
     await click('.sessions-home header button', '新建项目')
@@ -451,6 +459,32 @@ app.whenReady().then(async () => {
     assert.equal(optimizeCalls, beforeKey + 1)
     console.log(
       'PASS Ctrl+Enter runs only the visible page action; action bars sit below the scroll area without overlapping content',
+    )
+
+    // 角色提示词入口必须沿用当前预览图片，跨页面也应保留底图。
+    await click('.nav-item', '生图预览')
+    await waitUI(`!!document.querySelector('.generate .gallery .thumb')`)
+    await js(`document.querySelector('.generate .gallery .thumb').click()`)
+    for (const [view, label] of [
+      ['generate', '生图预览'],
+      ['preview', '画面推测'],
+      ['ai', 'AI 优化'],
+    ]) {
+      await click('.nav-item', label)
+      await click(`.${view} button`, '编辑位置')
+      await waitUI(`document.querySelector('.pos-reference-image')?.naturalWidth === 2`)
+      assert.equal(
+        await js(`document.querySelector('.pos-reference-image').getAttribute('src')`),
+        positionReference.url,
+      )
+      assert.ok(
+        await js(`document.querySelector('.pos-canvas').classList.contains('with-reference')`),
+      )
+      await click('.pos-dialog button', '完成')
+      await waitUI(`!document.querySelector('.pos-dialog')`)
+    }
+    console.log(
+      'PASS character position editors retain the selected preview image across prompt pages',
     )
 
     // 删除有内容的角色可撤销

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SnippetButton from '../prompts/components/SnippetButton.vue'
 import { computed, ref, watch } from 'vue'
 import type { ReverseResult } from '@shared/reverse/types'
 import ArtistWeights from './ArtistWeights.vue'
@@ -108,6 +109,7 @@ watch(
             v-model="trial.style"
             :disabled="locked"
           />
+          <SnippetButton :disabled="locked" />
           <textarea
             v-model="trial.style"
             :aria-label="'方案 ' + trial.id + ' 画师串'"

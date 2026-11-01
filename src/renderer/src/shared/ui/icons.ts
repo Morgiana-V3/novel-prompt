@@ -50,6 +50,8 @@ export const ICONS = {
     '<path d="M3.8 7.2A1.7 1.7 0 0 1 5.5 5.5h3.9l2 2.2h7.1a1.7 1.7 0 0 1 1.7 1.7v8.4a1.7 1.7 0 0 1-1.7 1.7h-13a1.7 1.7 0 0 1-1.7-1.7z"/>',
   layers:
     '<path d="M12 4l8 4.2-8 4.2-8-4.2z"/><path d="M4 12.2l8 4.2 8-4.2"/><path d="M4 16l8 4.2 8-4.2"/>',
+  panel:
+    '<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M14.5 4.5v15"/><path d="M16.8 8.5h1.4M16.8 11.5h1.4"/>',
 } as const
 
 export type IconName = keyof typeof ICONS

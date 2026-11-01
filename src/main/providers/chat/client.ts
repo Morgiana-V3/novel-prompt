@@ -63,7 +63,12 @@ export async function requestChat(
     if (!thinkingOn) {
       body.temperature = opts.temperature ?? 0.7
     }
-  } else {
+  } else if (/^gpt-6-(sol|luna)(?:-|$)/i.test(model)) {
+    // These GPT-6 models support Chat Completions tools only without reasoning.
+    // https://developers.openai.com/api/docs/guides/latest-model
+    body.reasoning_effort = 'none'
+  } else if (!/^gpt-[56](?:[.-]|$)|^kimi-k/i.test(model)) {
+    // GPT reasoning and Kimi models restrict sampling parameters; use their defaults.
     body.temperature = opts.temperature ?? 0.7
   }
   if (opts.tools?.length) {

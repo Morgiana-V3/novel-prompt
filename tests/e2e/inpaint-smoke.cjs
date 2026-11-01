@@ -164,6 +164,9 @@ net.fetch = async (url, init) => {
   return new Response(generated, { headers: { 'content-type': 'image/png' } })
 }
 const handlers = {
+  'snippets:list': () => [
+    { id: 'inpaint-fixture', name: '柔光', text: 'soft lighting', category: '光影' },
+  ],
   'tasks:list': () => ({ revision: 0, tasks: [] }),
   'window:image-preview': (event, active) =>
     require('../../src/main/adapters/ipc/image-preview.ts').setImagePreviewActive(
@@ -858,6 +861,35 @@ app.whenReady().then(async () => {
       `document.querySelector('.ip-tabs .on').textContent.trim()==='提示词' && !document.querySelector('.ip-regions-bar')`,
       'manual editing is the default and annotations are optional',
     )
+    const originalPrompt = await js(`document.querySelector('#ip-prompt').value`)
+    await run(
+      `document.querySelector('#ip-prompt').previousElementSibling.querySelector('.snippet-trigger').click()`,
+    )
+    await wait(
+      `!!document.querySelector('.snippet-popover:popover-open .snippet-quick-list button')`,
+    )
+    await run(
+      `document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`,
+    )
+    await check(
+      `!document.querySelector('.snippet-popover:popover-open') && !!document.querySelector('.ip-mask') && !document.querySelector('.ip-close-confirm')`,
+      'Escape dismisses snippet list without closing inpaint',
+    )
+    await run(
+      `document.querySelector('#ip-prompt').previousElementSibling.querySelector('.snippet-trigger').click()`,
+    )
+    await wait(
+      `!!document.querySelector('.snippet-popover:popover-open .snippet-quick-list button')`,
+    )
+    await run(
+      `document.querySelector('.snippet-popover:popover-open .snippet-quick-list button').click()`,
+    )
+    await check(
+      `document.querySelector('#ip-prompt').value.includes('soft lighting')`,
+      'inpaint accepts snippets from the toolbar',
+    )
+    await run(`document.querySelector('#ip-prompt').focus();document.execCommand('undo')`)
+    assert.equal(await js(`document.querySelector('#ip-prompt').value`), originalPrompt)
     await js(
       `document.getAnimations().filter(a=>Number.isFinite(a.effect?.getComputedTiming().endTime)).forEach(a=>a.finish())`,
     )

@@ -68,6 +68,9 @@ net.fetch = async () => {
   throw new Error('Offline preview forbids network requests')
 }
 const handlers = {
+  'snippets:list': () => [
+    { id: 'fixture-artist', name: '测试画师串', text: 'artist:fixture', category: '画师串' },
+  ],
   'settings:get': () => getSettings(),
   'settings:save': (_, patch) => saveSettings(patch),
   'agents:list': () => [],
@@ -163,6 +166,26 @@ app.whenReady().then(async () => {
     writeFileSync(
       join(profile, 'recommendations.png'),
       (await win.webContents.capturePage(rect)).toPNG(),
+    )
+    const originalStyle = await js(`document.querySelector('#reverse-style').value`)
+    const originalContent = await js(`document.querySelector('#reverse-content').value`)
+    await js(
+      `document.querySelector('#reverse-style').previousElementSibling.querySelector('.snippet-trigger').click()`,
+    )
+    await wait(
+      `!!document.querySelector('.snippet-popover:popover-open .snippet-quick-list button')`,
+    )
+    await js(
+      `document.querySelector('.snippet-popover:popover-open .snippet-quick-list button').click()`,
+    )
+    assert((await js(`document.querySelector('#reverse-style').value`)).includes('artist:fixture'))
+    assert.equal(
+      await js(`document.querySelector('#reverse-content').value`),
+      originalContent,
+      'artist snippet does not alter content prompt',
+    )
+    await js(
+      `(()=>{const e=document.querySelector('#reverse-style');e.value=${JSON.stringify(originalStyle)};e.dispatchEvent(new Event('input',{bubbles:true}))})()`,
     )
     await js(`document.querySelector('.reverse-next-step button').click()`)
     await js(`document.querySelector('.reverse-preview-actions .primary').click()`)

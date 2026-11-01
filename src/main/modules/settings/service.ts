@@ -1,5 +1,6 @@
 import { copyFileSync, existsSync, readFileSync, statSync } from 'node:fs'
 import type { Settings } from '../../../shared/settings/types'
+import { inferAiPreset } from '../../../shared/settings/ai-presets'
 import { quarantine, writeFileAtomic } from '../../infrastructure/atomic-file'
 import { dataFile } from '../../infrastructure/paths'
 
@@ -63,10 +64,16 @@ export function getSettings(): Settings {
       }
     }
   }
-  if (saved.model && LEGACY_MODELS.has(saved.model)) {
+  if (
+    !saved.aiPreset &&
+    inferAiPreset(saved.baseUrl ?? DEFAULTS.baseUrl) === 'deepseek' &&
+    saved.model &&
+    LEGACY_MODELS.has(saved.model)
+  ) {
     saved.model = DEFAULT_MODEL
   }
   cache = { ...DEFAULTS, ...saved }
+  cache.aiPreset = saved.aiPreset ?? inferAiPreset(cache.baseUrl)
   if (restored) {
     try {
       writeFileAtomic(file, JSON.stringify(cache, null, 2))

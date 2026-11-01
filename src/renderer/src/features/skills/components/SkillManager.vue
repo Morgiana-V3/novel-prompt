@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import HelpTip from '../../../shared/ui/HelpTip.vue'
 import { skillsState } from '../state'
 import { shellState } from '../../../shared/state/shell'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -189,12 +188,7 @@ const openPicker = () => (skillsState.skillPanel = true)
     <div class="card-head">
       <span class="card-icon"><Icon name="layers" /></span>
       <div>
-        <h2>
-          Skill 管理<HelpTip
-            label="Skill 管理"
-            text="Skill 决定内置 AI（AI 优化、画面推测）和 agent（prompt_guide）怎么写、怎么读提示词。这里负责导入、编辑和删除；启用哪些、谁优先，在侧栏「Skill」里设置。"
-          />
-        </h2>
+        <h2>Skill 管理</h2>
       </div>
     </div>
 
@@ -203,10 +197,7 @@ const openPicker = () => (skillsState.skillPanel = true)
         :disabled="importBusy"
         @select="(kind) => (kind === 'file' ? importMd() : importDirectory())"
       />
-      <HelpTip
-        label="导入 Skill"
-        text="可导入单个 .md，或根目录含 SKILL.md 的文件夹。目录包支持 Markdown 参考资料和图片，脚本不执行。保存独立副本，同名导入不覆盖原 Skill；导入后可调整作用范围和模型。"
-      />
+
       <button
         class="btn ghost small"
         @click="editing = { doc: null, readonly: false }"

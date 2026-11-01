@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import SnippetButton from '../prompts/components/SnippetButton.vue'
+import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 import { computed, ref, watch } from 'vue'
 import type { ReverseResult } from '@shared/reverse/types'
 import type { CharDraft } from '../prompts/state'
@@ -14,6 +16,11 @@ const base = defineModel<string>('base', { required: true })
 const characters = defineModel<CharDraft[]>('characters', { required: true })
 const draft = ref('')
 const target = ref('base')
+const targetOptions = computed(() => [
+  { value: 'base', label: '主提示词' },
+  ...characters.value.map((_, index) => ({ value: String(index), label: `角色 ${index + 1}` })),
+  { value: 'new', label: '新建角色', disabled: characters.value.length >= 6 },
+])
 const candidates = computed(() =>
   (props.result?.characters ?? []).filter((tag) => tag.score >= threshold.value),
 )
@@ -126,6 +133,7 @@ function apply() {
       >
         加入局部外观标签
       </button>
+      <SnippetButton :disabled="busy" />
       <textarea
         id="reverse-character-draft"
         v-model="draft"
@@ -134,26 +142,13 @@ function apply() {
         placeholder="点击角色候选，或直接输入角色与外观标签"
         spellcheck="false"
       />
-      <select
+      <ThemeSelect
         v-model="target"
+        class="sm character-target"
+        :options="targetOptions"
         aria-label="角色标签加入位置"
         :disabled="busy"
-      >
-        <option value="base">主提示词</option>
-        <option
-          v-for="(_, index) in characters"
-          :key="index"
-          :value="String(index)"
-        >
-          角色 {{ index + 1 }}
-        </option>
-        <option
-          value="new"
-          :disabled="characters.length >= 6"
-        >
-          新建角色
-        </option>
-      </select>
+      />
       <button
         class="btn small"
         :disabled="busy || !draft.trim() || (target === 'new' && characters.length >= 6)"
@@ -164,6 +159,7 @@ function apply() {
     </div>
     <div class="character-assigned">
       <label for="reverse-character-base">加入主提示词的角色标签</label>
+      <SnippetButton :disabled="busy" />
       <textarea
         id="reverse-character-base"
         v-model="base"
@@ -185,6 +181,7 @@ function apply() {
         >
           移除
         </button>
+        <SnippetButton :disabled="busy" />
         <textarea
           :id="`reverse-role-${index}`"
           v-model="role.prompt"
@@ -242,13 +239,33 @@ input {
 }
 
 input,
-select,
 textarea {
   color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  padding: 6px 8px;
+  outline: none;
+  transition:
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+
+input:focus,
+textarea:focus {
+  border-color: var(--pink-line);
+  box-shadow: 0 0 0 3px var(--pink-soft);
+}
+
+input:disabled,
+textarea:disabled {
   background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 5px;
+  color: var(--muted);
+}
+
+.character-draft :deep(.character-target) {
+  width: 120px;
+  height: 30px;
 }
 
 textarea {

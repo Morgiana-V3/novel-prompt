@@ -1,3 +1,4 @@
+import { storageRoot } from '../../infrastructure/storage-root'
 import { app, dialog, net } from 'electron'
 import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
@@ -13,7 +14,7 @@ export function registerReverseIpc(
   workerPath = join(__dirname, 'reverse-worker.js'),
 ): void {
   const service = new ReverseService(
-    join(app.getPath('userData'), 'models', 'reverse-v1'),
+    join(storageRoot(), 'models', 'reverse-v1'),
     undefined,
     net.fetch.bind(net),
   )

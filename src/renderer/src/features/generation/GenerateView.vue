@@ -13,14 +13,14 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { NaiFreeCheck, NaiGenParams, NaiGenResult } from '@shared/generation/types'
 import type { NaiImage } from '@shared/images/types'
 import { toast } from '../../shared/lib/notifications'
-import { importImagePrompt, importGenerationRequest, workKey } from '../prompts/actions'
+import { importImagePrompt, workKey } from '../prompts/actions'
 import { cleanErr } from '../../shared/lib/format'
 import { DEFAULT_PARAMS } from '../prompts/state'
 import { DEFAULT_GEN, generationParams } from './state'
 import { resizeWithin } from '../../shared/lib/autosize'
 import { readPngPrompt } from '../prompts/png-import'
 import { type ImportedPrompt } from '@shared/prompts/import'
-import RecipeLibrary from './components/RecipeLibrary.vue'
+import { favorites, revealFavorite } from '../../shared/state/favorites'
 import FavoriteButton from '../../shared/ui/FavoriteButton.vue'
 import type { NaiGenRequest } from '@shared/generation/types'
 import { saveSettings } from '../settings/state'
@@ -94,9 +94,8 @@ const {
   retain,
   lightbox,
 } = useGallery(last)
-const recipeOpen = ref(false)
 const retentionSaving = ref(false)
-const favoriteId = ref('')
+const savingRecipe = ref(false)
 const currentRecipe = computed<NaiGenRequest>(() => ({
   base: promptState.prompt,
   negative: promptState.negative,
@@ -121,15 +120,22 @@ async function toggleRetention(event: Event) {
     retentionSaving.value = false
   }
 }
-async function applyRecipe(request: NaiGenRequest) {
-  if (running.value) {
+/** 无需先出图：把当前提示词与全部生成参数存为一条收藏，在收藏页统一浏览、编辑和载入 */
+async function saveRecipe() {
+  if (savingRecipe.value) {
     return
   }
+  savingRecipe.value = true
   try {
-    await importGenerationRequest(request, '已加载收藏配置')
-    recipeOpen.value = false
+    const item = await window.api.recipesCreateConfig(
+      JSON.parse(JSON.stringify(currentRecipe.value)),
+    )
+    favorites.items = [item, ...favorites.items.filter((other) => other.id !== item.id)]
+    toast('已收藏当前配置', { label: '查看', run: () => revealFavorite(item.id) })
   } catch (error2) {
-    toast(cleanErr(error2))
+    toast(`收藏失败：${cleanErr(error2)}`)
+  } finally {
+    savingRecipe.value = false
   }
 }
 const posEditing = ref(false)
@@ -362,10 +368,6 @@ function openImageWorkspace() {
   imageState.workspaceImage = { ...current.value }
   shellState.tab = 'workspace'
 }
-function closeRecipes() {
-  recipeOpen.value = false
-  favoriteId.value = ''
-}
 </script>
 
 <template>
@@ -386,9 +388,25 @@ function closeRecipes() {
           <label class="field-label">生成参数</label>
           <button
             class="btn ghost small ml-auto"
-            @click="recipeOpen = true"
+            :disabled="savingRecipe"
+            title="保存当前提示词、模型和全部生成参数，无需先出图"
+            @click="saveRecipe"
           >
-            配置收藏
+            <Icon
+              name="star"
+              :size="14"
+            />收藏当前配置
+          </button>
+          <button
+            class="btn ghost small"
+            :disabled="running"
+            title="在收藏页挑选配置并载入"
+            @click="shellState.tab = 'favorites'"
+          >
+            <Icon
+              name="layers"
+              :size="14"
+            />从收藏载入
           </button>
           <button
             class="btn ghost small"
@@ -601,7 +619,7 @@ function closeRecipes() {
           v-if="current?.storage === 'workspace'"
           class="muted small gallery-delete-note"
         >
-          工作台引用中，请进入对应项目清理图片；已删除项目的图片可在 AI 工作台首页「清理遗留图片」。
+          工作台引用中，请进入对应项目清理图片；已删除项目的图片可在 工作台首页「清理遗留图片」。
         </p>
 
         <div
@@ -735,13 +753,6 @@ function closeRecipes() {
       </template>
     </section>
 
-    <RecipeLibrary
-      v-if="recipeOpen"
-      :current-request="currentRecipe"
-      :initial-id="favoriteId"
-      @close="closeRecipes"
-      @apply="applyRecipe"
-    />
     <ImageViewer
       v-if="lightbox && current"
       :image="current"

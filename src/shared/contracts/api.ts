@@ -41,7 +41,18 @@ import type {
 import type { DesktopCommand, DesktopReply, DesktopState } from './desktop'
 import type { McpInfo } from './mcp'
 
+import type { StorageInfo } from '../settings/storage'
+import type { PromptSnippet, SnippetInput } from '../prompts/snippets'
+
 export interface Api {
+  storageInfo: () => Promise<StorageInfo>
+  storageChoose: () => Promise<string | null>
+  storageSchedule: (path: string) => Promise<StorageInfo>
+  storageCancel: () => Promise<StorageInfo>
+  storageOpen: () => Promise<void>
+  snippetsList: () => Promise<PromptSnippet[]>
+  snippetsSave: (input: SnippetInput) => Promise<PromptSnippet>
+  snippetsDelete: (id: string) => Promise<void>
   reverseScore: (reference: number[], name: string) => Promise<number>
   reverseStatus: (models?: ReverseModel[]) => Promise<ReverseStatus>
   reverseInstall: (models?: ReverseModel[]) => Promise<ReverseStatus>
@@ -187,6 +198,14 @@ export interface Api {
 }
 
 export interface IpcContract {
+  'storage:info': { args: []; result: StorageInfo }
+  'storage:choose': { args: []; result: string | null }
+  'storage:schedule': { args: [path: string]; result: StorageInfo }
+  'storage:cancel': { args: []; result: StorageInfo }
+  'storage:open': { args: []; result: void }
+  'snippets:list': { args: []; result: PromptSnippet[] }
+  'snippets:save': { args: [input: SnippetInput]; result: PromptSnippet }
+  'snippets:delete': { args: [id: string]; result: void }
   'reverse:status': { args: [ReverseModel[]?]; result: ReverseStatus }
   'reverse:install': { args: [ReverseModel[]?]; result: ReverseStatus }
   'reverse:import': { args: [ReverseModel[]?]; result: ReverseStatus }

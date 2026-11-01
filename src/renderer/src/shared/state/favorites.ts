@@ -1,12 +1,27 @@
 import { reactive } from 'vue'
 import type { NaiImage, SavedRecipe } from '@shared/images/types'
 import { toast } from '../lib/notifications'
+import { shellState } from './shell'
 
 export const favorites = reactive({
   items: [] as SavedRecipe[],
   loaded: false,
   busy: [] as string[],
+  /** 其他页面请求在收藏页中打开的收藏 id；收藏页处理后清空 */
+  focusId: '',
+  /** 收藏页当前分页，其他页面可直接跳到「提示词片段」 */
+  tab: 'recipes' as 'recipes' | 'snippets',
 })
+/** 跳转到收藏页并直接打开指定收藏 */
+export function revealFavorite(id: string) {
+  favorites.focusId = id
+  shellState.tab = 'favorites'
+}
+/** 跳转到收藏页的提示词片段库 */
+export function revealSnippets() {
+  favorites.tab = 'snippets'
+  shellState.tab = 'favorites'
+}
 let loading: Promise<void> | undefined
 export function refreshFavorites(): Promise<void> {
   loading ??= window.api
@@ -39,11 +54,11 @@ export async function saveFavorite(image: NaiImage) {
     }
     const existing = favoriteFor(image)
     if (existing) {
-      toast('这张图片已收藏')
+      toast('这张图片已收藏', { label: '查看', run: () => revealFavorite(existing.id) })
     } else {
       const item = await window.api.recipesCreate(image.name)
       favorites.items = [item, ...favorites.items.filter((other) => other.id !== item.id)]
-      toast('已收藏图片与生成记录')
+      toast('已收藏图片与生成记录', { label: '查看收藏', run: () => revealFavorite(item.id) })
     }
   } finally {
     favorites.busy = favorites.busy.filter((name) => name !== image.name)

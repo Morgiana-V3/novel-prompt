@@ -115,10 +115,6 @@ export interface AiOptimizeResult {
   evidence: EvidenceInfo
 }
 
-export interface AiProgress {
-  step: string
-}
-
 export interface PreviewParams {
   width: number
   height: number

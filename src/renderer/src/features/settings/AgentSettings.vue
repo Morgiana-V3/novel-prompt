@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import HelpTip from '../../shared/ui/HelpTip.vue'
 import { useMcpSettings } from './use-mcp-settings'
 import { copy } from '../../shared/lib/notifications'
 import Icon from '../../shared/ui/Icon.vue'
@@ -29,12 +28,7 @@ const emit = defineEmits<{
     <div class="card-head">
       <span class="card-icon blue"><Icon name="wand" /></span>
       <div>
-        <h2>
-          Agent 接入（MCP）<HelpTip
-            label="Agent 接入（MCP）"
-            text="支持后台处理与前台可视化操作。告诉 Agent「这次使用前台可视化模式」，即可在界面中展示操作，并随时停止；无需另配服务。"
-          />
-        </h2>
+        <h2>Agent 接入（MCP）</h2>
       </div>
     </div>
     <div class="form-grid">
@@ -42,23 +36,11 @@ const emit = defineEmits<{
         v-if="mcp?.runtime"
         class="form-field full"
       >
-        <label
-          >当前环境：{{ mcp.runtime.mode === 'development' ? '开发版' : '安装版' }}
-          <HelpTip
-            label="当前环境"
-            :text="`数据目录：${mcp.runtime.dataPath}
-程序目录：${mcp.runtime.appPath}
-下面的配置连接此环境。开发版与安装版的数据分别保存。`"
-          />
-        </label>
+        <label>当前环境：{{ mcp.runtime.mode === 'development' ? '开发版' : '安装版' }} </label>
       </div>
 
       <div class="form-field">
-        <label
-          >允许调用 DeepSeek<HelpTip
-            label="允许调用 DeepSeek"
-            text="允许 Agent 使用已配置的 AI 服务，包括前台工作台讨论、优化和画面推测，会消耗对应服务额度。仅填写输入、查看或绘制区域无需开启。"
-        /></label>
+        <label>允许调用 AI 服务</label>
         <div class="seg">
           <button
             :class="{ on: !allowAi }"
@@ -80,11 +62,7 @@ const emit = defineEmits<{
         >
       </div>
       <div class="form-field">
-        <label
-          >允许生图<HelpTip
-            label="允许生图"
-            text="前台与后台生图、重绘均检查免费条件，并要求 Agent 取得你的生成授权。"
-        /></label>
+        <label>允许生图</label>
         <div class="seg">
           <button
             :class="{ on: !allowGenerate }"
@@ -115,11 +93,7 @@ const emit = defineEmits<{
         v-if="!mcp?.portable"
         class="form-field full"
       >
-        <label for="mcp-scope"
-          >接入范围<HelpTip
-            label="接入范围"
-            text="所选功能在首次连接时即可使用，范围越小，Agent 需要读取的工具说明越少。选择后复制下方新配置并重新连接。“按需加载”适合支持动态刷新工具的客户端。"
-        /></label>
+        <label for="mcp-scope">接入范围</label>
         <ThemeSelect
           id="mcp-scope"
           v-model="mcpScope"
@@ -203,17 +177,16 @@ const emit = defineEmits<{
             <Icon
               name="layers"
               :size="14"
-            />Skill 启用与优先级</button
-          ><HelpTip
-            label="Agent 使用 Skill"
-            text="Agent 使用侧栏中启用的 Skill，并按优先级处理冲突；修改后下一次读取生效。Agent 也可以通过管理工具增删改 Skill。"
-          />
+            />Skill 启用与优先级
+          </button>
         </div>
       </div>
     </div>
-    <div class="mcp-log">
+    <details class="mcp-log manual">
+      <summary>
+        调用历史<span v-if="mcp?.log.length"> · {{ mcp.log.length }} 条</span>
+      </summary>
       <div class="mcp-log-head">
-        <b>最近调用</b>
         <button
           class="btn ghost small ml-auto"
           @click="loadMcp"
@@ -245,6 +218,6 @@ const emit = defineEmits<{
       >
         还没有 agent 调用过
       </div>
-    </div>
+    </details>
   </div>
 </template>

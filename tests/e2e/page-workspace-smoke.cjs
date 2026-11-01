@@ -952,24 +952,23 @@ app.whenReady().then(async () => {
     assert.equal(getSettings().naiAutoSave, true)
     await run(`document.querySelector('.pane-foot input[type=checkbox]').click()`)
     assert.equal(getSettings().naiAutoSave, false)
-    await click('.gen-params-head button', '配置收藏')
-    await wait(`!!document.querySelector('.recipe-dialog')`)
-    await click('.recipe-save-current button', '收藏当前配置')
+    // Saving the current configuration needs no image; browsing and loading live on the favorites page.
+    await click('.gen-params-head button', '收藏当前配置')
+    await wait(`document.querySelector('.toast')?.textContent.includes('已收藏当前配置')`)
     const savedConfig = require('../../src/main/modules/images/recipes.ts').listRecipes()[0]
     assert.equal(savedConfig.sourceImage, '')
     assert.equal(savedConfig.thumbnail, '')
+    await click('.toast-action', '查看')
+    await wait(`document.querySelector('.nav-item.active')?.textContent.includes('收藏')`)
+    await wait(`!!document.querySelector('.favorite-details')`)
     assert.ok(
-      await js(`document.querySelector('.recipe-load input').checked`),
+      await js(`document.querySelector('.favorite-details footer input').checked`),
       'loading defaults to exact saved seed',
     )
-    assert.ok(
-      await js(
-        `(()=>{const d=document.querySelector('.recipe-dialog'),a=document.querySelector('.recipe-columns article'),f=document.querySelector('.recipe-load');return getComputedStyle(d).overflow==='hidden'&&a.getBoundingClientRect().right<d.getBoundingClientRect().right-16&&f.getBoundingClientRect().bottom<d.getBoundingClientRect().bottom})()`,
-      ),
-      'scrollbars stay inset; load action remains visible',
-    )
-    await click('.recipe-load button', '加载配置')
-    await wait(`!document.querySelector('.recipe-dialog')`)
+    await click('.favorite-details footer button', '载入配置')
+    await wait(`!!document.querySelector('.favorite-go')`)
+    await click('.favorite-go', '去生图')
+    await wait(`document.querySelector('.nav-item.active')?.textContent.includes('生图预览')`)
     const ordinary = await client.generateImages(
       { ...draft, version: 'v5', params },
       () => {},
@@ -984,22 +983,28 @@ app.whenReady().then(async () => {
     await wait(
       `document.querySelector('.viewer .favorite-button')?.getAttribute('aria-pressed')==='true'`,
     )
-    await click('.gen-params-head button', '配置收藏')
-    await wait(`!!document.querySelector('.recipe-dialog')`)
-    await click('.recipe-item', 'grey shirt')
-    await input('.recipe-columns article input', '可复用的灰衣配方')
-    await click('.recipe-columns article button', '保存修改')
+    await click('.toast-action', '查看收藏')
+    await wait(`document.querySelector('.favorite-details')?.textContent.includes('grey shirt')`)
+    await run(`document.querySelector('[aria-label="编辑收藏名称备注和标签"]').click()`)
+    await wait(`!!document.querySelector('.favorite-edit')`)
+    await input('.favorite-edit input', '可复用的灰衣配方')
+    await click('.favorite-edit button', '保存')
+    await wait(`!document.querySelector('.favorite-edit')`)
     assert.equal(
       require('../../src/main/modules/images/recipes.ts').listRecipes()[0].name,
       '可复用的灰衣配方',
     )
-    await input('.recipe-columns aside input', '不存在的配方')
-    assert.equal(await js(`document.querySelectorAll('.recipe-item').length`), 0)
-    await input('.recipe-columns aside input', '灰衣')
-    assert.equal(await js(`document.querySelectorAll('.recipe-item').length`), 1)
+    await click('.favorites-navigation button', '全部收藏')
+    await input('input[aria-label="搜索收藏"]', '不存在的配方')
+    await wait(`document.querySelectorAll('.favorite-card').length===0`)
+    await input('input[aria-label="搜索收藏"]', '灰衣')
+    await wait(`document.querySelectorAll('.favorite-card').length===1`)
     await shot('13-recipe-library.png')
-    await click('.recipe-dialog button', '加载配置')
-    await wait(`!document.querySelector('.recipe-dialog')`)
+    await click('.favorite-card', '可复用的灰衣配方')
+    await click('.favorite-details footer button', '载入配置')
+    await wait(`document.querySelector('.toast')?.textContent.includes('已载入收藏')`)
+    await input('input[aria-label="搜索收藏"]', '')
+    await click('.nav-item', '生图预览')
     assert.equal(
       require('../../src/main/modules/images/library.ts').imageInfo(ordinary.images[0].name)
         .storage,
@@ -1088,7 +1093,7 @@ app.whenReady().then(async () => {
     await run(`document.querySelector('.session-create [title="取消新建"]').click()`)
     assert.equal(pages.listPages().length, beforeImageStart + 1, 'cancel creates no extra record')
     const n = pages.listPages().length
-    await click('.nav-item', 'AI 工作台')
+    await click('.nav-item', '工作台')
     await shot('00-session-list.png')
     const gridTop = await js(`document.querySelector('.session-grid').getBoundingClientRect().top`)
     await click('.sessions-home header button', '新建项目')
@@ -1465,7 +1470,7 @@ app.whenReady().then(async () => {
       'resize recalculates wrapping',
     )
     await click('.nav-item', 'Tag 搜索')
-    await click('.nav-item', 'AI 工作台')
+    await click('.nav-item', '工作台')
     await pause(100)
     assert.ok(
       await js(
@@ -1796,7 +1801,7 @@ app.whenReady().then(async () => {
     // Further deletions use the adjacent card directly; no recycle UI or recycle read dependency.
     ipcMain.removeHandler('pages:removed')
     await click('.nav-item', 'Tag 搜索')
-    await click('.nav-item', 'AI 工作台')
+    await click('.nav-item', '工作台')
     assert.ok(
       await js(
         `!document.querySelector('.sessions-home header').textContent.includes('已删除')&&!document.querySelector('.sessions-home .error-box')`,

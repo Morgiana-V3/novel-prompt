@@ -1,3 +1,4 @@
+import { storageRoot } from '../infrastructure/storage-root'
 import { app, BrowserWindow, nativeImage, screen } from 'electron'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -39,7 +40,7 @@ export function createWindowManager(onClosed: () => void) {
       return
     }
     // The runtime profile is selected after the manager is constructed.
-    const statePath = join(app.getPath('userData'), 'window-state.json')
+    const statePath = join(storageRoot(), 'window-state.json')
     let restored: Partial<Electron.Rectangle> = {}
     let maximized = false
     try {

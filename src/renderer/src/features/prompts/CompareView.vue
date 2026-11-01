@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SnippetButton from './components/SnippetButton.vue'
 import { promptState } from './state'
 import { settingsState } from '../settings/state'
 import { tagState } from '../tags/state'
@@ -323,6 +324,7 @@ function formatPrompt() {
         </button>
       </div>
       <div :class="['composer', { neg: isNeg }]">
+        <SnippetButton />
         <textarea
           ref="textarea"
           v-model="text"

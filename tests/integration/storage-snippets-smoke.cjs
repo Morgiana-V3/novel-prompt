@@ -1,0 +1,72 @@
+const { app } = require('electron')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const { join } = require('node:path')
+const { temporaryProfile } = require('../support/fixtures.cjs')
+const profile = temporaryProfile('np-storage-source-')
+const target = temporaryProfile('np-storage-target-')
+app.setPath('userData', profile)
+require('../support/register-typescript.cjs')
+const storage = require('../../src/main/modules/settings/storage.ts')
+const paths = require('../../src/main/infrastructure/storage-root.ts')
+const snippets = require('../../src/main/modules/prompts/snippets.ts')
+const { dataFile } = require('../../src/main/infrastructure/paths.ts')
+async function main() {
+  const item = snippets.saveSnippet({ name: '光影', text: 'warm light, sunset', category: '环境' })
+  assert.equal(snippets.listSnippets()[0].text, item.text)
+  assert.throws(() => snippets.saveSnippet({ name: '', text: 'x', category: '' }))
+  fs.mkdirSync(join(profile, 'models'))
+  fs.writeFileSync(join(profile, 'models', 'fixture.onnx'), Buffer.alloc(200000, 42))
+  fs.writeFileSync(dataFile('page-fixture.json'), '{"image":"fixture.png"}')
+  await assert.rejects(storage.scheduleMigration(profile))
+  const nested = join(profile, 'nested')
+  fs.mkdirSync(nested)
+  await assert.rejects(storage.scheduleMigration(nested))
+  fs.writeFileSync(join(target, 'user-file.txt'), 'preserve')
+  await assert.rejects(storage.scheduleMigration(target))
+  fs.unlinkSync(join(target, 'user-file.txt'))
+  await storage.scheduleMigration(target)
+  assert.equal(paths.storageRoot(), profile, 'scheduling does not switch the live data root')
+  await storage.cancelMigration()
+  assert.equal(paths.readStorageLocation().pending, undefined)
+  await storage.scheduleMigration(target)
+  fs.writeFileSync(dataFile('last-edit.txt'), 'saved after scheduling')
+  await storage.migrateStorageOnStartup()
+  assert.equal(paths.storageRoot(), fs.realpathSync(target))
+  assert.equal(snippets.listSnippets()[0].id, item.id)
+  assert.equal(fs.readFileSync(dataFile('last-edit.txt'), 'utf8'), 'saved after scheduling')
+  assert.deepEqual(
+    fs.readFileSync(join(target, 'models', 'fixture.onnx')),
+    fs.readFileSync(join(profile, 'models', 'fixture.onnx')),
+  )
+  assert(fs.existsSync(join(profile, 'data', 'prompt-snippets.json')), 'original data survives')
+  const failed = temporaryProfile('np-storage-failure-')
+  await storage.scheduleMigration(failed)
+  fs.writeFileSync(join(failed, 'foreign.txt'), 'never overwrite')
+  await storage.migrateStorageOnStartup()
+  assert.equal(
+    paths.storageRoot(),
+    fs.realpathSync(target),
+    'failed migration retains current source',
+  )
+  assert(paths.readStorageLocation().error)
+  assert.equal(paths.readStorageLocation().pending, undefined)
+  assert.equal(fs.readFileSync(join(failed, 'foreign.txt'), 'utf8'), 'never overwrite')
+  snippets.saveSnippet({ ...item, text: 'updated' })
+  assert.equal(snippets.listSnippets().length, 1)
+  snippets.deleteSnippet(item.id)
+  assert.equal(snippets.listSnippets().length, 0)
+  const missing = target + '-temporarily-offline'
+  fs.renameSync(target, missing)
+  assert.throws(() => paths.storageRoot(), /数据目录不可用/)
+  fs.renameSync(missing, target)
+  console.log(
+    'PASS durable snippets, migration validation, copy verification, latest edits, source retention, failure rollback, offline disk',
+  )
+}
+main()
+  .then(() => app.exit(0))
+  .catch((error) => {
+    console.error(error)
+    app.exit(1)
+  })

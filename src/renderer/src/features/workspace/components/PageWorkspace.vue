@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { settingsState, saveSettings } from '../../settings/state'
+const aiCollapsed = computed(() => settingsState.settings?.workspaceAiCollapsed ?? false)
+const toggleAi = () => saveSettings({ workspaceAiCollapsed: !aiCollapsed.value }).catch(reportError)
 import { regionIds } from '@shared/workspace/regions'
 import { regionOverlay } from '../region-overlay'
 import { useDiscussionComposer } from '../use-discussion-composer'
@@ -97,7 +100,14 @@ const { regionId, selectedRegionIds, references, composer, discussionContext, re
     (message) => {
       error.value = message
     },
-    () => conversation.value?.focusComposer(),
+    () => {
+      void saveSettings({ workspaceAiCollapsed: false })
+        .then(async () => {
+          await nextTick()
+          conversation.value?.focusComposer()
+        })
+        .catch(reportError)
+    },
   )
 
 const title = ref(work.value.title)
@@ -852,7 +862,8 @@ async function beginConfigFromButton() {
   <section
     ref="dialog"
     class="pw-shell"
-    aria-label="AI 图像创作项目"
+    :class="{ 'pw-ai-collapsed': aiCollapsed }"
+    aria-label="图像创作工作台"
   >
     <header class="pw-header">
       <div class="pw-header-tools">
@@ -980,6 +991,24 @@ async function beginConfigFromButton() {
             :size="14"
           />
         </button>
+        <button
+          class="pw-ai-toggle"
+          :class="{ on: !aiCollapsed }"
+          :aria-expanded="!aiCollapsed"
+          aria-controls="workspace-ai-panel"
+          :aria-label="aiCollapsed ? '展开 AI 对话' : '收起 AI 对话'"
+          :title="aiCollapsed ? '展开 AI 对话' : '收起 AI 对话，画布占满宽度'"
+          @click="toggleAi"
+        >
+          <Icon
+            name="sparkle"
+            :size="14"
+          /><span>AI</span
+          ><Icon
+            name="panel"
+            :size="15"
+          />
+        </button>
       </div>
     </header>
     <div class="pw-main">
@@ -992,6 +1021,13 @@ async function beginConfigFromButton() {
         @missing="markVersionMissing"
       />
       <div class="pw-canvas-column">
+        <div
+          v-if="aiCollapsed && error"
+          class="error-box"
+          role="alert"
+        >
+          {{ error }}
+        </div>
         <div
           v-if="editingPrompt"
           class="pw-scope-bar"
@@ -1160,44 +1196,51 @@ async function beginConfigFromButton() {
           @cancel="cancelTask"
         />
       </div>
-      <WorkspaceConversation
-        ref="conversation"
-        v-model:composer="composer"
-        v-model:region-ids="selectedRegionIds"
-        :work="work"
-        :current="current"
-        :busy="busy"
-        :historical="historical"
-        :external="external"
-        :agent-label="agentLabel"
-        :agent-connected="agentConnected"
-        :agent-status="agentStatus"
-        :agent-activity="agentActivity"
-        :pending-request="pendingRequest"
-        :pending-text="pendingText"
-        :operation="operation"
-        :progress="operation === 'chat' ? chatProgress : progress"
-        :error="error"
-        :editing-prompt="editingPrompt"
-        :selected-proposal-id="selectedProposalId"
-        :references="references"
-        :discussion-context="discussionContext"
-        :label="label"
-        :time="time"
-        :status="status"
-        :stale="stale"
-        :plan-label="planLabel"
-        @agent-mode="setAgentMode"
-        @view="viewCandidate"
-        @proposal="proposal"
-        @cancel-external="cancelExternal"
-        @cancel-chat="cancelChat"
-        @clear-error="error = ''"
-        @reference="reference"
-        @annotation="updateSelection"
-        @locate="locateRegion"
-        @send="send"
-      />
+      <div
+        id="workspace-ai-panel"
+        class="pw-ai-dock"
+        :inert="aiCollapsed"
+        :aria-hidden="aiCollapsed"
+      >
+        <WorkspaceConversation
+          ref="conversation"
+          v-model:composer="composer"
+          v-model:region-ids="selectedRegionIds"
+          :work="work"
+          :current="current"
+          :busy="busy"
+          :historical="historical"
+          :external="external"
+          :agent-label="agentLabel"
+          :agent-connected="agentConnected"
+          :agent-status="agentStatus"
+          :agent-activity="agentActivity"
+          :pending-request="pendingRequest"
+          :pending-text="pendingText"
+          :operation="operation"
+          :progress="operation === 'chat' ? chatProgress : progress"
+          :error="error"
+          :editing-prompt="editingPrompt"
+          :selected-proposal-id="selectedProposalId"
+          :references="references"
+          :discussion-context="discussionContext"
+          :label="label"
+          :time="time"
+          :status="status"
+          :stale="stale"
+          :plan-label="planLabel"
+          @agent-mode="setAgentMode"
+          @view="viewCandidate"
+          @proposal="proposal"
+          @cancel-external="cancelExternal"
+          @cancel-chat="cancelChat"
+          @clear-error="error = ''"
+          @reference="reference"
+          @annotation="updateSelection"
+          @locate="locateRegion"
+          @send="send"
+        />
+      </div>
     </div>
 
     <InpaintEditor
@@ -1216,6 +1259,87 @@ async function beginConfigFromButton() {
 </template>
 
 <style scoped>
+/*
+ * AI 对话栏开合：外层 dock 只动宽度并裁切，对话栏本身保持固定宽度，
+ * 收起过程中内容不会被挤压重排；标题栏右列同步缩窄，开关始终停在右上角。
+ */
+.pw-ai-collapsed .pw-header {
+  grid-template-columns: minmax(0, 1fr) 240px;
+}
+
+.pw-ai-dock {
+  display: flex;
+  justify-content: flex-start;
+  flex-shrink: 0;
+  width: var(--pw-chat-width);
+  overflow: hidden;
+  transition: width var(--dur-slow) var(--ease-out);
+}
+
+.pw-ai-dock > :deep(.pw-conversation) {
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-slow) var(--ease-out);
+}
+
+.pw-ai-collapsed .pw-ai-dock {
+  width: 0;
+}
+
+.pw-ai-collapsed .pw-ai-dock > :deep(.pw-conversation) {
+  opacity: 0;
+  transform: translateX(24px);
+}
+
+.pw-ai-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  height: 28px;
+  margin-left: auto;
+  padding: 0 8px 0 9px;
+  border: 1px solid var(--line2);
+  border-radius: 999px;
+  color: var(--text2);
+  font-size: 12px;
+  font-weight: 600;
+  transition:
+    background-color var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out),
+    transform var(--dur-slow) var(--bounce);
+}
+
+.pw-ai-toggle:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.pw-ai-toggle:active {
+  transform: scale(var(--press-sm));
+}
+
+.pw-ai-toggle .icon:first-child {
+  color: var(--pink);
+}
+
+.pw-ai-toggle .icon:last-child {
+  margin-left: 2px;
+  color: var(--muted);
+  transition: color var(--dur-base) var(--ease-out);
+}
+
+.pw-ai-toggle.on {
+  border-color: var(--pink-line);
+  background: var(--pink-soft);
+  color: var(--pink-deep);
+}
+
+.pw-ai-toggle.on .icon:last-child {
+  color: var(--pink-deep);
+}
+
 .pw-header .pw-view-tabs {
   flex-shrink: 0;
 }
@@ -1617,6 +1741,7 @@ async function beginConfigFromButton() {
   gap: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--pw-chat-width);
+  transition: grid-template-columns var(--dur-slow) var(--ease-out);
 }
 
 .pw-header-tools {
@@ -1656,10 +1781,11 @@ async function beginConfigFromButton() {
   border-left: 1px solid var(--line);
   display: flex;
   align-items: center;
+  gap: 10px;
 }
 
 .pw-heading .pw-rename {
-  width: 100%;
+  flex: 1 1 0;
   min-width: 0;
   padding: 5px 0;
   gap: 8px;
@@ -1699,7 +1825,7 @@ async function beginConfigFromButton() {
   display: flex;
   align-items: center;
   gap: 3px;
-  width: 100%;
+  flex: 1 1 0;
   min-width: 0;
   height: 32px;
   padding: 3px 4px 3px 10px;

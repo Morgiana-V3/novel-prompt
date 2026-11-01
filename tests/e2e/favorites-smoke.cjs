@@ -310,13 +310,10 @@ app.whenReady().then(async () => {
       'absolute',
       'preview star stays in its corner',
     )
-    assert.equal(
-      await js(`document.querySelector('select[aria-label="按种子选择图片"]').options.length`),
-      2,
-    )
+    assert.equal(await js(`document.querySelectorAll('.favorite-strip button').length`), 2)
     await js(`document.querySelector('button[aria-label="下一张同配置图片"]').click()`)
     await wait(
-      `document.querySelector('select[aria-label="按种子选择图片"]').value===${JSON.stringify(legacy.id)}`,
+      `document.querySelector('[aria-label="按种子选择图片"]').textContent.includes('2 / 2')`,
     )
     assert.match(await js(`document.querySelector('.favorite-details').textContent`), /456/)
     assert.equal(
@@ -365,7 +362,7 @@ app.whenReady().then(async () => {
     assert.equal(recipes.listRecipes().length, 4)
     await js(`document.querySelector('.favorite-preview .favorite-button').click()`)
     await clickText('.favorite-confirm:popover-open button', '取消收藏')
-    await wait(`!document.querySelector('select[aria-label="按种子选择图片"]')`)
+    await wait(`!document.querySelector('[aria-label="按种子选择图片"]')`)
     assert.equal(recipes.listRecipes().length, 3)
     assert.ok(recipes.favoriteImagePath(variant.id), 'other seed remains collected')
     assert.ok(library.libraryImagePath(second.name), 'source is preserved')

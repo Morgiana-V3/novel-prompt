@@ -66,7 +66,7 @@ const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: bool
   { key: 'generate', label: '生图预览', icon: 'image', desc: '用 NovelAI 接口直接出图看效果' },
   {
     key: 'workspace',
-    label: 'AI 工作台',
+    label: '工作台',
     icon: 'chat',
     desc: '围绕一个目标持续讨论、生成和调整，保留每次尝试',
   },
@@ -88,7 +88,7 @@ const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: bool
     key: 'settings',
     label: '设置 / 数据',
     icon: 'sliders',
-    desc: 'Danbooru 数据、DeepSeek 与 NovelAI 配置',
+    desc: '词库、AI 服务与软件设置',
     tool: true,
   },
 ]
@@ -386,7 +386,7 @@ provide(prepareUpdateKey, async () => {
   settingsView.value?.prepareUpdate()
   generateView.value?.prepareUpdate()
   if (!(await workspaceView.value?.prepareUpdate())) {
-    throw new Error('请先保存或完成 AI 工作台中的编辑，再重启更新')
+    throw new Error('请先保存或完成 工作台中的编辑，再重启更新')
   }
   flushWorkspace()
 })

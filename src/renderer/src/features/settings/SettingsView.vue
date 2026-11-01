@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import StorageSettings from './StorageSettings.vue'
+import { AI_PRESETS, type AiPreset } from '@shared/settings/ai-presets'
 import HelpTip from '../../shared/ui/HelpTip.vue'
 import UpdateSettings from './UpdateSettings.vue'
 
@@ -16,11 +18,77 @@ import { refreshSubscription, subscriptionState } from '../generation/subscripti
 import { refreshDb } from '../tags/state'
 import { toast } from '../../shared/lib/notifications'
 import Icon from '../../shared/ui/Icon.vue'
+import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 import SkillManager from '../skills/components/SkillManager.vue'
 
 import type { ReasoningEffort } from '@shared/settings/types'
 
+const categories = [
+  { id: 'tags', label: 'Tag 词库', icon: 'tag' },
+  { id: 'services', label: 'AI 服务', icon: 'sparkle' },
+  { id: 'other', label: '存储与更新', icon: 'folder' },
+] as const
+const services = [
+  { id: 'nai', label: 'NovelAI' },
+  { id: 'ai', label: '模型接口' },
+  { id: 'skills', label: 'Skill' },
+  { id: 'agent', label: 'Agent' },
+] as const
+type SettingsCategory = (typeof categories)[number]['id']
+type AiService = (typeof services)[number]['id']
+type SettingsSection = SettingsCategory | AiService
+const category = ref<SettingsCategory>('tags')
+const service = ref<AiService>('nai')
+const content = ref<HTMLElement>()
+const anchors: Record<string, SettingsSection> = {
+  nai: 'nai',
+  deepseek: 'ai',
+  ai: 'ai',
+  'skill-manager': 'skills',
+  tags: 'tags',
+  agent: 'agent',
+  storage: 'other',
+  updates: 'other',
+}
+function selectCategory(id: SettingsCategory) {
+  category.value = id
+  if (content.value) {
+    content.value.scrollTop = 0
+  }
+}
+function selectService(id: AiService) {
+  service.value = id
+  selectCategory('services')
+}
+function selectSection(id: SettingsSection) {
+  if (id === 'nai' || id === 'ai' || id === 'agent' || id === 'skills') {
+    selectService(id)
+  } else {
+    selectCategory(id)
+  }
+}
+function navigateCategory(event: KeyboardEvent, index: number, nested = false) {
+  const options = nested ? services : categories
+  let next = index
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+    next = (index + 1) % options.length
+  } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+    next = (index + options.length - 1) % options.length
+  } else if (event.key === 'Home') {
+    next = 0
+  } else if (event.key === 'End') {
+    next = options.length - 1
+  } else {
+    return
+  }
+  event.preventDefault()
+  selectSection(options[next].id)
+  const navigation = (event.currentTarget as HTMLElement).parentElement
+  navigation?.querySelectorAll<HTMLButtonElement>('[role=tab]')[next]?.focus()
+}
+
 const form = reactive({
+  aiPreset: 'custom' as AiPreset,
   apiKey: '',
   baseUrl: '',
   model: '',
@@ -32,6 +100,51 @@ const form = reactive({
   mcpAllowAi: false,
   mcpAllowGenerate: false,
 })
+const presetDrafts = new Map<AiPreset, { apiKey: string; baseUrl: string; model: string }>()
+const modelSuggestions = computed(() => {
+  if (form.aiPreset === 'custom') {
+    return AI_PRESETS.filter((item) => item.models.length)
+  }
+  const preset = AI_PRESETS.find((item) => item.id === form.aiPreset)
+  return preset ? [preset] : []
+})
+const presetOptions = AI_PRESETS.map((preset) => ({ value: preset.id, label: preset.label }))
+/** 常用模型只是快捷填入：选中后写入模型输入框，自身始终显示占位文字 */
+const modelOptions = computed(() => [
+  { value: '', label: '常用模型', disabled: true },
+  ...modelSuggestions.value.flatMap((preset) =>
+    preset.models.map((model) => ({
+      value: model,
+      label: modelSuggestions.value.length > 1 ? `${preset.label} · ${model}` : model,
+    })),
+  ),
+])
+function chooseModel(model: string) {
+  if (model) {
+    form.model = model
+  }
+}
+function choosePreset(next: AiPreset) {
+  const preset = AI_PRESETS.find((item) => item.id === next)
+  if (!preset || next === form.aiPreset) {
+    return
+  }
+  const current = { apiKey: form.apiKey, baseUrl: form.baseUrl, model: form.model }
+  presetDrafts.set(form.aiPreset, current)
+  const draft =
+    presetDrafts.get(next) ??
+    (next === 'custom'
+      ? current
+      : {
+          apiKey: '',
+          baseUrl: preset.baseUrl,
+          model: preset.model,
+        })
+  Object.assign(form, draft, { aiPreset: next })
+}
+const deepSeekProvider = computed(
+  () => /deepseek/i.test(form.baseUrl) || /^deepseek/i.test(form.model),
+)
 const editableKeys = Object.keys(form) as (keyof typeof form)[]
 const skillManager = ref<InstanceType<typeof SkillManager>>()
 function prepareUpdate(): void {
@@ -81,20 +194,17 @@ const percent = computed(() => {
 
 const cancel = () => window.api.cancelTask()
 
-/* 从侧栏「管理 Skill」跳转过来时滚动到对应区块 */
+/* Deep links select the category before revealing their target. */
 watch(
   () => [shellState.tab, settingsState.settingsAnchor] as const,
-  ([tab, anchor]) => {
+  async ([tab, anchor]) => {
     if (tab !== 'settings' || !anchor) {
       return
     }
-    nextTick(() => {
-      document.getElementById(anchor)?.scrollIntoView({
-        behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-        block: 'start',
-      })
-      settingsState.settingsAnchor = ''
-    }).catch(reportError)
+    selectSection(anchors[anchor] ?? 'tags')
+    await nextTick()
+    document.getElementById(anchor)?.scrollIntoView({ block: 'nearest' })
+    settingsState.settingsAnchor = ''
   },
   { immediate: true },
 )
@@ -138,16 +248,44 @@ async function setEffort(effort: ReasoningEffort) {
   toast(`思考模式：${efforts.find((effortOption) => effortOption.v === effort)?.label}，已保存`)
 }
 
-/* 各卡片的未保存修改：按钮旁标出，离开设置页时提醒 */
+/* Preserve drafts across both navigation levels and mark their categories. */
 const differs = (...keys: (keyof typeof form)[]) =>
   !!settingsState.settings &&
   keys.some((field) => String(form[field]) !== String(settingsState.settings![field]))
 const dirty = computed(() => ({
   data: differs('minPostCount'),
-  deepseek: differs('apiKey', 'baseUrl', 'model'),
+  deepseek: differs('apiKey', 'baseUrl', 'model', 'aiPreset'),
   nai: differs('naiToken'),
   translate: differs('translateMinCount'),
 }))
+function categoryDirty(id: SettingsSection) {
+  if (id === 'services') {
+    return dirty.value.nai || dirty.value.deepseek
+  }
+  if (id === 'nai') {
+    return dirty.value.nai
+  }
+  if (id === 'ai') {
+    return dirty.value.deepseek
+  }
+  if (id === 'tags') {
+    return dirty.value.data || dirty.value.translate
+  }
+  return false
+}
+async function saveCategory(id: 'ai' | 'tags', silent = false) {
+  const patch =
+    id === 'ai'
+      ? { apiKey: form.apiKey, baseUrl: form.baseUrl, model: form.model, aiPreset: form.aiPreset }
+      : {
+          minPostCount: Number(form.minPostCount),
+          translateMinCount: Number(form.translateMinCount),
+        }
+  await saveSettings(patch)
+  if (!silent) {
+    toast('本页设置已保存')
+  }
+}
 const anyDirty = computed(() => Object.values(dirty.value).some(Boolean))
 watch(
   () => shellState.tab,
@@ -209,7 +347,7 @@ async function save(silent = false) {
 }
 
 async function update() {
-  await save(true)
+  await saveCategory('tags', true)
   tagState.progress = { stage: 'tags', message: '开始下载…' }
   try {
     await window.api.dbUpdate()
@@ -230,10 +368,11 @@ async function updateImplications() {
 }
 
 async function translate() {
-  await save(true)
-  if (!form.apiKey) {
-    return toast('请先填写 API Key')
+  if (!settingsState.settings?.apiKey) {
+    selectService('ai')
+    return toast('请先配置并保存 AI 服务')
   }
+  await saveCategory('tags', true)
   tagState.progress = { stage: 'ai-translate', message: '准备翻译…' }
   try {
     await window.api.aiTranslate()
@@ -245,397 +384,787 @@ async function translate() {
 </script>
 
 <template>
-  <div class="view settings">
+  <div class="view settings settings-categorized">
+    <header class="settings-navigation">
+      <div
+        class="settings-tabs"
+        role="tablist"
+        aria-label="设置分类"
+      >
+        <button
+          v-for="(item, index) in categories"
+          :id="`settings-tab-${item.id}`"
+          :key="item.id"
+          role="tab"
+          :aria-selected="category === item.id"
+          :aria-controls="`settings-panel-${item.id}`"
+          :tabindex="category === item.id ? 0 : -1"
+          :title="categoryDirty(item.id) ? '有未保存的修改' : undefined"
+          @click="selectCategory(item.id)"
+          @keydown="navigateCategory($event, index)"
+        >
+          <Icon
+            :name="item.icon"
+            :size="15"
+          />{{ item.label
+          }}<span
+            v-if="categoryDirty(item.id)"
+            class="settings-dirty-dot"
+            aria-label="有未保存的修改"
+          ></span>
+        </button>
+      </div>
+      <div
+        class="settings-services-nav"
+        :class="{ open: category === 'services' }"
+        :inert="category !== 'services'"
+        role="tablist"
+        aria-label="AI 服务分类"
+      >
+        <div class="settings-services-list">
+          <button
+            v-for="(item, index) in services"
+            :id="`settings-service-${item.id}`"
+            :key="item.id"
+            role="tab"
+            :aria-selected="service === item.id"
+            :aria-controls="`settings-panel-${item.id}`"
+            :tabindex="service === item.id ? 0 : -1"
+            @click="selectService(item.id)"
+            @keydown="navigateCategory($event, index, true)"
+          >
+            {{ item.label
+            }}<span
+              v-if="categoryDirty(item.id)"
+              class="settings-dirty-dot"
+              aria-label="有未保存的修改"
+            ></span>
+          </button>
+        </div>
+      </div>
+    </header>
     <div
-      class="card"
-      style="--d: 0ms"
+      ref="content"
+      class="settings-content scroll"
     >
-      <div class="card-head">
-        <span class="card-icon"><Icon name="tag" /></span>
-        <div>
-          <h2>
-            Danbooru 数据<HelpTip
-              label="Danbooru 数据"
-              text="安装包已内置一份 tag 和中文翻译；点「更新」后会下载到本机用户目录，覆盖内置的数据"
-            />
-          </h2>
-        </div>
-      </div>
-
-      <div
-        v-if="tagState.db"
-        class="tiles"
-      >
-        <div class="tile">
-          <div class="tile-num">{{ tagState.db.tagCount.toLocaleString() }}</div>
-          <div class="tile-label">Tag</div>
-        </div>
-        <div class="tile">
-          <div class="tile-num">{{ tagState.db.aliasCount.toLocaleString() }}</div>
-          <div class="tile-label">别名</div>
-        </div>
-        <div class="tile">
-          <div :class="['tile-num', { muted: !tagState.db.implicationCount }]">
-            {{
-              tagState.db.implicationCount
-                ? tagState.db.implicationCount.toLocaleString()
-                : '未下载'
-            }}
-          </div>
-          <div class="tile-label">
-            包含关系<HelpTip
-              label="包含关系"
-              text="包含关系用于判断冗余（如 white thighhighs 已包含 thighhighs）。AI 优化和画面推测还会联网查 Danbooru 的共现统计（角色默认外观、画师倾向），查过的结果会缓存 30 天，离线时自动降级。"
-            />
-          </div>
-        </div>
-        <div class="tile">
-          <div class="tile-num">{{ tagState.db.zhCount.toLocaleString() }}</div>
-          <div class="tile-label">已有中文</div>
-        </div>
-        <div class="tile">
-          <div class="tile-num">{{ tagState.db.minCount ?? '—' }}</div>
-          <div class="tile-label">收录阈值</div>
-        </div>
-        <div class="tile">
-          <div class="tile-num sm">
-            {{ tagState.db.fetchedAt ? new Date(tagState.db.fetchedAt).toLocaleDateString() : '—' }}
-          </div>
-          <div class="tile-label">
-            {{ tagState.db.source === 'user' ? '自行更新' : '内置数据' }}
-          </div>
-        </div>
-      </div>
-
-      <div class="form-grid">
-        <div class="form-field">
-          <label
-            >最小引用数<HelpTip
-              label="最小引用数"
-              text="只收录引用数 ≥ 该值的 tag。10 ≈ 15 万条，1 ≈ 50 万条（更慢）。点「下载 / 更新」时自动保存"
-          /></label>
-          <input
-            v-model="form.minPostCount"
-            class="input"
-            type="number"
-            min="1"
-          />
-        </div>
-      </div>
-
-      <div class="row">
-        <button
-          class="btn primary"
-          :disabled="running"
-          @click="update"
-        >
-          <Icon
-            name="download"
-            :size="16"
-          />下载 / 更新 tag 数据
-        </button>
-        <button
-          class="btn"
-          :disabled="running || !tagState.db?.loaded"
-          title="只下载包含关系，不重新下载 tag，约 1 分钟"
-          @click="updateImplications"
-        >
-          <Icon
-            name="swap"
-            :size="15"
-          />{{ tagState.db?.implicationCount ? '更新包含关系' : '下载包含关系' }}
-        </button>
-        <button
-          v-if="running"
-          class="btn ghost"
-          @click="cancel"
-        >
-          <Icon
-            name="stop"
-            :size="15"
-          />取消
-        </button>
-      </div>
-
-      <div
-        v-if="tagState.progress"
-        class="progress"
+      <section
+        v-show="category === 'tags'"
+        id="settings-panel-tags"
+        role="tabpanel"
+        aria-labelledby="settings-tab-tags"
+        tabindex="0"
+        class="settings-panel"
       >
         <div
-          :class="[
-            'progress-msg',
-            { bad: tagState.progress.stage === 'error', ok: tagState.progress.stage === 'done' },
-          ]"
+          class="card"
+          style="--d: 0ms"
         >
-          <Icon
-            v-if="tagState.progress.stage === 'done'"
-            name="check"
-            :size="15"
-            :stroke="2.2"
-          />
-          <Icon
-            v-else-if="tagState.progress.stage === 'error'"
-            name="warn"
-            :size="15"
-          />
-          <Icon
-            v-else
-            name="paw"
-            :size="15"
-            class="spin-slow"
-          />
-          {{ tagState.progress.message }}
+          <div class="card-head">
+            <span class="card-icon"><Icon name="tag" /></span>
+            <div>
+              <h2>Danbooru 数据</h2>
+            </div>
+          </div>
+
+          <div
+            v-if="tagState.db"
+            class="tiles"
+          >
+            <div class="tile">
+              <div class="tile-num">{{ tagState.db.tagCount.toLocaleString() }}</div>
+              <div class="tile-label">Tag</div>
+            </div>
+            <div class="tile">
+              <div class="tile-num">{{ tagState.db.aliasCount.toLocaleString() }}</div>
+              <div class="tile-label">别名</div>
+            </div>
+            <div class="tile">
+              <div class="tile-num">{{ (tagState.db.implicationCount ?? 0).toLocaleString() }}</div>
+              <div class="tile-label">包含关系</div>
+            </div>
+            <div class="tile">
+              <div class="tile-num">{{ tagState.db.zhCount.toLocaleString() }}</div>
+              <div class="tile-label">已有中文</div>
+            </div>
+          </div>
+          <div
+            v-if="tagState.db"
+            class="data-meta"
+          >
+            <span>当前收录阈值 ≥ {{ tagState.db.minCount ?? '—' }}</span>
+            <span
+              >{{ tagState.db.source === 'user' ? '自行更新' : '内置数据' }} ·
+              {{
+                tagState.db.fetchedAt
+                  ? new Date(tagState.db.fetchedAt).toLocaleDateString()
+                  : '日期未知'
+              }}</span
+            >
+          </div>
+
+          <div class="form-field">
+            <label for="settings-min-post">最小引用数</label>
+            <div class="inline-field">
+              <input
+                id="settings-min-post"
+                v-model="form.minPostCount"
+                class="input number-input"
+                type="number"
+                min="1"
+              />
+              <Transition name="fade">
+                <button
+                  v-if="categoryDirty('tags')"
+                  class="btn small tags-save"
+                  @click="saveCategory('tags').catch(reportError)"
+                >
+                  保存词库设置
+                </button>
+              </Transition>
+              <span class="help">低于该引用数的 tag 不会下载，数值越小词库越大</span>
+            </div>
+          </div>
+
+          <div class="row">
+            <button
+              class="btn primary"
+              :disabled="running"
+              @click="update"
+            >
+              <Icon
+                name="download"
+                :size="16"
+              />下载 / 更新 tag 数据
+            </button>
+            <button
+              class="btn"
+              :disabled="running || !tagState.db?.loaded"
+              title="只下载包含关系，不重新下载 tag，约 1 分钟"
+              @click="updateImplications"
+            >
+              <Icon
+                name="swap"
+                :size="15"
+              />{{ tagState.db?.implicationCount ? '更新包含关系' : '下载包含关系' }}
+            </button>
+            <button
+              v-if="running"
+              class="btn ghost"
+              @click="cancel"
+            >
+              <Icon
+                name="stop"
+                :size="15"
+              />取消
+            </button>
+          </div>
+
+          <div
+            v-if="tagState.progress"
+            class="progress"
+          >
+            <div
+              :class="[
+                'progress-msg',
+                {
+                  bad: tagState.progress.stage === 'error',
+                  ok: tagState.progress.stage === 'done',
+                },
+              ]"
+            >
+              <Icon
+                v-if="tagState.progress.stage === 'done'"
+                name="check"
+                :size="15"
+                :stroke="2.2"
+              />
+              <Icon
+                v-else-if="tagState.progress.stage === 'error'"
+                name="warn"
+                :size="15"
+              />
+              <Icon
+                v-else
+                name="paw"
+                :size="15"
+                class="spin-slow"
+              />
+              {{ tagState.progress.message }}
+            </div>
+            <div
+              v-if="running"
+              :class="['bar', { indeterminate: !tagState.progress.total }]"
+            >
+              <div
+                class="bar-in"
+                :style="tagState.progress.total ? { width: percent + '%' } : {}"
+              ></div>
+            </div>
+          </div>
         </div>
         <div
-          v-if="running"
-          :class="['bar', { indeterminate: !tagState.progress.total }]"
+          class="card"
+          style="--d: 140ms"
+        >
+          <div class="card-head">
+            <span class="card-icon green"><Icon name="translate" /></span>
+            <div>
+              <h2>AI 补全中文翻译</h2>
+            </div>
+          </div>
+          <div class="form-field">
+            <label for="settings-translate-min">最小引用数</label>
+            <div class="inline-field">
+              <input
+                id="settings-translate-min"
+                v-model="form.translateMinCount"
+                class="input number-input"
+                type="number"
+                min="1"
+              />
+              <span class="help">只翻译引用数不低于该值、且还没有中文的 tag</span>
+            </div>
+          </div>
+          <div class="row">
+            <button
+              class="btn primary"
+              :disabled="running"
+              @click="translate"
+            >
+              <Icon
+                name="sparkle"
+                :size="16"
+              />开始 AI 翻译
+            </button>
+            <span class="muted small">使用已保存的 AI 服务，消耗服务额度</span
+            ><button
+              class="btn ghost small"
+              @click="selectService('ai')"
+            >
+              配置 AI 服务
+            </button>
+          </div>
+        </div>
+      </section>
+      <section
+        v-show="category === 'services'"
+        id="settings-panel-services"
+        role="tabpanel"
+        aria-labelledby="settings-tab-services"
+        class="settings-services"
+      >
+        <section
+          v-show="service === 'nai'"
+          id="settings-panel-nai"
+          role="tabpanel"
+          aria-labelledby="settings-service-nai"
+          tabindex="0"
+          class="settings-panel"
         >
           <div
-            class="bar-in"
-            :style="tagState.progress.total ? { width: percent + '%' } : {}"
-          ></div>
-        </div>
-      </div>
-    </div>
-
-    <div
-      class="card"
-      style="--d: 70ms"
-    >
-      <div class="card-head">
-        <span class="card-icon blue"><Icon name="key" /></span>
-        <div>
-          <h2>
-            DeepSeek<HelpTip
-              label="DeepSeek"
-              text="用于 AI 优化、翻译和局部重绘分析，支持 OpenAI 兼容接口"
-            />
-          </h2>
-        </div>
-      </div>
-      <div class="form-grid">
-        <div class="form-field full">
-          <label>API Key</label>
-          <input
-            v-model="form.apiKey"
-            class="input"
-            type="password"
-            data-mcp-private
-            placeholder="sk-..."
-          />
-        </div>
-        <div class="form-field">
-          <label>Base URL</label>
-          <input
-            v-model="form.baseUrl"
-            class="input"
-          />
-        </div>
-        <div class="form-field">
-          <label
-            >模型<HelpTip
-              label="模型"
-              text="默认 deepseek-flash，支持工具调用与图片理解；局部重绘直接复用此模型，无需额外配置。其他模型使用「图片 + 批注」时需支持图片输入。"
-          /></label>
-          <input
-            v-model="form.model"
-            class="input"
-          />
-        </div>
-        <div class="form-field full">
-          <label
-            >思考模式<HelpTip
-              label="思考模式"
-              text="调整 AI 思考深度；更深的思考可能增加等待时间。批量翻译固定关闭思考。点选后立即生效。"
-          /></label>
-          <div class="seg">
-            <button
-              v-for="option in efforts"
-              :key="option.v"
-              :class="{ on: form.reasoningEffort === option.v }"
-              @click="setEffort(option.v)"
+            id="nai"
+            class="card"
+            style="--d: 105ms"
+          >
+            <div class="card-head">
+              <span class="card-icon"><Icon name="image" /></span>
+              <div>
+                <h2>NovelAI</h2>
+              </div>
+            </div>
+            <div class="form-grid">
+              <div class="form-field full">
+                <label
+                  >Persistent API Token<HelpTip
+                    label="Persistent API Token"
+                    text="在 NovelAI 网页「设置 → Account → Get Persistent API Token」获取。只保存在本机，只用于请求头"
+                /></label>
+                <input
+                  v-model="form.naiToken"
+                  class="input"
+                  type="password"
+                  :disabled="naiBusy"
+                  aria-label="NovelAI Persistent API Token"
+                  data-mcp-private
+                  placeholder="pst-..."
+                  autocomplete="off"
+                />
+              </div>
+              <div class="form-field full">
+                <label>只用免费额度</label>
+                <div class="seg">
+                  <button
+                    :class="{ on: form.naiFreeOnly }"
+                    @click="setFreeOnly(true)"
+                  >
+                    开启（推荐）
+                  </button>
+                  <button
+                    :class="{ on: !form.naiFreeOnly }"
+                    @click="setFreeOnly(false)"
+                  >
+                    允许消耗 Anlas
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <button
+                class="btn primary"
+                :disabled="naiBusy"
+                @click="saveNai()"
+              >
+                <Icon
+                  name="check"
+                  :size="16"
+                />保存
+              </button>
+              <button
+                class="btn"
+                :disabled="naiBusy || !form.naiToken.trim()"
+                @click="saveNai(true)"
+              >
+                <Icon
+                  name="key"
+                  :size="15"
+                />保存并测试连接
+              </button>
+              <button
+                class="btn ghost"
+                :disabled="naiBusy || (!form.naiToken && !settingsState.settings?.naiToken)"
+                @click="saveNai(false, true)"
+              >
+                清除 Token
+              </button>
+              <span
+                v-if="dirty.nai"
+                class="pill alias"
+                ><i></i>Token 未保存</span
+              >
+              <span
+                v-if="naiInfo"
+                class="muted small"
+                >{{ naiInfo }}</span
+              >
+            </div>
+            <p
+              v-if="naiError"
+              class="error-box"
+              role="alert"
             >
-              {{ option.label }}
-            </button>
+              {{ naiError }}
+            </p>
           </div>
-        </div>
-      </div>
-      <div class="row">
-        <button
-          class="btn primary"
-          @click="save().catch(reportError)"
+        </section>
+        <section
+          v-show="service === 'ai'"
+          id="settings-panel-ai"
+          role="tabpanel"
+          aria-labelledby="settings-service-ai"
+          tabindex="0"
+          class="settings-panel"
         >
-          <Icon
-            name="check"
-            :size="16"
-          />保存
-        </button>
-        <span
-          v-if="dirty.deepseek"
-          class="pill alias"
-          ><i></i>有未保存的修改</span
-        >
-      </div>
-    </div>
-
-    <SkillManager ref="skillManager" />
-
-    <div
-      id="nai"
-      class="card"
-      style="--d: 105ms"
-    >
-      <div class="card-head">
-        <span class="card-icon"><Icon name="image" /></span>
-        <div>
-          <h2>
-            NovelAI<HelpTip
-              label="NovelAI"
-              text="用于生图、反推试图和局部重绘，共用侧边栏账户状态"
-            />
-          </h2>
-        </div>
-      </div>
-      <div class="form-grid">
-        <div class="form-field full">
-          <label
-            >Persistent API Token<HelpTip
-              label="Persistent API Token"
-              text="在 NovelAI 网页「设置 → Account → Get Persistent API Token」获取。只保存在本机，只用于请求头"
-          /></label>
-          <input
-            v-model="form.naiToken"
-            class="input"
-            type="password"
-            :disabled="naiBusy"
-            aria-label="NovelAI Persistent API Token"
-            data-mcp-private
-            placeholder="pst-..."
-            autocomplete="off"
-          />
-        </div>
-        <div class="form-field full">
-          <label
-            >只用免费额度<HelpTip
-              label="只用免费额度"
-              text="点选后立即生效。开启后：生成前检查 Opus 会员、免费额度、尺寸（≤ 1024×1024 像素）和步数（≤ 28），不满足就不提交；每张生成后核对 Anlas，发现扣除立即停止。这是调用端的检查，不是服务端保证"
-          /></label>
-          <div class="seg">
-            <button
-              :class="{ on: form.naiFreeOnly }"
-              @click="setFreeOnly(true)"
-            >
-              开启（推荐）
-            </button>
-            <button
-              :class="{ on: !form.naiFreeOnly }"
-              @click="setFreeOnly(false)"
-            >
-              允许消耗 Anlas
-            </button>
+          <div
+            class="card"
+            style="--d: 70ms"
+          >
+            <div class="card-head">
+              <span class="card-icon blue"><Icon name="key" /></span>
+              <div>
+                <h2>模型接口</h2>
+              </div>
+            </div>
+            <div class="form-grid">
+              <div class="form-field full">
+                <label for="ai-preset">接口预设</label>
+                <ThemeSelect
+                  id="ai-preset"
+                  :model-value="form.aiPreset"
+                  :options="presetOptions"
+                  aria-label="接口预设"
+                  @update:model-value="choosePreset"
+                />
+              </div>
+              <div class="form-field full">
+                <label>API Key</label>
+                <input
+                  v-model="form.apiKey"
+                  class="input"
+                  type="password"
+                  data-mcp-private
+                  placeholder="sk-..."
+                />
+              </div>
+              <div class="form-field">
+                <label>Base URL</label>
+                <input
+                  v-model="form.baseUrl"
+                  aria-label="AI Base URL"
+                  class="input"
+                  @input="form.aiPreset = 'custom'"
+                />
+              </div>
+              <div class="form-field">
+                <label>模型</label>
+                <div class="model-picker">
+                  <input
+                    v-model="form.model"
+                    aria-label="AI 模型名称"
+                    placeholder="选择或输入模型 ID"
+                    class="input"
+                  />
+                  <ThemeSelect
+                    class="model-suggestions"
+                    model-value=""
+                    :options="modelOptions"
+                    :disabled="modelOptions.length < 2"
+                    aria-label="常用模型"
+                    @update:model-value="chooseModel"
+                  />
+                </div>
+              </div>
+              <div
+                v-if="deepSeekProvider"
+                class="form-field full"
+              >
+                <label>DeepSeek 思考模式</label>
+                <div class="seg">
+                  <button
+                    v-for="option in efforts"
+                    :key="option.v"
+                    :class="{ on: form.reasoningEffort === option.v }"
+                    @click="setEffort(option.v)"
+                  >
+                    {{ option.label }}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <button
+                class="btn primary"
+                :disabled="!form.baseUrl.trim() || !form.model.trim()"
+                @click="saveCategory('ai').catch(reportError)"
+              >
+                <Icon
+                  name="check"
+                  :size="16"
+                />保存
+              </button>
+              <span
+                v-if="dirty.deepseek"
+                class="pill alias"
+                ><i></i>有未保存的修改</span
+              >
+            </div>
           </div>
-        </div>
-      </div>
-      <div class="row">
-        <button
-          class="btn primary"
-          :disabled="naiBusy"
-          @click="saveNai()"
+        </section>
+        <section
+          v-show="service === 'agent'"
+          id="settings-panel-agent"
+          role="tabpanel"
+          aria-labelledby="settings-service-agent"
+          tabindex="0"
+          class="settings-panel"
         >
-          <Icon
-            name="check"
-            :size="16"
-          />保存
-        </button>
-        <button
-          class="btn"
-          :disabled="naiBusy || !form.naiToken.trim()"
-          @click="saveNai(true)"
+          <AgentSettings
+            :allow-ai="form.mcpAllowAi"
+            :allow-generate="form.mcpAllowGenerate"
+            @permission="setMcp"
+            @manage-skills="skillsState.skillPanel = true"
+          />
+        </section>
+        <section
+          v-show="service === 'skills'"
+          id="settings-panel-skills"
+          role="tabpanel"
+          aria-labelledby="settings-service-skills"
+          tabindex="0"
+          class="settings-panel"
         >
-          <Icon
-            name="key"
-            :size="15"
-          />保存并测试连接
-        </button>
-        <button
-          class="btn ghost"
-          :disabled="naiBusy || (!form.naiToken && !settingsState.settings?.naiToken)"
-          @click="saveNai(false, true)"
-        >
-          清除 Token
-        </button>
-        <span
-          v-if="dirty.nai"
-          class="pill alias"
-          ><i></i>Token 未保存</span
-        >
-        <span
-          v-if="naiInfo"
-          class="muted small"
-          >{{ naiInfo }}</span
-        >
-      </div>
-      <p
-        v-if="naiError"
-        class="error-box"
-        role="alert"
+          <SkillManager ref="skillManager" />
+        </section>
+      </section>
+      <section
+        v-show="category === 'other'"
+        id="settings-panel-other"
+        role="tabpanel"
+        aria-labelledby="settings-tab-other"
+        tabindex="0"
+        class="settings-panel"
       >
-        {{ naiError }}
-      </p>
+        <StorageSettings id="storage" />
+        <UpdateSettings id="updates" />
+      </section>
     </div>
-
-    <AgentSettings
-      :allow-ai="form.mcpAllowAi"
-      :allow-generate="form.mcpAllowGenerate"
-      @permission="setMcp"
-      @manage-skills="skillsState.skillPanel = true"
-    />
-
-    <div
-      class="card"
-      style="--d: 140ms"
-    >
-      <div class="card-head">
-        <span class="card-icon green"><Icon name="translate" /></span>
-        <div>
-          <h2>
-            AI 补全中文翻译<HelpTip
-              label="AI 补全中文翻译"
-              text="社区词库没覆盖的 tag 交给 DeepSeek 翻译（画师 tag 不翻译），手动编辑的翻译优先级最高"
-            />
-          </h2>
-        </div>
-      </div>
-      <div class="form-grid">
-        <div class="form-field">
-          <label
-            >最小引用数<HelpTip
-              label="最小引用数"
-              text="只翻译引用数 ≥ 该值的 tag，越小越多、越贵。点「开始 AI 翻译」时自动保存"
-          /></label>
-          <input
-            v-model="form.translateMinCount"
-            class="input"
-            type="number"
-            min="1"
-          />
-        </div>
-      </div>
-      <div class="row">
-        <button
-          class="btn primary"
-          :disabled="running"
-          @click="translate"
-        >
-          <Icon
-            name="sparkle"
-            :size="16"
-          />开始 AI 翻译
-        </button>
-        <span class="muted small">消耗 AI 服务额度</span>
-      </div>
-    </div>
-
-    <UpdateSettings />
   </div>
 </template>
+
+<style scoped>
+/*
+ * 两栏：左侧设置导航（AI 服务的子项在其下方展开），右侧内容。
+ * 导航与内容各自滚动，内容限宽居左，宽屏下不会拉成长行。
+ */
+.settings-categorized {
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr);
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+.settings-navigation {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 12px;
+  border-right: 1px solid var(--line);
+}
+
+/* 两组 tablist 保留各自的语义，导航里按视觉顺序把子项排在「AI 服务」下面 */
+.settings-tabs {
+  display: contents;
+}
+
+#settings-tab-tags {
+  order: 0;
+}
+
+#settings-tab-services {
+  order: 1;
+}
+
+#settings-tab-other {
+  order: 3;
+}
+
+.settings-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: var(--text2);
+  font-size: 13px;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-slow) var(--bounce);
+}
+
+.settings-tabs button .icon {
+  color: var(--muted);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.settings-tabs button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.settings-tabs button:active {
+  transform: scale(var(--press));
+}
+
+.settings-tabs button[aria-selected='true'] {
+  background: var(--pink-soft);
+  color: var(--pink-deep);
+  font-weight: 600;
+}
+
+.settings-tabs button[aria-selected='true'] .icon {
+  color: var(--pink);
+}
+
+.settings-tabs .settings-dirty-dot {
+  margin-left: auto;
+}
+
+/* 子导航：高度从 0 展开，配合淡入，不跳 */
+.settings-services-nav {
+  order: 2;
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows var(--dur-slow) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+.settings-services-nav.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.settings-services-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  overflow: hidden;
+  margin-left: 19px;
+  padding: 2px 0 6px 10px;
+  border-left: 1px solid var(--line2);
+  transition: padding var(--dur-slow) var(--ease-out);
+}
+
+.settings-services-nav:not(.open) .settings-services-list {
+  padding-block: 0;
+}
+
+.settings-services-nav button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: left;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.settings-services-nav button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.settings-services-nav button[aria-selected='true'] {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* 当前子项：左侧竖线上的粉色指示 */
+.settings-services-nav button[aria-selected='true']::before {
+  content: '';
+  position: absolute;
+  left: -11px;
+  top: 7px;
+  bottom: 7px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--pink);
+}
+
+.settings-services-nav .settings-dirty-dot {
+  margin-left: auto;
+}
+
+.settings-dirty-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--pink-deep);
+}
+
+.settings-content {
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 36px 48px;
+}
+
+/* 面板用 v-show 切换，重新显示时播放一次轻淡入 */
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 780px;
+  animation: view-in var(--dur-base) var(--ease-out);
+}
+
+.settings-panel > :deep(.card) {
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  animation: none;
+}
+
+.settings-panel > :deep(.card + .card) {
+  margin-top: 12px;
+  padding-top: 28px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-panel :deep(.card-head > .card-icon) {
+  display: none;
+}
+
+.settings-panel :deep(.sm-group) {
+  gap: 0;
+}
+
+.settings-panel :deep(.sm-group-title) {
+  padding: 12px 0 6px;
+}
+
+.settings-panel :deep(.sm-item) {
+  padding: 14px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+}
+
+.inline-field {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.form-field .inline-field .number-input {
+  align-self: auto;
+  width: 120px;
+}
+
+.inline-field .help {
+  margin: 0;
+}
+
+.data-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin-top: -5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (width <= 1100px) {
+  .settings-categorized {
+    grid-template-columns: 172px minmax(0, 1fr);
+  }
+
+  .settings-content {
+    padding: 20px 24px 40px;
+  }
+}
+
+.model-picker {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.model-picker input {
+  flex: 1;
+  min-width: 0;
+}
+
+.model-picker :deep(.model-suggestions) {
+  width: 120px;
+  flex-shrink: 0;
+}
+</style>
