@@ -39,6 +39,9 @@
   --dur-emph: 0.4s;
   --press: 0.97;
   --press-sm: 0.94;
+
+  /* 与 ::-webkit-scrollbar 宽度一致；滚动区预留这条槽位，右侧内边距相应减去，视觉上左右对称 */
+  --scrollbar-size: 10px;
   --mono: 'Cascadia Code', 'JetBrains Mono', consolas, 'Microsoft YaHei UI', monospace;
 
   font-family:

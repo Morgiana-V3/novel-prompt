@@ -291,6 +291,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
+  scrollbar-gutter: auto;
   overscroll-behavior: contain;
   border-radius: 7px;
 }

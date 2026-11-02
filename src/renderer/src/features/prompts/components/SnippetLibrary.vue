@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, toRef } from 'vue'
 import type { PromptSnippet } from '@shared/prompts/snippets'
+import { deleteSnippet, refreshSnippets, saveSnippet, snippetStore } from '../snippets-state'
 import { cleanErr } from '../../../shared/lib/format'
 import { copy, reportError, toast } from '../../../shared/lib/notifications'
 import Icon from '../../../shared/ui/Icon.vue'
 
-const items = ref<PromptSnippet[]>([])
+const items = toRef(snippetStore, 'items')
 const query = ref('')
 const category = ref('')
 /** 正在编辑的片段 id；'new' 表示新建 */
@@ -42,7 +43,7 @@ async function run(action: () => Promise<void>) {
 }
 onMounted(() =>
   run(async () => {
-    items.value = await window.api.snippetsList()
+    await refreshSnippets()
   }),
 )
 async function edit(item?: PromptSnippet) {
@@ -58,11 +59,10 @@ async function edit(item?: PromptSnippet) {
 }
 const save = () =>
   run(async () => {
-    const item = await window.api.snippetsSave({
+    const item = await saveSnippet({
       ...draft,
       id: editing.value === 'new' ? undefined : editing.value,
     })
-    items.value = [item, ...items.value.filter((entry) => entry.id !== item.id)]
     if (category.value && category.value !== item.category) {
       category.value = ''
     }
@@ -74,8 +74,7 @@ function askDelete(id: string) {
     return
   }
   run(async () => {
-    await window.api.snippetsDelete(id)
-    items.value = items.value.filter((item) => item.id !== id)
+    await deleteSnippet(id)
     deleting.value = ''
     toast('已删除片段')
   }).catch(reportError)

@@ -8,12 +8,13 @@ import {
   ref,
   shallowRef,
   useId,
+  toRef,
   watch,
 } from 'vue'
-import type { PromptSnippet } from '@shared/prompts/snippets'
 import { copy, reportError, toast } from '../../../shared/lib/notifications'
 import { cleanErr } from '../../../shared/lib/format'
 import { revealSnippets } from '../../favorites/public'
+import { refreshSnippets, saveSnippet as persistSnippet, snippetStore } from '../snippets-state'
 import Icon from '../../../shared/ui/Icon.vue'
 
 type InsertMode = 'cursor' | 'append' | 'replace'
@@ -35,14 +36,13 @@ const opened = ref(false)
 const loading = ref(false)
 const error = ref('')
 const copied = ref(false)
-const items = ref<PromptSnippet[]>([])
+const items = toRef(snippetStore, 'items')
 const query = ref('')
 const category = ref('')
 const mode = ref<InsertMode>('cursor')
 const saving = ref(false)
 const saveBusy = ref(false)
 const saveDraft = reactive({ name: '', category: '', text: '' })
-const selectionText = ref('')
 const fieldText = ref('')
 const position = ref({ left: '0px', top: '0px', width: '360px', maxHeight: '420px' })
 const categories = computed(() => [
@@ -98,7 +98,7 @@ function align() {
     input.clientWidth -
     (parseFloat(style.borderLeftWidth) || 0) -
     (parseFloat(style.borderRightWidth) || 0)
-  rail.value.style.top = `${to.bottom - from.top - rail.value.offsetHeight - 3}px`
+  rail.value.style.top = `${to.bottom - from.top - rail.value.offsetHeight - 4}px`
   rail.value.style.right = `${from.right - to.right + 6 + Math.max(0, scrollbar)}px`
 }
 /** Alt + S：输入时不用离开键盘就能打开片段 */
@@ -206,7 +206,6 @@ async function open(focus = false) {
     return
   }
   portal.value = trigger.value?.closest('dialog') ?? 'body'
-  selectionText.value = target.value.slice(target.selectionStart, target.selectionEnd).trim()
   fieldText.value = target.value.trim()
   query.value = ''
   saving.value = false
@@ -227,9 +226,8 @@ async function open(focus = false) {
     search.value?.focus({ preventScroll: true })
   }
   try {
-    const result = await window.api.snippetsList()
+    const result = await refreshSnippets()
     if (request === currentRequest) {
-      items.value = result
       if (category.value && !result.some((item) => item.category === category.value)) {
         category.value = ''
       }
@@ -288,7 +286,8 @@ function focusOut(event: FocusEvent) {
   close()
 }
 async function startSave() {
-  const text = selectionText.value || fieldText.value
+  // 收藏的是整个输入框的当前内容，不需要先划选
+  const text = fieldText.value
   Object.assign(saveDraft, {
     text,
     name: text
@@ -309,8 +308,7 @@ async function saveSnippet() {
   }
   saveBusy.value = true
   try {
-    const item = await window.api.snippetsSave({ ...saveDraft })
-    items.value = [item, ...items.value.filter((entry) => entry.id !== item.id)]
+    const item = await persistSnippet(saveDraft)
     saving.value = false
     toast(`已存为片段「${item.name}」`)
     await nextTick()
@@ -536,7 +534,7 @@ onBeforeUnmount(() => {
             {{
               items.length
                 ? '没有匹配的片段'
-                : '还没有片段。选中输入框里的文字，点下方「存为片段」即可收藏。'
+                : '还没有片段。点下方「收藏当前内容」，把这个输入框存成片段。'
             }}
           </p>
         </template>
@@ -620,14 +618,14 @@ onBeforeUnmount(() => {
         <button
           type="button"
           class="btn ghost small"
-          :disabled="!selectionText && !fieldText"
-          :title="selectionText ? '把选中的文字存为片段' : '把整个输入框存为片段'"
+          :disabled="!fieldText"
+          title="把这个输入框的全部内容存为片段"
           @click="startSave"
         >
           <Icon
             name="plus"
             :size="13"
-          />{{ selectionText ? '存选中文字' : '存为片段' }}
+          />收藏当前内容
         </button>
       </div>
     </div>
@@ -783,6 +781,7 @@ onBeforeUnmount(() => {
 .snippet-quick-list {
   flex: 1;
   overflow: auto;
+  scrollbar-gutter: stable;
   min-height: 0;
   padding: 6px;
 }

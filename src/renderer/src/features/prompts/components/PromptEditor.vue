@@ -165,6 +165,11 @@ function onPaste(event2: ClipboardEvent) {
 }
 
 .with-presets textarea {
-  padding-bottom: 38px;
+  padding-bottom: 32px;
+}
+
+/* 有预设选择的输入框底部本来就是一行工具栏：复制 / 片段常驻显示，和左侧选择对齐 */
+.with-presets :deep(.snippet-rail) {
+  opacity: 1;
 }
 </style>

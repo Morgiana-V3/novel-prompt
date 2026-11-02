@@ -459,6 +459,7 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  scrollbar-gutter: stable;
   padding: 0 8px 8px;
   display: flex;
   flex-direction: column;

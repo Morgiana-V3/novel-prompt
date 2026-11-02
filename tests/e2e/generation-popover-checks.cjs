@@ -21,9 +21,9 @@ module.exports = async function checkGenerationPopover({ js, waitUI, win, profil
   )
   assert.ok(
     await js(
-      `['#creation-editor', '.creation-panels'].every(selector => getComputedStyle(document.querySelector(selector)).scrollbarGutter === 'auto')`,
+      `['#creation-editor', '.creation-panels'].every(selector => getComputedStyle(document.querySelector(selector)).scrollbarGutter === 'stable')`,
     ),
-    'scrollbars do not reserve empty space',
+    'scrollbars appear in reserved space instead of squeezing content',
   )
   assert.equal(
     await js(`document.querySelector('${toggle}').textContent.trim()`),

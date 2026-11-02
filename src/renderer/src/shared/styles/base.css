@@ -127,8 +127,14 @@ select {
   color: var(--bad);
 }
 
+/*
+ * 滚动区域始终预留滚动条的位置：内容从不满一屏变成需要滚动时，
+ * 滚动条出现在本来就留好的槽里，内容宽度不变，不会突然被挤一下。
+ * 小下拉菜单、横向缩略图条等不需要的地方各自改回 auto。
+ */
 .scroll {
   overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 .app-tooltip {

@@ -1132,6 +1132,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   flex: 1;
   min-width: 0;
   overflow-x: auto;
+  scrollbar-gutter: auto;
   padding: 3px;
 }
 

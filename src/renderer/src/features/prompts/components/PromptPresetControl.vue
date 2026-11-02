@@ -64,23 +64,32 @@ const hint = computed(() =>
   </div>
 </template>
 <style scoped>
+/* 与右下角的复制 / 片段按钮同一基线：左侧是设置，右侧是操作 */
 .prompt-preset-control {
   position: absolute;
-  bottom: 7px;
-  left: 12px;
+  bottom: 3px;
+  left: 8px;
   z-index: 2;
 }
 
-.uc-select {
-  width: 135px;
-  min-height: 25px;
-  padding: 3px 8px;
-  font-size: 11px;
+/* ThemeSelect 是多根组件，作用域样式要经由 :deep 才能落到按钮上 */
+.prompt-preset-control :deep(.uc-select) {
+  width: auto;
+  height: 24px;
+  min-height: 24px;
+  gap: 6px;
+  padding: 0 8px;
   border: 0;
+  border-radius: 7px;
+  background: transparent;
   box-shadow: none;
+  color: var(--text2);
+  font-size: 11.5px;
 }
 
-.quality-select {
-  width: 170px;
+.prompt-preset-control :deep(.uc-select:hover:not(:disabled)),
+.prompt-preset-control :deep(.uc-select.expanded) {
+  background: var(--hover);
+  color: var(--text);
 }
 </style>

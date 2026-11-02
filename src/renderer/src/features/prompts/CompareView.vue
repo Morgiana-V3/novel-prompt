@@ -168,6 +168,41 @@ const groups = computed(() => {
   }
 })
 
+/** 检查摘要：只列有数量的项，问题排在前面；点一下滚动到对应分组 */
+const summary = computed(() => {
+  const stats = result.value?.stats
+  if (!stats) {
+    return []
+  }
+  return [
+    {
+      kind: 'unknown',
+      label: '未收录',
+      count: stats.unknown,
+      title: '词库未收录，不代表模型一定不认识',
+    },
+    {
+      kind: 'alias',
+      label: '可改写',
+      count: stats.alias,
+      title: '别名或非标准写法，可一键改成标准 tag',
+    },
+    {
+      kind: 'other',
+      label: '自然语言',
+      count: stats.natural + stats.text,
+      title: '句子或文字内容',
+    },
+    { kind: 'valid', label: '有效', count: stats.valid, title: '词库中的标准 tag' },
+  ].filter((item) => item.count > 0)
+})
+const rightPane = ref<HTMLElement>()
+function jump(kind: string) {
+  rightPane.value
+    ?.querySelector(`[data-group="${kind}"]`)
+    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 const allGood = computed(
   () =>
     !!result.value &&
@@ -421,7 +456,10 @@ function formatPrompt() {
       </div>
     </section>
 
-    <section class="pane right scroll">
+    <section
+      ref="rightPane"
+      class="pane right scroll"
+    >
       <template v-if="embedded">
         <div class="section-tabs">
           <button
@@ -435,29 +473,44 @@ function formatPrompt() {
         </div>
         <div
           v-if="result"
-          class="stats"
+          class="check-toolbar"
         >
-          <span class="pill ok">有效 Tag {{ result.stats.valid }}</span>
-          <span
-            class="pill bad"
-            title="词库未收录，不代表模型一定不认识"
-            >未收录 {{ result.stats.unknown }}</span
+          <div
+            class="stats check-summary"
+            aria-label="检查结果"
           >
-          <span class="pill alias">改写建议 {{ result.stats.alias }}</span>
-          <span class="pill nl">自然语言 {{ result.stats.natural + result.stats.text }}</span>
-        </div>
-        <div class="actions">
-          <button
-            class="btn small"
-            @click="formatPrompt"
-          >
-            整理格式</button
-          ><button
-            class="btn small"
-            @click="navigate('ai')"
-          >
-            交给 AI 调整
-          </button>
+            <button
+              v-for="item in summary"
+              :key="item.kind"
+              class="summary-item"
+              :class="item.kind"
+              :title="item.title"
+              @click="jump(item.kind)"
+            >
+              <i></i>{{ item.label }}<b>{{ item.count }}</b>
+            </button>
+            <span
+              v-if="!summary.length"
+              class="muted small"
+              >这一段还没有内容</span
+            >
+          </div>
+          <div class="check-actions">
+            <button
+              class="btn ghost small"
+              @click="formatPrompt"
+            >
+              整理格式</button
+            ><button
+              class="btn ghost small"
+              @click="navigate('ai')"
+            >
+              <Icon
+                name="sparkle"
+                :size="13"
+              />交给 AI 调整
+            </button>
+          </div>
         </div>
       </template>
       <div
@@ -528,6 +581,7 @@ function formatPrompt() {
       <div
         v-if="groups.unknown.length"
         class="group"
+        data-group="unknown"
       >
         <div class="group-head">
           <span class="group-badge bad"
@@ -606,6 +660,7 @@ function formatPrompt() {
       <div
         v-if="groups.alias.length"
         class="group"
+        data-group="alias"
       >
         <div class="group-head">
           <span class="group-badge alias"
@@ -652,6 +707,7 @@ function formatPrompt() {
       <div
         v-if="groups.valid.length"
         class="group"
+        data-group="valid"
       >
         <div class="group-head">
           <span class="group-badge ok"
@@ -699,6 +755,7 @@ function formatPrompt() {
       <div
         v-if="groups.other.length"
         class="group"
+        data-group="other"
       >
         <div class="group-head">
           <span class="group-badge nl"

@@ -1,149 +1,196 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue'
+import type { AiChange } from '@shared/prompts/types'
 import type { AdoptionChange } from '../partial-adoption'
-import { computed } from 'vue'
-const displayText = (text: string) => text.trim()
-function action(change: AdoptionChange) {
-  if (change.kind !== 'text') {
-    return ''
-  }
+import Icon from '../../../shared/ui/Icon.vue'
+import AiExplanations from './AiExplanations.vue'
+import AdoptChoice from './AdoptChoice.vue'
+
+const props = defineProps<{
+  changes: AdoptionChange[]
+  selected: Set<string>
+  /** 每条修改匹配到的说明，按修改 id 索引 */
+  notes?: Map<string, AiChange[]>
+}>()
+defineEmits<{ toggle: [id: string] }>()
+const opened = ref(new Set<string>())
+const OPERATIONS = {
+  add: '＋ 新增内容',
+  remove: '− 删除内容',
+  replace: '替换内容',
+  format: '调整格式',
+  reorder: '调整顺序',
+} as const
+function operation(change: AdoptionChange): keyof typeof OPERATIONS {
   if (change.description) {
-    return {
-      add: '新增',
-      remove: '删除',
-      replace: '替换',
-      format: '格式调整',
-      reorder: '顺序调整',
-    }[change.description.operation]
+    return change.description.operation
   }
   if (!change.after) {
-    return '移除'
+    return 'remove'
   }
-  return change.before ? '替换' : '补充'
+  return change.before ? 'replace' : 'add'
 }
-const props = defineProps<{ changes: AdoptionChange[]; selected: Set<string>; compact?: boolean }>()
 const prepared = computed(() =>
-  props.changes.map((change) => ({ ...change, ...change.description })),
+  props.changes.map((change) => {
+    const op = operation(change)
+    return {
+      ...change,
+      op,
+      opLabel: OPERATIONS[op],
+      // 描述里是整理过的 tag 文本（去掉了分隔符和上下文），比原始补丁更好读
+      before: (change.description?.before ?? change.before).trim(),
+      after: (change.description?.after ?? change.after).trim(),
+      notes: props.notes?.get(change.id) ?? [],
+    }
+  }),
 )
-defineEmits<{ toggle: [id: string] }>()
+function toggleNotes(id: string) {
+  const next = new Set(opened.value)
+  if (!next.delete(id)) {
+    next.add(id)
+  }
+  opened.value = next
+}
 </script>
 <template>
-  <div
-    class="ai-change-picker"
-    :class="{ compact }"
+  <ul
+    class="ai-change-list"
+    aria-label="可逐条采纳的修改"
   >
-    <button
-      v-for="change in prepared"
+    <li
+      v-for="(change, index) in prepared"
       :key="change.id"
-      class="ai-change"
-      :class="{ adopted: selected.has(change.id) }"
-      :aria-pressed="selected.has(change.id)"
-      :aria-label="`${selected.has(change.id) ? '取消采纳' : '采纳'}：${change.label} ${change.after || change.before}`"
-      :title="selected.has(change.id) ? '点击取消采纳' : '点击采纳到编辑区'"
-      :data-change-id="change.id"
-      @click="$emit('toggle', change.id)"
+      :style="{ '--i': Math.min(index, 10) }"
     >
-      <span class="change-heading"
-        ><b
-          ><template v-if="!compact">{{ change.group }} · {{ change.label }} · </template
-          >{{ action(change) || change.label }}</b
-        ></span
+      <AdoptChoice
+        class="ai-change"
+        :class="{ open: opened.has(change.id) }"
+        :data-change-id="change.id"
+        :label="change.opLabel"
+        :tone="
+          change.op === 'add' || change.op === 'remove' || change.op === 'replace'
+            ? change.op
+            : 'neutral'
+        "
+        :selected="selected.has(change.id)"
+        :description="`${change.label} ${change.after || change.before}`"
+        @toggle="$emit('toggle', change.id)"
       >
-      <span
-        v-if="!compact && change.context && change.kind === 'text'"
-        class="change-context"
-        >{{ change.context }}</span
-      >
-      <span class="change-text"
-        ><del v-if="change.before && (!compact || change.kind === 'text')">{{
-          displayText(change.before)
-        }}</del
-        ><span v-if="change.before && change.after && (!compact || change.kind === 'text')">
-          → </span
-        ><ins v-if="change.after && (!compact || change.kind === 'text')">{{
-          displayText(change.after)
-        }}</ins></span
-      >
-    </button>
-    <p
-      v-if="!changes.length"
-      class="muted small"
-    >
-      提示词没有变化。
-    </p>
-  </div>
+        <template #meta>
+          <button
+            v-if="change.notes.length"
+            class="change-why"
+            :aria-expanded="opened.has(change.id)"
+            :title="opened.has(change.id) ? '收起说明' : '查看这条修改的原因'"
+            @click.stop="toggleNotes(change.id)"
+            @keydown.stop
+          >
+            说明<Icon
+              name="chevron"
+              :size="11"
+            />
+          </button>
+        </template>
+        <del v-if="change.before">{{ change.before }}</del
+        ><span
+          v-if="change.before && change.after"
+          class="change-arrow"
+          aria-hidden="true"
+          >→</span
+        ><ins v-if="change.after">{{ change.after }}</ins>
+        <template #after>
+          <div
+            v-if="change.notes.length"
+            class="change-notes"
+            :inert="!opened.has(change.id)"
+            @click.stop
+          >
+            <div>
+              <AiExplanations
+                :changes="change.notes"
+                plain
+              />
+            </div>
+          </div>
+        </template>
+      </AdoptChoice>
+    </li>
+  </ul>
 </template>
 <style scoped>
-.ai-change-picker {
-  display: grid;
-  gap: 8px;
-}
-
-.ai-change {
+.ai-change-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--line2);
-  border-radius: 10px;
-  text-align: left;
-  background: var(--bg);
-  min-width: 0;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.ai-change.adopted {
-  border-color: var(--ok);
-  background: var(--ok-soft);
-}
-
-.change-heading {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 12px;
-}
-
-.change-context {
-  font-size: 11px;
-  color: var(--text2);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.change-text {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: 13px;
-}
-
-.change-text del {
+.ai-change del {
   color: var(--bad);
+  text-decoration-color: color-mix(in srgb, var(--bad) 55%, transparent);
 }
 
-.change-text ins {
+.ai-change ins {
   color: var(--ok);
   text-decoration: none;
 }
 
-.compact {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 10px 14px;
-  border-top: 1px solid var(--line);
+/* 小箭头，和左上角小字同级 */
+.change-arrow {
+  margin: 0 6px;
+  font-size: 11px;
+  color: var(--muted);
 }
 
-.compact .ai-change {
-  gap: 4px;
-  padding: 6px 9px;
-  border-radius: 6px;
-  max-width: 100%;
+.change-why {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 0 4px;
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 
-.compact .change-heading {
-  font-size: 10px;
+.change-why:hover,
+.open .change-why {
+  background: var(--hover);
+  color: var(--text);
 }
 
-.compact .change-text {
-  font-size: 12px;
+.change-why .icon {
+  transform: rotate(90deg);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.open .change-why .icon {
+  transform: rotate(-90deg);
+}
+
+.change-notes {
+  display: grid;
+  grid-template-rows: 0fr;
+  cursor: auto;
+  transition: grid-template-rows var(--dur-slow) var(--ease-out);
+}
+
+.open .change-notes {
+  grid-template-rows: 1fr;
+}
+
+.change-notes > div {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.change-notes :deep(.inline-explanations) {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
 }
 </style>

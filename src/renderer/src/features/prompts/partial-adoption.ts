@@ -36,6 +36,20 @@ const clone = (draft: InpaintDraft): InpaintDraft => ({
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 /** Exact text patches are replayed from the request snapshot, never searched by tag spelling. */
+/**
+ * 可以单独采纳的小改动：tag 级的替换 / 增删。整句改写保持整段采纳，
+ * 拆开反而会拼出不通顺的句子。
+ */
+export function granularChanges(changes: AdoptionChange[]): AdoptionChange[] {
+  return changes.filter(
+    (change) =>
+      change.kind === 'text' &&
+      change.field !== 'position' &&
+      change.before.length + change.after.length <= 180 &&
+      !/[.!?。！？]\s/.test(change.before + change.after),
+  )
+}
+
 export function adoptionPlan(original: InpaintDraft, proposal: InpaintDraft) {
   const before = clone(original)
   const after = clone(proposal)

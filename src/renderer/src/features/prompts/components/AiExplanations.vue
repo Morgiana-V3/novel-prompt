@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import type { AiChange } from '@shared/prompts/types'
 import BasisPill from './BasisPill.vue'
-defineProps<{ changes: AiChange[] }>()
+defineProps<{ changes: AiChange[]; plain?: boolean }>()
 </script>
 <template>
   <div
     v-if="changes.length"
     class="inline-explanations"
+    :class="{ plain }"
   >
     <div
       v-for="(change, index) in changes"
@@ -25,6 +26,10 @@ defineProps<{ changes: AiChange[] }>()
   display: grid;
   gap: 10px;
   padding: 12px 14px;
+}
+
+.inline-explanations.plain {
+  padding: 0;
 }
 
 .inline-explanation {

@@ -938,6 +938,7 @@ async function translate() {
   gap: 2px;
   min-height: 0;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   padding: 20px 12px;
   border-right: 1px solid var(--line);
 }

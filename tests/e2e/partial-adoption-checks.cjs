@@ -179,6 +179,63 @@ module.exports = async function checkPartialUi({
     `[...document.querySelectorAll('.field-adopt')].find(el => el.textContent.includes('移除角色')).click()`,
   )
   assert.deepEqual(await characterValues(), originalRoles)
+  // Position changes are collected in their own scope, adopt per role and open a before/after map.
+  const positions = () =>
+    js(
+      `[...document.querySelectorAll('#creation-editor .char-block input.input.sm')].map(el => el.value)`,
+    )
+  const originalPositions = await positions()
+  setOptimizeResult((req) => ({
+    positive: req.prompt,
+    negative: req.negative,
+    characters: req.characters.map((c, i) => (i === 0 ? { ...c, position: 'E5' } : c)),
+    changes: [],
+    invalid: [],
+    notes: '把第一个角色移到右下角。',
+    evidence: { related: [], wiki: [], failed: [], implications: true },
+  }))
+  await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+  await waitUI(
+    `!![...document.querySelectorAll('.review-scopes button')].find(el => el.textContent.includes('位置变更'))`,
+  )
+  assert.equal(
+    await js(
+      `[...document.querySelectorAll('.review-scopes button')].some(el => el.textContent.includes('· 位置'))`,
+    ),
+    false,
+    'positions are not split into per-role tabs',
+  )
+  await js(
+    `[...document.querySelectorAll('.review-scopes button')].find(el => el.textContent.includes('位置变更')).click()`,
+  )
+  await waitUI(`document.querySelectorAll('.position-row').length === 1`)
+  await js(`document.querySelector('.position-row').click()`)
+  assert.deepEqual(await positions(), ['E5', ...originalPositions.slice(1)])
+  assert.equal(
+    await js(`document.querySelector('.position-row').getAttribute('aria-pressed')`),
+    'true',
+  )
+  assert.ok(
+    await js(`!!document.querySelector('.position-row .adopt-choice-check')`),
+    'adopted cards show a check; unadopted cards show none',
+  )
+  await js(`document.querySelector('.position-row').click()`)
+  assert.deepEqual(await positions(), originalPositions)
+  await click('.position-head button', '查看位置对比')
+  await waitUI(`document.querySelectorAll('.position-compare figure').length === 2`)
+  assert.equal(await js(`document.querySelectorAll('.position-marker.moved').length`), 2)
+  assert.equal(
+    await js(`document.querySelectorAll('.position-compare .position-reference').length`),
+    2,
+    'both canvases show the current preview image as the reference background',
+  )
+  await new Promise((resolve) => setTimeout(resolve, 400))
+  writeFileSync(
+    join(profile, 'position-compare.png'),
+    (await win.webContents.capturePage()).toPNG(),
+  )
+  await js(`document.querySelector('[aria-label="关闭位置对比"]').click()`)
+  await waitUI(`!document.querySelector('.position-compare')`)
   const oldPrompt =
     'other, pikachu, standing,\nPanel 1 at the top. The small yellow creature stands on the image right.'
   const newPrompt = oldPrompt.replace('standing,\n', 'standing, target#pointing at another,\n')

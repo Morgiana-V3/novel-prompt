@@ -142,3 +142,79 @@
 .warn-line .icon {
   margin-top: 2px;
 }
+
+/* 创作实验 · 词条检查：一行摘要（只列有数量的项）+ 右侧操作 */
+.check-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  flex-shrink: 0;
+}
+
+.check-summary {
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.summary-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--text2);
+  font-size: 12px;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.summary-item:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.summary-item i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.summary-item b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-item.unknown i {
+  background: var(--bad);
+}
+
+.summary-item.unknown b {
+  color: var(--bad);
+}
+
+.summary-item.alias i {
+  background: var(--alias);
+}
+
+.summary-item.alias b {
+  color: var(--alias);
+}
+
+.summary-item.other i {
+  background: var(--nl);
+}
+
+.summary-item.valid i {
+  background: var(--ok);
+}
+
+.check-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}

@@ -23,6 +23,7 @@ import AiFieldAdoption from './components/AiFieldAdoption.vue'
 import AiScopedReview from './components/AiScopedReview.vue'
 import AiReviewOverview from './components/AiReviewOverview.vue'
 import { usePartialAdoption } from './use-partial-adoption'
+import { imageState } from '../generation/public'
 import { activeTask, cancelTask } from '../../shared/state/tasks'
 import { usePageShortcuts, runKeyLabel, runKeyShort } from '../../shared/lib/shortcuts'
 
@@ -201,6 +202,26 @@ function fieldChanges(group: ReviewGroup, field?: ReviewField) {
       : change.pairKey === group.key && change.field === field.key
   })
 }
+/** 创作实验里的修改对比：逐段采纳，并带上前后所有角色位置用于位置对比图 */
+const scopedProps = computed(() => {
+  const roles = (characters: { position?: string }[] = []) =>
+    characters.map((character, index) => ({
+      label: `角色 ${index + 1}`,
+      position: character.position ?? '',
+    }))
+  return {
+    changes: result.value?.changes ?? [],
+    changesFor: fieldChanges,
+    selected: partial.selected.value,
+    positions: { before: roles(sent.value?.characters), after: roles(result.value?.characters) },
+    canvas: { width: promptState.params.width, height: promptState.params.height },
+    // 与角色位置编辑器相同：用当前预览图做参考底图
+    reference:
+      imageState.currentImage?.url && imageState.positionReference.visible
+        ? { url: imageState.currentImage.url, opacity: imageState.positionReference.opacity }
+        : null,
+  }
+})
 const totalChanges = computed(() =>
   review.value.reduce((count, group) => count + group.fields.length, 0),
 )
@@ -603,20 +624,9 @@ usePageShortcuts(() => isActive('ai'), {
           :aria-label="embedded ? '提示词修改对比' : undefined"
           :groups="review"
           :full-context="embedded"
-          v-bind="embedded ? { changes: result.changes } : {}"
+          v-bind="embedded ? scopedProps : {}"
+          v-on="embedded ? { toggle: toggleChange, toggleMany: toggleChanges } : {}"
         >
-          <template
-            v-if="embedded"
-            #adoption="{ group, field }"
-          >
-            <AiFieldAdoption
-              v-if="fieldChanges(group, field).length"
-              :changes="fieldChanges(group, field)"
-              :selected="partial.selected.value"
-              @toggle="toggleChange"
-              @toggle-many="toggleChanges"
-            />
-          </template>
           <template
             v-if="embedded"
             #group-adoption="{ group }"

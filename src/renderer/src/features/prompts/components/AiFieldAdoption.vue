@@ -1,97 +1,58 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { AdoptionChange } from '../partial-adoption'
-import AiChangePicker from './AiChangePicker.vue'
+import AdoptChoice from './AdoptChoice.vue'
+
+/** 整个角色层面的改动（新增 / 移除 / 整组重排），与逐条修改用同一种可点卡片 */
 const props = defineProps<{ changes: AdoptionChange[]; selected: Set<string> }>()
-defineEmits<{ toggle: [id: string]; toggleMany: [ids: string[]] }>()
+const emit = defineEmits<{ toggle: [id: string]; toggleMany: [ids: string[]] }>()
 const adopted = computed(
   () => props.changes.length > 0 && props.changes.every((c) => props.selected.has(c.id)),
 )
-// Keep prose rewrites atomic in the primary action. Only offer small independent tag patches.
-const local = computed(() =>
-  props.changes.filter(
-    (c) =>
-      c.kind === 'text' &&
-      c.field !== 'position' &&
-      c.before.length + c.after.length <= 180 &&
-      !/[.!?。！？]\s/.test(c.before + c.after),
-  ),
-)
+const kind = computed(() => props.changes[0]?.kind)
 const label = computed(() => {
-  const change = props.changes[0]
-  if (change?.kind === 'structure') {
+  if (kind.value === 'structure') {
     return '整组角色'
   }
-  if (change?.kind === 'add') {
+  if (kind.value === 'add') {
     return '新增角色'
   }
-  if (change?.kind === 'remove') {
+  if (kind.value === 'remove') {
     return '移除角色'
   }
-  return change?.field === 'position' ? '位置调整' : '整段修改'
+  return props.changes[0]?.field === 'position' ? '位置调整' : '整段修改'
+})
+const preview = computed(() => {
+  const change = props.changes[0]
+  return (kind.value === 'remove' ? change?.before : change?.after || change?.before) ?? ''
 })
 </script>
 <template>
-  <div
+  <AdoptChoice
     v-if="changes.length"
-    class="field-adoption"
+    class="field-adopt"
+    :label="label"
+    :tone="kind === 'add' ? 'add' : kind === 'remove' ? 'remove' : 'neutral'"
+    :selected="adopted"
+    :description="label"
+    @toggle="
+      emit(
+        'toggleMany',
+        changes.map((c) => c.id),
+      )
+    "
   >
-    <button
-      class="btn small field-adopt"
-      :class="{ adopted }"
-      :aria-pressed="adopted"
-      :aria-label="`${adopted ? '取消采纳' : '采纳'}${label}`"
-      :title="adopted ? '点击取消采纳' : '点击采纳到编辑区'"
-      @click="
-        $emit(
-          'toggleMany',
-          changes.map((c) => c.id),
-        )
-      "
-    >
-      {{ label }}
-    </button>
-    <div
-      v-if="local.length > 1 || (local.length && local.length < changes.length)"
-      class="local-adoption"
-    >
-      <AiChangePicker
-        :changes="local"
-        :selected="selected"
-        compact
-        @toggle="$emit('toggle', $event)"
-      />
-    </div>
-  </div>
+    <p class="role-preview">{{ preview }}</p>
+  </AdoptChoice>
 </template>
 <style scoped>
-.field-adoption {
-  padding: 10px 14px;
-  border-top: 1px solid var(--line);
-  display: flex;
-  align-items: start;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.field-adopt {
-  flex-shrink: 0;
-}
-
-.field-adopt.adopted {
-  color: var(--ok);
-  border-color: var(--ok);
-  background: var(--ok-soft);
-}
-
-.local-adoption {
-  flex: 1;
-  min-width: 150px;
-  font-size: 12px;
-}
-
-.local-adoption :deep(.compact) {
-  border: 0;
-  padding: 0;
+.role-preview {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  white-space: pre-wrap;
+  color: var(--text2);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 </style>

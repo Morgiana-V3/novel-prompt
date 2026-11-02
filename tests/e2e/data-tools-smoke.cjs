@@ -232,7 +232,7 @@ app
       // The toolbar lives in space reserved below the text, so it never covers what is being edited.
       assert(
         await js(
-          `(()=>{const t=document.querySelector('${base}'),r=t.previousElementSibling.querySelector('.snippet-rail').getBoundingClientRect(),b=t.getBoundingClientRect(),pad=parseFloat(getComputedStyle(t).paddingBottom);return pad>=26&&pad<=30&&r.bottom<=b.bottom&&r.top>=b.bottom-pad-2})()`,
+          `(()=>{const t=document.querySelector('${base}'),r=t.previousElementSibling.querySelector('.snippet-rail').getBoundingClientRect(),b=t.getBoundingClientRect(),pad=parseFloat(getComputedStyle(t).paddingBottom);return pad>=26&&pad<=34&&r.bottom<=b.bottom&&r.top>=b.bottom-pad-2})()`,
         ),
         'snippet toolbar sits inside the reserved bottom space',
       )
@@ -304,6 +304,32 @@ app
         'soft light, forest',
       )
       await shot('03-compare-entry.png')
+      // Saving from the popover stores the whole field and shows up in the already-open library.
+      const compareField = '.compare .composer textarea'
+      await js(
+        `(()=>{const e=document.querySelector(${JSON.stringify(compareField)});e.focus();e.setSelectionRange(12,18);e.previousElementSibling.querySelector('.snippet-trigger').click()})()`,
+      )
+      await wait(`!!document.querySelector('.snippet-popover:popover-open .snippet-quick-footer')`)
+      await click('.snippet-popover:popover-open .snippet-quick-footer button', '收藏当前内容')
+      await wait(`!!document.querySelector('.snippet-popover:popover-open .snippet-quick-save')`)
+      assert.equal(
+        await js(
+          `document.querySelector('.snippet-popover:popover-open .snippet-save-text').textContent`,
+        ),
+        'soft light, forest',
+      )
+      await input('.snippet-popover:popover-open .snippet-quick-save input', '森林')
+      await click('.snippet-popover:popover-open .snippet-quick-save button', '保存')
+      await wait(`!document.querySelector('.snippet-popover .snippet-quick-save')`)
+      assert.ok(
+        snippets
+          .listSnippets()
+          .some((item) => item.name === '森林' && item.text === 'soft light, forest'),
+        'popover save persists the whole field',
+      )
+      await click('.nav-item', '收藏')
+      await wait(`document.querySelector('.snippet-list')?.textContent.includes('森林')`)
+      await click('.nav-item', '提示词比对')
       await click('.nav-item', '工作台')
       await wait(`!!document.querySelector('.session-card')`)
       await js(`document.querySelector('.session-open').click()`)

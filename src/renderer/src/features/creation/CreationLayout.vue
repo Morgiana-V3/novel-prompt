@@ -106,7 +106,9 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 14px 16px;
+
+  /* 预留了滚动条槽位，右侧扣掉槽宽 */
+  padding: 14px calc(16px - var(--scrollbar-size)) 14px 16px;
 }
 
 .creation-editor > * {
@@ -134,6 +136,7 @@ watch(
   display: block;
   min-height: 0;
   overflow: auto;
+  scrollbar-gutter: stable;
   flex: 1;
 }
 
@@ -165,7 +168,7 @@ watch(
 }
 
 .creation-active :deep(.pane.right) {
-  padding: 12px 16px;
+  padding: 12px calc(16px - var(--scrollbar-size)) 12px 16px;
   gap: 16px;
 }
 
@@ -183,7 +186,7 @@ watch(
   }
 
   .creation-editor {
-    padding: 12px;
+    padding: 12px calc(12px - var(--scrollbar-size) / 2) 12px 12px;
   }
 }
 

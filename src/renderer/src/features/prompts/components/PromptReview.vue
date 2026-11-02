@@ -126,8 +126,10 @@ const prepared = computed(() =>
 
 .review-field-actions {
   position: absolute;
-  top: 6px;
-  right: 8px;
+
+  /* 与左上角「− 修改前」标题同一行、同样 16px 的边距，左右对称 */
+  top: 7px;
+  right: 16px;
   z-index: 1;
 }
 

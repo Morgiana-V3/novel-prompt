@@ -73,6 +73,7 @@
 .history-list {
   max-height: 320px;
   overflow: auto;
+  scrollbar-gutter: stable;
   padding: 6px;
   display: flex;
   flex-direction: column;
