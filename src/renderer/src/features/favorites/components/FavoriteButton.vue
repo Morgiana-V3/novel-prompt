@@ -1,17 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import type { NaiImage, SavedRecipe } from '@shared/images/types'
-import {
-  favorites,
-  favoriteFor,
-  refreshFavorites,
-  saveFavorite,
-  removeFavorite,
-} from '../state/favorites'
-import { shellState } from '../state/shell'
-import { cleanErr } from '../lib/format'
-import { toast } from '../lib/notifications'
-import Icon from './Icon.vue'
+import { favorites, favoriteFor, refreshFavorites, saveFavorite, removeFavorite } from '../state'
+import { shellState } from '../../../shared/state/shell'
+import { cleanErr } from '../../../shared/lib/format'
+import { toast } from '../../../shared/lib/notifications'
+import Icon from '../../../shared/ui/Icon.vue'
 defineOptions({ inheritAttrs: false })
 const props = defineProps<{ image?: NaiImage; item?: SavedRecipe }>()
 const selected = computed(() => props.item ?? (props.image ? favoriteFor(props.image) : undefined))

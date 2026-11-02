@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { useEditorPersistence } from '../use-editor-persistence'
 import SnippetButton from '../../prompts/components/SnippetButton.vue'
 import { useInpaintAnalysis } from '../use-analysis'
 import RegionComment from './RegionComment.vue'
 import RegionContextMenu from './RegionContextMenu.vue'
-import type { FrontendRequest, FrontendContext } from '@shared/contracts/desktop'
+import { createRegionCommands } from '../commands'
 
 import { executeInpaintQueue } from '../generation'
 import { useMaskInteraction } from '../use-mask-interaction'
@@ -480,103 +481,28 @@ const { active, point, down, move, up, undo, cancelDraw, clearMask, userClearMas
 const previousFocus = document.activeElement as HTMLElement | null
 let unsubscribe: (() => void) | undefined
 let alive = true
-let savingSnapshot: Promise<void> | null = null
-let snapshotTimer: ReturnType<typeof setTimeout> | undefined
-function editorSnapshot(): PageEditorState {
-  const { strength, ...params } = settings
-  return {
-    draft: cloneDraft(draft),
-    params: {
-      ...params,
-      width: width.value,
-      height: height.value,
-      seed: params.seed === null || (params.seed as unknown) === '' ? null : Number(params.seed),
-    },
-    strength,
-    regions: regions.value
-      .filter((region) => region.hasPixels)
-      .map((region) => ({
-        id: region.id,
-        label: region.label,
-        instruction: region.instruction,
-        target: region.target,
-        anchor: region.anchor ? { ...region.anchor } : null,
-        annotated: region.annotated,
-        mask: exportMask(region),
-        accepted: region.accepted ? cloneDraft(region.accepted) : null,
-      })),
-  }
-}
-async function persistEditor() {
-  if (!props.saveEditor || loading.value || !sourceUrl.value || active.value) {
-    return
-  }
-  if (savingSnapshot) {
-    await savingSnapshot
-  }
-  const request = props.saveEditor(editorSnapshot())
-  savingSnapshot = request
-  try {
-    await request
-  } finally {
-    if (savingSnapshot === request) {
-      savingSnapshot = null
-    }
-  }
-}
-watch(
-  [regions, draft, settings],
-  () => {
-    if (!props.saveEditor || loading.value || frontendBusy.value) {
-      return
-    }
-    clearTimeout(snapshotTimer)
-    snapshotTimer = setTimeout(() => {
-      void persistEditor().catch((candidate) => {
-        error.value = `选区保存失败：${cleanErr(candidate)}`
-      })
-    }, 800)
-  },
-  { deep: true },
-)
-async function restoreEditor(saved: PageEditorState) {
-  Object.assign(draft, cloneDraft(saved.draft))
-  Object.assign(settings, saved.params, { strength: saved.strength })
-  await nextTick() // Let draft invalidation finish before restoring accepted suggestions.
-  const restored: Region[] = []
-  for (const item of saved.regions) {
-    const img = new Image()
-    img.src = `data:image/png;base64,${item.mask}`
-    await img.decode()
-    const canvas = document.createElement('canvas')
-    canvas.width = width.value
-    canvas.height = height.value
-    const ctx = canvas.getContext('2d')!
-    ctx.drawImage(img, 0, 0)
-    const pixels = ctx.getImageData(0, 0, width.value, height.value)
-    for (let i = 0; i < pixels.data.length; i += 4) {
-      const a = pixels.data[i]
-      pixels.data.set([255, 107, 154, a], i)
-    }
-    ctx.putImageData(pixels, 0, 0)
-    usedLabels.add(item.label)
-    restored.push({
-      ...makeRegion(),
-      ...item,
-      number: item.annotated ? ++regionNumber : 0,
-      baseMask: markRaw(canvas),
-      strokes: [],
-      hasPixels: true,
-    })
-  }
-  regions.value = restored.length ? restored : [makeRegion()]
-  selectedId.value =
-    regions.value.find((region) => region.id === props.initialRegionId)?.id ?? regions.value[0].id
-  promptNote.value = '已恢复当前版本的提示词、选区和批注。'
-  renderMask()
-  measureMask()
-  panel.value = 'regions'
-}
+const { persistEditor, restoreEditor, cancelPendingSave } = useEditorPersistence({
+  settings,
+  draft,
+  width,
+  height,
+  regions,
+  loading,
+  sourceUrl,
+  active,
+  frontendBusy,
+  error,
+  usedLabels,
+  selectedId,
+  promptNote,
+  panel,
+  exportMask,
+  makeRegion,
+  renderMask,
+  measureMask,
+  props,
+  nextRegionNumber: () => ++regionNumber,
+})
 function maskFromPixels(pixels: Uint8ClampedArray) {
   return markRaw(createMaskCanvas(pixels, width.value, height.value))
 }
@@ -806,7 +732,7 @@ async function close() {
     confirmingClose.value = true
     return
   }
-  clearTimeout(snapshotTimer)
+  cancelPendingSave()
   try {
     await persistEditor()
   } catch (error2) {
@@ -886,117 +812,35 @@ onMounted(() => {
   dialog.value?.focus({ preventScroll: true })
   sourceReady = loadSource(props.image)
 })
-async function frontendRegion(request: FrontendRequest, ctx: FrontendContext) {
-  frontendBusy.value = true
-  try {
-    await sourceReady
-    if (
-      loading.value ||
-      error.value ||
-      !sourceUrl.value ||
-      !props.selectionOnly ||
-      !props.saveEditor
-    ) {
-      throw new Error(error.value || '选区编辑器尚未就绪')
-    }
-    const existing = request.action !== 'region'
-    const removing = request.action === 'region-delete'
-    if (!existing && regions.value.filter((region) => region.hasPixels).length >= 16) {
-      throw new Error('最多保留 16 个区域')
-    }
-    if (request.target != null && request.target >= draft.characters.length) {
-      throw new Error('角色索引超出当前角色数量')
-    }
-    const rectangles = request.rectangles ?? []
-    if (
-      rectangles.some(
-        (bounds) =>
-          bounds.x + bounds.width > width.value || bounds.y + bounds.height > height.value,
-      )
-    ) {
-      throw new Error('选区超出原图边界')
-    }
-    let region2 = existing
-      ? regions.value.find((region) => region.id === request.region_id && region.hasPixels)
-      : undefined
-    if (existing && !region2) {
-      throw new Error('区域不存在')
-    }
-    if (removing && request.confirm !== true) {
-      throw new Error('缺少删除区域授权')
-    }
-    await ctx.step('已打开原图选区编辑器')
-    if (!region2) {
-      region2 = makeRegion()
-      regions.value.push(region2)
-    }
-    chooseRegion(region2)
-    tool.value = 'rect'
-    panel.value = 'regions'
-    await nextTick()
-    renderMask()
-    measureMask()
-    if (existing) {
-      await ctx.step(`已定位区域 ${region2.label}`)
-    }
-    if (removing) {
-      await ctx.step(`即将删除区域 ${region2.label} 的遮罩与批注`)
-      removeRegion()
-    } else {
-      if (request.rectangles !== undefined) {
-        region2.baseMask = null
-        region2.strokes = []
-        for (const rect of rectangles) {
-          region2.strokes.push({
-            tool: 'rect',
-            radius: brush.value,
-            points: [
-              { x: rect.x, y: rect.y },
-              { x: rect.x + rect.width, y: rect.y + rect.height },
-            ],
-          })
-        }
-        region2.anchor = {
-          x: rectangles[0].x + rectangles[0].width / 2,
-          y: rectangles[0].y + rectangles[0].height / 2,
-        }
-      }
-      invalidateRegion(region2)
-      await nextTick()
-      renderMask()
-      measureMask()
-      if (request.rectangles !== undefined) {
-        await ctx.step(existing ? '已更新区域遮罩，尚未保存' : '已在原图上绘制遮罩')
-      }
-      if (request.instruction !== undefined) {
-        region2.instruction = request.instruction
-      }
-      if (request.target !== undefined) {
-        region2.target = request.target
-      }
-      region2.annotated = true
-      if (!region2.number) {
-        region2.number = ++regionNumber
-      }
-      await ctx.step(existing ? '区域批注已更新，尚未保存' : '已填写区域批注')
-    }
-    if (ctx.signal.aborted) {
-      throw new Error('已停止，未保存区域修改')
-    }
-    clearTimeout(snapshotTimer)
-    await persistEditor()
-    await ctx.step(removing ? '区域已删除' : '区域批注已保存')
-    opened.value = false
-    return region2.id
-  } finally {
-    await nextTick()
-    clearTimeout(snapshotTimer)
-    frontendBusy.value = false
-  }
-}
+const frontendRegion = createRegionCommands({
+  frontendBusy,
+  loading,
+  error,
+  sourceUrl,
+  regions,
+  draft,
+  width,
+  height,
+  tool,
+  panel,
+  brush,
+  opened,
+  makeRegion,
+  chooseRegion,
+  renderMask,
+  measureMask,
+  removeRegion,
+  invalidateRegion,
+  persistEditor,
+  sourceReady: () => sourceReady,
+  selectionOnly: () => props.selectionOnly,
+  canSave: () => !!props.saveEditor,
+  nextRegionNumber: () => ++regionNumber,
+  cancelPendingSave,
+})
 defineExpose({ frontendRegion })
 onBeforeUnmount(() => {
-  clearTimeout(snapshotTimer)
+  cancelPendingSave()
   alive = false
   cancelDraw()
   layerCache.clear()

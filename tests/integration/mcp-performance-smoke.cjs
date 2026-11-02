@@ -19,11 +19,11 @@ net.fetch = async () => {
 }
 require('../support/register-typescript.cjs')
 const pages = require('../../src/main/modules/workspace/index.ts')
-const { desktopTools } = require('../../src/main/adapters/mcp/desktop-tools.ts')
+const { desktopTools } = require('../../src/main/adapters/mcp/tools/desktop.ts')
 const { createMcpSession } = require('../../src/main/adapters/mcp/server.ts')
 const { composeSkills } = require('../../src/main/modules/skills/service.ts')
 const { buildTools } = require('../../src/main/adapters/mcp/tools.ts')
-const { frontendTools } = require('../../src/main/adapters/mcp/frontend-tools.ts')
+const { frontendTools } = require('../../src/main/adapters/mcp/tools/frontend.ts')
 const library = require('../../src/main/modules/images/library.ts')
 const desktop = { withWorkspace: async (_, fn) => fn() }
 const tools = [...buildTools(), ...desktopTools(desktop, {}, () => ({})), ...frontendTools(desktop)]

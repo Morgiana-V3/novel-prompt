@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { groupFavorites, type FavoriteGroup } from '@shared/images/favorite-groups'
-import { favorites, refreshFavorites } from '../../shared/state/favorites'
+import { favorites, refreshFavorites } from './state'
 import { shellState } from '../../shared/state/shell'
 import { importGenerationRequest, sectionText } from '../prompts/actions'
 import { copy, toast } from '../../shared/lib/notifications'
@@ -9,7 +9,7 @@ import { cleanErr } from '../../shared/lib/format'
 import Icon from '../../shared/ui/Icon.vue'
 import Mascot from '../../shared/ui/Mascot.vue'
 import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
-import FavoriteButton from '../../shared/ui/FavoriteButton.vue'
+import FavoriteButton from './components/FavoriteButton.vue'
 import SnippetLibrary from '../prompts/components/SnippetLibrary.vue'
 
 const favoriteTab = computed({

@@ -13,7 +13,7 @@ app.setPath('userData', profile)
 app.getAppPath = () => join(__dirname, '../..')
 require('../support/register-typescript.cjs')
 const pages = require('../../src/main/modules/workspace/index.ts')
-const { desktopTools } = require('../../src/main/adapters/mcp/desktop-tools.ts')
+const { desktopTools } = require('../../src/main/adapters/mcp/tools/desktop.ts')
 const { createMcpSession } = require('../../src/main/adapters/mcp/server.ts')
 const { workspaceResult } = require('../../src/main/adapters/mcp/workspace-result.ts')
 const { readWorkspaceResult } = require('../../src/main/adapters/mcp/workspace-read.ts')
@@ -116,7 +116,7 @@ app.whenReady().then(async () => {
     w.messages.at(-1).skillSnapshot = skillSnapshot
     w.messages.at(-1).externalRequest = { status: 'pending', contextKey: '' }
     w.messages.at(-1).role = 'user'
-    const { workspaceRectangleMask } = require('../../src/main/adapters/mcp/inpaint-tools.ts')
+    const { workspaceRectangleMask } = require('../../src/main/adapters/mcp/tools/inpaint.ts')
     w.versions[0].editor.regions.push({
       id: 'context-preview',
       label: 'AB',

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useRemoteWorkspace } from '../use-remote-workspace'
 import { settingsState, saveSettings } from '../../settings/state'
 const aiCollapsed = computed(() => settingsState.settings?.workspaceAiCollapsed ?? false)
 const toggleAi = () => saveSettings({ workspaceAiCollapsed: !aiCollapsed.value }).catch(reportError)
@@ -219,7 +220,6 @@ const progress = ref('')
 const zoom = ref(100)
 const overlay = ref('')
 const remoteBusy = ref(false)
-let remoteLease = ''
 const pendingText = ref('')
 const showMask = ref(true)
 const conversation = ref<InstanceType<typeof WorkspaceConversation>>()
@@ -745,56 +745,26 @@ const frontendAction = createWorkspaceCommands({
   },
 })
 
-async function beginRemote(lease: string) {
-  if (busy.value || editing.value || renaming.value) {
-    throw new Error('工作台正在编辑或执行操作，请等待用户完成后重试')
-  }
-  remoteLease = lease
-  remoteBusy.value = true
-  try {
-    await flushNotes()
-  } catch (error2) {
-    remoteLease = ''
-    remoteBusy.value = false
-    throw error2
-  }
-}
-async function endRemote(lease: string) {
-  if (remoteLease !== lease) {
-    return
-  }
-  try {
-    const oldVersion = current.value.id
-    const oldGenerated = work.value.latestGeneratedVersionId
-    const oldProposal = pageLatestProposal(work.value, oldVersion)?.id
-    work.value = await window.api.pagesRead(work.value.id)
-    title.value = work.value.title
-    composer.value = work.value.composer
-    savedNotes.value = JSON.stringify(notesValue())
-    if (
-      oldGenerated !== work.value.latestGeneratedVersionId &&
-      work.value.latestGeneratedVersionId
-    ) {
-      viewedId.value = work.value.latestGeneratedVersionId
-      pane.value = 'canvas'
-    } else if (oldVersion !== current.value.id) {
-      viewedId.value = current.value.id
-      pane.value = 'canvas'
-    } else if (
-      !historical.value &&
-      pageLatestProposal(work.value, current.value.id)?.id !== oldProposal &&
-      pageLatestProposal(work.value, current.value.id)?.proposal?.status === 'pending'
-    ) {
-      await showSuggestions(current.value.id)
-    }
-    await refreshOverlay()
-    await scrollEnd()
-    emit('updated')
-  } finally {
-    remoteLease = ''
-    remoteBusy.value = false
-  }
-}
+const { beginRemote, endRemote } = useRemoteWorkspace({
+  busy,
+  editing,
+  renaming,
+  remoteBusy,
+  current,
+  work,
+  title,
+  composer,
+  savedNotes,
+  viewedId,
+  pane,
+  historical,
+  flushNotes,
+  notesValue,
+  showSuggestions,
+  refreshOverlay,
+  scrollEnd,
+  emit,
+})
 defineExpose({ prepareLeave, desktopState, beginRemote, endRemote, frontendAction })
 async function close() {
   if (busy.value || editing.value) {

@@ -11,6 +11,7 @@ const profile = temporaryProfile('np-retention-')
 app.setPath('userData', profile)
 require('../support/register-typescript.cjs')
 const library = require('../../src/main/modules/images/library.ts')
+const imageAccess = require('../../src/main/modules/images/access.ts')
 const client = require('../../src/main/modules/generation/index.ts')
 const pages = require('../../src/main/modules/workspace/index.ts')
 const { renderPage, discussPage } = require('../../src/main/modules/workspace/collaboration.ts')
@@ -140,7 +141,7 @@ app.whenReady().then(async () => {
       assert.ok(library.clearTemporaryImages(false).message)
       assert.ok(fs.existsSync(join(tempDir, stale + '.json')), 'locked image keeps its metadata')
       assert.ok(!fs.existsSync(join(tempDir, unlocked)), 'one failure does not block other files')
-      assert.ok(client.imagePath(a.images[1].name), 'retry preserves this session')
+      assert.ok(imageAccess.imagePath(a.images[1].name), 'retry preserves this session')
       fs.readdirSync = (path, ...args) => {
         if (path === tempDir) {
           throw Object.assign(new Error('fixture denied'), { code: 'EACCES' })
@@ -157,7 +158,7 @@ app.whenReady().then(async () => {
     }
     assert.equal(library.clearTemporaryImages(false).message, '')
     assert.ok(!fs.existsSync(join(tempDir, stale)))
-    assert.ok(client.imagePath(a.images[1].name))
+    assert.ok(imageAccess.imagePath(a.images[1].name))
     const favorite = recipes.createRecipe(a.images[1].name)
     recipes.updateRecipe(favorite.id, { name: '猫配方', note: '测试备注', tags: ['猫'] })
     const imported = await pages.createPage(a.images[1].name, params, 'v5', req)
@@ -165,7 +166,7 @@ app.whenReady().then(async () => {
     assert.notEqual(owned.name, a.images[1].name)
     assert.equal(owned.storage, 'workspace')
     assert.ok(owned.contentHash)
-    fs.writeFileSync(join(client.imageDir(), 'legacy.png'), bytes)
+    fs.writeFileSync(join(imageAccess.imageDir(), 'legacy.png'), bytes)
     const legacy = await pages.createPage('legacy.png', params, 'v5', req)
     pageCurrent(legacy).image = {
       ...pageCurrent(legacy).image,
@@ -176,7 +177,7 @@ app.whenReady().then(async () => {
     const legacyDoc = join(profile, 'data', 'page-workspaces', legacy.id + '.json')
     const legacyBefore = fs.readFileSync(legacyDoc, 'utf8')
     assert.equal(library.imageInfo('legacy.png').storage, 'workspace')
-    assert.equal(client.listImages().find((i) => i.name === 'legacy.png').storage, 'workspace')
+    assert.equal(imageAccess.listImages().find((i) => i.name === 'legacy.png').storage, 'workspace')
     assert.equal(
       fs.readFileSync(legacyDoc, 'utf8'),
       legacyBefore,
@@ -186,11 +187,11 @@ app.whenReady().then(async () => {
     assert.equal(library.imageInfo('legacy.png').storage, 'workspace')
     assert.ok(pages.pageUsesImage('legacy.png'))
     library.clearTemporaryImages()
-    assert.equal(client.imagePath(a.images[1].name), null)
-    assert.ok(client.imagePath(owned.name))
-    assert.ok(client.imagePath(retained.name))
-    assert.ok(client.imagePath(b.images[0].name))
-    assert.ok(client.imagePath('legacy.png'))
+    assert.equal(imageAccess.imagePath(a.images[1].name), null)
+    assert.ok(imageAccess.imagePath(owned.name))
+    assert.ok(imageAccess.imagePath(retained.name))
+    assert.ok(imageAccess.imagePath(b.images[0].name))
+    assert.ok(imageAccess.imagePath('legacy.png'))
     assert.equal(recipes.listRecipes()[0].recipe.request.params.seed, 1)
     assert.ok(recipes.listRecipes()[0].thumbnail.startsWith('data:image/'))
     let w = await pages.createPage(null, params, 'v5', req)
@@ -236,7 +237,7 @@ app.whenReady().then(async () => {
       'A-B-A is a new scheme group',
     )
     const missing = pageCurrent(w).image
-    const missingPath = client.imagePath(missing.name)
+    const missingPath = imageAccess.imagePath(missing.name)
     const originalBytes = fs.readFileSync(missingPath)
     fs.unlinkSync(missingPath)
     w = pages.readPage(w.id)
@@ -284,7 +285,7 @@ app.whenReady().then(async () => {
     const removed = pages.listRemovedPages().find((r) => r.token.startsWith(w.id))
     assert.ok(removed)
     assert.ok(pages.pageUsesImage(missing.name))
-    assert.ok(client.imagePath(missing.name))
+    assert.ok(imageAccess.imagePath(missing.name))
     assert.equal(pages.restorePage(removed.token).currentVersionId, second)
     let paint = pages.readPage(imported.id)
     const paintSource = paint.currentVersionId
@@ -337,7 +338,7 @@ app.whenReady().then(async () => {
     const infillRecipe = recipes.createRecipe(paint.versions.at(-1).image.name)
     assert.equal(infillRecipe.recipe.sourceKind, 'inpaint')
     recipes.deleteRecipe(infillRecipe.id)
-    fs.unlinkSync(client.imagePath(pageCurrent(paint).image.name))
+    fs.unlinkSync(imageAccess.imagePath(pageCurrent(paint).image.name))
     paint = pages.readPage(paint.id)
     paint = pages.editPage(paint.id, paint.revision, {
       type: 'editor',

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reportError } from '../shared/lib/notifications'
 import { promptState } from '../features/prompts/state'
-import { imageState } from '../features/generation/state'
+import { imageState, setPreviewImage } from '../features/generation/public'
 import { settingsState } from '../features/settings/state'
 import { tagState } from '../features/tags/state'
 import { shellState } from '../shared/state/shell'
@@ -26,7 +26,7 @@ import SearchView from '../features/tags/SearchView.vue'
 import AiView from '../features/prompts/AiView.vue'
 import PreviewView from '../features/prompts/PreviewView.vue'
 import GenerateView from '../features/generation/GenerateView.vue'
-import FavoritesView from '../features/generation/FavoritesView.vue'
+import FavoritesView from '../features/favorites/FavoritesView.vue'
 import ReverseView from '../features/reverse/ReverseView.vue'
 import SubscriptionStatus from '../features/generation/components/SubscriptionStatus.vue'
 import WorkspacesView from '../features/workspace/WorkspacesView.vue'
@@ -371,7 +371,7 @@ async function desktopCommand(command: DesktopCommand) {
         String(argumentsRecord.lease),
       )
     } else if (command.type === 'show-image') {
-      imageState.currentImage = argumentsRecord.image as DesktopState['image']
+      setPreviewImage(argumentsRecord.image as DesktopState['image'])
     }
     await nextTick()
     publishDesktop()

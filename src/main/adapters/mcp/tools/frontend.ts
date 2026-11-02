@@ -1,13 +1,13 @@
-import type { FrontendAction, FrontendRequest } from '../../../shared/contracts/desktop'
-import { WORKSPACE_CONFIG_SCHEMA } from '../../../shared/workspace/config'
-import { listImages } from '../../modules/images/access'
-import { getSettings } from '../../modules/settings/service'
-import { requireAgent } from '../../modules/workspace/agent-sessions'
-import { readPage } from '../../modules/workspace/repository'
-import type { DesktopBridge } from '../desktop/bridge'
-import { runFrontend } from '../desktop/frontend-operations'
-import { EXTERNAL_RESPONSE_SCHEMA } from './external-workspace-tools'
-import type { McpTool } from './types'
+import type { FrontendAction, FrontendRequest } from '../../../../shared/contracts/desktop'
+import { WORKSPACE_CONFIG_SCHEMA } from '../../../../shared/workspace/config'
+import { listImages } from '../../../modules/images/access'
+import { getSettings } from '../../../modules/settings/service'
+import { requireAgent } from '../../../modules/workspace/agent-sessions'
+import { readPage } from '../../../modules/workspace/repository'
+import type { DesktopBridge } from '../../desktop/bridge'
+import { runFrontend } from '../../desktop/frontend-operations'
+import { EXTERNAL_RESPONSE_SCHEMA } from './external-workspace'
+import type { McpTool } from '../types'
 
 const ID = { type: 'string', description: '当前已打开工作台的 id；先用 ui_open_workspace 打开' }
 const TOKEN = {

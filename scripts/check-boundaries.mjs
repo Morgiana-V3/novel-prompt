@@ -115,6 +115,27 @@ for (const filename of sourceFiles(join(root, 'src'))) {
       continue
     }
     const target = normalize(relative(root, resolved))
+    const sourceFeature = source.match(/^src\/renderer\/src\/features\/([^/]+)\//)?.[1]
+    const targetFeature = target.match(/^src\/renderer\/src\/features\/([^/]+)\//)?.[1]
+    if (sourceFeature !== targetFeature) {
+      if (target === 'src/renderer/src/features/generation/state.ts') {
+        failures.push(`${source} must use generation/public.ts instead of mutable generation state`)
+      }
+      if (
+        targetFeature === 'favorites' &&
+        target !== 'src/renderer/src/features/favorites/public.ts' &&
+        !(source.startsWith('src/renderer/src/app/') && target.endsWith('/FavoritesView.vue'))
+      ) {
+        failures.push(`${source} must use favorites/public.ts instead of ${target}`)
+      }
+    }
+    if (
+      target.startsWith('src/main/modules/skills/') &&
+      !source.startsWith('src/main/modules/skills/') &&
+      target !== 'src/main/modules/skills/service.ts'
+    ) {
+      failures.push(`${source} must use the Skill service instead of ${target}`)
+    }
     if (target.startsWith('tests/') || target.startsWith('scripts/')) {
       failures.push(`${source} imports non-production ${target}`)
     }

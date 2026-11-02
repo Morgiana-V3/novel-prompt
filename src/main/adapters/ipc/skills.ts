@@ -1,6 +1,6 @@
 import { dialog, shell } from 'electron'
 import type { SkillEntry, SkillInput } from '../../../shared/skills/types'
-import { userSkillDir } from '../../infrastructure/paths'
+import { userSkillDir } from '../../modules/skills/service'
 import {
   previewSkillDirectory,
   exportSkillDirectory,

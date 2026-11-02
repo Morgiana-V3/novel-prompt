@@ -18,8 +18,8 @@ const {
   inpaintTools,
   workspaceRectangleMask,
   workspaceInpaintPreview,
-} = require('../../src/main/adapters/mcp/inpaint-tools.ts')
-const { imageDir } = require('../../src/main/modules/generation/index.ts')
+} = require('../../src/main/adapters/mcp/tools/inpaint.ts')
+const { imageDir } = require('../../src/main/modules/images/access.ts')
 const signal = new AbortController().signal
 const prepare = inpaintTools().find((t) => t.name === 'prepare_inpaint')
 app.whenReady().then(async () => {

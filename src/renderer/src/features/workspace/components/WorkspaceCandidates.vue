@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import Icon from '../../../shared/ui/Icon.vue'
-import FavoriteButton from '../../../shared/ui/FavoriteButton.vue'
+import { FavoriteButton } from '../../favorites/public'
 import type { PageWorkspace } from '@shared/workspace/model'
 import type { useVersionBrowser } from '../use-version-browser'
 defineProps<{

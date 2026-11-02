@@ -2,20 +2,20 @@ import {
   patchWorkspaceConfig,
   WORKSPACE_CONFIG_SCHEMA,
   type WorkspaceConfigPatch,
-} from '../../../shared/workspace/config'
-import { pageCurrent } from '../../../shared/workspace/model'
-import { requireAgent } from '../../modules/workspace/agent-sessions'
+} from '../../../../shared/workspace/config'
+import { pageCurrent } from '../../../../shared/workspace/model'
+import { requireAgent } from '../../../modules/workspace/agent-sessions'
 import {
   clearPageImage,
   deletePageWithImages,
   deleteUnreferencedImage,
-} from '../../modules/workspace/image-cleanup'
-import { readPage } from '../../modules/workspace/repository'
-import { editPage } from '../../modules/workspace/service'
-import type { DesktopBridge } from '../desktop/bridge'
-import { workspaceRectangleMask } from './inpaint-tools'
-import type { McpTool } from './types'
-import { workspaceReceipt } from './workspace-read'
+} from '../../../modules/workspace/image-cleanup'
+import { readPage } from '../../../modules/workspace/repository'
+import { editPage } from '../../../modules/workspace/service'
+import type { DesktopBridge } from '../../desktop/bridge'
+import { workspaceRectangleMask } from './inpaint'
+import type { McpTool } from '../types'
+import { workspaceReceipt } from '../workspace-read'
 
 const id = { type: 'string', minLength: 1 }
 const revision = { type: 'integer', minimum: 0 }

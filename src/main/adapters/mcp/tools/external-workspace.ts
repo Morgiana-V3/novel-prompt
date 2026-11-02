@@ -1,38 +1,38 @@
-import { regionIds, regionNotes } from '../../../shared/workspace/regions'
+import { regionIds, regionNotes } from '../../../../shared/workspace/regions'
 import { randomUUID } from 'node:crypto'
-import type { PageExternalReply } from '../../../shared/workspace/model'
+import type { PageExternalReply } from '../../../../shared/workspace/model'
 import {
   pageComparison,
   pageContextKey,
   pageCurrent,
   pageGroups,
-} from '../../../shared/workspace/model'
+} from '../../../../shared/workspace/model'
 import {
   agentActivity,
   agentIsConnected,
   reportAgentActivity,
   requireAgent,
-} from '../../modules/workspace/agent-sessions'
+} from '../../../modules/workspace/agent-sessions'
 import {
   cancelExternalRequest,
   queueExternalRequest,
   replyExternalRequest,
   setPageAgent,
-} from '../../modules/workspace/external-collaboration'
-import { listPendingPageRequests } from '../../modules/workspace/queries'
-import { readPage } from '../../modules/workspace/repository'
-import { editPage } from '../../modules/workspace/service'
+} from '../../../modules/workspace/external-collaboration'
+import { listPendingPageRequests } from '../../../modules/workspace/queries'
+import { readPage } from '../../../modules/workspace/repository'
+import { editPage } from '../../../modules/workspace/service'
 import {
   discussionIsStale,
   discussionSnapshot,
   pendingExternalRequest,
-} from '../../modules/workspace/snapshot'
-import type { DesktopBridge } from '../desktop/bridge'
-import { CANDIDATE_PAGE_SCHEMA, candidatePage } from './candidate-page'
-import { workspaceInpaintPreview, workspaceRectangleMask } from './inpaint-tools'
-import { contextSkills, SKILLS_READ_SCHEMA } from './skills-cache'
-import type { McpTool } from './types'
-import { workspaceReceipt } from './workspace-read'
+} from '../../../modules/workspace/snapshot'
+import type { DesktopBridge } from '../../desktop/bridge'
+import { CANDIDATE_PAGE_SCHEMA, candidatePage } from '../candidate-page'
+import { workspaceInpaintPreview, workspaceRectangleMask } from './inpaint'
+import { contextSkills, SKILLS_READ_SCHEMA } from '../skills-cache'
+import type { McpTool } from '../types'
+import { workspaceReceipt } from '../workspace-read'
 
 const draft = {
   type: 'object',

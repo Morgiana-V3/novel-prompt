@@ -13,7 +13,7 @@ import {
 import type { PromptSnippet } from '@shared/prompts/snippets'
 import { copy, reportError, toast } from '../../../shared/lib/notifications'
 import { cleanErr } from '../../../shared/lib/format'
-import { revealSnippets } from '../../../shared/state/favorites'
+import { revealSnippets } from '../../favorites/public'
 import Icon from '../../../shared/ui/Icon.vue'
 
 type InsertMode = 'cursor' | 'append' | 'replace'

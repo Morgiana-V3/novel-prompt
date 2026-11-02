@@ -10,7 +10,7 @@ app.setPath('userData', profile)
 app.getAppPath = () => root
 require('../support/register-typescript.cjs')
 const skills = require('../../src/main/modules/skills/service.ts')
-const paths = require('../../src/main/infrastructure/paths.ts')
+const paths = require('../../src/main/modules/skills/paths.ts')
 const { saveSettings } = require('../../src/main/modules/settings/service.ts')
 const { missingSkillLinks } = require('../../src/shared/skills/references.ts')
 const { contextSkills } = require('../../src/main/adapters/mcp/skills-cache.ts')
@@ -152,13 +152,19 @@ app.whenReady().then(async () => {
       skills.deleteSkill(copy.id)
     }
     for (const name of ['nai-prompt', 'nai-preview']) {
-      assert(paths.KNOWN_DEFAULTS[`${name}.md`].includes(baseline[name].fingerprint))
+      assert(
+        require('../../src/main/modules/skills/catalog.ts').KNOWN_DEFAULTS[`${name}.md`].includes(
+          baseline[name].fingerprint,
+        ),
+      )
     }
     // Simulate installation resources without touching the installed app or user data.
     const packaged = Object.getOwnPropertyDescriptor(app, 'isPackaged')
     const resources = Object.getOwnPropertyDescriptor(process, 'resourcesPath')
     const packagedRoot = join(profile, 'packaged')
-    cpSync(join(root, 'skills'), join(packagedRoot, 'skills'), { recursive: true })
+    cpSync(join(root, 'resources/skills/builtin'), join(packagedRoot, 'skills'), {
+      recursive: true,
+    })
     try {
       Object.defineProperty(app, 'isPackaged', { configurable: true, value: true })
       Object.defineProperty(process, 'resourcesPath', { configurable: true, value: packagedRoot })

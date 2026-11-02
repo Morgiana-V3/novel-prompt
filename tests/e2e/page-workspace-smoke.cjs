@@ -19,6 +19,7 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'np-img', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ])
 require('../support/register-typescript.cjs')
+const imageAccess = require('../../src/main/modules/images/access.ts')
 const client = require('../../src/main/modules/generation/index.ts')
 const pages = require('../../src/main/modules/workspace/index.ts')
 const cleanup = require('../../src/main/modules/workspace/image-cleanup.ts')
@@ -78,7 +79,7 @@ for (const [x, y, w, h] of [
 }
 rect(source, 70, 340, 180, 240, [130, 130, 130, 255])
 rect(source, 100, 590, 120, 240, [70, 70, 70, 255])
-writeFileSync(join(client.imageDir(), 'page-fixture.png'), PNG.sync.write(source))
+writeFileSync(join(imageAccess.imageDir(), 'page-fixture.png'), PNG.sync.write(source))
 const mask = image([0, 0, 0, 255])
 rect(mask, 90, 350, 100, 150, [255, 255, 255, 255])
 const region = {
@@ -267,8 +268,8 @@ const handlers = {
   'nai:retain': (_, name) => require('../../src/main/modules/images/library.ts').retainImage(name),
   'nai:recipe': (_, name) =>
     require('../../src/main/modules/images/library.ts').readImageRecipe(name),
-  'nai:list': () => client.listImages(),
-  'nai:readImage': (_, name) => new Uint8Array(readFileSync(client.imagePath(name))),
+  'nai:list': () => imageAccess.listImages(),
+  'nai:readImage': (_, name) => new Uint8Array(readFileSync(imageAccess.imagePath(name))),
   'pages:delete': async (e, id, rev) => {
     try {
       await cleanup.deletePageWithImages(id, rev)
@@ -460,7 +461,7 @@ app.whenReady().then(async () => {
     mode = 'inpaint'
     await talk('这次只重绘这个遮罩内的部位', region.id)
     decide('accept')
-    const before = PNG.sync.read(readFileSync(client.imagePath(pageCurrent(w).image.name)))
+    const before = PNG.sync.read(readFileSync(imageAccess.imagePath(pageCurrent(w).image.name)))
     w = await collaborator.renderPage(
       id,
       w.revision,
@@ -472,7 +473,7 @@ app.whenReady().then(async () => {
     edit({ type: 'switch', versionId: w.latestGeneratedVersionId })
     assert.equal(generationInputs.at(-1).action, 'infill')
     assert.match(generationInputs.at(-1).input, /black shirt/)
-    const result = PNG.sync.read(readFileSync(client.imagePath(pageCurrent(w).image.name)))
+    const result = PNG.sync.read(readFileSync(imageAccess.imagePath(pageCurrent(w).image.name)))
     for (let i = 0; i < before.data.length; i += 4) {
       if (!mask.data[i]) {
         assert.ok(before.data.subarray(i, i + 4).equals(result.data.subarray(i, i + 4)))
@@ -626,7 +627,7 @@ app.whenReady().then(async () => {
     )
     assert.equal(pageIteration(w, w.currentVersionId).before.draft.base, '')
     const imported = await pages.importPage(
-      join(client.imageDir(), 'page-fixture.png'),
+      join(imageAccess.imageDir(), 'page-fixture.png'),
       params,
       'v5',
       draft,
@@ -636,7 +637,7 @@ app.whenReady().then(async () => {
     assert.throws(() => pages.deletePage(imported.id, imported.revision - 1), /更新/)
     pages.deletePage(imported.id, imported.revision)
     assert.ok(!pages.listPages().some((s) => s.id === imported.id))
-    assert.ok(client.imagePath(importedName))
+    assert.ok(imageAccess.imagePath(importedName))
     const legacy = await pages.createPage('page-fixture.png', params, 'v5', draft)
     legacy.schema = 1
     delete legacy.execution
@@ -711,7 +712,7 @@ app.whenReady().then(async () => {
       () => false,
     )
     for (const v of batch.versions.slice(-2)) {
-      const pixels = PNG.sync.read(readFileSync(client.imagePath(v.image.name)))
+      const pixels = PNG.sync.read(readFileSync(imageAccess.imagePath(v.image.name)))
       for (let i = 0; i < source.data.length; i += 4) {
         if (!mask.data[i]) {
           assert.ok(
@@ -829,7 +830,7 @@ app.whenReady().then(async () => {
       'one request for the complete union',
     )
     const jointVersion = batch.versions.at(-1)
-    const unionPixels = PNG.sync.read(readFileSync(client.imagePath(jointVersion.image.name)))
+    const unionPixels = PNG.sync.read(readFileSync(imageAccess.imagePath(jointVersion.image.name)))
     const savedUnion = PNG.sync.read(Buffer.from(jointVersion.generated.inpaint.mask, 'base64'))
     assert.deepEqual(savedUnion.data, merged.data)
     assert.deepEqual(
@@ -890,7 +891,7 @@ app.whenReady().then(async () => {
     )
 
     protocol.handle('np-img', (req) => {
-      const file = client.imagePath(decodeURIComponent(new URL(req.url).pathname.slice(1)))
+      const file = imageAccess.imagePath(decodeURIComponent(new URL(req.url).pathname.slice(1)))
       return file
         ? nativeFetch(pathToFileURL(file).toString())
         : new Response('Image missing', { status: 404 })
@@ -1077,8 +1078,8 @@ app.whenReady().then(async () => {
     assert.ok(fromImage)
     assert.notEqual(fromImage.image.url, chosenUrl)
     assert.ok(
-      readFileSync(client.imagePath(fromImage.image.name)).equals(
-        readFileSync(client.imagePath(decodeURIComponent(chosenUrl.split('/').at(-1)))),
+      readFileSync(imageAccess.imagePath(fromImage.image.name)).equals(
+        readFileSync(imageAccess.imagePath(decodeURIComponent(chosenUrl.split('/').at(-1)))),
       ),
     )
     assert.deepEqual(
@@ -1616,7 +1617,7 @@ app.whenReady().then(async () => {
     await wait(`!document.querySelector('.pw-shell')`)
     const missingDoc = pages.readPage(ui.id)
     const missingVersion = pageCurrent(missingDoc)
-    const missingPath = client.imagePath(missingVersion.image.name)
+    const missingPath = imageAccess.imagePath(missingVersion.image.name)
     const missingBytes = readFileSync(missingPath)
     require('node:fs').unlinkSync(missingPath)
     await click('.session-open', '通用创作会话测试')
@@ -1721,16 +1722,16 @@ app.whenReady().then(async () => {
     await run(`document.querySelector('${cardSelector} .pw-candidate-delete').click()`)
     assert.ok(await js(`!!document.querySelector('.pw-candidates')`), 'delete does not open canvas')
     await click('.pw-candidate-delete-confirm button', '取消')
-    assert.ok(client.imagePath(otherCandidate.image.name), 'cancelling keeps target image')
+    assert.ok(imageAccess.imagePath(otherCandidate.image.name), 'cancelling keeps target image')
     await run(`document.querySelector('${cardSelector} .pw-candidate-delete').click()`)
     await click('.pw-candidate-delete-confirm button', '确认删除')
     await wait(`document.querySelectorAll('.pw-candidate').length===1`)
     assert.equal(
-      client.imagePath(otherCandidate.image.name),
+      imageAccess.imagePath(otherCandidate.image.name),
       null,
       'deletes hovered candidate, not current preview',
     )
-    assert.ok(client.imagePath(clearedImage))
+    assert.ok(imageAccess.imagePath(clearedImage))
     assert.equal(pages.readPage(ui.id).currentVersionId, beforeClear.currentVersionId)
     assert.ok(
       await js(`!!document.querySelector('.pw-candidates')`),
@@ -1739,7 +1740,7 @@ app.whenReady().then(async () => {
     await run(`document.querySelector('.pw-candidate-delete').click()`)
     await click('.pw-candidate-delete-confirm button', '确认删除')
     await wait(`!!document.querySelector('.pw-candidates-empty')`)
-    assert.equal(client.imagePath(clearedImage), null)
+    assert.equal(imageAccess.imagePath(clearedImage), null)
     assert.equal(pages.readPage(ui.id).versions.length, beforeClear.versions.length)
     assert.deepEqual(pageCurrent(pages.readPage(ui.id)).generated, clearedSnapshot)
     await click('.pw-view-tabs button', '生图配置')
@@ -1788,7 +1789,7 @@ app.whenReady().then(async () => {
     await click('.session-delete-popover button', '确认删除')
     assert.ok(!pages.listPages().some((s) => s.id === ui.id))
     assert.equal(
-      client.imagePath(pageCurrent(saved).image.name),
+      imageAccess.imagePath(pageCurrent(saved).image.name),
       null,
       'deleting the project cleans its generated images',
     )

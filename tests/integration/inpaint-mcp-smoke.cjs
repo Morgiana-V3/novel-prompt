@@ -13,7 +13,7 @@ require('../support/register-typescript.cjs')
 const { toolOutputSchema } = require('../../src/main/adapters/mcp/output-schemas.ts')
 const { validateArguments } = require('../../src/main/adapters/mcp/contract.ts')
 const { buildTools } = require('../../src/main/adapters/mcp/tools.ts')
-const { imageDir, imagePath } = require('../../src/main/modules/generation/index.ts')
+const { imageDir, imagePath } = require('../../src/main/modules/images/access.ts')
 const { saveSettings } = require('../../src/main/modules/settings/service.ts')
 const { diffTags } = require('../../src/renderer/src/features/prompts/tag-diff.ts')
 const {

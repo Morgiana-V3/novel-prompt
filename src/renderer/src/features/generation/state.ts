@@ -56,3 +56,24 @@ export const imageState = reactive({
   /** 生图预览送入新建会话的图片，只暂存，不自动创建记录。 */
   workspaceImage: null as NaiImage | null,
 })
+
+export function setGenerationBusy(value: boolean): void {
+  imageState.generating = value
+}
+export function selectReferenceImage(image: NaiImage): void {
+  imageState.currentImage = { ...image }
+}
+export function clearWorkspaceImage(): void {
+  imageState.workspaceImage = null
+}
+
+/** Import only generation-owned fields, preserving the shared prompt parameters. */
+export function applyGenerationParams(params: GenOnly): void {
+  for (const field of Object.keys(DEFAULT_GEN) as (keyof GenOnly)[]) {
+    ;(generationParams as Record<string, unknown>)[field] = params[field]
+  }
+}
+
+export function setPreviewImage(image: NaiImage | null): void {
+  imageState.currentImage = image
+}

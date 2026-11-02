@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import FavoriteButton from '../../shared/ui/FavoriteButton.vue'
+import { FavoriteButton } from '../favorites/public'
 import type { ReverseTrial } from './use-reverse-trials'
 import { importGenerationRequest } from '../prompts/actions'
-import { imageState } from '../generation/state'
+import { selectReferenceImage } from '../generation/public'
 import { cleanErr } from '../../shared/lib/format'
 import { shellState } from '../../shared/state/shell'
 
@@ -28,7 +28,7 @@ async function act(action: 'retain' | 'adopt') {
   try {
     if (action === 'adopt') {
       await importGenerationRequest(JSON.parse(JSON.stringify(trial.request)), '已采用反推方案')
-      imageState.currentImage = { ...trial.image }
+      selectReferenceImage(trial.image)
       shellState.tab = 'generate'
     } else {
       if (

@@ -7,7 +7,7 @@ import { dataFile } from '../../infrastructure/paths'
 
 /**
  * 两层数据：
- * - 默认层（只读）：项目 default-data/*.json.gz，打包后位于 resources/default-data
+ * - 默认层（只读）：项目 resources/default-data/*.json.gz，打包后位于 resources/default-data
  * - 用户层（可写）：%APPDATA%/novel-prompt/data/*.json，下载、AI 翻译、手动编辑都只写这里
  */
 export type DataSource = 'default' | 'user'
@@ -20,7 +20,7 @@ interface Manifest {
 export function defaultDataDir(): string {
   return app.isPackaged
     ? join(process.resourcesPath, 'default-data')
-    : join(app.getAppPath(), 'default-data')
+    : join(app.getAppPath(), 'resources/default-data')
 }
 
 export function readUser<T>(name: string): T | undefined {

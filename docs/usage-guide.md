@@ -498,8 +498,6 @@ Electron 44 · Vue 3 · TypeScript · Vite（electron-vite）· 内存索引搜�
 ### 结构
 
 ```
-src/main/tagdb      数据抓取（fetcher）、两层数据读取（layers）、内存索引与包含关系（store）、Danbooru 共现与 wiki（knowledge）
-src/main/prompt     提示词解析器
 src/main/app        启动、窗口、生命周期与应用协议
 src/main/modules    工作台、生成、图片、提示词、标签、规则、设置、任务与更新用例
 src/main/providers  NovelAI / 聊天服务的 HTTP、请求与响应协议
@@ -508,11 +506,11 @@ src/preload/api     按领域暴露受限跨进程 API
 src/shared          跨进程契约、领域模型与平台无关纯规则
 src/renderer/src    app 装配、features 业务组件/状态、shared 通用 UI 与样式
 src/runtime         独立 Node MCP 代理与运行目录解析
-skills/             内置规则
+resources/skills/   builtin 内置规则；user-seeds 初始用户规则
 scripts/            开发、构建、验收安装包、数据与资源处理命令
 tests/              unit / integration / e2e / support；运行产物在项目外
 docs/               使用、Agent 接入、架构、验证与代码规范
-default-data/       随安装包分发的内置数据
+resources/default-data/  随安装包分发的内置数据
 ```
 
 ### 常用脚本
@@ -534,7 +532,7 @@ npm run update:smoke # 更新下载、校验和重试；不执行安装器
 npm run pages:smoke   # 隔离配置中验证会话、AI 建议、版本对比与 Markdown（不调用在线模型）
 npm run screenshots  # 生成演示截图（release/screenshots/），不覆盖 README 精选图片
 npm run dist         # 打包安装包 + 便携版
-npm run data:export  # 把本机数据导出为内置数据 default-data/
+npm run data:export  # 把本机数据导出为内置数据 resources/default-data/
 ```
 
 开发启动前会检查本项目是否仍有应用或 MCP 宿主运行。若提示已有宿主，请先保存工作、断开 MCP 连接并退出应用，再运行 `npm run dev`；仅关闭窗口时，MCP 连接可能让后台继续驻留。检查失败时不会覆盖构建文件，避免新界面调用旧后台接口。开发实例启动后再连接 MCP，即可共用该实例。
@@ -542,7 +540,7 @@ npm run data:export  # 把本机数据导出为内置数据 default-data/
 ### 更新内置数据（发版前）
 
 ```bash
-npm run data:export   # 从开发版数据目录导出到 default-data/；可用 NP_DATA_DIR 显式指定来源
+npm run data:export   # 从开发版数据目录导出到 resources/default-data/；可用 NP_DATA_DIR 显式指定来源
 npm run dist
 ```
 

@@ -15,7 +15,7 @@ const { renderDocumentMarkdown } = require('../../src/renderer/src/shared/lib/ma
 const { skillTools } = require('../../src/main/adapters/mcp/tools/skills.ts')
 const { contextSkills } = require('../../src/main/adapters/mcp/skills-cache.ts')
 const { saveSettings } = require('../../src/main/modules/settings/service.ts')
-const { bundledUserSkillPath } = require('../../src/main/infrastructure/paths.ts')
+const { bundledUserSkillPath } = require('../../src/main/modules/skills/paths.ts')
 const baseline = require('../fixtures/manga-template-baseline.json')
 const merge = require('../fixtures/manga-template-merge.json')
 const { checkSkillDocuments } = require('../support/skill-document-checks.cjs')
@@ -130,13 +130,13 @@ app.whenReady().then(async () => {
     const builder = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).build
     assert(
       builder.extraResources.some(
-        (r) => r.from === 'skill-templates' && r.to === 'skill-templates',
+        (r) => r.from === 'resources/skills/user-seeds' && r.to === 'skill-templates',
       ),
     )
     const packaged = Object.getOwnPropertyDescriptor(app, 'isPackaged')
     const resources = Object.getOwnPropertyDescriptor(process, 'resourcesPath')
     const packagedRoot = join(profile, 'packaged')
-    cpSync(join(root, 'skill-templates'), join(packagedRoot, 'skill-templates'), {
+    cpSync(join(root, 'resources/skills/user-seeds'), join(packagedRoot, 'skill-templates'), {
       recursive: true,
     })
     try {

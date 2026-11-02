@@ -4,7 +4,7 @@ import type { TagCategory } from '@shared/tags/types'
 import { watch } from 'vue'
 import { toast, reportError } from '../../shared/lib/notifications'
 import { settingsState, saveSettings } from '../settings/state'
-import { DEFAULT_GEN, generationParams } from '../generation/state'
+import { applyGenerationParams, generationParams } from '../generation/public'
 import type { FieldRef, Persisted, Snapshot } from './state'
 import { DEFAULT_PARAMS, MAX_HISTORY, promptState, STORE_KEY, toDrafts } from './state'
 
@@ -296,9 +296,7 @@ export async function importGenerationRequest(
   for (const field of Object.keys(DEFAULT_PARAMS) as (keyof typeof DEFAULT_PARAMS)[]) {
     ;(promptState.params as unknown as Record<string, unknown>)[field] = request.params[field]
   }
-  for (const field of Object.keys(DEFAULT_GEN) as (keyof typeof DEFAULT_GEN)[]) {
-    ;(generationParams as unknown as Record<string, unknown>)[field] = request.params[field]
-  }
+  applyGenerationParams(request.params)
   const undo = async () => {
     if (settingsState.settings?.naiVersion !== before.version) {
       await saveSettings({ naiVersion: before.version })
@@ -306,7 +304,7 @@ export async function importGenerationRequest(
     pushHistory('撤销导入前')
     setContent(before.content)
     Object.assign(promptState.params, before.params)
-    Object.assign(generationParams, before.generation)
+    applyGenerationParams(before.generation)
     toast('已恢复导入前的提示词、模型和生成参数')
   }
   toast(`${source}：提示词、模型和生成参数`, {

@@ -9,7 +9,7 @@ require('../support/register-typescript.cjs')
 const provider = require('../../src/main/providers/chat/client.ts')
 const { chat } = require('../../src/main/modules/prompts/chat.ts')
 const { ReadOnlyToolSession } = require('../../src/main/modules/prompts/tool-session.ts')
-const optimizer = require('../../src/main/modules/prompts/optimizer.ts')
+const tagTools = require('../../src/main/modules/prompts/tag-tools.ts')
 const skills = require('../../src/main/modules/skills/service.ts')
 const { tagStore } = require('../../src/main/modules/tags/store.ts')
 const pages = require('../../src/main/modules/workspace/index.ts')
@@ -115,7 +115,7 @@ app.whenReady().then(async () => {
     // A batch above the former 8-call cap must complete, with duplicates executed once.
     tagStore.loaded = true
     let executed = 0
-    optimizer.tagTool = async () => {
+    tagTools.tagTool = async () => {
       executed++
       return 'fixture lookup'
     }
@@ -196,7 +196,7 @@ app.whenReady().then(async () => {
 
     provider.requestChat = async () =>
       reply([call('cancel', 'search_tags', { queries: ['cancel'] })])
-    optimizer.tagTool = async (_name, _args, signal) => {
+    tagTools.tagTool = async (_name, _args, signal) => {
       pageLocks.get(page.id).abort()
       signal.throwIfAborted()
     }

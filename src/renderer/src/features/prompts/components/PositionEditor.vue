@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { promptState } from '../state'
-import { imageState } from '../../generation/state'
+import { imageState } from '../../generation/public'
 import { settingsState } from '../../settings/state'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { parsePosition, isGridPosition } from '@shared/generation/presets'

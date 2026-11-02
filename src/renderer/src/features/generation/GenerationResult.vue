@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import type { NaiImage } from '@shared/images/types'
 import Icon from '../../shared/ui/Icon.vue'
-import FavoriteButton from '../../shared/ui/FavoriteButton.vue'
+import { FavoriteButton } from '../favorites/public'
 import { copy } from '../../shared/lib/notifications'
 const props = defineProps<{
   current: NaiImage

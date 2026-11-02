@@ -1,5 +1,5 @@
 import { AGENT_ENTRY } from './agent-guide'
-import { inpaintTools } from './inpaint-tools'
+import { inpaintTools } from './tools/inpaint'
 import { createAgentGuideTool } from './tools/guides'
 import {
   createGenerateImageTool,

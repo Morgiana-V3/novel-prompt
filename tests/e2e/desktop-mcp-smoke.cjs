@@ -39,6 +39,7 @@ protocol.registerSchemesAsPrivileged([
 require('../support/register-typescript.cjs')
 const settings = require('../../src/main/modules/settings/service.ts')
 const pages = require('../../src/main/modules/workspace/index.ts')
+const imageAccess = require('../../src/main/modules/images/access.ts')
 const client = require('../../src/main/modules/generation/index.ts')
 const { tagStore } = require('../../src/main/modules/tags/store.ts')
 settings.saveSettings({
@@ -158,10 +159,11 @@ for (const [name, handler] of Object.entries({
   'reverse:status': () => ({ phase: 'idle', ready: false, models: [] }),
   'recipes:list': () => [],
   'update:state': () => null,
-  'nai:list': () => client.listImages(),
+  'storage:info': () => require('../../src/main/modules/settings/storage.ts').storageInfo(),
+  'nai:list': () => imageAccess.listImages(),
   'nai:freeCheck': () => ({ ok: true, reasons: [], notes: [] }),
   'nai:subscription': () => ({ active: true, tier: 3, anlasFixed: 1000, anlasPurchased: 0 }),
-  'nai:readImage': (_, name) => new Uint8Array(readFileSync(client.imagePath(name))),
+  'nai:readImage': (_, name) => new Uint8Array(readFileSync(imageAccess.imagePath(name))),
   'pages:removed': () => pages.listRemovedPages(),
   'pages:list': () => pages.listPages(),
   'pages:read': (_, id) => pages.readPage(id),
@@ -245,8 +247,8 @@ app.whenReady().then(async () => {
   try {
     const { DesktopBridge } = require('../../src/main/adapters/desktop/bridge.ts')
     const { startMcpBridge } = require('../../src/main/adapters/mcp/bridge.ts')
-    const { desktopTools } = require('../../src/main/adapters/mcp/desktop-tools.ts')
-    const { frontendTools } = require('../../src/main/adapters/mcp/frontend-tools.ts')
+    const { desktopTools } = require('../../src/main/adapters/mcp/tools/desktop.ts')
+    const { frontendTools } = require('../../src/main/adapters/mcp/tools/frontend.ts')
     const { agentExecutor } = require('../../src/main/adapters/mcp/runtime.ts')
     const { buildTools, MCP_INSTRUCTIONS } = require('../../src/main/adapters/mcp/tools.ts')
     // Foreground tools call show()/focus(): an offscreen BrowserWindow would expose
@@ -295,7 +297,9 @@ app.whenReady().then(async () => {
       'np-img',
       (req) =>
         new Response(
-          readFileSync(client.imagePath(decodeURIComponent(new URL(req.url).pathname.slice(1)))),
+          readFileSync(
+            imageAccess.imagePath(decodeURIComponent(new URL(req.url).pathname.slice(1))),
+          ),
         ),
     )
     await win.loadFile(join(buildDirectory, 'renderer/index.html'))
@@ -438,8 +442,21 @@ app.whenReady().then(async () => {
     assert.equal(await js(`!!document.getElementById('np-mcp-capture-privacy')`), false)
     await js(`document.getElementById('capture-private-fixture').remove()`)
     await a.tool('navigate_app', { tab: 'settings' })
-    const settingsShot = await a.tool('ui_capture_app')
-    assert.equal(settingsShot.structuredContent.redactedFields, 2)
+    await js(`document.getElementById('settings-tab-services').click()`)
+    for (const service of ['nai', 'ai']) {
+      await js(`document.getElementById('settings-service-${service}').click()`)
+      await wait(() =>
+        js(
+          `!!document.querySelector('#settings-panel-${service} input[type="password"]')?.getClientRects().length`,
+        ),
+      )
+      const settingsShot = await a.tool('ui_capture_app')
+      assert.equal(
+        settingsShot.structuredContent.redactedFields,
+        1,
+        `${service} credential is redacted`,
+      )
+    }
     await a.tool('navigate_app', { tab: 'ai' })
     console.log(
       'PASS real application screenshot, bounded dimensions, hidden-window refusal and credential redaction with UI restored',
@@ -899,7 +916,7 @@ app.whenReady().then(async () => {
     assert.equal(front.workspace.historyOpen, true)
     const generatedVersion = front.workspace.versionId
     const beforeRegion = pages.readPage(frontId).versions.find((v) => v.id === generatedVersion)
-    const originalPng = PNG.sync.read(readFileSync(client.imagePath(beforeRegion.image.name)))
+    const originalPng = PNG.sync.read(readFileSync(imageAccess.imagePath(beforeRegion.image.name)))
     const regionPromise = act('ui_add_workspace_region', {
       rectangles: [{ x: 20, y: 30, width: 40, height: 50 }],
       instruction: '仅修改这里的颜色',
@@ -1051,7 +1068,7 @@ app.whenReady().then(async () => {
     const resultVersion = resultPage.versions.find(
       (v) => v.id === resultPage.latestGeneratedVersionId,
     )
-    const outputPng = PNG.sync.read(readFileSync(client.imagePath(resultVersion.image.name)))
+    const outputPng = PNG.sync.read(readFileSync(imageAccess.imagePath(resultVersion.image.name)))
     let changed = 0
     for (let i = 0; i < originalPng.data.length; i += 4) {
       if (!savedMask.data[i]) {
@@ -1890,9 +1907,9 @@ app.whenReady().then(async () => {
       confirm: true,
     })
     assert.equal(managed.versions[0].image, null)
-    assert.ok(client.imagePath(owned), 'shared file survives')
+    assert.ok(imageAccess.imagePath(owned), 'shared file survives')
     await b.data('delete_workspace', { id: managed.id, revision: managed.revision, confirm: true })
-    assert.ok(client.imagePath(owned))
+    assert.ok(imageAccess.imagePath(owned))
     managed = await b.data('get_workspace', { id: shared.id })
     manageUi = await b.data('ui_open_workspace', { id: managed.id, step_delay_ms: 0 })
     await manageAct('ui_delete_workspace_image', {
@@ -1900,7 +1917,7 @@ app.whenReady().then(async () => {
       confirm: true,
     })
     assert.equal(manageUi.workspace.image, null)
-    assert.equal(client.imagePath(owned), null)
+    assert.equal(imageAccess.imagePath(owned), null)
     assert.ok(pages.readPage(managed.id).messages.length)
     const openBeforeDelete = (await b.data('get_app_state')).desktop.workspace.id
     await b.data('delete_workspace', {
@@ -1924,7 +1941,7 @@ app.whenReady().then(async () => {
       })
       assert.notEqual(page2.items[0].name, page1.items[0].name)
     }
-    const originalPath = client.imagePath(source.name)
+    const originalPath = imageAccess.imagePath(source.name)
     assert.equal(
       (await b.data('delete_image', { name: source.name, confirm: true })).outcome,
       'deleted',
@@ -1939,7 +1956,9 @@ app.whenReady().then(async () => {
     )
 
     await b.data('navigate_app', { tab: 'settings' })
-    await ui(`document.querySelector('#mcp-scope[role="combobox"]') !== null`)
+    await js(`document.getElementById('settings-tab-services').click()`)
+    await js(`document.getElementById('settings-service-agent').click()`)
+    await ui(`!!document.querySelector('#mcp-scope[role="combobox"]')?.getClientRects().length`)
     await js(`document.querySelector('#mcp-scope').scrollIntoView({block: 'center'})`)
     await pause(200)
     await js(`document.querySelector('#mcp-scope').click()`)

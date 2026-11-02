@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useModelManager } from './use-model-manager'
 import SnippetButton from '../prompts/components/SnippetButton.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ReverseModel, ReverseResult, ReverseStatus } from '@shared/reverse/types'
@@ -6,7 +7,7 @@ import { shellState } from '../../shared/state/shell'
 import { toast } from '../../shared/lib/notifications'
 import { cleanErr } from '../../shared/lib/format'
 import type { CharDraft } from '../prompts/state'
-import { imageState } from '../generation/state'
+import { imageState } from '../generation/public'
 import { settingsState } from '../settings/state'
 import { reverseTrialParams } from './trial-defaults'
 import Icon from '../../shared/ui/Icon.vue'
@@ -186,67 +187,24 @@ const progress = computed(() =>
     ? Math.min(100, (status.value.completedBytes / status.value.totalBytes) * 100)
     : 0,
 )
-let timer: ReturnType<typeof setInterval>
-let polling = false
 const cancelRequested = ref(false)
+const { refresh, manage } = useModelManager({
+  status,
+  selection,
+  error,
+  actionBusy,
+  cancelRequested,
+  modelsOpen,
+  shouldPoll: () => shellState.tab === 'reverse' || busy.value,
+})
 
-async function refresh() {
-  if (polling) {
-    return
-  }
-  polling = true
-  try {
-    status.value = await window.api.reverseStatus([...selection.value])
-  } catch (e) {
-    error.value = cleanErr(e)
-  } finally {
-    polling = false
-  }
-}
 onMounted(() => {
   window.addEventListener('paste', paste)
-  refresh().catch((e) => {
-    error.value = cleanErr(e)
-  })
-  timer = setInterval(() => {
-    if (shellState.tab === 'reverse' || busy.value) {
-      refresh().catch((e) => {
-        error.value = cleanErr(e)
-      })
-    }
-  }, 900)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('paste', paste)
-  clearInterval(timer)
   URL.revokeObjectURL(imageUrl.value)
 })
-
-async function manage(action: 'install' | 'import' | 'cancel' | 'remove') {
-  error.value = ''
-  actionBusy.value = true
-  if (action !== 'cancel') {
-    cancelRequested.value = false
-  }
-  try {
-    if (action === 'install') {
-      status.value = await window.api.reverseInstall([...selection.value])
-    } else if (action === 'import') {
-      status.value = await window.api.reverseImport([...selection.value])
-    } else if (action === 'cancel') {
-      cancelRequested.value = true
-      await window.api.reverseCancel()
-    } else {
-      await window.api.reverseRemove([...selection.value])
-      modelsOpen.value = false
-    }
-    await refresh()
-  } catch (e) {
-    error.value = cleanErr(e)
-  } finally {
-    actionBusy.value = false
-  }
-}
 
 function select(file?: File) {
   if (!file || busy.value) {

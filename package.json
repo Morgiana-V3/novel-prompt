@@ -75,15 +75,15 @@
     ],
     "extraResources": [
       {
-        "from": "skill-templates",
+        "from": "resources/skills/user-seeds",
         "to": "skill-templates"
       },
       {
-        "from": "skills",
+        "from": "resources/skills/builtin",
         "to": "skills"
       },
       {
-        "from": "default-data",
+        "from": "resources/default-data",
         "to": "default-data",
         "filter": [
           "*.json.gz",

@@ -1,4 +1,4 @@
-import { TAG_TOOL_DEFS, tagTool } from '../../../modules/prompts/optimizer'
+import { TAG_TOOL_DEFS, tagTool } from '../../../modules/prompts/tag-tools'
 import type { McpTool } from '../types'
 
 export const tagDef = (name: string) =>

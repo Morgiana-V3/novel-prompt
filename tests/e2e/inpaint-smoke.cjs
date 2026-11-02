@@ -17,6 +17,8 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'np-img', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ])
 require('../support/register-typescript.cjs')
+const novelaiPayload = require('../../src/main/providers/novelai/payload.ts')
+const imageAccess = require('../../src/main/modules/images/access.ts')
 const client = require('../../src/main/modules/generation/index.ts')
 app.getAppPath = () => join(__dirname, '../..')
 const { planInpaint, normalizePlans } = require('../../src/main/modules/prompts/inpaint-planner.ts')
@@ -69,7 +71,7 @@ const originalBytes = metadata(PNG.sync.write(original), {
   },
 })
 const sourceName = 'smoke-source.png'
-writeFileSync(join(client.imageDir(), sourceName), originalBytes)
+writeFileSync(join(imageAccess.imageDir(), sourceName), originalBytes)
 saveSettings({
   naiToken: 'fixture-token',
   naiVersion: 'v5',
@@ -207,8 +209,8 @@ const handlers = {
   }),
   'nai:subscription': () => client.getSubscription(),
   'nai:freeCheck': (_, ...args) => client.freeCheck(...args),
-  'nai:list': () => client.listImages(),
-  'nai:readImage': (_, name) => new Uint8Array(readFileSync(client.imagePath(name))),
+  'nai:list': () => imageAccess.listImages(),
+  'nai:readImage': (_, name) => new Uint8Array(readFileSync(imageAccess.imagePath(name))),
   'nai:inpaint': async (event, req) => {
     lastRequest = req
     generationRequests.push(req)
@@ -250,7 +252,7 @@ app.whenReady().then(async () => {
   protocol.handle('np-img', (req) =>
     originalFetch(
       pathToFileURL(
-        client.imagePath(decodeURIComponent(new URL(req.url).pathname.slice(1))),
+        imageAccess.imagePath(decodeURIComponent(new URL(req.url).pathname.slice(1))),
       ).toString(),
     ),
   )
@@ -595,8 +597,8 @@ app.whenReady().then(async () => {
       Buffer.from(lastBody.parameters.image, 'base64').equals(originalBytes),
       'source sent to NovelAI must not contain the colored UI overlay',
     )
-    const latest = client.listImages().find((g) => g.name !== sourceName)
-    const savedBytes = readFileSync(client.imagePath(latest.name))
+    const latest = imageAccess.listImages().find((g) => g.name !== sourceName)
+    const savedBytes = readFileSync(imageAccess.imagePath(latest.name))
     const saved = PNG.sync.read(savedBytes)
     const selected = PNG.sync.read(Buffer.from(lastRequest.inpaint.mask, 'base64'))
     let changed = 0
@@ -1367,7 +1369,7 @@ app.whenReady().then(async () => {
       () => compositeInpaint(prepared, PNG.sync.write(png([0, 0, 0, 255], 64, 64))),
       /尺寸/,
     )
-    const v45 = client.buildInpaintBody(
+    const v45 = novelaiPayload.buildInpaintBody(
       { ...lastRequest, version: 'v4.5', inpaint: { ...lastRequest.inpaint, strength: 1 } },
       42,
       prepared,
@@ -1392,7 +1394,7 @@ app.whenReady().then(async () => {
     assert.ok(alphaComposite.data[0] > 130 && alphaComposite.data[0] < 150)
     assert.ok(alphaComposite.data[3] > 190 && alphaComposite.data[3] < 195)
     assert.ok(alphaComposite.data.subarray(4).equals(alphaSource.data.subarray(4)))
-    const normal = client.buildBody(lastRequest, 42)
+    const normal = novelaiPayload.buildBody(lastRequest, 42)
     assert.equal(normal.action, 'generate')
     assert.ok(!('image' in normal.parameters))
     console.log('PASS input validation and V4.5 full-strength request')

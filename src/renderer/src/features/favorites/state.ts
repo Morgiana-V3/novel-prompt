@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
 import type { NaiImage, SavedRecipe } from '@shared/images/types'
-import { toast } from '../lib/notifications'
-import { shellState } from './shell'
+import { toast } from '../../shared/lib/notifications'
+import { shellState } from '../../shared/state/shell'
 
 export const favorites = reactive({
   items: [] as SavedRecipe[],
@@ -80,4 +80,8 @@ export async function removeFavorite(item: SavedRecipe) {
   } finally {
     favorites.busy = favorites.busy.filter((id) => id !== item.id)
   }
+}
+
+export function rememberFavorite(item: SavedRecipe): void {
+  favorites.items = [item, ...favorites.items.filter((other) => other.id !== item.id)]
 }

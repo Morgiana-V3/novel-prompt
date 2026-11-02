@@ -1,5 +1,5 @@
 /**
- * 把本机已下载 / 翻译好的数据导出为默认数据（default-data/），随安装包分发。
+ * 把本机已下载 / 翻译好的数据导出为默认数据（resources/default-data/），随安装包分发。
  * 用法：npm run data:export
  *
  * 只导出白名单内的数据文件；settings.json（含 API Key）永远不会被导出。
@@ -20,7 +20,7 @@ import runtimeProfile from '../src/runtime/runtime-profile.cjs'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SRC =
   process.env.NP_DATA_DIR ?? join(runtimeProfile.resolveRuntimeProfile({ packaged: false }), 'data')
-const OUT = join(ROOT, 'default-data')
+const OUT = join(ROOT, 'resources/default-data')
 const FILES = [
   'tags.json',
   'aliases.json',

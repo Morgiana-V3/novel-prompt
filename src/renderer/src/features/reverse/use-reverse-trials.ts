@@ -1,7 +1,7 @@
 import { onBeforeUnmount, reactive, watchEffect } from 'vue'
 import type { NaiGenRequest } from '@shared/generation/types'
 import type { NaiImage } from '@shared/images/types'
-import { imageState } from '../generation/state'
+import { imageState, setGenerationBusy } from '../generation/public'
 import { settingsState } from '../settings/state'
 import { activeTask, trialActivity } from '../../shared/state/tasks'
 import { cleanErr } from '../../shared/lib/format'
@@ -99,7 +99,7 @@ export function useReverseTrials() {
       state: 'pending',
     }))
     state.running = true
-    imageState.generating = true
+    setGenerationBusy(true)
     state.stopRequested = false
     state.cost = null
     let cost = 0
@@ -157,7 +157,7 @@ export function useReverseTrials() {
     } finally {
       requesting = false
       state.running = false
-      imageState.generating = false
+      setGenerationBusy(false)
     }
   }
 

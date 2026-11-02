@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import type { PageVersion, PageRegion } from '@shared/workspace/model'
 import Icon from '../../../shared/ui/Icon.vue'
-import FavoriteButton from '../../../shared/ui/FavoriteButton.vue'
+import { FavoriteButton } from '../../favorites/public'
 import ImageViewport from '../../../shared/ui/ImageViewport.vue'
 const props = defineProps<{
   viewed: PageVersion

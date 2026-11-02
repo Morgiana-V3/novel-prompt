@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reportError } from '../../shared/lib/notifications'
 import { promptState } from '../prompts/state'
-import { imageState } from '../generation/state'
+import { imageState, clearWorkspaceImage } from '../generation/public'
 import { settingsState } from '../settings/state'
 import { shellState } from '../../shared/state/shell'
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
@@ -11,7 +11,7 @@ import type { NaiImage } from '@shared/images/types'
 import type { NaiGenParams } from '@shared/generation/types'
 import { cleanErr } from '../../shared/lib/format'
 import { toast } from '../../shared/lib/notifications'
-import { generationParams } from '../generation/state'
+import { generationParams } from '../generation/public'
 import PageWorkspace from './components/PageWorkspace.vue'
 import Icon from '../../shared/ui/Icon.vue'
 import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
@@ -199,7 +199,7 @@ watch(
     if (!image) {
       return
     }
-    imageState.workspaceImage = null
+    clearWorkspaceImage()
     if (busy.value) {
       error.value = '请等待当前操作完成，再选择项目图片。'
       return

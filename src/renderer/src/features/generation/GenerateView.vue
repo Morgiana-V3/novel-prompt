@@ -20,8 +20,8 @@ import { DEFAULT_GEN, generationParams } from './state'
 import { resizeWithin } from '../../shared/lib/autosize'
 import { readPngPrompt } from '../prompts/png-import'
 import { type ImportedPrompt } from '@shared/prompts/import'
-import { favorites, revealFavorite } from '../../shared/state/favorites'
-import FavoriteButton from '../../shared/ui/FavoriteButton.vue'
+import { rememberFavorite, revealFavorite } from '../favorites/public'
+import { FavoriteButton } from '../favorites/public'
 import type { NaiGenRequest } from '@shared/generation/types'
 import { saveSettings } from '../settings/state'
 import Icon from '../../shared/ui/Icon.vue'
@@ -130,7 +130,7 @@ async function saveRecipe() {
     const item = await window.api.recipesCreateConfig(
       JSON.parse(JSON.stringify(currentRecipe.value)),
     )
-    favorites.items = [item, ...favorites.items.filter((other) => other.id !== item.id)]
+    rememberFavorite(item)
     toast('已收藏当前配置', { label: '查看', run: () => revealFavorite(item.id) })
   } catch (error2) {
     toast(`收藏失败：${cleanErr(error2)}`)

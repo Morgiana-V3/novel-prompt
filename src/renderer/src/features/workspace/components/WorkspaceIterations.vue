@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { pageConfigurationChanges, type PageWorkspace } from '@shared/workspace/model'
 import { reviewDrafts } from '../../prompts/prompt-review'
 import PromptReview from '../../prompts/components/PromptReview.vue'
-import FavoriteButton from '../../../shared/ui/FavoriteButton.vue'
+import { FavoriteButton } from '../../favorites/public'
 
 const props = defineProps<{ work: PageWorkspace; versionId: string; compareId: string }>()
 const iteration = computed(() =>
