@@ -5,7 +5,13 @@ import type { ReviewGroup } from '../prompt-review'
 import DiffChips from './DiffChips.vue'
 
 const props = withDefaults(
-  defineProps<{ groups: ReviewGroup[]; beforeLabel?: string; afterLabel?: string }>(),
+  defineProps<{
+    groups: ReviewGroup[]
+    flat?: boolean
+    fullContext?: boolean
+    beforeLabel?: string
+    afterLabel?: string
+  }>(),
   { beforeLabel: '修改前', afterLabel: '修改后' },
 )
 const statusLabels = { changed: '已修改', added: '新增角色', removed: '移除角色' }
@@ -21,15 +27,19 @@ const prepared = computed(() =>
 </script>
 
 <template>
-  <div class="prompt-review">
-    <details
+  <div
+    class="prompt-review"
+    :class="{ flat }"
+  >
+    <component
+      :is="flat ? 'section' : 'details'"
       v-for="group in prepared"
       :key="group.key"
       class="review-group"
       :data-group="group.key"
-      open
+      :open="!flat || undefined"
     >
-      <summary>
+      <summary v-if="!flat">
         <strong>{{ group.label }}</strong
         ><span
           class="review-status"
@@ -46,8 +56,9 @@ const prepared = computed(() =>
           class="review-field"
           :data-field="field.kind"
         >
-          <div class="review-field-head">
+          <div :class="flat ? 'review-field-actions' : 'review-field-head'">
             <slot
+              v-if="!flat"
               name="control"
               :field="field"
               ><span>{{ field.label }}</span></slot
@@ -60,6 +71,7 @@ const prepared = computed(() =>
           <DiffChips
             v-if="field.diff"
             :diff="field.diff"
+            :full-context="fullContext"
             :before-label="beforeLabel"
             :after-label="afterLabel"
             :before-text="field.before"
@@ -72,6 +84,11 @@ const prepared = computed(() =>
             <span class="review-old">{{ field.before }}</span
             ><span aria-label="变更为">→</span><span class="review-new">{{ field.after }}</span>
           </div>
+          <slot
+            name="adoption"
+            :field="field"
+            :group="group"
+          />
           <p
             v-if="field.reason"
             class="review-reason"
@@ -79,6 +96,10 @@ const prepared = computed(() =>
             {{ field.reason }}
           </p>
         </div>
+        <slot
+          name="group-adoption"
+          :group="group"
+        />
         <p
           v-if="!group.fields.length"
           class="review-reason"
@@ -86,13 +107,28 @@ const prepared = computed(() =>
           未填写提示词
         </p>
       </div>
-    </details>
+    </component>
   </div>
 </template>
 
 <style scoped>
 .prompt-review {
   min-width: 0;
+}
+
+.flat .review-group {
+  margin: 0;
+}
+
+.flat .review-field {
+  position: relative;
+}
+
+.review-field-actions {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 1;
 }
 
 .review-group {

@@ -3,7 +3,7 @@ import { shellState, type Tab } from '../state/shell'
 
 /** 有弹窗或浮层打开时，页面级快捷键不生效，避免在弹窗里按键却触发了背后的页面 */
 const OVERLAY =
-  '[aria-modal="true"], .pos-mask, .ip-mask, .sk-mask, .sp-mask, .theme-select-menu, .task-panel, .history-menu'
+  '[aria-modal="true"], [data-generation-settings-open], .pos-mask, .ip-mask, .sk-mask, .sp-mask, .theme-select-menu, .task-panel, .history-menu'
 
 export const isMac = navigator.platform.toLowerCase().includes('mac')
 export const runKeyLabel = isMac ? '⌘ Enter' : 'Ctrl + Enter'
@@ -15,11 +15,12 @@ export const runKeyShort = isMac ? '⌘ ↵' : 'Ctrl ↵'
  * 只在对应页签可见、且没有弹窗时响应；在输入框里也能用（写完提示词直接执行）。
  */
 export function usePageShortcuts(
-  tab: Tab,
+  tab: Tab | (() => boolean),
   actions: { run: () => void; cancel?: () => void; canCancel?: () => boolean },
 ): void {
   function onKey(event2: KeyboardEvent) {
-    if (shellState.tab !== tab || event2.isComposing || document.querySelector(OVERLAY)) {
+    const active = typeof tab === 'function' ? tab() : shellState.tab === tab
+    if (!active || event2.isComposing || document.querySelector(OVERLAY)) {
       return
     }
     if (document.querySelector('.content[inert]')) {

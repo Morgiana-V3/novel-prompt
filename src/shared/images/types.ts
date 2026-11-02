@@ -1,6 +1,7 @@
 import type { NaiGenRequest } from '../generation/types'
 
 export interface NaiImage {
+  collectionId?: string
   /** 文件名（位于本地图库目录） */
   name: string
   /** 渲染进程可直接使用的地址 */

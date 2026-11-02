@@ -1,6 +1,7 @@
 import {
   MAX_CHARACTERS,
-  QUALITY_TAGS,
+  qualityTagsFor,
+  effectiveQualityMode,
   TEXT_MAX_CHARS,
   UC_LABEL,
   UC_PRESETS,
@@ -454,7 +455,7 @@ function paramsBlock(req: AiPreviewRequest): string {
     `## 生成参数`,
     `- 模型：${req.version === 'v5' ? 'V5' : 'V4.5'}`,
     `- 画幅：${width}×${height}（${shape}）`,
-    `- Add Quality Tags：${qualityTags ? `开启，主提示词末尾隐式追加 \`${QUALITY_TAGS[req.version]}\`` : '关闭'}`,
+    `- Add Quality Tags：${qualityTags ? `开启，主提示词末尾隐式追加 \`${qualityTagsFor(req.version, effectiveQualityMode(req.version, req.params))}\`` : '关闭'}`,
     `- UC 预设：${UC_LABEL[ucPreset]}${preset ? `，负面隐式追加 \`${preset}\`` : ''}`,
   ].join('\n')
 }
@@ -492,7 +493,7 @@ export function userPrompt(
   const lines = [
     `请推测下面这套 NovelAI 提示词实际会画出的画面。`,
     ...reportBlocks(req, sections, issues, evidenceBlock),
-    req.expectation.trim()
+    !req.forecastOnly && req.expectation.trim()
       ? `## 作者想要的效果\n${req.expectation.trim()}\n请对比推测结果，在 gap 中说明差距，在 suggestions 中给出具体到 tag 的修改建议。`
       : '',
   ]

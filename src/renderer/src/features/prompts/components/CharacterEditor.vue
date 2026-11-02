@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { deleteSelectedToken } from '../prompt-keyboard'
 import SnippetButton from './SnippetButton.vue'
 import { promptState } from '../state'
 import { settingsState } from '../../settings/state'
@@ -161,6 +162,7 @@ function remove(i: number) {
           data-src="pos"
           spellcheck="false"
           placeholder="girl, silver hair, red eyes, ..."
+          @keydown="deleteSelectedToken"
           @focus="!characters && (promptState.focus = { kind: 'char', index: indexItem })"
         ></textarea>
       </div>
@@ -173,6 +175,7 @@ function remove(i: number) {
           data-src="neg"
           spellcheck="false"
           placeholder="角色负面（可空），如 glasses, animal ears"
+          @keydown="deleteSelectedToken"
           @focus="
             !characters && (promptState.focus = { kind: 'char', index: indexItem, neg: true })
           "

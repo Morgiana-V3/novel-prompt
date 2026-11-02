@@ -19,7 +19,7 @@ const readPngPrompt = async (blob) => readPngBytes(new Uint8Array(await blob.arr
 const { parsePrompt } = require('../../src/main/modules/prompts/parser.ts')
 const pages = require('../../src/main/modules/workspace/index.ts')
 const { getSettings, saveSettings } = require('../../src/main/modules/settings/service.ts')
-saveSettings({ apiKey: 'fixture', naiVersion: 'v5' })
+saveSettings({ apiKey: 'fixture', naiToken: 'fixture', naiVersion: 'v5' })
 net.fetch = async () => {
   throw new Error('Unexpected network request in offline regression')
 }
@@ -67,6 +67,7 @@ const positionReference = {
   time: 1,
 }
 const handlers = {
+  'collections:list': () => [{ id: 'default', name: '默认图集', createdAt: 0 }],
   'agents:list': () => [],
   'tasks:list': () => ({ revision: 0, tasks: [] }),
   'images:cleanup-status': () => ({ pending: 0, message: '' }),
@@ -87,6 +88,13 @@ const handlers = {
     implicationCount: 0,
   }),
   'nai:list': () => [positionReference],
+  'nai:subscription': () => ({
+    active: true,
+    tier: 3,
+    anlasFixed: 10000,
+    anlasPurchased: 0,
+    usagePercent: 100,
+  }),
   'nai:freeCheck': () => ({ ok: false, reasons: [], notes: [] }),
   'clipboard:write': (_, text) => {
     copied = text
@@ -105,7 +113,7 @@ const handlers = {
     optimizeCalls++
     lastOptimize = req
     if (reviewResult) {
-      return reviewResult
+      return typeof reviewResult === 'function' ? reviewResult(req) : reviewResult
     }
     return {
       positive: 'outdoors',
@@ -117,10 +125,14 @@ const handlers = {
       evidence: { related: [], wiki: [], failed: [], implications: true },
     }
   },
-  'ai:preview': () => previewResult,
+  'ai:preview': (_, req) => {
+    lastPreviewRequest = req
+    return previewResult
+  },
 }
 let optimizeCalls = 0
 let previewResult = null
+let lastPreviewRequest = null
 let danbooruHits = 0
 let lastOptimize = null
 const pt = { text: 't', tags: [], confidence: 'medium' }
@@ -612,6 +624,45 @@ app.whenReady().then(async () => {
       'PASS grouped review hides unchanged fields, preserves prose/commas/copy, folds context and adapts to narrow containers',
     )
 
+    reviewResult = null
+    await require('./creation-checks.cjs')({
+      win,
+      js,
+      click,
+      waitUI,
+      profile,
+      image: positionReference,
+      getPreviewRequest: () => lastPreviewRequest,
+      getCopied: () => copied,
+    })
+
+    await require('../integration/preview-forecast-checks.cjs')(lastPreviewRequest)
+    require('../unit/partial-adoption-checks.cjs')()
+    require('../unit/review-explanation-checks.cjs')()
+    require('../unit/remove-tokens-checks.cjs')()
+    await require('./partial-adoption-checks.cjs')({
+      js,
+      click,
+      waitUI,
+      profile,
+      win,
+      setOptimizeResult: (value) => {
+        reviewResult = value
+      },
+    })
+
+    await require('../integration/prompt-presets-checks.cjs')()
+    await require('./preset-settings-checks.cjs')({
+      js,
+      waitUI,
+      win,
+      profile,
+      getOptimize: () => lastOptimize,
+      getPreview: () => lastPreviewRequest,
+    })
+
+    await require('./editor-refinement-checks.cjs')({ js, waitUI })
+
     // 主进程：AI 请求错误中文化、5xx 自动重试、Key 脱敏；Danbooru 熔断
     const { chat } = require('../../src/main/modules/prompts/chat.ts')
     saveSettings({
@@ -668,6 +719,11 @@ app.whenReady().then(async () => {
     console.error(e)
     process.exitCode = 1
     if (win) {
+      writeFileSync(
+        join(profile, 'failure.html'),
+        await win.webContents.executeJavaScript('document.body.outerHTML'),
+      )
+      writeFileSync(join(profile, 'failure.png'), (await win.webContents.capturePage()).toPNG())
       writeFileSync(
         join(profile, 'failure.txt'),
         await win.webContents.executeJavaScript('document.body.innerText'),

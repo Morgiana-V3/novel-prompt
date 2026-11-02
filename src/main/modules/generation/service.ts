@@ -1,3 +1,4 @@
+import { recordAnlas, recordGeneratedImage } from '../statistics/service'
 import { isNaiVersion } from '../../../shared/generation/types'
 import { readFileSync, statSync } from 'node:fs'
 import type {
@@ -11,6 +12,7 @@ import { generateOne, readSubscription } from '../../providers/novelai/client'
 import { buildBody } from '../../providers/novelai/payload'
 import { imagePath } from '../images/access'
 import { storeGeneratedImage } from '../images/library'
+import { imageCollections } from '../images/collections'
 import { getSettings } from '../settings/service'
 import { anlasChange, freeCheck } from './costs'
 import { compositeInpaint, prepareInpaint, type PreparedInpaint } from './inpaint'
@@ -36,6 +38,7 @@ export async function generateImages(
 ): Promise<NaiGenResult> {
   // Snapshot both request and retention once, before the first asynchronous operation.
   req = structuredClone(req)
+  req.collectionId = imageCollections.resolve(req.collectionId)
   const resolveStorage = () => {
     if (opts.workspaceId) {
       return 'workspace' as const
@@ -124,6 +127,7 @@ export async function generateImages(
     let png: Buffer
     try {
       png = await generateOne(req, seed, token(), undefined, prepared)
+      recordGeneratedImage(req.version)
       if (prepared) {
         png = compositeInpaint(prepared, png)
       }
@@ -169,6 +173,7 @@ export async function generateImages(
         },
         storage,
         opts.workspaceId,
+        req.collectionId,
       ),
     )
 
@@ -180,10 +185,10 @@ export async function generateImages(
       delta = undefined
       if (freeOnly) {
         stopped = '生成后查询余额失败，无法确认是否扣费，已停止后续生成'
-        break
       }
     }
     const change = anlasChange(sub, after)
+    recordAnlas(req.version, change)
     if (change && delta !== undefined) {
       delta += change.fixed + change.purchased
     } else if (!change) {
@@ -196,7 +201,7 @@ export async function generateImages(
       sub = after
       break
     }
-    sub = after ?? sub
+    sub = after
   }
 
   onStep(stopped ?? '完成')

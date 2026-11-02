@@ -9,6 +9,8 @@ import { invoke, on } from './bridge'
 import type { SnippetInput } from '../../shared/prompts/snippets'
 
 export const applicationApi = {
+  statisticsGet: () => invoke('statistics:get'),
+  statisticsClear: () => invoke('statistics:clear'),
   storageInfo: () => invoke('storage:info'),
   storageChoose: () => invoke('storage:choose'),
   storageSchedule: (path: string) => invoke('storage:schedule', path),

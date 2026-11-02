@@ -79,6 +79,12 @@ export function patchWorkspaceConfig(
         }
         continue
       }
+      if (field === 'qualityMode') {
+        if (!['standard', 'light'].includes(String(value))) {
+          throw new Error('质量词档位无效')
+        }
+        continue
+      }
       if (field === 'qualityTags') {
         if (typeof value !== 'boolean') {
           throw new Error('质量词开关无效')
@@ -172,6 +178,7 @@ export const WORKSPACE_CONFIG_SCHEMA = {
       properties: {
         count: { type: 'integer', enum: [1, 2, 4] },
         qualityTags: { type: 'boolean' },
+        qualityMode: { type: 'string', enum: ['standard', 'light'] },
         ucPreset: { type: 'string', enum: UC_PRESET_NAMES },
         width: { type: 'integer' },
         height: { type: 'integer' },

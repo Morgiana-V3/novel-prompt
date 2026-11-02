@@ -7,6 +7,8 @@ import { cleanErr } from '../../shared/lib/format'
 import { toast } from '../../shared/lib/notifications'
 import { type Tab } from '../../shared/state/shell'
 import Icon from '../../shared/ui/Icon.vue'
+import TaskSteps from './TaskSteps.vue'
+import TaskUsage from './TaskUsage.vue'
 import type { IconName } from '../../shared/ui/icons'
 
 const opened = ref(false)
@@ -279,6 +281,11 @@ function closePanel() {
                   ><span class="task-status">{{ statusText[task.status] }}</span>
                 </div>
                 <p>{{ task.message }}</p>
+                <TaskSteps :task="task" />
+                <TaskUsage
+                  v-if="task.usage"
+                  :usage="task.usage"
+                />
                 <div
                   v-if="taskIsActive(task)"
                   class="task-meter"

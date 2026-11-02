@@ -383,6 +383,7 @@ export function workKey(): string {
     parameters.width,
     parameters.height,
     parameters.qualityTags,
+    parameters.qualityMode,
     parameters.ucPreset,
     settingsState.settings?.naiVersion,
   ])

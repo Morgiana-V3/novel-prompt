@@ -37,7 +37,9 @@ export function characterCaptions(chars: AiCharacter[]) {
 
 export function buildBody(req: NaiGenRequest, seed: number): Record<string, unknown> {
   const parameters = req.params
-  const input = parameters.qualityTags ? withQualityTags(req.base, req.version) : req.base.trim()
+  const input = parameters.qualityTags
+    ? withQualityTags(req.base, req.version, parameters.qualityMode)
+    : req.base.trim()
   const negative = joinPrompt(req.negative, UC_PRESETS[req.version][parameters.ucPreset])
   const chars = characterCaptions(req.characters)
   return {

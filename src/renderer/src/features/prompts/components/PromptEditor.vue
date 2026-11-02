@@ -9,6 +9,8 @@ import { importPrompt } from '../actions'
 import { vAutosize } from '../../../shared/lib/autosize'
 import { parsePromptText } from '@shared/prompts/import'
 import CharacterEditor from './CharacterEditor.vue'
+import PromptPresetControl from './PromptPresetControl.vue'
+import { deleteSelectedToken } from '../prompt-keyboard'
 
 /** 统一表单顺序：主提示词 → 负面（UC）→ 角色；项目传入独立草稿，其他页面使用共享内容。 */
 const props = withDefaults(
@@ -18,6 +20,7 @@ const props = withDefaults(
     params?: { width: number; height: number }
     image?: NaiImage | null
     disabled?: boolean
+    showPresets?: boolean
     baseLabel?: string
     baseHint?: string
     charLabel?: string
@@ -88,7 +91,10 @@ function onPaste(event2: ClipboardEvent) {
       :title="baseHint"
       >{{ baseLabel }}</label
     >
-    <div class="composer short">
+    <div
+      class="composer short"
+      :class="{ 'with-presets': showPresets && !draft }"
+    >
       <SnippetButton :disabled="disabled" />
       <textarea
         v-model="base"
@@ -101,8 +107,14 @@ function onPaste(event2: ClipboardEvent) {
           disabled ? '未设置主提示词' : '2girls, artist:xxx, outdoors, cherry blossoms, ...'
         "
         @paste="onPaste"
+        @keydown="deleteSelectedToken"
         @focus="!draft && (promptState.focus = { kind: 'base' })"
       ></textarea>
+      <PromptPresetControl
+        v-if="showPresets && !draft"
+        kind="quality"
+        :disabled="disabled"
+      />
     </div>
   </div>
 
@@ -112,7 +124,10 @@ function onPaste(event2: ClipboardEvent) {
       :title="negHint"
       >负面提示词（UC）</label
     >
-    <div class="composer short neg">
+    <div
+      class="composer short neg"
+      :class="{ 'with-presets': showPresets && !draft }"
+    >
       <SnippetButton :disabled="disabled" />
       <textarea
         v-model="negative"
@@ -122,8 +137,14 @@ function onPaste(event2: ClipboardEvent) {
         data-src="neg"
         spellcheck="false"
         :placeholder="disabled ? '未设置负面提示词' : 'lowres, worst quality, bad quality, ...'"
+        @keydown="deleteSelectedToken"
         @focus="!draft && (promptState.focus = { kind: 'negative' })"
       ></textarea>
+      <PromptPresetControl
+        v-if="showPresets && !draft"
+        kind="uc"
+        :disabled="disabled"
+      />
     </div>
   </div>
 
@@ -137,3 +158,13 @@ function onPaste(event2: ClipboardEvent) {
     :disabled="disabled"
   />
 </template>
+
+<style scoped>
+.with-presets {
+  position: relative;
+}
+
+.with-presets textarea {
+  padding-bottom: 38px;
+}
+</style>

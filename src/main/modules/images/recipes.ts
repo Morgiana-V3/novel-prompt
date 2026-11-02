@@ -89,6 +89,8 @@ export function createConfigRecipe(request: NaiGenRequest): SavedRecipe {
     parameters.count < 1 ||
     parameters.count > 8 ||
     typeof parameters.qualityTags !== 'boolean' ||
+    (parameters.qualityMode !== undefined &&
+      !['standard', 'light'].includes(parameters.qualityMode)) ||
     !isUcPreset(parameters.ucPreset) ||
     !Number.isFinite(parameters.cfgRescale) ||
     parameters.cfgRescale < 0 ||

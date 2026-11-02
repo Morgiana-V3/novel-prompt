@@ -24,6 +24,7 @@ export interface WorkParams {
   height: number
   /** Add Quality Tags */
   qualityTags: boolean
+  qualityMode?: 'standard' | 'light'
   ucPreset: UcPreset
 }
 
@@ -48,6 +49,7 @@ export const DEFAULT_PARAMS: Readonly<WorkParams> = {
   width: 832,
   height: 1216,
   qualityTags: true,
+  qualityMode: 'standard',
   ucPreset: 'heavy',
 }
 

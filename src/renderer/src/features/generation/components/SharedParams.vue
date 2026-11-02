@@ -2,14 +2,16 @@
 import { promptState } from '../../prompts/state'
 import { computed } from 'vue'
 import type { UcPreset, NaiGenParams } from '@shared/generation/types'
+import ResolutionPicker from './ResolutionPicker.vue'
 
 /** 推测与生图共用的参数（作为若干个 .param 直接放进父级网格）；only 用来只渲染其中几项 */
 type Part = 'size' | 'quality' | 'uc'
 const props = defineProps<{
   only?: Part[]
-  params?: Pick<NaiGenParams, 'width' | 'height' | 'qualityTags' | 'ucPreset'>
+  params?: Pick<NaiGenParams, 'width' | 'height' | 'qualityTags' | 'qualityMode' | 'ucPreset'>
   disabled?: boolean
   sizeLocked?: boolean
+  expandedSizes?: boolean
 }>()
 const show = (field: Part) => !props.only || props.only.includes(field)
 
@@ -57,7 +59,17 @@ function setSize(width: number, height: number) {
       >画幅 · {{ parameters.width }}×{{ parameters.height
       }}<template v-if="sizeLocked && !disabled"> · 与遮罩尺寸一致</template></span
     >
-    <div class="seg block">
+    <ResolutionPicker
+      v-if="expandedSizes"
+      :width="parameters.width"
+      :height="parameters.height"
+      :disabled="disabled || sizeLocked"
+      @change="updateParameters"
+    />
+    <div
+      v-else
+      class="seg block"
+    >
       <button
         v-for="option in SIZES"
         :key="option.key"
@@ -78,9 +90,11 @@ function setSize(width: number, height: number) {
       <button
         :disabled="disabled"
         :class="{ on: parameters.qualityTags }"
-        @click="updateParameters({ qualityTags: true })"
+        @click="
+          updateParameters({ qualityTags: true, qualityMode: parameters.qualityMode ?? 'standard' })
+        "
       >
-        开
+        {{ parameters.qualityMode === 'light' ? 'Light' : '开' }}
       </button>
       <button
         :disabled="disabled"

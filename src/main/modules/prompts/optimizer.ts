@@ -20,6 +20,7 @@ import { analyzePrompt } from './analyzer'
 import { chat } from './chat'
 import { gatherEvidence, type EvSection } from './evidence'
 import { TAG_TOOL_DEFS as TOOLS, runTool, type ToolLog } from './tag-tools'
+import { presetContext } from './preset-context'
 
 const MAX_TOOL_ROUNDS = 10
 const MAX_FIX_ROUNDS = 2
@@ -47,6 +48,7 @@ function systemPrompt(version: NaiVersion, skillText: string): string {
 {"positive":"主提示词","negative":"完整的负面提示词，可空","characters":[{"prompt":"角色提示词","position":"位置","negative":"该角色的负面提示词，可空"}],"assessment":"整体评估，一两句话","changes":[{"scope":"positive","text":"twin tails → twintails","basis":"rule","evidence":"validate_tags：别名"}]}
 - scope 取 positive / character / negative / optional。basis 取值：rule = 可被程序校验的硬规则（tag 不存在、别名、语法、版本、位置写法）；data = 统计数据或工具结果；doc = 依据启用的 Skill 或官方文档（evidence 写出 Skill 名称）；taste = 你自己的审美判断。**basis 为 taste 的内容只能放在 scope=optional，不能直接改进提示词**；按 Skill 要求做的修改属于 doc，不是 taste。
 - 删除或改写了用户原有的内容时，changes 的 text 里要写出原文；Text: 块里的文字必须逐字符保留。
+- scope=character 的每条说明必须用 characterIndex（从 0 开始）、characterField（prompt / negative / position）定位到一个角色字段。characterSide=after 表示输出角色列表；删除角色用 characterSide=before 和输入列表的序号。涉及多个角色或字段时分别写明，不把多项解释混在一起。无法归属具体字段的整体建议用 optional。
 - 不需要角色提示词时 characters 为 []。`
 }
 
@@ -137,6 +139,7 @@ function userPrompt(
     req.mode === 'semantic' ? '将用户描述转换为提示词。' : '根据用户要求调整已有提示词。',
     '创作方法和内容组织依据本次启用的 Skill。按 Skill 的适用范围与优先级使用；没有规则覆盖时尊重用户原意，不自行强制特定画风、角色拆分或编排方式。',
     '使用提供的工具核实候选 tag，区分工具证据与推断。列出实际改动及其依据，不把可选建议当成已获用户同意的内容。',
+    presetContext(req.version, req.promptPresets, req.prompt, req.negative),
     JSON.stringify({
       description: req.instruction,
       base: req.prompt,
@@ -333,6 +336,18 @@ function normalizeChanges(raw: unknown): AiChange[] {
         text: String(record.text ?? '').trim(),
         basis: BASES.includes(record.basis as Basis) ? (record.basis as Basis) : 'doc',
         evidence: String(record.evidence ?? '').trim(),
+        ...(Number.isSafeInteger(record.characterIndex) && Number(record.characterIndex) >= 0
+          ? {
+              characterIndex: Number(record.characterIndex),
+              characterSide:
+                record.characterSide === 'before' ? ('before' as const) : ('after' as const),
+              characterField: (['prompt', 'negative', 'position'].includes(
+                String(record.characterField),
+              )
+                ? record.characterField
+                : 'prompt') as NonNullable<AiChange['characterField']>,
+            }
+          : {}),
       }
     })
     .filter((change) => change.text)
@@ -340,18 +355,30 @@ function normalizeChanges(raw: unknown): AiChange[] {
 
 function normalizeResult(raw: Record<string, unknown>, evidence: EvidenceInfo): AiOptimizeResult {
   const chars = Array.isArray(raw.characters) ? (raw.characters as Partial<AiCharacter>[]) : []
+  const normalizedCharacters = chars.map((character) => ({
+    prompt: String(character?.prompt ?? '').trim(),
+    position: character?.position ? String(character.position).trim() : undefined,
+    negative: character?.negative ? String(character.negative).trim() : undefined,
+  }))
+  const indices = new Map<number, number>()
+  normalizedCharacters.forEach((character, index) => {
+    if (character.prompt) {
+      indices.set(index, indices.size)
+    }
+  })
+  const changes = normalizeChanges(raw.changes).map((change) =>
+    change.scope === 'character' &&
+    change.characterIndex !== undefined &&
+    change.characterSide !== 'before'
+      ? { ...change, characterIndex: indices.get(change.characterIndex) ?? -1 }
+      : change,
+  )
   return {
     positive: String(raw.positive ?? ''),
     negative: String(raw.negative ?? ''),
-    characters: chars
-      .map((character) => ({
-        prompt: String(character?.prompt ?? '').trim(),
-        position: character?.position ? String(character.position).trim() : undefined,
-        negative: character?.negative ? String(character.negative).trim() : undefined,
-      }))
-      .filter((character) => character.prompt),
+    characters: normalizedCharacters.filter((character) => character.prompt),
     notes: String(raw.assessment ?? raw.notes ?? '').trim(),
-    changes: normalizeChanges(raw.changes),
+    changes,
     invalid: [],
     dropped: [],
     fidelity: [],

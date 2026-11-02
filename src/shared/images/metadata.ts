@@ -36,6 +36,7 @@ export function validRecipe(value: unknown): value is ImageRecipe {
     isNaiSampler(p.sampler) &&
     isNaiNoiseSchedule(p.noiseSchedule) &&
     typeof p.qualityTags === 'boolean' &&
+    (p.qualityMode === undefined || ['standard', 'light'].includes(p.qualityMode as string)) &&
     isUcPreset(p.ucPreset)
   )
 }

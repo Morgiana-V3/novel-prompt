@@ -10,6 +10,8 @@ export interface ReviewField {
   sourceIndex?: number
 }
 export interface ReviewGroup {
+  beforeIndex?: number
+  afterIndex?: number
   key: string
   label: string
   status: 'changed' | 'added' | 'removed'

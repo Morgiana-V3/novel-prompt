@@ -21,10 +21,14 @@ import {
 import { type FieldRef } from './state'
 import { parsePromptText } from '@shared/prompts/import'
 import { findTextBlock } from '@shared/generation/presets'
+import { removePromptTokens } from '@shared/prompts/remove-tokens'
+import { deleteSelectedToken } from './prompt-keyboard'
 import TagCard from '../tags/components/TagCard.vue'
 import Icon from '../../shared/ui/Icon.vue'
 import Mascot from '../../shared/ui/Mascot.vue'
 import WorkspaceBar from './components/WorkspaceBar.vue'
+import { usePagePresentation } from '../../shared/lib/page-presentation'
+const { embedded, navigate, editor } = usePagePresentation()
 
 const analyzed = ref<{ key: string; result: AnalysisResult } | null>(null)
 const textarea = ref<HTMLTextAreaElement>()
@@ -36,6 +40,31 @@ const BASE_PLACEHOLDER =
 
 /** 当前检查的是哪一段：主提示词 / 角色 N / 角色 N 负面 / 负面 */
 const target = ref<FieldRef>({ kind: 'base' })
+watch(
+  () => [embedded.value, promptState.focus] as const,
+  () => {
+    if (embedded.value && validField(promptState.focus)) {
+      target.value = { ...promptState.focus }
+    }
+  },
+  { deep: true },
+)
+function activeTextarea() {
+  if (!embedded.value) {
+    return textarea.value
+  }
+  const field = target.value
+  if (field.kind === 'char') {
+    return editor()
+      ?.querySelectorAll('.char-block')
+      [field.index]?.querySelector<HTMLTextAreaElement>(
+        `textarea[data-src="${field.neg ? 'neg' : 'pos'}"]`,
+      )
+  }
+  return editor()?.querySelector<HTMLTextAreaElement>(
+    `textarea[aria-label="${field.kind === 'base' ? '主提示词' : '负面提示词'}"]`,
+  )
+}
 /** 角色负面只在有内容或正在检查时显示，避免切换条太长 */
 const sections = computed(() =>
   fieldList().filter(
@@ -151,7 +180,7 @@ function locate(analyzedToken: AnalyzedToken) {
   if (!currentTokens([analyzedToken])) {
     return
   }
-  const el = textarea.value
+  const el = activeTextarea()
   if (!el) {
     return
   }
@@ -163,7 +192,7 @@ function locate(analyzedToken: AnalyzedToken) {
 
 /** 通过 execCommand 写入文本框，保留原生撤销栈，误清空/误替换后可以 Ctrl+Z 恢复 */
 function setPrompt(text: string) {
-  const el = textarea.value
+  const el = activeTextarea()
   if (el && el.offsetParent !== null && text !== el.value) {
     el.focus()
     el.select()
@@ -224,32 +253,18 @@ function fixAllAliases() {
   }
 }
 
-function cut(path: string, analyzedToken: AnalyzedToken): string {
-  let end = analyzedToken.end
-  while (end < path.length && /[\s,]/.test(path[end])) {
-    end++
-  }
-  return path.slice(0, analyzedToken.start) + path.slice(end)
-}
-
 function removeToken(analyzedToken: AnalyzedToken) {
   if (!currentTokens([analyzedToken])) {
     return
   }
-  setPrompt(cut(text.value, analyzedToken))
+  setPrompt(removePromptTokens(text.value, [analyzedToken]))
 }
 
 function removeAllUnknown() {
   if (!currentTokens(groups.value.unknown)) {
     return
   }
-  let path = text.value
-  for (const analyzedToken of [...groups.value.unknown].sort(
-    (analyzedToken2, analyzedToken3) => analyzedToken3.start - analyzedToken2.start,
-  )) {
-    path = cut(path, analyzedToken)
-  }
-  setPrompt(path)
+  setPrompt(removePromptTokens(text.value, groups.value.unknown))
   toast('已移除不存在的 tag，可 Ctrl+Z 撤销')
 }
 
@@ -303,8 +318,16 @@ function formatPrompt() {
 </script>
 
 <template>
-  <div class="view compare">
-    <section class="pane left">
+  <div
+    :id="embedded ? 'creation-panel-compare' : undefined"
+    :role="embedded ? 'tabpanel' : undefined"
+    :aria-labelledby="embedded ? 'creation-tab-compare' : undefined"
+    class="view compare"
+  >
+    <section
+      v-if="!embedded"
+      class="pane left"
+    >
       <WorkspaceBar />
       <div class="section-tabs">
         <button
@@ -332,6 +355,7 @@ function formatPrompt() {
           :placeholder="target.kind === 'base' ? BASE_PLACEHOLDER : `${fieldLabel(target)}（可空）`"
           @focus="promptState.focus = target"
           @paste="onPaste"
+          @keydown="deleteSelectedToken"
         ></textarea>
         <div class="composer-bar">
           <div
@@ -385,7 +409,7 @@ function formatPrompt() {
             </button>
             <button
               class="btn accent"
-              @click="shellState.tab = 'ai'"
+              @click="navigate('ai')"
             >
               <Icon
                 name="sparkle"
@@ -398,6 +422,44 @@ function formatPrompt() {
     </section>
 
     <section class="pane right scroll">
+      <template v-if="embedded">
+        <div class="section-tabs">
+          <button
+            v-for="field in sections"
+            :key="fieldLabel(field)"
+            :class="['section-tab', { on: sameField(field, target) }]"
+            @click="select(field)"
+          >
+            {{ fieldLabel(field) }} <span class="section-count">{{ count(field) }}</span>
+          </button>
+        </div>
+        <div
+          v-if="result"
+          class="stats"
+        >
+          <span class="pill ok">有效 Tag {{ result.stats.valid }}</span>
+          <span
+            class="pill bad"
+            title="词库未收录，不代表模型一定不认识"
+            >未收录 {{ result.stats.unknown }}</span
+          >
+          <span class="pill alias">改写建议 {{ result.stats.alias }}</span>
+          <span class="pill nl">自然语言 {{ result.stats.natural + result.stats.text }}</span>
+        </div>
+        <div class="actions">
+          <button
+            class="btn small"
+            @click="formatPrompt"
+          >
+            整理格式</button
+          ><button
+            class="btn small"
+            @click="navigate('ai')"
+          >
+            交给 AI 调整
+          </button>
+        </div>
+      </template>
       <div
         v-if="!tagState.db?.loaded"
         class="empty"
@@ -428,7 +490,7 @@ function formatPrompt() {
         <p>在左边输入提示词，我会帮你一个个检查～</p>
       </div>
       <div
-        v-else-if="allGood"
+        v-else-if="!embedded && allGood"
         class="cheer"
       >
         <Mascot
@@ -441,7 +503,7 @@ function formatPrompt() {
         </div>
       </div>
       <div
-        v-else-if="result.stats.unknown >= 3"
+        v-else-if="!embedded && result && result.stats.unknown >= 3"
         class="cheer warn"
       >
         <Mascot
@@ -454,7 +516,7 @@ function formatPrompt() {
         </div>
         <button
           class="btn accent small ml-auto"
-          @click="shellState.tab = 'ai'"
+          @click="navigate('ai')"
         >
           <Icon
             name="sparkle"
@@ -474,7 +536,7 @@ function formatPrompt() {
               :size="14"
               :stroke="2.2"
           /></span>
-          <h3>不存在的 tag</h3>
+          <h3>{{ embedded ? '词库未收录' : '不存在的 tag' }}</h3>
           <span class="group-count">{{ groups.unknown.length }}</span>
           <button
             class="btn ghost small ml-auto"
@@ -600,7 +662,13 @@ function formatPrompt() {
           /></span>
           <h3>有效 tag</h3>
           <span class="group-count">{{ groups.valid.length }}</span>
-          <span class="muted small ml-auto">双击中文可编辑</span>
+          <button
+            class="btn ghost small ml-auto"
+            title="前往 Tag 搜索管理词库翻译"
+            @click="shellState.tab = 'search'"
+          >
+            词库翻译
+          </button>
         </div>
         <div class="tag-grid">
           <div
@@ -613,7 +681,6 @@ function formatPrompt() {
               :weight="group.weight"
               :prefix="group.prefix"
               :index="indexItem"
-              editable
               @click="locate(group)"
             />
             <div

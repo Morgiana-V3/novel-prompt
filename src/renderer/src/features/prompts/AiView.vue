@@ -2,16 +2,16 @@
 import { reportError } from '../../shared/lib/notifications'
 import { promptState } from './state'
 import { settingsState } from '../settings/state'
-import { shellState } from '../../shared/state/shell'
+import { usePagePresentation } from '../../shared/lib/page-presentation'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { AiCharacter, AiOptimizeResult, ChangeScope } from '@shared/prompts/types'
 import { copy, toast } from '../../shared/lib/notifications'
-import { applyWorkspace, revertTo, sectionText } from './actions'
+import { applyWorkspace, revertTo, sectionText, workKey, current } from './actions'
 import { cleanErr } from '../../shared/lib/format'
 import { type Tab } from '../../shared/state/shell'
 import { type Snapshot } from './state'
 import { vAutosize, resizeWithin } from '../../shared/lib/autosize'
-import { reviewDrafts } from './prompt-review'
+import { reviewDrafts, type ReviewGroup, type ReviewField } from './prompt-review'
 import Icon from '../../shared/ui/Icon.vue'
 import Mascot from '../../shared/ui/Mascot.vue'
 import PromptEditor from './components/PromptEditor.vue'
@@ -19,8 +19,14 @@ import WorkspaceBar from './components/WorkspaceBar.vue'
 import BasisPill from './components/BasisPill.vue'
 import EvidenceNote from './components/EvidenceNote.vue'
 import PromptReview from './components/PromptReview.vue'
+import AiFieldAdoption from './components/AiFieldAdoption.vue'
+import AiScopedReview from './components/AiScopedReview.vue'
+import AiReviewOverview from './components/AiReviewOverview.vue'
+import { usePartialAdoption } from './use-partial-adoption'
 import { activeTask, cancelTask } from '../../shared/state/tasks'
 import { usePageShortcuts, runKeyLabel, runKeyShort } from '../../shared/lib/shortcuts'
+
+const { embedded, navigate, isActive } = usePagePresentation()
 
 /**
  * 一个输入框，按当前提示词自动决定做什么：
@@ -31,6 +37,13 @@ import { usePageShortcuts, runKeyLabel, runKeyShort } from '../../shared/lib/sho
  */
 const request = ref('')
 const fresh = ref(false)
+const requestExpanded = ref(false)
+function toggleRequest(event: Event) {
+  if (mode.value === 'optimize') {
+    requestExpanded.value = (event.target as HTMLDetailsElement).open
+  }
+  nextTick(resizeAll).catch(reportError)
+}
 const hasPrompt = computed(
   () =>
     !!promptState.prompt.trim() ||
@@ -50,10 +63,30 @@ let offStep: (() => void) | undefined
 const sent = ref<{ base: string; negative: string; characters: AiCharacter[] } | null>(null)
 /** 结果已经采用到当前提示词 */
 const adopted = ref(false)
+const partial = usePartialAdoption()
+const isAdopted = computed(() => (embedded.value ? partial.all.value : adopted.value))
+const sentKey = ref('')
+const presetKey = () =>
+  JSON.stringify([
+    settingsState.settings?.naiVersion,
+    promptState.params.qualityTags,
+    promptState.params.qualityMode,
+    promptState.params.ucPreset,
+  ])
+const sentPresetKey = ref('')
+const presetsChanged = computed(() => !!result.value && sentPresetKey.value !== presetKey())
+const stale = computed(() =>
+  embedded.value
+    ? partial.stale.value
+    : !!result.value && !adopted.value && sentKey.value !== workKey(),
+)
 /** 采用前那一份历史，撤销时精确回到它（期间可能有导入、清空、Agent 修改等其他历史） */
 let beforeAdopt: Snapshot | null = null
 
 watch(mode, () => {
+  if (mode.value === 'optimize' && !request.value.trim()) {
+    requestExpanded.value = false
+  }
   if (!running.value) {
     error.value = ''
   }
@@ -83,9 +116,9 @@ onBeforeUnmount(() => {
 
 // 视图常驻但可能是隐藏状态（v-show），隐藏时量不出内容高度，切回来时重算一次
 watch(
-  () => shellState.tab,
-  async (tab) => {
-    if (tab !== 'ai') {
+  () => isActive('ai'),
+  async (active) => {
+    if (!active) {
       return
     }
     await nextTick()
@@ -106,6 +139,7 @@ watch(
       return
     }
     promptState.aiHandoff = null
+    requestExpanded.value = true
     fresh.value = false
     const mine = request.value.trim()
     if (!mine.includes(handoff.text)) {
@@ -145,12 +179,28 @@ const review = computed(() => {
   if (!sent.value || !result.value) {
     return []
   }
+  if (embedded.value) {
+    return partial.review.value
+  }
   return reviewDrafts(sent.value, {
     base: result.value.positive,
     negative: result.value.negative,
     characters: result.value.characters,
   })
 })
+function fieldChanges(group: ReviewGroup, field?: ReviewField) {
+  return partial.changes.value.filter((change) => {
+    if (!field) {
+      return change.kind !== 'text' && change.pairKey === group.key
+    }
+    if (change.kind !== 'text') {
+      return false
+    }
+    return group.key === 'global'
+      ? change.bucket === field.key
+      : change.pairKey === group.key && change.field === field.key
+  })
+}
 const totalChanges = computed(() =>
   review.value.reduce((count, group) => count + group.fields.length, 0),
 )
@@ -169,6 +219,8 @@ async function run() {
       : '请先描述想要的画面，或在下方粘贴已有的提示词'
     return
   }
+  const adoptionBase = current('AI 优化前')
+  partial.reset()
   running.value = true
   error.value = ''
   steps.value = []
@@ -188,6 +240,8 @@ async function run() {
   const base = scratch ? '' : promptState.prompt
   const negative = scratch ? '' : promptState.negative
   sent.value = { base, negative, characters }
+  sentKey.value = workKey()
+  sentPresetKey.value = presetKey()
   try {
     result.value = await window.api.optimize({
       mode: mode.value,
@@ -196,6 +250,16 @@ async function run() {
       characters,
       instruction: request.value,
       version: settingsState.settings.naiVersion,
+      promptPresets: {
+        qualityTags: promptState.params.qualityTags,
+        qualityMode: promptState.params.qualityMode,
+        ucPreset: promptState.params.ucPreset,
+      },
+    })
+    partial.reset(adoptionBase, {
+      base: result.value.positive,
+      negative: result.value.negative,
+      characters: result.value.characters,
     })
   } catch (error2) {
     error.value = cleanErr(error2)
@@ -205,9 +269,32 @@ async function run() {
 }
 
 /** 采用结果：写入当前提示词（写入前自动存历史），可选跳到下一步 */
+function toggleChange(id: string) {
+  if (partial.toggle(id)) {
+    fresh.value = false
+  }
+}
+function toggleChanges(ids: string[]) {
+  if (partial.toggleMany(ids)) {
+    fresh.value = false
+  }
+}
+
 function adopt(next?: Tab) {
   const character = result.value
   if (!character) {
+    return
+  }
+  if (embedded.value) {
+    if (!partial.adoptAll()) {
+      return
+    }
+    fresh.value = false
+    if (next) {
+      navigate(next)
+    } else {
+      toast('已采纳全部修改，可逐项取消')
+    }
     return
   }
   if (!adopted.value) {
@@ -221,13 +308,17 @@ function adopt(next?: Tab) {
     nextTick(resizeAll).catch(reportError)
   }
   if (next) {
-    shellState.tab = next
+    navigate(next)
   } else {
     toast('已采用，所有页面都会用这套提示词')
   }
 }
 
 function undoAdopt() {
+  if (embedded.value) {
+    partial.undoAll()
+    return
+  }
   if (revertTo(beforeAdopt, '撤销采用前')) {
     adopted.value = false
     beforeAdopt = null
@@ -242,7 +333,7 @@ const fullText = (optimization: AiOptimizeResult) =>
     characters: optimization.characters,
   })
 
-usePageShortcuts('ai', {
+usePageShortcuts(() => isActive('ai'), {
   run,
   cancel: () => task.value && cancelTask(task.value.id),
   canCancel: () => running.value && !!task.value,
@@ -250,24 +341,51 @@ usePageShortcuts('ai', {
 </script>
 
 <template>
-  <div class="view ai">
+  <div
+    :id="embedded ? 'creation-panel-ai' : undefined"
+    :role="embedded ? 'tabpanel' : undefined"
+    :aria-labelledby="embedded ? 'creation-tab-ai' : undefined"
+    class="view ai"
+  >
     <section class="pane left with-foot">
       <div
         ref="leftPane"
         class="pane-body scroll"
+        :class="{ 'compact-request': embedded }"
       >
-        <div class="field">
-          <div class="field-head">
+        <component
+          :is="embedded ? 'details' : 'div'"
+          class="field request-field"
+          :open="requestExpanded || mode === 'semantic'"
+          @toggle="toggleRequest"
+        >
+          <summary
+            v-if="embedded"
+            class="request-summary"
+          >
+            <span>{{ mode === 'optimize' ? '修改要求（可选）' : '画面描述' }}</span>
+            <span class="request-summary-text">{{
+              fresh ? '重新生成' : request.trim() || '未填写'
+            }}</span>
+          </summary>
+          <div
+            v-if="!embedded"
+            class="field-head"
+          >
             <label class="field-label">{{
               mode === 'optimize' ? '修改要求（可选）' : '画面描述'
             }}</label>
-            <span class="muted small ml-auto">{{
-              mode === 'optimize'
-                ? '留空只做规范化检查：修正错误 tag、冲突、顺序'
-                : hasPrompt
-                  ? '将不参考下方的当前提示词'
-                  : '下方为空，会按描述生成整套提示词'
-            }}</span>
+            <span
+              v-if="!embedded"
+              class="muted small ml-auto"
+              >{{
+                mode === 'optimize'
+                  ? '留空只做规范化检查：修正错误 tag、冲突、顺序'
+                  : hasPrompt
+                    ? '将不参考下方的当前提示词'
+                    : '下方为空，会按描述生成整套提示词'
+              }}</span
+            >
           </div>
           <div class="composer short">
             <textarea
@@ -290,11 +408,14 @@ usePageShortcuts('ai', {
             />
             <span>按描述重新生成，不保留当前提示词</span>
           </label>
-        </div>
+        </component>
 
-        <WorkspaceBar />
+        <WorkspaceBar v-if="!embedded" />
 
-        <div :class="['prompt-group', { 'is-ignored': mode === 'semantic' && hasPrompt }]">
+        <div
+          v-if="!embedded"
+          :class="['prompt-group', { 'is-ignored': mode === 'semantic' && hasPrompt }]"
+        >
           <PromptEditor
             char-label="角色提示词（可选）"
             :char-hint="hasPrompt ? '多人画面时填写' : '留空则由 AI 按描述拆分'"
@@ -303,7 +424,7 @@ usePageShortcuts('ai', {
         </div>
 
         <div
-          v-if="steps.length"
+          v-if="!embedded && steps.length"
           class="timeline"
         >
           <div
@@ -406,20 +527,39 @@ usePageShortcuts('ai', {
         </p>
       </div>
       <template v-else>
-        <div class="cheer">
+        <p
+          v-if="embedded && presetsChanged"
+          class="evidence-note warn preset-change-note"
+        >
+          模型或内置预设已改变，请重新优化以更新建议。
+        </p>
+        <p
+          v-if="embedded && stale"
+          class="error-box"
+        >
+          部分内容已另行编辑；采纳或取消时会保留这些编辑，冲突项需重新优化。
+        </p>
+        <div
+          class="cheer"
+          :class="{ 'compact-review-heading': embedded }"
+        >
           <Mascot
+            v-if="!embedded"
             :mood="result.invalid.length ? 'confused' : 'wink'"
             :size="76"
           />
           <div>
             <b>{{
-              adopted
+              isAdopted
                 ? '已采用到当前提示词'
                 : result.invalid.length
                   ? '大部分搞定了，还有几个 tag 要你看看'
                   : '优化好啦！'
             }}</b>
-            <div class="muted small">
+            <div
+              v-if="!embedded"
+              class="muted small"
+            >
               {{
                 result.characters.length
                   ? `${result.characters.length} 个角色提示词`
@@ -430,7 +570,7 @@ usePageShortcuts('ai', {
           </div>
           <div class="actions ml-auto">
             <button
-              v-if="adopted"
+              v-if="isAdopted"
               class="btn small"
               @click="undoAdopt"
             >
@@ -447,12 +587,48 @@ usePageShortcuts('ai', {
               <Icon
                 name="check"
                 :size="13"
-              />采用
+              />{{ embedded ? '全部采纳' : '采用' }}
             </button>
           </div>
         </div>
 
-        <PromptReview :groups="review">
+        <AiReviewOverview
+          v-if="embedded"
+          :notes="result.notes"
+        />
+        <component
+          :is="embedded ? AiScopedReview : PromptReview"
+          :id="embedded ? 'ai-review-compare' : undefined"
+          :role="embedded ? 'region' : undefined"
+          :aria-label="embedded ? '提示词修改对比' : undefined"
+          :groups="review"
+          :full-context="embedded"
+          v-bind="embedded ? { changes: result.changes } : {}"
+        >
+          <template
+            v-if="embedded"
+            #adoption="{ group, field }"
+          >
+            <AiFieldAdoption
+              v-if="fieldChanges(group, field).length"
+              :changes="fieldChanges(group, field)"
+              :selected="partial.selected.value"
+              @toggle="toggleChange"
+              @toggle-many="toggleChanges"
+            />
+          </template>
+          <template
+            v-if="embedded"
+            #group-adoption="{ group }"
+          >
+            <AiFieldAdoption
+              v-if="fieldChanges(group).length"
+              :changes="fieldChanges(group)"
+              :selected="partial.selected.value"
+              @toggle="toggleChange"
+              @toggle-many="toggleChanges"
+            />
+          </template>
           <template #actions="{ field }">
             <button
               v-if="field.kind === 'prompt' && field.after"
@@ -466,7 +642,7 @@ usePageShortcuts('ai', {
               />
             </button>
           </template>
-        </PromptReview>
+        </component>
         <p
           v-if="!review.length"
           class="muted"
@@ -474,105 +650,108 @@ usePageShortcuts('ai', {
           提示词没有变化。
         </p>
 
-        <div
-          v-if="result.invalid.length"
-          class="result-card warn-card"
-          style="--d: 200ms"
-        >
-          <div class="result-head">
-            <span class="group-badge alias"
-              ><Icon
-                name="warn"
-                :size="14"
-            /></span>
-            <h3>还没通过校验的 tag</h3>
-          </div>
-          <div class="notes">{{ result.invalid.join(', ') }}</div>
-        </div>
-
-        <div
-          v-if="result.fidelity?.length"
-          class="result-card warn-card"
-          style="--d: 210ms"
-        >
-          <div class="result-head">
-            <span class="group-badge alias"
-              ><Icon
-                name="warn"
-                :size="14"
-            /></span>
-            <h3>画面文字被改写了，请手动恢复原文</h3>
-          </div>
-          <div class="notes">{{ result.fidelity.join('；') }}</div>
-        </div>
-
-        <div
-          v-if="result.dropped?.length"
-          class="result-card warn-card"
-          style="--d: 220ms"
-        >
-          <div class="result-head">
-            <span class="group-badge alias"
-              ><Icon
-                name="warn"
-                :size="14"
-            /></span>
-            <h3>原有内容被删掉了，AI 没有说明理由</h3>
-          </div>
-          <div class="notes">{{ result.dropped?.join(', ') }}</div>
-        </div>
-
-        <div
-          class="result-card"
-          style="--d: 240ms"
-        >
-          <div class="result-head">
-            <span class="group-badge ok"
-              ><Icon
-                name="book"
-                :size="14"
-            /></span>
-            <h3>修改说明</h3>
-            <span
-              v-if="result.changes.length"
-              class="muted small ml-auto"
-              >悬停依据标签查看含义</span
-            >
-          </div>
+        <div class="ai-explanations">
           <div
-            v-if="result.notes"
-            class="notes lead"
+            v-if="result.invalid.length"
+            class="result-card warn-card"
+            style="--d: 200ms"
           >
-            {{ result.notes }}
+            <div class="result-head">
+              <span class="group-badge alias"
+                ><Icon
+                  name="warn"
+                  :size="14"
+              /></span>
+              <h3>还没通过校验的 tag</h3>
+            </div>
+            <div class="notes">{{ result.invalid.join(', ') }}</div>
           </div>
+
           <div
-            v-for="groupItem in changeGroups"
-            :key="groupItem.scope"
-            class="change-group"
+            v-if="result.fidelity?.length"
+            class="result-card warn-card"
+            style="--d: 210ms"
           >
-            <div class="change-group-title">{{ groupItem.label }}</div>
-            <div class="effect-list">
-              <div
-                v-for="(entry, index) in groupItem.items"
-                :key="index"
-                class="effect-row"
-                :style="{ '--i': index }"
+            <div class="result-head">
+              <span class="group-badge alias"
+                ><Icon
+                  name="warn"
+                  :size="14"
+              /></span>
+              <h3>画面文字被改写了，请手动恢复原文</h3>
+            </div>
+            <div class="notes">{{ result.fidelity.join('；') }}</div>
+          </div>
+
+          <div
+            v-if="result.dropped?.length"
+            class="result-card warn-card"
+            style="--d: 220ms"
+          >
+            <div class="result-head">
+              <span class="group-badge alias"
+                ><Icon
+                  name="warn"
+                  :size="14"
+              /></span>
+              <h3>原有内容被删掉了，AI 没有说明理由</h3>
+            </div>
+            <div class="notes">{{ result.dropped?.join(', ') }}</div>
+          </div>
+
+          <div
+            v-if="!embedded"
+            class="result-card"
+            style="--d: 240ms"
+          >
+            <div class="result-head">
+              <span class="group-badge ok"
+                ><Icon
+                  name="book"
+                  :size="14"
+              /></span>
+              <h3>修改说明</h3>
+              <span
+                v-if="result.changes.length"
+                class="muted small ml-auto"
+                >悬停依据标签查看含义</span
               >
-                <span class="meta"><BasisPill :basis="entry.basis" /></span>
-                <div class="grow">
-                  {{ entry.text }}
-                  <span
-                    v-if="entry.evidence"
-                    class="evidence"
-                    >{{ entry.evidence }}</span
-                  >
+            </div>
+            <div
+              v-if="result.notes"
+              class="notes lead"
+            >
+              {{ result.notes }}
+            </div>
+            <div
+              v-for="groupItem in changeGroups"
+              :key="groupItem.scope"
+              class="change-group"
+            >
+              <div class="change-group-title">{{ groupItem.label }}</div>
+              <div class="effect-list">
+                <div
+                  v-for="(entry, index) in groupItem.items"
+                  :key="index"
+                  class="effect-row"
+                  :style="{ '--i': index }"
+                >
+                  <span class="meta"><BasisPill :basis="entry.basis" /></span>
+                  <div class="grow">
+                    {{ entry.text }}
+                    <span
+                      v-if="entry.evidence"
+                      class="evidence"
+                      >{{ entry.evidence }}</span
+                    >
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <EvidenceNote :info="result.evidence" />
+          <EvidenceNote :info="result.evidence" />
+        </div>
 
         <div class="row">
           <button
@@ -586,33 +765,83 @@ usePageShortcuts('ai', {
           </button>
           <button
             class="btn"
-            @click="adopt('compare')"
+            @click="embedded ? navigate('compare') : adopt('compare')"
           >
             <Icon
               name="compare"
               :size="15"
-            />{{ adopted ? '' : '采用并' }}逐个比对
+            />{{ embedded ? '检查当前提示词' : (adopted ? '' : '采用并') + '逐个比对' }}
           </button>
           <button
             class="btn"
-            @click="adopt('preview')"
+            @click="embedded ? navigate('preview') : adopt('preview')"
           >
             <Icon
               name="eye"
               :size="15"
-            />{{ adopted ? '' : '采用并' }}推测画面
+            />{{ embedded ? '推测当前画面' : (adopted ? '' : '采用并') + '推测画面' }}
           </button>
           <button
             class="btn accent"
-            @click="adopt('generate')"
+            @click="embedded ? navigate('generate') : adopt('generate')"
           >
             <Icon
               name="image"
               :size="15"
-            />{{ adopted ? '' : '采用并' }}生图
+            />{{ embedded ? '查看出图结果' : (adopted ? '' : '采用并') + '生图' }}
           </button>
         </div>
       </template>
     </section>
   </div>
 </template>
+
+<style scoped>
+.compact-review-heading {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  min-height: 0;
+}
+
+.ai-explanations {
+  display: grid;
+  gap: 16px;
+}
+
+.compact-request {
+  padding: 8px 16px;
+}
+
+.request-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text2);
+}
+
+.request-summary::before {
+  content: '›';
+  font-size: 18px;
+}
+
+.request-field[open] > .request-summary::before {
+  transform: rotate(90deg);
+}
+
+.request-summary-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.request-field[open] > .request-summary {
+  margin-bottom: 8px;
+}
+</style>

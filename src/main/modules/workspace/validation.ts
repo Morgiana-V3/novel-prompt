@@ -49,6 +49,8 @@ export function checkPageParams(parameters: NaiGenParams) {
     !parameters ||
     ![1, 2, 4].includes(parameters.count) ||
     typeof parameters.qualityTags !== 'boolean' ||
+    (parameters.qualityMode !== undefined &&
+      !['standard', 'light'].includes(parameters.qualityMode)) ||
     !isUcPreset(parameters.ucPreset)
   ) {
     throw new Error('张数或提示词预设无效')

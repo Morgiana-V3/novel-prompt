@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import StorageSettings from './StorageSettings.vue'
+import StatisticsSettings from './StatisticsSettings.vue'
 import { AI_PRESETS, type AiPreset } from '@shared/settings/ai-presets'
 import HelpTip from '../../shared/ui/HelpTip.vue'
 import UpdateSettings from './UpdateSettings.vue'
@@ -26,6 +27,7 @@ import type { ReasoningEffort } from '@shared/settings/types'
 const categories = [
   { id: 'tags', label: 'Tag 词库', icon: 'tag' },
   { id: 'services', label: 'AI 服务', icon: 'sparkle' },
+  { id: 'statistics', label: '使用统计', icon: 'tasks' },
   { id: 'other', label: '存储与更新', icon: 'folder' },
 ] as const
 const services = [
@@ -49,6 +51,7 @@ const anchors: Record<string, SettingsSection> = {
   agent: 'agent',
   storage: 'other',
   updates: 'other',
+  statistics: 'statistics',
 }
 function selectCategory(id: SettingsCategory) {
   category.value = id
@@ -858,6 +861,12 @@ async function translate() {
               >
             </div>
           </div>
+          <StatisticsSettings
+            v-if="category === 'services' && service === 'ai'"
+            compact
+            :active="shellState.tab === 'settings'"
+            @open="selectCategory('statistics')"
+          />
         </section>
         <section
           v-show="service === 'agent'"
@@ -884,6 +893,16 @@ async function translate() {
         >
           <SkillManager ref="skillManager" />
         </section>
+      </section>
+      <section
+        v-if="category === 'statistics'"
+        id="settings-panel-statistics"
+        role="tabpanel"
+        aria-labelledby="settings-tab-statistics"
+        class="settings-panel"
+        tabindex="0"
+      >
+        <StatisticsSettings :active="shellState.tab === 'settings'" />
       </section>
       <section
         v-show="category === 'other'"
@@ -936,8 +955,12 @@ async function translate() {
   order: 1;
 }
 
-#settings-tab-other {
+#settings-tab-statistics {
   order: 3;
+}
+
+#settings-tab-other {
+  order: 4;
 }
 
 .settings-tabs button {

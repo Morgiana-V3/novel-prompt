@@ -127,6 +127,7 @@ const manager = registerTaskIpc((channel, payload) => {
 })
 for (const [name, handler] of Object.entries({
   'images:cleanup-status': () => ({ pending: 0, message: '' }),
+  'storage:info': () => ({ currentPath: profile, defaultPath: profile }),
   'settings:get': () => getSettings(),
   'settings:save': (_, p) => saveSettings(p),
   'db:status': () => tagStore.status(),
@@ -144,6 +145,7 @@ for (const [name, handler] of Object.entries({
     installRequests++
   },
   'nai:list': () => [],
+  'collections:list': () => [{ id: 'default', name: '默认图集', createdAt: 0 }],
   'nai:freeCheck': () => ({ ok: false, reasons: [], notes: [] }),
   'pages:removed': () => [],
   'pages:list': () => [],
@@ -167,6 +169,16 @@ async function checkManager() {
     return d.promise
   })
   const id = m.snapshot().tasks[0].id
+  progress('查询词库')
+  const frozenSteps = m.snapshot().tasks[0].steps
+  progress('查询词库')
+  assert.equal(frozenSteps.at(-1).count, 1, 'step snapshots are independent')
+  assert.equal(m.snapshot().tasks[0].steps.at(-1).count, 2)
+  for (let i = 0; i < 205; i++) {
+    progress(`step ${i}`)
+  }
+  assert.equal(m.snapshot().tasks[0].steps.length, 200)
+  assert.ok(m.snapshot().tasks[0].stepsOmitted > 0)
   const rejected = assert.rejects(a, /已取消/)
   await assert.rejects(
     m.run('optimize', async () => {}),
@@ -304,6 +316,8 @@ app.whenReady().then(async () => {
       await js("document.querySelector('.ai .run-bar .btn.accent').textContent.trim()"),
     )
     await wait(() => pending.optimize.length === 1)
+    pending.optimize[0].progress('查询词库 fixture')
+    pending.optimize[0].progress('校验修改 fixture')
     await click('.nav-item', '画面推测')
     await click(
       '.preview .run-bar .btn.accent',
@@ -367,6 +381,12 @@ app.whenReady().then(async () => {
     )
     await js(`document.querySelector('.task-trigger').click()`)
     await ui(`document.querySelectorAll('.task-card.running').length===3`)
+    await js(
+      `document.querySelector('.task-card[data-kind="optimize"] .task-steps summary').click()`,
+    )
+    await ui(
+      `document.querySelector('.task-card[data-kind="optimize"] .task-steps').textContent.includes('查询词库 fixture') && document.querySelector('.task-card[data-kind="optimize"] .task-steps').textContent.includes('校验修改 fixture')`,
+    )
     const optimizeId = find('optimize').id
     await js(`document.querySelector('.task-card[data-kind="optimize"] .task-cancel').click()`)
     await wait(() => pending.optimize[0].signal.aborted)
@@ -461,6 +481,8 @@ app.whenReady().then(async () => {
       'paused',
     )
     console.log('PASS task control morphs and spins while active, then returns to its idle shape')
+    await require('./statistics-ui-checks.cjs')({ js, click, ui, win, profile, manager })
+    await require('./gallery-ui-checks.cjs')({ js, click, ui, win, profile })
     await click('.nav-item', 'AI 优化')
     await click(
       '.ai .run-bar .btn.accent',
@@ -485,6 +507,9 @@ app.whenReady().then(async () => {
     await js(`document.querySelector('.task-trigger').click()`)
     await ui(`document.querySelectorAll('.task-card.running').length===3`)
     await pause(300)
+    await js(
+      `document.querySelector('.task-card[data-kind="optimize"] .task-steps summary').click()`,
+    )
     writeFileSync(join(profile, 'tasks-desktop.png'), (await win.webContents.capturePage()).toPNG())
     win.setSize(1100, 760)
     await pause(300)

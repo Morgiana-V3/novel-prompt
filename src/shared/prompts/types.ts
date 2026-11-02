@@ -48,6 +48,8 @@ export interface AnalysisResult {
 }
 
 export interface AiOptimizeRequest {
+  /** 未传入时不假定预设状态，兼容既有外部调用。 */
+  promptPresets?: { qualityTags: boolean; qualityMode?: 'standard' | 'light'; ucPreset: UcPreset }
   mode: 'optimize' | 'semantic'
   /** 现有提示词 */
   prompt: string
@@ -79,6 +81,10 @@ export type Basis = 'rule' | 'data' | 'doc' | 'taste'
 export type ChangeScope = 'positive' | 'character' | 'negative' | 'optional'
 
 export interface AiChange {
+  /** Character explanations address the returned list by default; removals address the input list. */
+  characterIndex?: number
+  characterSide?: 'before' | 'after'
+  characterField?: 'prompt' | 'negative' | 'position'
   scope: ChangeScope
   text: string
   basis: Basis
@@ -120,10 +126,13 @@ export interface PreviewParams {
   height: number
   /** NAI 前端「Add Quality Tags」是否开启 */
   qualityTags: boolean
+  qualityMode?: 'standard' | 'light'
   ucPreset: UcPreset
 }
 
 export interface AiPreviewRequest {
+  /** 仅推测现有提示词的画面；忽略期望，不生成修改建议。旧入口默认保留完整评估。 */
+  forecastOnly?: boolean
   base: string
   negative: string
   characters: AiCharacter[]

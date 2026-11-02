@@ -3,7 +3,10 @@ import type { NaiImage } from '@shared/images/types'
 import { reactive, watch } from 'vue'
 
 /** 只属于生图的参数；画幅、质量词、UC 预设与画面推测共用（promptState.params） */
-export type GenOnly = Omit<NaiGenParams, 'width' | 'height' | 'qualityTags' | 'ucPreset'>
+export type GenOnly = Omit<
+  NaiGenParams,
+  'width' | 'height' | 'qualityTags' | 'qualityMode' | 'ucPreset'
+>
 
 export const GEN_PARAMS_KEY = 'np-gen-params'
 

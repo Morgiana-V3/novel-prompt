@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import GenerationResult from './GenerationResult.vue'
+import CollectionPicker from '../gallery/CollectionPicker.vue'
+import { generationCollection } from '../gallery/collections-state'
 import { useGallery } from './use-gallery'
 
 import { reportError } from '../../shared/lib/notifications'
@@ -34,6 +36,15 @@ import InpaintEditor from '../inpaint/components/InpaintEditor.vue'
 import ImageViewer from '../../shared/ui/ImageViewer.vue'
 import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 import { usePageShortcuts, runKeyLabel, runKeyShort } from '../../shared/lib/shortcuts'
+import { usePagePresentation } from '../../shared/lib/page-presentation'
+import { useSettingsPopover } from './use-settings-popover'
+const { embedded, navigate, isActive } = usePagePresentation()
+const {
+  open: parametersOpen,
+  dock: settingsDock,
+  trigger: parametersTrigger,
+} = useSettingsPopover(embedded)
+const sentRecipes = ref<Record<string, string>>({})
 
 const gen = generationParams
 const params = promptState.params
@@ -61,6 +72,25 @@ const version = computed(() => settingsState.settings?.naiVersion ?? 'v4.5')
 
 const sub = computed(() => subscriptionState.subscription)
 const check = ref<NaiFreeCheck | null>(null)
+const checkError = ref('')
+const feeStatus = computed(() => {
+  if (!hasToken.value) {
+    return { text: '未配置', tone: '', hint: '请先配置 NovelAI Token' }
+  }
+  if (!check.value) {
+    return {
+      text: checkError.value ? '待确认' : '检查中',
+      tone: '',
+      hint: checkError.value || '正在检查当前配置的免费资格',
+    }
+  }
+  const paid = freeOnly.value ? '需调整' : '可能扣费'
+  return {
+    text: check.value.ok ? '预计免费' : paid,
+    tone: check.value.ok ? 'ok' : 'bad',
+    hint: [...check.value.reasons, ...check.value.notes].join('\n'),
+  }
+})
 
 const running = ref(false)
 watch(
@@ -173,16 +203,29 @@ const matchedPreview = computed(() => {
 })
 
 let checkTimer: ReturnType<typeof setTimeout> | undefined
+let checkEpoch = 0
 watch(
   () => [params.width, params.height, gen.steps, version.value, sub.value, freeOnly.value],
   () => {
     clearTimeout(checkTimer)
+    const epoch = ++checkEpoch
+    check.value = null
+    checkError.value = ''
     checkTimer = setTimeout(async () => {
-      check.value = await window.api.naiFreeCheck(
-        { width: params.width, height: params.height, steps: gen.steps } as NaiGenParams,
-        version.value,
-        sub.value ? { ...sub.value } : undefined,
-      )
+      try {
+        const result = await window.api.naiFreeCheck(
+          { width: params.width, height: params.height, steps: gen.steps } as NaiGenParams,
+          version.value,
+          sub.value ? { ...sub.value } : undefined,
+        )
+        if (epoch === checkEpoch) {
+          check.value = result
+        }
+      } catch (error) {
+        if (epoch === checkEpoch) {
+          checkError.value = cleanErr(error)
+        }
+      }
     }, 150)
   },
   { immediate: true },
@@ -198,12 +241,14 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', resizeAll)
+  clearTimeout(checkTimer)
+  checkEpoch++
 })
 
 watch(
-  () => shellState.tab,
-  async (tab) => {
-    if (tab !== 'generate') {
+  () => isActive('generate'),
+  async (active) => {
+    if (!active) {
       return
     }
     await nextTick()
@@ -239,14 +284,20 @@ async function run() {
     error.value = `当前设置不满足免费条件：\n${check.value.reasons.join('\n')}\n\n可以调整尺寸/步数，或在设置中允许消耗 Anlas`
     return
   }
+  if (embedded.value) {
+    navigate('generate')
+  }
   running.value = true
+  parametersOpen.value = false
   cancelling.value = false
   error.value = ''
   steps.value = []
   const key = workKey()
+  const recipeKey = JSON.stringify(currentRecipe.value)
   try {
     const seed = gen.seed === null || (gen.seed as unknown) === '' ? null : Number(gen.seed)
     const generationResult = await window.api.naiGenerate({
+      collectionId: generationCollection.value,
       base: promptState.prompt,
       negative: promptState.negative,
       characters: promptState.characters
@@ -258,6 +309,7 @@ async function run() {
     last.value = generationResult
     for (const img of generationResult.images) {
       imageState.imageKeys[img.name] = key
+      sentRecipes.value[img.name] = recipeKey
     }
     if (generationResult.images.length) {
       current.value = generationResult.images[generationResult.images.length - 1]
@@ -280,7 +332,11 @@ async function cancel() {
   toast('会在当前这张完成后停止')
 }
 
-usePageShortcuts('generate', { run, cancel, canCancel: () => running.value && !cancelling.value })
+usePageShortcuts(() => isActive('generate') || (embedded.value && isActive('compare')), {
+  run,
+  cancel,
+  canCancel: () => running.value && !cancelling.value,
+})
 function useSeed(img: NaiImage) {
   if (img.seed === undefined) {
     return
@@ -336,7 +392,7 @@ async function previewImage(img: NaiImage) {
   }
   try {
     await importImagePrompt(importedPrompt, '已加载原图')
-    shellState.tab = 'preview'
+    navigate('preview')
   } catch (error) {
     reportError(error)
   }
@@ -371,166 +427,249 @@ function openImageWorkspace() {
 </script>
 
 <template>
-  <div class="view generate">
-    <section class="pane left with-foot">
-      <div
-        ref="leftPane"
-        class="pane-body scroll"
+  <div
+    :id="embedded ? 'creation-panel-generate' : undefined"
+    :role="embedded ? 'tabpanel' : undefined"
+    :aria-labelledby="embedded ? 'creation-tab-generate' : undefined"
+    class="view generate"
+  >
+    <Teleport
+      defer
+      to="#creation-generation-controls"
+      :disabled="!embedded"
+    >
+      <section
+        ref="settingsDock"
+        :class="['pane left with-foot', { 'creation-generation': embedded }]"
       >
-        <WorkspaceBar />
-
-        <PromptEditor
-          :disabled="running"
-          char-hint="点「编辑位置」可在画布上拖动角色"
-        />
-
-        <div class="field-head gen-params-head">
-          <label class="field-label">生成参数</label>
-          <button
-            class="btn ghost small ml-auto"
-            :disabled="savingRecipe"
-            title="保存当前提示词、模型和全部生成参数，无需先出图"
-            @click="saveRecipe"
-          >
-            <Icon
-              name="star"
-              :size="14"
-            />收藏当前配置
-          </button>
-          <button
-            class="btn ghost small"
-            :disabled="running"
-            title="在收藏页挑选配置并载入"
-            @click="shellState.tab = 'favorites'"
-          >
-            <Icon
-              name="layers"
-              :size="14"
-            />从收藏载入
-          </button>
-          <button
-            class="btn ghost small"
-            :disabled="running || isDefault"
-            title="步数、Guidance、采样器、画幅等全部恢复默认"
-            @click="resetDefaults"
-          >
-            <Icon
-              name="reset"
-              :size="14"
-            />恢复默认
-          </button>
-        </div>
-        <GenerationParameters
-          :gen="gen"
-          :params="params"
-          :disabled="running"
-          @change-gen="updateGenerationOptions"
-          @change-params="updatePromptParameters"
-        />
-
-        <div
-          v-if="hasToken && check"
-          :class="['free-check', check.ok ? 'ok' : freeOnly ? 'bad' : 'warn']"
+        <button
+          v-if="embedded"
+          ref="parametersTrigger"
+          class="icon-btn creation-parameters-toggle"
+          :aria-expanded="parametersOpen"
+          aria-haspopup="dialog"
+          aria-controls="creation-generation-settings"
+          title="生成设置"
+          aria-label="生成设置"
+          @click="parametersOpen = !parametersOpen"
         >
           <Icon
-            :name="check.ok ? 'check' : 'warn'"
-            :size="15"
-            :stroke="check.ok ? 2.2 : 1.8"
-          />
-          <div>
-            <b>{{
-              check.ok
-                ? '满足免费生成条件'
-                : freeOnly
-                  ? '不满足免费条件，不会提交'
-                  : '可能会消耗 Anlas'
-            }}</b>
-            <div
-              v-for="r in check.reasons"
-              :key="r"
-            >
-              {{ r }}
-            </div>
-            <div
-              v-if="check.ok"
-              class="muted"
-            >
-              {{ check.notes[0] }}
-            </div>
-          </div>
-        </div>
-
-        <div
-          v-if="steps.length"
-          class="timeline"
-        >
-          <div
-            v-for="(step, index) in steps"
-            :key="index"
-            :class="['tl-item', { live: running && index === steps.length - 1 }]"
-          >
-            {{ step }}
-          </div>
-        </div>
-      </div>
-
-      <footer class="pane-foot">
-        <div
-          v-if="error"
-          class="error-box"
-        >
-          <Icon
-            name="warn"
+            name="sliders"
             :size="16"
-          />{{ error }}
-        </div>
-        <div class="row run-bar">
-          <label
-            class="retention-toggle"
-            title="自动留存普通生图，开关从下一批生效。关闭时，临时图在软件完全退出后清理；后台任务或 Agent 连接期间仍保留。工作台图片始终归档。"
-          >
-            <input
-              type="checkbox"
-              :checked="!!settingsState.settings?.naiAutoSave"
-              :disabled="retentionSaving"
-              @change="toggleRetention"
-            />
-            自动留存
-          </label>
-          <div class="run-actions">
+          />
+        </button>
+        <div
+          v-show="!embedded || parametersOpen"
+          :id="embedded ? 'creation-generation-settings' : undefined"
+          ref="leftPane"
+          class="pane-body scroll"
+          :class="{ 'generation-settings-popover': embedded }"
+          :role="embedded ? 'dialog' : undefined"
+          :aria-label="embedded ? '生成设置' : undefined"
+          :data-generation-settings-open="embedded && parametersOpen ? '' : undefined"
+        >
+          <WorkspaceBar v-if="!embedded" />
+
+          <PromptEditor
+            v-if="!embedded"
+            :disabled="running"
+            char-hint="点「编辑位置」可在画布上拖动角色"
+          />
+
+          <div class="field-head gen-params-head">
+            <label class="field-label">生成参数</label>
             <button
-              v-if="running"
-              class="btn ghost"
-              :disabled="cancelling"
-              title="当前这张完成后停止（Esc）"
-              @click="cancel"
-            >
-              {{ cancelling ? '即将停止' : '停止' }}
-            </button>
-            <button
-              class="btn accent"
-              :disabled="running || inpaintBusy || imageState.generating"
-              :title="`生成（${runKeyLabel}）`"
-              @click="run"
+              class="btn ghost small ml-auto"
+              :disabled="savingRecipe"
+              title="保存当前提示词、模型和全部生成参数，无需先出图"
+              @click="saveRecipe"
             >
               <Icon
-                name="image"
-                :size="17"
-                :class="{ 'spin-slow': running }"
-              />
-              {{ running ? '正在生成' : gen.count > 1 ? `生成 ${gen.count} 张` : '生成'
-              }}<span
-                v-if="!running"
-                class="kbd"
-                >{{ runKeyShort }}</span
-              >
+                name="star"
+                :size="14"
+              />收藏当前配置
+            </button>
+            <button
+              class="btn ghost small"
+              :disabled="running"
+              title="在收藏页挑选配置并载入"
+              @click="shellState.tab = 'favorites'"
+            >
+              <Icon
+                name="layers"
+                :size="14"
+              />从收藏载入
+            </button>
+            <button
+              class="btn ghost small"
+              :disabled="running || isDefault"
+              title="步数、Guidance、采样器、画幅等全部恢复默认"
+              @click="resetDefaults"
+            >
+              <Icon
+                name="reset"
+                :size="14"
+              />恢复默认
             </button>
           </div>
+          <GenerationParameters
+            :prompt-presets-in-editor="embedded"
+            :expanded-sizes="embedded"
+            :gen="gen"
+            :params="params"
+            :disabled="running"
+            @change-gen="updateGenerationOptions"
+            @change-params="updatePromptParameters"
+          />
+
+          <div
+            v-if="!embedded && hasToken && check"
+            :class="['free-check', check.ok ? 'ok' : freeOnly ? 'bad' : 'warn']"
+          >
+            <Icon
+              :name="check.ok ? 'check' : 'warn'"
+              :size="15"
+              :stroke="check.ok ? 2.2 : 1.8"
+            />
+            <div>
+              <b>{{
+                check.ok
+                  ? '满足免费生成条件'
+                  : freeOnly
+                    ? '不满足免费条件，不会提交'
+                    : '可能会消耗 Anlas'
+              }}</b>
+              <div
+                v-for="r in check.reasons"
+                :key="r"
+              >
+                {{ r }}
+              </div>
+              <div
+                v-if="check.ok"
+                class="muted"
+              >
+                {{ check.notes[0] }}
+              </div>
+            </div>
+          </div>
+
+          <div
+            v-if="!embedded && steps.length"
+            class="timeline"
+          >
+            <div
+              v-for="(step, index) in steps"
+              :key="index"
+              :class="['tl-item', { live: running && index === steps.length - 1 }]"
+            >
+              {{ step }}
+            </div>
+          </div>
         </div>
-      </footer>
-    </section>
+
+        <CollectionPicker
+          v-if="embedded"
+          class="dock-collection"
+        />
+        <label
+          v-if="embedded"
+          class="retention-toggle dock-retention"
+          title="自动留存生成图片，从下一批生效"
+        >
+          <input
+            type="checkbox"
+            aria-label="自动留存生成图片"
+            :checked="!!settingsState.settings?.naiAutoSave"
+            :disabled="retentionSaving"
+            @change="toggleRetention"
+          />
+          <span>自动留存</span>
+        </label>
+        <span
+          v-if="embedded"
+          :class="['fee-status', feeStatus.tone]"
+          :title="feeStatus.hint"
+          >{{ feeStatus.text }}</span
+        >
+        <footer class="pane-foot">
+          <div
+            v-if="error"
+            class="error-box"
+          >
+            <Icon
+              name="warn"
+              :size="16"
+            />{{ error }}
+          </div>
+          <div class="row run-bar">
+            <CollectionPicker v-if="!embedded" />
+            <label
+              v-if="!embedded"
+              class="retention-toggle"
+              title="自动留存普通生图，开关从下一批生效。关闭时，临时图在软件完全退出后清理；后台任务或 Agent 连接期间仍保留。工作台图片始终归档。"
+            >
+              <input
+                type="checkbox"
+                :checked="!!settingsState.settings?.naiAutoSave"
+                :disabled="retentionSaving"
+                @change="toggleRetention"
+              />
+              自动留存
+            </label>
+            <div class="run-actions">
+              <button
+                v-if="running"
+                class="btn ghost"
+                :disabled="cancelling"
+                title="当前这张完成后停止（Esc）"
+                @click="cancel"
+              >
+                {{ cancelling ? '即将停止' : '停止' }}
+              </button>
+              <button
+                v-if="!embedded || !running"
+                class="btn accent"
+                :disabled="running || inpaintBusy || imageState.generating"
+                :title="
+                  embedded && !isActive('compare') && !isActive('generate')
+                    ? '生成当前提示词'
+                    : `生成（${runKeyLabel}）`
+                "
+                @click="run"
+              >
+                <Icon
+                  name="image"
+                  :size="17"
+                  :class="{ 'spin-slow': running }"
+                />
+                <span>{{
+                  running ? '正在生成' : gen.count > 1 ? `生成 ${gen.count} 张` : '生成'
+                }}</span
+                ><span
+                  v-if="!running && !embedded"
+                  class="kbd"
+                  >{{ runKeyShort }}</span
+                >
+              </button>
+            </div>
+          </div>
+        </footer>
+      </section>
+    </Teleport>
 
     <section class="pane right scroll">
+      <p
+        v-if="
+          embedded &&
+          current &&
+          sentRecipes[current.name] &&
+          sentRecipes[current.name] !== JSON.stringify(currentRecipe)
+        "
+        class="evidence-note warn"
+      >
+        提示词或生成参数已调整，当前图片是上一次配置的结果。再次生成可查看最新效果。
+      </p>
       <div
         v-if="running && !current"
         class="empty"
@@ -623,7 +762,7 @@ function openImageWorkspace() {
         </p>
 
         <div
-          v-if="matchedPreview"
+          v-if="!embedded && matchedPreview"
           class="result-card"
           style="--d: 60ms"
         >
@@ -636,7 +775,7 @@ function openImageWorkspace() {
             <h3>推测 vs 实际</h3>
             <button
               class="btn ghost small ml-auto"
-              @click="shellState.tab = 'preview'"
+              @click="navigate('preview')"
             >
               完整推测
             </button>
@@ -782,6 +921,80 @@ function openImageWorkspace() {
 </template>
 
 <style scoped>
+.pane.left.creation-generation {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30px minmax(64px, 120px) auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg);
+  overflow: visible;
+}
+
+.creation-generation .pane-foot {
+  container-type: normal;
+  min-width: 0;
+  grid-column: 5;
+  grid-row: 1;
+  border-top: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.creation-parameters-toggle {
+  width: 30px;
+  height: 30px;
+}
+
+.creation-generation .btn.accent {
+  min-width: 86px;
+  min-height: 34px;
+  padding: 3px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.2;
+  box-shadow: none;
+  gap: 8px;
+}
+
+.creation-generation > .fee-status {
+  grid-column: 4;
+  grid-row: 1;
+  justify-self: end;
+  padding: 3px 5px;
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text2);
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.creation-generation > .fee-status.bad {
+  color: var(--bad);
+}
+
+.creation-generation .generation-settings-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 8px;
+  right: 8px;
+  z-index: 1;
+  max-height: min(65vh, calc(100vh - 180px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  border: 1px solid var(--line2);
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: 0 8px 32px #0000001f;
+}
+
+.generation-settings-popover .gen-params-head {
+  flex-wrap: wrap;
+}
+
 .retention-toggle {
   display: inline-flex;
   align-items: center;
@@ -795,5 +1008,29 @@ function openImageWorkspace() {
 .retention-toggle input {
   margin: 0;
   accent-color: var(--pink);
+}
+
+.dock-retention {
+  grid-column: 3;
+  grid-row: 1;
+  gap: 5px;
+  font-size: 11px;
+}
+
+.dock-collection {
+  grid-column: 2;
+  grid-row: 1;
+  width: 100%;
+  min-width: 0;
+  max-width: 160px;
+}
+
+.dock-collection :deep(.theme-select) {
+  width: 100%;
+  min-width: 0;
+  padding: 0 8px;
+  gap: 4px;
+  font-size: 11px;
+  height: 30px;
 }
 </style>

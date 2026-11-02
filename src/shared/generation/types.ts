@@ -57,11 +57,14 @@ export interface NaiGenParams {
   count: number
   /** 由本工具把质量词拼进主提示词（不交给服务端处理） */
   qualityTags: boolean
+  qualityMode?: 'standard' | 'light'
   /** 由本工具把 UC 预设拼进负面（不交给服务端处理） */
   ucPreset: UcPreset
 }
 
 export interface NaiGenRequest {
+  /** Local image collection; never sent to the generation provider. */
+  collectionId?: string
   base: string
   negative: string
   characters: AiCharacter[]

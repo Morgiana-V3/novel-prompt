@@ -24,6 +24,7 @@ import type { ImageRecipe, NaiImage } from '../../../shared/images/types'
 import { writeFileAtomic } from '../../infrastructure/atomic-file'
 import { pngSize } from '../../providers/novelai/png-response'
 import { workspaceImageNames } from '../workspace/image-references'
+import { imageCollections } from './collections'
 
 type Storage = NonNullable<NaiImage['storage']>
 const uuid = /^[a-f0-9-]{36}$/
@@ -102,6 +103,7 @@ export function imageInfo(name: string, references?: Set<string>): NaiImage | nu
     width: size?.width,
     height: size?.height,
     storage,
+    collectionId: imageCollections.forImage(name),
   }
 }
 const recipeCache = new Map<string, { stamp: string; recipe: ImageRecipe | null }>()
@@ -155,6 +157,7 @@ export function storeGeneratedImage(
   recipe: ImageRecipe,
   storage: Storage,
   owner?: string,
+  collectionId?: string,
 ): NaiImage {
   if (storage === 'workspace' && (!owner || !uuid.test(owner))) {
     throw new Error('工作台标识无效')
@@ -176,6 +179,7 @@ export function storeGeneratedImage(
   }
   const png = embedRecipe(bytes, recipe)
   writeFileAtomic(dest, png)
+  imageCollections.assign([name], imageCollections.resolve(collectionId))
   return { ...imageInfo(name)!, contentHash: createHash('sha256').update(png).digest('hex') }
 }
 export function retainImage(name: string): NaiImage {

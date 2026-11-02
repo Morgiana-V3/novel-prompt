@@ -308,6 +308,7 @@ export function pageConfigurationChanges(workspace: PageWorkspace, id: string, c
     ['seed', '种子'],
     ['count', '张数'],
     ['qualityTags', 'Add Quality Tags'],
+    ['qualityMode', '质量词档位'],
     ['ucPreset', 'UC 预设'],
   ]
   const parameters: { label: string; before: unknown; after: unknown }[] = fields

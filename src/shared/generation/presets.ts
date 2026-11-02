@@ -108,14 +108,42 @@ export function textBlockOf(input: string): string | null {
   return at < 0 ? null : input.slice(at + 5).trim()
 }
 
+export function effectiveQualityMode(
+  version: NaiVersion,
+  params: { qualityTags: boolean; qualityMode?: 'standard' | 'light' },
+): 'standard' | 'light' | 'none' {
+  if (!params.qualityTags) {
+    return 'none'
+  }
+  return version === 'v5' && params.qualityMode === 'light' ? 'light' : 'standard'
+}
+export function qualityTagsFor(
+  version: NaiVersion,
+  mode: 'standard' | 'light' | 'none' = 'standard',
+): string {
+  if (mode === 'none') {
+    return ''
+  }
+  return version === 'v5' && mode === 'light'
+    ? 'very aesthetic, amazing quality, no text'
+    : QUALITY_TAGS[version]
+}
 /**
  * 把 Add Quality Tags 追加到主提示词：NAI 要求 Text: 块在最末尾，
  * 有 Text: 块时插到它前面。
  */
-export function withQualityTags(base: string, version: NaiVersion): string {
+export function withQualityTags(
+  base: string,
+  version: NaiVersion,
+  mode: 'standard' | 'light' | 'none' = 'standard',
+): string {
+  const quality = qualityTagsFor(version, mode)
+  if (!quality) {
+    return base.trim()
+  }
   const at = findTextBlock(base)
   if (at < 0) {
-    return joinPrompt(base, QUALITY_TAGS[version])
+    return joinPrompt(base, quality)
   }
-  return `${joinPrompt(base.slice(0, at), QUALITY_TAGS[version])}, ${base.slice(at).trim()}`
+  return `${joinPrompt(base.slice(0, at), quality)}, ${base.slice(at).trim()}`
 }

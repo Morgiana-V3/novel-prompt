@@ -1,3 +1,4 @@
+import type { TokenUsage } from '../statistics/model'
 export const TASK_LABELS = {
   agent: 'Agent 操作',
   'db-update': '更新标签库',
@@ -21,6 +22,11 @@ export const TASK_LABELS = {
 
 export type TaskKind = keyof typeof TASK_LABELS
 export type TaskStatus = 'running' | 'cancelling' | 'completed' | 'cancelled' | 'failed'
+export interface TaskStep {
+  at: number
+  message: string
+  count: number
+}
 export interface AppTask {
   id: string
   kind: TaskKind
@@ -34,6 +40,9 @@ export interface AppTask {
   targetId?: string
   origin?: 'agent'
   label?: string
+  steps?: TaskStep[]
+  stepsOmitted?: number
+  usage?: TokenUsage
 }
 export interface TaskSnapshot {
   revision: number

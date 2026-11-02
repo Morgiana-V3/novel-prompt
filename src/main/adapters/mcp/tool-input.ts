@@ -108,6 +108,12 @@ export const PROMPT_PROPS = {
 }
 
 export const PARAM_PROPS = {
+  quality_mode: {
+    type: 'string',
+    enum: ['standard', 'light'],
+    description:
+      '质量词档位，默认 standard；light 仅 V5，V4.5 使用 standard。quality_tags=false 时关闭。',
+  },
   width: { type: 'integer', description: '宽，64 的倍数，默认 832' },
   height: { type: 'integer', description: '高，64 的倍数，默认 1216' },
   quality_tags: {

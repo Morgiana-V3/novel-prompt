@@ -2,7 +2,7 @@
 import { promptState } from './state'
 import { settingsState } from '../settings/state'
 import { skillsState } from '../skills/state'
-import { shellState } from '../../shared/state/shell'
+import { usePagePresentation } from '../../shared/lib/page-presentation'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type {
   AiPreviewResult,
@@ -24,6 +24,8 @@ import EvidenceNote from './components/EvidenceNote.vue'
 import type { IconName } from '../../shared/ui/icons'
 import { activeTask, cancelTask } from '../../shared/state/tasks'
 import { usePageShortcuts, runKeyLabel, runKeyShort } from '../../shared/lib/shortcuts'
+
+const { embedded, navigate, isActive, editor } = usePagePresentation()
 
 const expectation = ref('')
 const running = ref(false)
@@ -54,9 +56,9 @@ onBeforeUnmount(() => {
 })
 
 watch(
-  () => shellState.tab,
-  async (tab) => {
-    if (tab !== 'preview') {
+  () => isActive('preview'),
+  async (active) => {
+    if (!active) {
       return
     }
     await nextTick()
@@ -100,7 +102,8 @@ async function run() {
         .filter((character) => character.prompt.trim())
         .map((character) => ({ ...character })),
       params: { ...promptState.params },
-      expectation: expectation.value,
+      expectation: embedded.value ? '' : expectation.value,
+      forecastOnly: embedded.value,
       version: settingsState.settings.naiVersion,
     })
     promptState.lastPreview = { key, result: preview }
@@ -206,7 +209,8 @@ function locateTag(tag: string, preferNeg = false) {
   }
   const needles = [...new Set([core, core.replace(/ /g, '_'), core.replace(/^artist:\s*/, '')])]
   const els = [
-    ...(leftPane.value?.querySelectorAll<HTMLTextAreaElement>('textarea[data-src]') ?? []),
+    ...((editor() ?? leftPane.value)?.querySelectorAll<HTMLTextAreaElement>('textarea[data-src]') ??
+      []),
   ]
   if (preferNeg) {
     els.sort(
@@ -260,10 +264,10 @@ function resultText(preview: AiPreviewResult): string {
       `【风险】\n${preview.risks.map((risk) => `- [${RISK_LABEL[risk.level].text}] ${risk.text}${risk.evidence ? `（依据：${risk.evidence}）` : ''}`).join('\n')}`,
     )
   }
-  if (preview.gap) {
+  if (!embedded.value && preview.gap) {
     parts.push(`【与期望的差距】\n${preview.gap}`)
   }
-  if (preview.suggestions.length) {
+  if (!embedded.value && preview.suggestions.length) {
     parts.push(
       `【建议】\n${preview.suggestions.map((suggestion, i) => `${i + 1}. ${suggestion.text}${suggestion.evidence ? `（依据：${suggestion.evidence}）` : ''}`).join('\n')}`,
     )
@@ -272,7 +276,7 @@ function resultText(preview: AiPreviewResult): string {
 }
 
 function toGenerate() {
-  shellState.tab = 'generate'
+  navigate('generate')
 }
 
 /** 把期望、差距和建议整理成 AI 优化的「额外要求」一起带过去，不用手动复制 */
@@ -303,10 +307,10 @@ function toOptimize() {
       count: (preview?.suggestions.length ?? 0) + highRisks.length,
     }
   }
-  shellState.tab = 'ai'
+  navigate('ai')
 }
 
-usePageShortcuts('preview', {
+usePageShortcuts(() => isActive('preview'), {
   run,
   cancel: () => task.value && cancelTask(task.value.id),
   canCancel: () => running.value && !!task.value,
@@ -314,21 +318,36 @@ usePageShortcuts('preview', {
 </script>
 
 <template>
-  <div class="view preview">
+  <div
+    :id="embedded ? 'creation-panel-preview' : undefined"
+    :role="embedded ? 'tabpanel' : undefined"
+    :aria-labelledby="embedded ? 'creation-tab-preview' : undefined"
+    class="view preview"
+  >
     <section class="pane left with-foot">
       <div
+        v-show="!embedded"
         ref="leftPane"
         class="pane-body scroll"
       >
-        <WorkspaceBar />
+        <WorkspaceBar v-if="!embedded" />
 
-        <PromptEditor neg-hint="用来判断哪些东西被压掉了" />
+        <PromptEditor
+          v-if="!embedded"
+          neg-hint="用来判断哪些东西被压掉了"
+        />
 
-        <div class="params">
+        <div
+          v-if="!embedded"
+          class="params"
+        >
           <SharedParams />
         </div>
 
-        <div class="field">
+        <div
+          v-if="!embedded"
+          class="field"
+        >
           <label class="field-label"
             >想要的效果（可选）<span class="muted"> · 填了会对比差距并给出修改建议</span></label
           >
@@ -342,11 +361,11 @@ usePageShortcuts('preview', {
         </div>
 
         <div
-          v-if="steps.length"
+          v-if="!embedded && steps.length"
           class="timeline"
         >
           <div
-            v-for="(step, index) in steps"
+            v-for="(step, index) in embedded ? steps.slice(-1) : steps"
             :key="index"
             :class="['tl-item', { live: running && index === steps.length - 1 }]"
           >
@@ -412,6 +431,7 @@ usePageShortcuts('preview', {
         class="empty"
       >
         <Mascot
+          v-if="!embedded"
           mood="think"
           :size="240"
         />
@@ -424,20 +444,23 @@ usePageShortcuts('preview', {
         class="empty"
       >
         <Mascot
+          v-if="!embedded"
           mood="confused"
           :size="230"
         />
-        <p>出了点问题，看看左边的报错信息吧</p>
+        <p>{{ embedded ? '推测失败，请查看上方错误信息' : '出了点问题，看看左边的报错信息吧' }}</p>
       </div>
       <div
         v-else-if="!result"
         class="empty"
       >
         <Mascot
+          v-if="!embedded"
           mood="crystal"
           :size="230"
         />
-        <p>
+        <p v-if="embedded">点击「开始推测」查看当前提示词可能生成的画面。</p>
+        <p v-else>
           推测用的是「当前提示词」，和其他页面共用。可以在左侧粘贴整套提示词，或者把 NovelAI
           原图拖进窗口。我会先查一遍每个 tag，再猜猜它会画成什么样、哪里可能和你想的不一样。
         </p>
@@ -460,8 +483,18 @@ usePageShortcuts('preview', {
             </button>
           </div>
         </div>
-        <div :class="['cheer', { warn: hasHighRisk }]">
+        <div
+          v-if="embedded"
+          class="forecast-meta muted small"
+        >
+          仅为文字推测 · {{ CONF_LABEL[result.confidence].text }}
+        </div>
+        <div
+          v-else
+          :class="['cheer', { warn: hasHighRisk }]"
+        >
           <Mascot
+            v-if="!embedded"
             :mood="hasHighRisk ? 'confused' : 'ok'"
             :size="76"
           />
@@ -668,7 +701,7 @@ usePageShortcuts('preview', {
                 name="warn"
                 :size="14"
             /></span>
-            <h3>可能和预期不一样的地方</h3>
+            <h3>{{ embedded ? '画面中的不确定性' : '可能和预期不一样的地方' }}</h3>
             <span class="group-count">{{ result.risks.length }}</span>
           </div>
           <div class="effect-list">
@@ -711,7 +744,7 @@ usePageShortcuts('preview', {
         </div>
 
         <div
-          v-if="result.gap || result.suggestions.length"
+          v-if="!embedded && (result.gap || result.suggestions.length)"
           class="result-card"
           style="--d: 440ms"
         >
@@ -766,7 +799,7 @@ usePageShortcuts('preview', {
         </div>
 
         <div
-          v-if="sortedIssues.length"
+          v-if="!embedded && sortedIssues.length"
           class="result-card"
           style="--d: 480ms"
         >
@@ -810,6 +843,7 @@ usePageShortcuts('preview', {
             />复制推测结果
           </button>
           <button
+            v-if="!embedded"
             class="btn"
             title="把期望、差距和建议带到 AI 优化的「额外要求」"
             @click="toOptimize"

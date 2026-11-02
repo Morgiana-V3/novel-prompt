@@ -24,9 +24,35 @@ import {
 import { deleteUnreferencedImage } from '../../modules/workspace/image-cleanup'
 import type { IpcContext } from './context'
 import { handle } from './handle'
+import { imageCollections } from '../../modules/images/collections'
 
 export function registerImagesIpc(context: IpcContext): void {
   const { send, notifyAppChanged } = context
+  const collectionsChanged = () => {
+    send('gallery:changed', null)
+    notifyAppChanged()
+  }
+  handle('collections:list', () => imageCollections.list())
+  handle('collections:create', (_e, name) => {
+    const item = imageCollections.create(name)
+    collectionsChanged()
+    return item
+  })
+  handle('collections:rename', (_e, id, name) => {
+    imageCollections.rename(id, name)
+    collectionsChanged()
+  })
+  handle('collections:delete', (_e, id) => {
+    imageCollections.remove(id)
+    collectionsChanged()
+  })
+  handle('collections:assign', (_e, names, id) => {
+    if (!Array.isArray(names) || names.some((name) => !imagePath(name))) {
+      throw new Error('部分图片已不存在，请刷新图库')
+    }
+    imageCollections.assign(names, id)
+    collectionsChanged()
+  })
 
   /* ---------- NovelAI 生图 ---------- */
   handle('nai:subscription', () => {

@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto'
+import { emptyUsage, addUsage } from '../../../shared/statistics/model'
+import { withUsageContext } from '../../infrastructure/usage-context'
+import { recordTask } from '../statistics/service'
 import {
   TASK_LABELS,
   taskIsActive,
@@ -33,7 +36,28 @@ export class TaskManager {
   constructor(private publish: (snapshot: TaskSnapshot) => void) {}
 
   snapshot(): TaskSnapshot {
-    return { revision: this.revision, tasks: this.records.map((task) => ({ ...task })) }
+    return {
+      revision: this.revision,
+      tasks: this.records.map((task) => ({
+        ...task,
+        usage: task.usage ? { ...task.usage } : undefined,
+        steps: task.steps?.map((step) => ({ ...step })),
+      })),
+    }
+  }
+  private recordStep(task: AppTask, message: string) {
+    const text = message.slice(0, 1000)
+    const steps = task.steps ?? (task.steps = [])
+    const last = steps.at(-1)
+    if (last?.message === text) {
+      last.count++
+      return
+    }
+    steps.push({ at: Date.now(), message: text, count: 1 })
+    if (steps.length > 200) {
+      steps.shift()
+      task.stepsOmitted = (task.stepsOmitted ?? 0) + 1
+    }
   }
   private changed() {
     // Retain a bounded session history, without ever pruning running tasks.
@@ -50,6 +74,7 @@ export class TaskManager {
     entry.task.status = 'cancelling'
     entry.task.message =
       entry.task.cancelMode === 'after-current' ? '当前图片完成后停止，结果会保留' : '正在取消…'
+    this.recordStep(entry.task, entry.task.message)
     entry.ctrl.abort()
     entry.options.onCancel?.()
     this.changed()
@@ -97,17 +122,29 @@ export class TaskManager {
     }
     this.active.set(task.id, { task, ctrl, options, key })
     this.records.unshift(task)
+    this.recordStep(task, task.message)
     this.changed()
     const progress: TaskContext['progress'] = (message, current, total) => {
       if (task.status !== 'running') {
         return false
       }
       Object.assign(task, { message, current, total })
+      this.recordStep(task, message)
       this.changed()
       return true
     }
     try {
-      const result = await work({ id: task.id, signal: ctrl.signal, progress })
+      const result = await withUsageContext(
+        {
+          kind,
+          onUsage: (usage) => {
+            task.usage ??= emptyUsage()
+            addUsage(task.usage, usage)
+            this.changed()
+          },
+        },
+        () => work({ id: task.id, signal: ctrl.signal, progress }),
+      )
       // An API may resolve despite aborting; never expose such a late AI result as successful.
       if (ctrl.signal.aborted && task.cancelMode === 'abort') {
         throw new Error('已取消')
@@ -134,6 +171,8 @@ export class TaskManager {
       throw cancelled ? new Error('已取消') : error
     } finally {
       task.endedAt = Date.now()
+      recordTask(kind, task.status)
+      this.recordStep(task, task.status === 'completed' ? '任务已完成' : task.message)
       this.active.delete(task.id)
       this.changed()
     }

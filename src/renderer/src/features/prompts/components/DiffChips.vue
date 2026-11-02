@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { TagDiff } from '../tag-diff'
-import { foldContext, wordParts } from '../prompt-diff'
+import { foldContext, wordParts, type ContextPart } from '../prompt-diff'
 
 const props = withDefaults(
   defineProps<{
+    fullContext?: boolean
     diff: TagDiff
     beforeLabel?: string
     afterLabel?: string
@@ -21,8 +22,8 @@ const fullTags = computed(
     !!props.afterText &&
     props.beforeText !== props.afterText,
 )
-const documents = computed(() =>
-  (fullTags.value && expanded.value
+const documents = computed<{ before: string; after: string; parts: ContextPart[] }[]>(() =>
+  props.fullContext
     ? [
         {
           before: props.beforeText,
@@ -30,11 +31,19 @@ const documents = computed(() =>
           parts: wordParts(props.beforeText, props.afterText),
         },
       ]
-    : (props.diff.sentences ?? [])
-  ).map((sentence) => ({
-    ...sentence,
-    parts: foldContext(sentence.parts),
-  })),
+    : (fullTags.value && expanded.value
+        ? [
+            {
+              before: props.beforeText,
+              after: props.afterText,
+              parts: wordParts(props.beforeText, props.afterText),
+            },
+          ]
+        : (props.diff.sentences ?? [])
+      ).map((sentence) => ({
+        ...sentence,
+        parts: foldContext(sentence.parts),
+      })),
 )
 const hasContext = computed(
   () =>
@@ -64,7 +73,9 @@ watch(
   <div class="prompt-diff">
     <div
       v-if="
-        !(fullTags && expanded) && (diff.added.length || diff.removed.length || diff.changed.length)
+        !fullContext &&
+        !(fullTags && expanded) &&
+        (diff.added.length || diff.removed.length || diff.changed.length)
       "
       class="diff-row"
     >
@@ -88,7 +99,7 @@ watch(
       >
     </div>
     <button
-      v-if="hasContext"
+      v-if="!fullContext && hasContext"
       type="button"
       class="diff-context"
       :aria-expanded="expanded"

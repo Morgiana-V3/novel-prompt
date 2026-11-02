@@ -111,6 +111,7 @@ export function createGenerateImageTool(): McpTool {
             : Math.round(num(argumentsRecord.seed, 0, 0, 4_294_967_295)),
         count: Math.round(num(argumentsRecord.count, 1, 1, 4)),
         qualityTags: bool(argumentsRecord.quality_tags, true),
+        qualityMode: argumentsRecord.quality_mode === 'light' ? 'light' : 'standard',
         ucPreset: ucPreset(argumentsRecord.uc_preset),
       }
       const generationResult = await generateImages(

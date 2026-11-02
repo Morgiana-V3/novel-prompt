@@ -1,10 +1,12 @@
 import { reactive } from 'vue'
 
 export type Tab =
+  | 'creation'
   | 'compare'
   | 'ai'
   | 'preview'
   | 'generate'
+  | 'gallery'
   | 'reverse'
   | 'workspace'
   | 'search'

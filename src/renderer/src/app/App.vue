@@ -22,10 +22,12 @@ import {
 } from '@shared/contracts/desktop'
 import { readPngPrompt } from '../features/prompts/png-import'
 import CompareView from '../features/prompts/CompareView.vue'
+import CreationLayout from '../features/creation/CreationLayout.vue'
 import SearchView from '../features/tags/SearchView.vue'
 import AiView from '../features/prompts/AiView.vue'
 import PreviewView from '../features/prompts/PreviewView.vue'
 import GenerateView from '../features/generation/GenerateView.vue'
+import GalleryView from '../features/gallery/GalleryView.vue'
 import FavoritesView from '../features/favorites/FavoritesView.vue'
 import ReverseView from '../features/reverse/ReverseView.vue'
 import SubscriptionStatus from '../features/generation/components/SubscriptionStatus.vue'
@@ -44,6 +46,12 @@ import { taskIsActive } from '@shared/tasks/model'
 
 /** 按工作流排序：写 → 校验 → 优化 → 推测 → 出图；搜索与设置是工具 */
 const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: boolean }[] = [
+  {
+    key: 'creation',
+    label: '创作实验',
+    icon: 'sparkle',
+    desc: '在同一页编辑、检查、优化提示词并生成图片，与原页面对比体验',
+  },
   {
     key: 'compare',
     label: '提示词比对',
@@ -71,6 +79,13 @@ const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: bool
     desc: '围绕一个目标持续讨论、生成和调整，保留每次尝试',
   },
   {
+    key: 'gallery',
+    label: '图库',
+    icon: 'folder',
+    desc: '按图集整理、查看和复用生成图片',
+    tool: true,
+  },
+  {
     key: 'favorites',
     label: '收藏',
     icon: 'star',
@@ -93,6 +108,17 @@ const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: bool
   },
 ]
 const current = computed(() => tabs.find((tab) => tab.key === shellState.tab)!)
+const creationPanel = ref<Tab>('compare')
+const creationActive = computed(() => shellState.tab === 'creation')
+function navigateCreation(tab: Tab) {
+  if (creationActive.value && ['compare', 'ai', 'preview', 'generate'].includes(tab)) {
+    creationPanel.value = tab
+  } else {
+    shellState.tab = tab
+  }
+}
+const pageVisible = (tab: Tab) =>
+  creationActive.value ? creationPanel.value === tab : shellState.tab === tab
 const development = ref(false)
 const cleanup = ref({ pending: 0, message: '' })
 const cleanupBusy = ref(false)
@@ -687,22 +713,29 @@ async function onDrop(event2: DragEvent) {
         class="content"
         :inert="frontend?.status === 'running'"
       >
-        <CompareView v-show="shellState.tab === 'compare'" />
+        <CreationLayout
+          :active="creationActive"
+          :panel="creationPanel"
+          @navigate="navigateCreation"
+        >
+          <CompareView v-show="pageVisible('compare')" />
+          <AiView v-show="pageVisible('ai')" />
+          <PreviewView v-show="pageVisible('preview')" />
+          <GenerateView
+            v-show="pageVisible('generate')"
+            ref="generateView"
+          />
+        </CreationLayout>
         <ReverseView
           v-show="shellState.tab === 'reverse'"
           ref="reverseView"
         />
         <SearchView v-show="shellState.tab === 'search'" />
-        <AiView v-show="shellState.tab === 'ai'" />
-        <PreviewView v-show="shellState.tab === 'preview'" />
-        <GenerateView
-          v-show="shellState.tab === 'generate'"
-          ref="generateView"
-        />
         <WorkspacesView
           v-show="shellState.tab === 'workspace'"
           ref="workspaceView"
         />
+        <GalleryView v-if="shellState.tab === 'gallery'" />
         <FavoritesView v-show="shellState.tab === 'favorites'" />
         <SettingsView
           v-show="shellState.tab === 'settings'"

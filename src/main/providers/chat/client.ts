@@ -1,4 +1,6 @@
 import { net } from 'electron'
+import { reportUsage } from '../../infrastructure/usage-context'
+import { readTokenUsage } from '../../../shared/statistics/model'
 import type { ReasoningEffort } from '../../../shared/settings/types'
 
 export interface ToolCall {
@@ -90,9 +92,19 @@ export async function requestChat(
   }
   const limitMs = resolveLimitMs()
   const payload = JSON.stringify(body)
+  let provider = '自定义接口'
+  try {
+    provider = new URL(url).origin
+  } catch {
+    /* Network layer provides the actionable URL error. */
+  }
   for (let attempt = 0; ; attempt++) {
+    let recorded = false
     try {
-      return await requestOnce(url, apiKey, payload, limitMs, opts.signal)
+      return await requestOnce(url, apiKey, payload, limitMs, opts.signal, (usage) => {
+        recorded = true
+        reportUsage(provider, model, readTokenUsage(usage))
+      })
     } catch (error) {
       // 限流、服务繁忙、网络抖动可以稍后重试；Key 错误、参数错误、超时、用户取消不重试
       if (
@@ -104,6 +116,10 @@ export async function requestChat(
         throw error
       }
       await wait(error.retryAfterMs ?? 1500 * 2 ** attempt, opts.signal)
+    } finally {
+      if (!recorded) {
+        reportUsage(provider, model, readTokenUsage(undefined))
+      }
     }
   }
 }
@@ -199,7 +215,8 @@ async function requestOnce(
   apiKey: string,
   payload: string,
   limitMs: number,
-  signal?: AbortSignal,
+  signal: AbortSignal | undefined,
+  onUsage: (usage: unknown) => void,
 ): Promise<ChatMessage> {
   const timeout = AbortSignal.timeout(limitMs)
   let res: Response
@@ -246,7 +263,7 @@ async function requestOnce(
     )
   }
   const text = await res.text()
-  let data: { choices?: { message?: ChatMessage }[] }
+  let data: { choices?: { message?: ChatMessage }[]; usage?: unknown }
   try {
     data = JSON.parse(text)
   } catch {
@@ -254,6 +271,7 @@ async function requestOnce(
       `AI 服务返回的不是有效数据，请检查 Base URL 是否指向 OpenAI 兼容接口：${serverDetail(text, apiKey).slice(0, 120)}`,
     )
   }
+  onUsage(data.usage)
   const msg = data.choices?.[0]?.message
   if (!msg) {
     throw new AiServiceError('AI 服务返回为空，请稍后重试', true)

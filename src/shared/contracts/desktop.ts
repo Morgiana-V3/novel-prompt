@@ -5,11 +5,13 @@ import type { WorkspaceConfigPatch } from '../workspace/config'
 import type { PageAgentActivity, PageExternalReply } from '../workspace/model'
 
 export const APP_TABS = [
+  'creation',
   'compare',
   'ai',
   'preview',
   'reverse',
   'generate',
+  'gallery',
   'workspace',
   'favorites',
   'search',

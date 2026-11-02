@@ -85,6 +85,7 @@ export function createAnalyzePromptTool(): McpTool {
             width: num(argumentsRecord.width, 832, 64, 4096),
             height: num(argumentsRecord.height, 1216, 64, 4096),
             qualityTags: bool(argumentsRecord.quality_tags, true),
+            qualityMode: argumentsRecord.quality_mode === 'light' ? 'light' : 'standard',
             ucPreset: ucPreset(argumentsRecord.uc_preset),
           },
           expectation: '',
@@ -119,6 +120,15 @@ export function createOptimizePromptTool(): McpTool {
           description: 'optimize 时为额外要求；semantic 时为画面描述',
         },
         ...PROMPT_PROPS,
+        quality_mode: PARAM_PROPS.quality_mode,
+        quality_tags: {
+          ...PARAM_PROPS.quality_tags,
+          description: '当前质量词开关；需与 uc_preset 一同提供，未提供完整设置时不假定预设状态',
+        },
+        uc_preset: {
+          ...PARAM_PROPS.uc_preset,
+          description: '当前 UC 预设；需与 quality_tags 一同提供，未提供完整设置时不假定预设状态',
+        },
       },
     },
     annotations: { readOnlyHint: true, openWorldHint: true },
@@ -132,6 +142,16 @@ export function createOptimizePromptTool(): McpTool {
           characters: characters(argumentsRecord.characters),
           instruction: str(argumentsRecord.instruction),
           version: version(argumentsRecord.version),
+          ...(typeof argumentsRecord.quality_tags === 'boolean' &&
+          typeof argumentsRecord.uc_preset === 'string'
+            ? {
+                promptPresets: {
+                  qualityTags: argumentsRecord.quality_tags,
+                  qualityMode: argumentsRecord.quality_mode === 'light' ? 'light' : 'standard',
+                  ucPreset: ucPreset(argumentsRecord.uc_preset),
+                },
+              }
+            : {}),
         },
         progress ?? (() => {}),
         signal,
@@ -184,6 +204,7 @@ export function createPreviewPromptTool(): McpTool {
             width: num(argumentsRecord.width, 832, 64, 4096),
             height: num(argumentsRecord.height, 1216, 64, 4096),
             qualityTags: bool(argumentsRecord.quality_tags, true),
+            qualityMode: argumentsRecord.quality_mode === 'light' ? 'light' : 'standard',
             ucPreset: ucPreset(argumentsRecord.uc_preset),
           },
           expectation: str(argumentsRecord.expectation),

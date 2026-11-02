@@ -1,3 +1,5 @@
+import type { StatisticsData } from '../statistics/model'
+import type { ImageCollection } from '../images/collections'
 import type {
   NaiFreeCheck,
   NaiGenParams,
@@ -45,6 +47,13 @@ import type { StorageInfo } from '../settings/storage'
 import type { PromptSnippet, SnippetInput } from '../prompts/snippets'
 
 export interface Api {
+  collectionsList: () => Promise<ImageCollection[]>
+  collectionsCreate: (name: string) => Promise<ImageCollection>
+  collectionsRename: (id: string, name: string) => Promise<void>
+  collectionsDelete: (id: string) => Promise<void>
+  collectionsAssign: (names: string[], id: string) => Promise<void>
+  statisticsGet: () => Promise<StatisticsData>
+  statisticsClear: () => Promise<StatisticsData>
   storageInfo: () => Promise<StorageInfo>
   storageChoose: () => Promise<string | null>
   storageSchedule: (path: string) => Promise<StorageInfo>
@@ -198,6 +207,17 @@ export interface Api {
 }
 
 export interface IpcContract {
+  'collections:list': {
+    args: Parameters<Api['collectionsList']>
+    result: Awaited<ReturnType<Api['collectionsList']>>
+  }
+  'collections:create': {
+    args: Parameters<Api['collectionsCreate']>
+    result: Awaited<ReturnType<Api['collectionsCreate']>>
+  }
+  'collections:rename': { args: Parameters<Api['collectionsRename']>; result: void }
+  'collections:delete': { args: Parameters<Api['collectionsDelete']>; result: void }
+  'collections:assign': { args: Parameters<Api['collectionsAssign']>; result: void }
   'storage:info': { args: []; result: StorageInfo }
   'storage:choose': { args: []; result: string | null }
   'storage:schedule': { args: [path: string]; result: StorageInfo }
@@ -213,6 +233,8 @@ export interface IpcContract {
   'reverse:remove': { args: [ReverseModel[]?]; result: void }
   'reverse:analyze': { args: [Uint8Array, ReverseModel[]?]; result: ReverseResult }
   'reverse:score': { args: [number[], string]; result: number }
+  'statistics:get': { args: []; result: StatisticsData }
+  'statistics:clear': { args: []; result: StatisticsData }
   'tasks:list': {
     args: Parameters<Api['tasksList']>
     result: Awaited<ReturnType<Api['tasksList']>>

@@ -12,10 +12,12 @@ const props = withDefaults(
       NaiGenParams,
       'count' | 'steps' | 'scale' | 'seed' | 'cfgRescale' | 'sampler' | 'noiseSchedule'
     >
-    params: Pick<NaiGenParams, 'width' | 'height' | 'qualityTags' | 'ucPreset'>
+    params: Pick<NaiGenParams, 'width' | 'height' | 'qualityTags' | 'qualityMode' | 'ucPreset'>
     disabled?: boolean
     sizeLocked?: boolean
     hideCount?: boolean
+    promptPresetsInEditor?: boolean
+    expandedSizes?: boolean
   }>(),
   { disabled: false, sizeLocked: false },
 )
@@ -62,8 +64,9 @@ const advancedSummary = computed(() =>
       props.gen.sampler,
     props.gen.noiseSchedule,
     `Rescale ${props.gen.cfgRescale}`,
-    props.params.qualityTags ? '质量词开' : '质量词关',
-    `UC ${props.params.ucPreset}`,
+    ...(props.promptPresetsInEditor
+      ? []
+      : [props.params.qualityTags ? '质量词开' : '质量词关', `UC ${props.params.ucPreset}`]),
   ].join(' · '),
 )
 const advancedChanged = computed(
@@ -71,8 +74,9 @@ const advancedChanged = computed(
     props.gen.sampler !== DEFAULT_GEN.sampler ||
     props.gen.noiseSchedule !== DEFAULT_GEN.noiseSchedule ||
     props.gen.cfgRescale !== DEFAULT_GEN.cfgRescale ||
-    props.params.qualityTags !== DEFAULT_PARAMS.qualityTags ||
-    props.params.ucPreset !== DEFAULT_PARAMS.ucPreset,
+    (!props.promptPresetsInEditor &&
+      (props.params.qualityTags !== DEFAULT_PARAMS.qualityTags ||
+        props.params.ucPreset !== DEFAULT_PARAMS.ucPreset)),
 )
 </script>
 <template>
@@ -81,6 +85,7 @@ const advancedChanged = computed(
       :params="params"
       :disabled="disabled"
       :size-locked="sizeLocked"
+      :expanded-sizes="expandedSizes"
       :only="['size']"
       @change-params="emit('changeParams', $event)"
     />
@@ -169,7 +174,10 @@ const advancedChanged = computed(
       <span class="muted gen-advanced-sum">{{ advancedSummary }}</span>
     </summary>
     <div class="gen-params">
-      <div class="param">
+      <div
+        v-if="!expandedSizes"
+        class="param"
+      >
         <span class="side-label">自定义尺寸（64 的倍数）</span>
         <div class="pair">
           <input
@@ -225,6 +233,7 @@ const advancedChanged = computed(
         />
       </div>
       <SharedParams
+        v-if="!promptPresetsInEditor"
         :params="params"
         :disabled="disabled"
         :only="['quality', 'uc']"
