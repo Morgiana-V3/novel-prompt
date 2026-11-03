@@ -57,7 +57,6 @@ const open = () => run(() => window.api.storageOpen())
     <div class="card-head">
       <div>
         <h2>存储与数据</h2>
-        <p>一个目录，保存你的图片、模型、Tag、收藏与工作台项目。</p>
       </div>
     </div>
     <template v-if="info">

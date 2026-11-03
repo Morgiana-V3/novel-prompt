@@ -52,7 +52,6 @@ const loadingHelp = computed(() =>
     ...(['optimize', 'preview', 'inpaint', 'workspace'] as const).map(
       (feature) => `${SCOPE[feature]}：${fmtChars(total(feature))}`,
     ),
-    '不含固定总则、参考目录和对话。目录包的参考正文按需读取；字符数不等于 token 或实际请求总量。',
   ].join('\n'),
 )
 
@@ -220,7 +219,7 @@ onBeforeUnmount(() => {
             }"
           >
             <div class="sp-head">
-              <b title="拖动排序，越靠上优先级越高；冲突时采用优先级更高的规则">启用的 Skill</b>
+              <b>启用的 Skill</b>
               <HelpTip
                 label="Skill 加载量"
                 :text="loadingHelp"

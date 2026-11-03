@@ -2,7 +2,11 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { NaiImage } from '@shared/images/types'
 import { DEFAULT_COLLECTION } from '@shared/images/collections'
-import { collections, refreshCollections } from './collections-state'
+import {
+  collections,
+  galleryCollection as collection,
+  refreshCollections,
+} from './collections-state'
 import { shellState } from '../../shared/state/shell'
 import { toast, reportError } from '../../shared/lib/notifications'
 import { cleanErr } from '../../shared/lib/format'
@@ -14,7 +18,6 @@ import ConfirmDialog from '../../shared/ui/ConfirmDialog.vue'
 
 const images = ref<NaiImage[]>([])
 const api = window.api
-const collection = ref('all')
 const retention = ref('all')
 const selected = ref('')
 const page = ref(1)
@@ -393,9 +396,6 @@ function step(delta: number) {
             <button
               class="btn ghost"
               :disabled="busy || current.storage === 'workspace'"
-              :title="
-                current.storage === 'workspace' ? '工作台引用中，请在工作台管理' : '移到系统回收站'
-              "
               @click="confirming = 'image'"
             >
               删除图片
@@ -407,8 +407,10 @@ function step(delta: number) {
     <ImageViewer
       v-if="lightbox && current"
       :image="current"
+      :images="filtered"
       :can-previous="index > 0"
       :can-next="index < filtered.length - 1"
+      @select="selected = $event.name"
       @close="lightbox = false"
       @previous="step(-1)"
       @next="step(1)"

@@ -145,12 +145,6 @@ function enlargeReference() {
               :src="referenceUrl"
               :alt="referenceName || '参考图'"
             />
-            <span class="zoom-hint"
-              ><Icon
-                name="search"
-                :size="14"
-              />放大查看</span
-            >
           </button>
         </figure>
         <figure>
@@ -172,12 +166,6 @@ function enlargeReference() {
               :alt="`方案 ${selected.index + 1}`"
               @error="imageFailed = true"
             />
-            <span class="zoom-hint"
-              ><Icon
-                name="search"
-                :size="14"
-              />放大查看</span
-            >
           </button>
           <div
             v-else
@@ -373,26 +361,6 @@ button.comparison-canvas {
   width: 100%;
   height: 100%;
   object-fit: contain;
-}
-
-.zoom-hint {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 8px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--bg);
-  opacity: 0;
-  font-size: 11px;
-}
-
-.comparison-canvas:hover .zoom-hint,
-.comparison-canvas:focus-visible .zoom-hint {
-  opacity: 1;
 }
 
 .comparison-empty {

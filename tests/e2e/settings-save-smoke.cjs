@@ -37,6 +37,8 @@ net.fetch = async () => {
   throw new Error('Unexpected network request')
 }
 const handlers = {
+  'collections:list': () => [{ id: 'default', name: '默认图集', createdAt: 0 }],
+  'storage:info': () => ({ path: profile, bytes: 0, pending: null, previous: null, error: null }),
   'settings:get': () => getSettings(),
   'settings:save': (_, patch) => {
     patches.push(patch)
@@ -136,10 +138,40 @@ app.whenReady().then(async () => {
     await wait(
       `document.querySelector('#settings-panel-guide')?.textContent.includes('/ 快捷搜索')`,
     )
-    writeFileSync(
-      join(profile, 'operation-guide.png'),
-      (await win.webContents.capturePage()).toPNG(),
+    for (const [id, label] of [
+      ['tags', 'Tag 搜索与补全'],
+      ['prompts', '提示词与 AI 修改'],
+      ['positions', '角色位置'],
+      ['images', '图片、图库与收藏'],
+      ['inpaint', '局部重绘'],
+      ['skills', 'Skill 使用与编写'],
+      ['settings', '服务、存储与统计'],
+    ]) {
+      await click('.settings-guide-nav button', label)
+      assert.equal(
+        await js(`document.querySelector('#settings-guide-${id}').getAttribute('aria-selected')`),
+        'true',
+      )
+      assert.ok(
+        await js(`document.querySelector('#guide-panel-${id}').getClientRects().length > 0`),
+      )
+    }
+    await js(
+      `document.querySelector('#settings-guide-settings').dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))`,
     )
+    await wait(`document.activeElement?.id === 'settings-guide-tags'`)
+    for (const width of [1440, 1100]) {
+      win.setSize(width, 900)
+      await delay(300)
+      await js(`document.getAnimations().forEach(a => { try { a.finish() } catch {} })`)
+      assert.ok(await js(`document.documentElement.scrollWidth <= innerWidth`))
+      writeFileSync(
+        join(profile, `operation-guide-${width}.png`),
+        (await win.webContents.capturePage()).toPNG(),
+      )
+    }
+    win.setSize(1440, 1000)
+    console.log('PASS grouped operation guides, keyboard navigation and narrow layout')
     assert.equal(
       await js(
         `document.querySelectorAll('textarea[title="输入 / 快捷搜索 Tag，支持中文和空格"]').length`,

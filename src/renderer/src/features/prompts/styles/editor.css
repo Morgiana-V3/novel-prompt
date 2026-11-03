@@ -117,6 +117,7 @@
 
 .section-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   flex-shrink: 0;
   padding-block: 2px;
@@ -124,6 +125,7 @@
 
 .section-tab {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 6px;
   height: 28px;

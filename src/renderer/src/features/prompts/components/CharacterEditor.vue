@@ -92,7 +92,6 @@ function remove(i: number) {
         v-if="chars.length"
         :disabled="disabled"
         class="btn ghost small ml-auto"
-        title="在画布上拖动各角色的位置"
         @click="posEditing = 0"
       >
         <Icon
@@ -134,7 +133,7 @@ function remove(i: number) {
         <button
           :disabled="disabled"
           class="icon-btn sm"
-          title="在画布上拖动位置"
+          title="编辑角色位置"
           @click="posEditing = indexItem"
         >
           <Icon

@@ -1026,7 +1026,6 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
               <div class="ip-navigation muted small">
                 <button
                   class="btn ghost small ml-auto"
-                  title="滚轮缩放；空格 + 拖动或中键拖动"
                   @click="viewport?.reset()"
                 >
                   适应画布
@@ -1153,7 +1152,7 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                   v-if="!annotations.length"
                   class="muted small"
                 >
-                  涂抹后右键添加批注
+                  暂无区域批注
                 </p>
                 <details
                   v-for="region in annotations"
@@ -1250,7 +1249,7 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                   v-if="!analysisInfo"
                   class="ip-note"
                 >
-                  先在区域上填写修改批注，再点击分析。AI 会提出建议，由你选择采纳。
+                  暂无分析建议
                 </div>
                 <template v-else>
                   <details class="ip-analysis-details">

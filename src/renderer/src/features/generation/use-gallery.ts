@@ -6,25 +6,24 @@ import { cleanErr } from '../../shared/lib/format'
 import { reportError, toast } from '../../shared/lib/notifications'
 import { shellState } from '../../shared/state/shell'
 import { imageState } from './state'
+import { DEFAULT_COLLECTION } from '@shared/images/collections'
+import { collections, galleryCollection } from '../gallery/collections-state'
 export function useGallery(last: Ref<NaiGenResult | null>) {
   const gallery = ref<NaiImage[]>([])
 
   const galleryFilter = ref('all')
+  const galleryCollections = computed(() => [
+    { value: 'all', label: '全部图集' },
+    ...collections.value.map((collection) => ({ value: collection.id, label: collection.name })),
+  ])
 
   const visibleGallery = computed(() =>
     gallery.value.filter(
-      (image) => galleryFilter.value === 'all' || image.storage === galleryFilter.value,
+      (image) =>
+        (galleryCollection.value === 'all' ||
+          (image.collectionId || DEFAULT_COLLECTION) === galleryCollection.value) &&
+        (galleryFilter.value === 'all' || (image.storage || 'saved') === galleryFilter.value),
     ),
-  )
-
-  const galleryHint = computed(
-    () =>
-      ({
-        all: '临时未留存：退出软件后清理；已留存与工作台归档：持续保留。',
-        temporary: '仅临时保存，软件完全退出后清理。满意的图片可点击「留存图片」。',
-        saved: '手动留存或开启自动留存后的图片，退出软件后仍保留。',
-        workspace: '工作台的版本图片，随会话保留。',
-      })[galleryFilter.value],
   )
 
   async function retain(images: NaiImage[]) {
@@ -56,10 +55,38 @@ export function useGallery(last: Ref<NaiGenResult | null>) {
 
   const lightbox = ref(false)
 
+  function reconcileSelection() {
+    if (
+      current.value &&
+      !visibleGallery.value.some((image) => image.name === current.value!.name)
+    ) {
+      current.value = visibleGallery.value[0] ?? null
+      if (!current.value) {
+        lightbox.value = false
+      }
+    }
+  }
+  watch([galleryCollection, galleryFilter], reconcileSelection, { flush: 'sync' })
+
+  function showGenerated(image: NaiImage) {
+    const collectionId = image.collectionId || DEFAULT_COLLECTION
+    if (galleryCollection.value !== 'all' && galleryCollection.value !== collectionId) {
+      galleryCollection.value = collectionId
+    }
+    if (galleryFilter.value !== 'all' && galleryFilter.value !== (image.storage || 'saved')) {
+      galleryFilter.value = 'all'
+    }
+    current.value = image
+  }
+
   async function refreshGallery() {
     gallery.value = await window.api.naiList()
     if (current.value) {
       current.value = gallery.value.find((image) => image.name === current.value!.name) ?? null
+    }
+    reconcileSelection()
+    if (!current.value) {
+      lightbox.value = false
     }
   }
 
@@ -142,7 +169,10 @@ export function useGallery(last: Ref<NaiGenResult | null>) {
     }
   }
   let unsubscribe: (() => void) | undefined
-  watch([() => current.value?.name, galleryFilter, lightbox, () => shellState.tab], resetDelete)
+  watch(
+    [() => current.value?.name, galleryCollection, galleryFilter, lightbox, () => shellState.tab],
+    resetDelete,
+  )
   onMounted(() => {
     unsubscribe = window.api.onGalleryChanged(() => {
       void refreshGallery().catch(reportError)
@@ -157,8 +187,10 @@ export function useGallery(last: Ref<NaiGenResult | null>) {
     gallery,
     current,
     galleryFilter,
+    galleryCollection,
+    galleryCollections,
+    showGenerated,
     visibleGallery,
-    galleryHint,
     latestBatchTemporary,
     refreshGallery,
     pendingDelete,

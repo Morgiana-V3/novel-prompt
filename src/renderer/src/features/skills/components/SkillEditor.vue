@@ -9,7 +9,6 @@ import SkillDocument from './SkillDocument.vue'
 import { missingSkillLinks } from '@shared/skills/references'
 import Icon from '../../../shared/ui/Icon.vue'
 import ConfirmDialog from '../../../shared/ui/ConfirmDialog.vue'
-import HelpTip from '../../../shared/ui/HelpTip.vue'
 
 /**
  * Skill 编辑 / 查看弹窗。
@@ -156,11 +155,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 :size="14"
             /></span>
             <h3>{{ title ?? (readonly ? '查看 Skill' : doc ? '编辑 Skill' : '新建 Skill') }}</h3>
-            <HelpTip
-              v-if="!readonly"
-              label="Skill 写法说明"
-              text="正文用 Markdown 书写，就是给 AI 的规则。「AI 优化」也作用于描述转提示词和 agent 读取的 prompt_guide。只在某个版本生效的规则，可以在条目里标注【V4.5】/【V5】，或把整份的适用模型设为对应版本。输出格式、Text: 等语法由软件固定，不需要写。"
-            />
             <span
               v-if="readonly"
               class="pill"

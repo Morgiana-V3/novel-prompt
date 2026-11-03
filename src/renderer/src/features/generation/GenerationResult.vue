@@ -154,11 +154,7 @@ const deleteLabel = computed(() => {
       v-if="current.storage === 'temporary'"
       class="row viewer-retain"
     >
-      <span
-        class="muted small"
-        title="满意这张？留存后下次启动仍可查看。"
-        >满意这张？留存后下次启动仍可查看。</span
-      ><button
+      <button
         class="btn small primary"
         @click="emit('retain', [current])"
       >
@@ -177,11 +173,6 @@ const deleteLabel = computed(() => {
         class="btn small gallery-delete"
         :class="{ 'danger-confirm': pendingDelete === current.name }"
         :disabled="!!deleting || current.storage === 'workspace'"
-        :title="
-          current.storage === 'workspace'
-            ? '工作台引用中，无法从图库删除'
-            : '删除图片（移到回收站）'
-        "
         :aria-label="deleteLabel"
         @click="emit('remove', current)"
       >

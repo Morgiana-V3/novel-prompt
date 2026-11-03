@@ -6,9 +6,9 @@ import {
 } from '@shared/settings/tag-completion'
 import StorageSettings from './StorageSettings.vue'
 import OperationGuide from './OperationGuide.vue'
+import { operationTopics } from './operation-guides'
 import StatisticsSettings from './StatisticsSettings.vue'
 import { AI_PRESETS, type AiPreset } from '@shared/settings/ai-presets'
-import HelpTip from '../../shared/ui/HelpTip.vue'
 import UpdateSettings from './UpdateSettings.vue'
 
 import AgentSettings from './AgentSettings.vue'
@@ -48,6 +48,11 @@ type AiService = (typeof services)[number]['id']
 type SettingsSection = SettingsCategory | AiService
 const category = ref<SettingsCategory>('tags')
 const service = ref<AiService>('nai')
+const guideTopic = ref(operationTopics[0])
+function selectGuide(index: number) {
+  guideTopic.value = operationTopics[index]
+  selectCategory('guide')
+}
 const content = ref<HTMLElement>()
 const anchors: Record<string, SettingsSection> = {
   nai: 'nai',
@@ -78,8 +83,13 @@ function selectSection(id: SettingsSection) {
     selectCategory(id)
   }
 }
-function navigateCategory(event: KeyboardEvent, index: number, nested = false) {
-  const options = nested ? services : categories
+function navigateCategory(event: KeyboardEvent, index: number, nested: boolean | 'guide' = false) {
+  let options: readonly { id: string; label: string }[] = categories
+  if (nested === 'guide') {
+    options = operationTopics
+  } else if (nested) {
+    options = services
+  }
   let next = index
   if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
     next = (index + 1) % options.length
@@ -93,7 +103,11 @@ function navigateCategory(event: KeyboardEvent, index: number, nested = false) {
     return
   }
   event.preventDefault()
-  selectSection(options[next].id)
+  if (nested === 'guide') {
+    selectGuide(next)
+  } else {
+    selectSection(options[next].id as SettingsSection)
+  }
   const navigation = (event.currentTarget as HTMLElement).parentElement
   navigation?.querySelectorAll<HTMLButtonElement>('[role=tab]')[next]?.focus()
 }
@@ -460,6 +474,29 @@ async function translate() {
           </button>
         </div>
       </div>
+      <div
+        class="settings-services-nav settings-guide-nav"
+        :class="{ open: category === 'guide' }"
+        :inert="category !== 'guide'"
+        role="tablist"
+        aria-label="操作说明分类"
+      >
+        <div class="settings-services-list">
+          <button
+            v-for="(topic, index) in operationTopics"
+            :id="`settings-guide-${topic.id}`"
+            :key="topic.id"
+            role="tab"
+            :aria-selected="guideTopic.id === topic.id"
+            :aria-controls="`guide-panel-${topic.id}`"
+            :tabindex="guideTopic.id === topic.id ? 0 : -1"
+            @click="selectGuide(index)"
+            @keydown="navigateCategory($event, index, 'guide')"
+          >
+            {{ topic.label }}
+          </button>
+        </div>
+      </div>
     </header>
     <div
       ref="content"
@@ -532,7 +569,6 @@ async function translate() {
                 :max="MAX_TAG_COMPLETION_LIMIT"
                 step="1"
               />
-              <span class="help">自动补全与 / 搜索共用，默认 20 个，最多 100 个</span>
             </div>
           </div>
 
@@ -555,7 +591,6 @@ async function translate() {
                   保存词库设置
                 </button>
               </Transition>
-              <span class="help">低于该引用数的 tag 不会下载，数值越小词库越大</span>
             </div>
           </div>
 
@@ -656,7 +691,6 @@ async function translate() {
                 type="number"
                 min="1"
               />
-              <span class="help">只翻译引用数不低于该值、且还没有中文的 tag</span>
             </div>
           </div>
           <div class="row">
@@ -708,11 +742,7 @@ async function translate() {
             </div>
             <div class="form-grid">
               <div class="form-field full">
-                <label
-                  >Persistent API Token<HelpTip
-                    label="Persistent API Token"
-                    text="在 NovelAI 网页「设置 → Account → Get Persistent API Token」获取。只保存在本机，只用于请求头"
-                /></label>
+                <label>Persistent API Token</label>
                 <input
                   v-model="form.naiToken"
                   class="input"
@@ -943,7 +973,17 @@ async function translate() {
         tabindex="0"
         class="settings-panel"
       >
-        <OperationGuide />
+        <section
+          v-for="topic in operationTopics"
+          v-show="guideTopic.id === topic.id"
+          :id="`guide-panel-${topic.id}`"
+          :key="topic.id"
+          role="tabpanel"
+          :aria-labelledby="`settings-guide-${topic.id}`"
+          tabindex="0"
+        >
+          <OperationGuide :topic="topic" />
+        </section>
       </section>
       <section
         v-show="category === 'other'"
@@ -1003,6 +1043,14 @@ async function translate() {
 
 #settings-tab-other {
   order: 4;
+}
+
+#settings-tab-guide {
+  order: 5;
+}
+
+.settings-services-nav.settings-guide-nav {
+  order: 6;
 }
 
 .settings-tabs button {
@@ -1146,6 +1194,7 @@ async function translate() {
   animation: view-in var(--dur-base) var(--ease-out);
 }
 
+.settings-panel :deep(.operation-guide),
 .settings-panel > :deep(.card) {
   flex-shrink: 0;
   padding: 0;

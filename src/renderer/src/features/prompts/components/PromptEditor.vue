@@ -35,7 +35,7 @@ const props = withDefaults(
     // 未指定时沿用生图预览；显式 null 表示独立草稿没有参考图。
     image: undefined,
     baseLabel: '主提示词',
-    baseHint: '各页面共用，粘贴分节文本会自动拆分',
+    baseHint: '',
     charLabel: '角色提示词',
     charHint: '',
     negHint: '',

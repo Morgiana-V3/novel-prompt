@@ -67,6 +67,7 @@ const positionReference = {
   time: 1,
 }
 const handlers = {
+  'storage:info': () => ({ path: profile, bytes: 0, pending: null, previous: null, error: null }),
   'collections:list': () => [{ id: 'default', name: '默认图集', createdAt: 0 }],
   'agents:list': () => [],
   'tasks:list': () => ({ revision: 0, tasks: [] }),

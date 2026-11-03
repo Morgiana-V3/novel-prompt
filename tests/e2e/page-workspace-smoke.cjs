@@ -230,6 +230,8 @@ net.fetch = async (url, init) => {
 }
 const openedLinks = []
 const handlers = {
+  'collections:list': () => [{ id: 'default', name: '默认图集', createdAt: 0 }],
+  'storage:info': () => ({ path: profile, bytes: 0, pending: null, previous: null, error: null }),
   'agents:list': () => [],
   'tasks:list': () => ({ revision: 0, tasks: [] }),
   'web:open': (_, url) => {
@@ -1260,6 +1262,24 @@ app.whenReady().then(async () => {
     await shot('02-current-prompt.png')
     await click('.pw-execution button', '生成图片')
     await wait(`document.querySelector('.pw-scope-label')?.textContent.includes('版本 V1')`)
+    await run(`document.querySelector('[aria-label="版本记录"]').click()`)
+    assert.equal(
+      await js(`document.querySelectorAll('.pw-version').length`),
+      1,
+      'first generated image starts the visible version history',
+    )
+    assert.equal(await js(`document.querySelector('.pw-version b').textContent`), '版本 V1')
+    assert.ok(
+      await js(
+        `!!document.querySelector('.pw-version img') && !document.querySelector('.pw-history').textContent.includes('起点')`,
+      ),
+    )
+    assert.equal(
+      pages.readPage(ui.id).versions[0].image,
+      null,
+      'original description and stable history references remain intact',
+    )
+    await run(`document.querySelector('[aria-label="版本记录"]').click()`)
     await click('.pw-canvas-actions button', '区域批注')
     await wait(`document.querySelector('.ip-active-mask')?.getBoundingClientRect().width>100`)
     await pause(300)
@@ -1384,7 +1404,7 @@ app.whenReady().then(async () => {
         'A person stands at the selected position.',
       )
       await run(
-        `document.querySelector('.workspace-prompt .char-block [title="在画布上拖动位置"]').click()`,
+        `document.querySelector('.workspace-prompt .char-block [title="编辑角色位置"]').click()`,
       )
       await wait(`!!document.querySelector('.pos-reference-image')`)
       await pause(250)
@@ -1668,8 +1688,8 @@ app.whenReady().then(async () => {
     await run(`document.querySelector('[aria-label="版本记录"]').click()`)
     assert.equal(
       await js(`document.querySelectorAll('.pw-version').length`),
-      require('../../src/shared/workspace/model.ts').pageGroups(rolled).length,
-      'sidebar shows one entry per version',
+      require('../../src/shared/workspace/model.ts').pageGroups(rolled).length - 1,
+      'reopened workspace shows each generated version without the empty starting draft',
     )
     await run(`document.querySelector('[aria-label="本版图片"]').click()`)
     await wait(`!!document.querySelector('.pw-candidates')`)
@@ -1900,6 +1920,76 @@ app.whenReady().then(async () => {
     )
     await run(`document.querySelector('.viewer-stage').click()`)
     await wait(`!!document.querySelector('.image-viewer')`)
+    await wait(`document.querySelectorAll('.iv-thumbnail').length === 2`)
+    const clickBoundary = async (selector) => {
+      const point = await js(`(() => {
+        const button = document.querySelector(${JSON.stringify(selector)})
+        const rect = button.getBoundingClientRect()
+        const style = getComputedStyle(button)
+        if (button.getAttribute('aria-disabled') !== 'true' || Number(style.opacity) < 0.3 || style.pointerEvents === 'none') return null
+        return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }
+      })()`)
+      assert.ok(point, 'boundary navigation remains visible and catches pointer events')
+      const before = await js(`document.querySelector('.iv-count').textContent`)
+      for (let i = 0; i < 3; i++) {
+        win.webContents.sendInputEvent({
+          type: 'mouseDown',
+          button: 'left',
+          clickCount: 1,
+          ...point,
+        })
+        win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point })
+      }
+      await pause(350)
+      assert.equal(
+        await js(`document.querySelector('.iv-count')?.textContent`),
+        before,
+        'repeated boundary clicks keep the viewer and image unchanged',
+      )
+    }
+    assert.equal(
+      await js(`document.querySelector('.iv-name').textContent.includes('.png')`),
+      false,
+      'generated file IDs are replaced by a readable image label',
+    )
+    await run(`document.querySelector('.iv-thumbnail').click()`)
+    await wait(`document.querySelector('.iv-count')?.textContent.trim() === '1 / 2'`)
+    await wait(
+      `!document.querySelector('.iv-image-leave-active') && document.querySelector('.iv-canvas img')?.getAttribute('src') === ${JSON.stringify(firstDeleteUrl)}`,
+    )
+    assert.equal(
+      await js(`document.querySelector('.iv-canvas img').getAttribute('src')`),
+      firstDeleteUrl,
+    )
+    assert.ok(
+      await js(`!!document.querySelector('.image-viewer')`),
+      'thumbnail selection does not dismiss viewer',
+    )
+    await clickBoundary('.iv-previous')
+    await run(`document.querySelector('.iv-next').click()`)
+    await wait(`document.querySelector('.iv-count')?.textContent.trim() === '2 / 2'`)
+    await clickBoundary('.iv-next')
+    for (const width of [1440, 1100]) {
+      win.setSize(width, 900)
+      await pause(400)
+      assert.ok(
+        await js(`(() => {
+        const button = document.querySelector('.iv-next').getBoundingClientRect()
+        const strip = document.querySelector('.iv-filmstrip').getBoundingClientRect()
+        const toolbar = document.querySelector('.iv-toolbar').getBoundingClientRect()
+        const thumbs = [...document.querySelectorAll('.iv-thumbnail')]
+        const thumbnails = thumbs.map(item => Math.round(item.getBoundingClientRect().top + item.getBoundingClientRect().height / 2))
+        const active = document.querySelector('.iv-thumbnail.active')
+        const inactive = document.querySelector('.iv-thumbnail:not(.active)')
+        const frame = getComputedStyle(active)
+        const arrow = document.querySelector('.iv-step svg').getBoundingClientRect()
+        return new Set(thumbnails).size === 1 && active.offsetWidth > inactive.offsetWidth && parseFloat(frame.borderRadius) >= 10 && parseFloat(frame.borderTopWidth) >= 2 && frame.borderTopColor !== getComputedStyle(inactive).borderTopColor && arrow.width >= 28 && arrow.height >= 28 && !document.querySelector('.iv-hint') && !document.querySelector('.iv-step[title]') && button.width >= 44 && button.height >= 44 && strip.bottom <= innerHeight && toolbar.right <= innerWidth
+      })()`),
+        'viewer controls have large targets and fit the viewport',
+      )
+      await shot(`22-image-filmstrip-${width}.png`)
+    }
+    win.setSize(1440, 960)
     const pressDelete = (repeat = false) =>
       run(
         `document.querySelector('.image-viewer').dispatchEvent(new KeyboardEvent('keydown',{key:'Delete',repeat:${repeat},bubbles:true,cancelable:true}))`,
@@ -1911,6 +2001,8 @@ app.whenReady().then(async () => {
     await pressDelete()
     await wait(`document.querySelectorAll('.gallery .thumb').length===1`)
     assert.equal(deleteCalls, 2)
+    await clickBoundary('.iv-previous')
+    await clickBoundary('.iv-next')
     assert.ok(
       await js(
         `!!document.querySelector('.image-viewer')&&!document.querySelector('.iv-delete.danger-confirm')`,
@@ -1936,9 +2028,9 @@ app.whenReady().then(async () => {
     await run(`document.querySelector('.gallery .thumb').click()`)
     assert.ok(
       await js(
-        `document.querySelector('.gallery-delete').disabled && document.querySelector('.thumb-actions [aria-label="删除"]').disabled && document.querySelector('.gallery-delete-note').textContent.includes('工作台引用中')`,
+        `document.querySelector('.gallery-delete').disabled && document.querySelector('.thumb-actions [aria-label="删除"]').disabled && !document.querySelector('.gallery-delete-note') && !document.body.innerText.includes('工作台引用中') && !document.querySelector('[title*="工作台引用中"]')`,
       ),
-      'protected images keep a visible disabled delete entry with explanation',
+      'protected images keep disabled deletion without repeated explanation or tooltip',
     )
     await run(`document.querySelector('.viewer-stage').click()`)
     await wait(`!!document.querySelector('.image-viewer')`)
@@ -1946,7 +2038,7 @@ app.whenReady().then(async () => {
     assert.equal(deleteCalls, 3, 'workspace archives cannot be deleted with shortcut')
     assert.ok(
       await js(
-        `document.querySelector('.iv-delete').disabled && document.querySelector('.iv-hint').textContent.includes('工作台引用中')`,
+        `document.querySelector('.iv-delete').disabled && !document.querySelector('.iv-delete').hasAttribute('title') && !document.querySelector('.iv-hint') && !document.querySelector('.image-viewer').innerText.includes('工作台引用中')`,
       ),
     )
     await shot('24-protected-gallery-delete.png')

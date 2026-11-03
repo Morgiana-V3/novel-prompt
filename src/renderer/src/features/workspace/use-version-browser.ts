@@ -24,16 +24,28 @@ export function useVersionBrowser(work: Ref<PageWorkspace>) {
     viewedGroup.value.versions.filter((version) => !version.imageCleared),
   )
 
-  const groupCards = computed(() =>
-    groups.value.map((versionGroup) => ({
-      ...versionGroup,
-      cover:
-        versionGroup.versions.find((version) => version.id === viewedId.value) ??
-        versionGroup.versions.find((version) => version.id === current.value.id) ??
-        versionGroup.versions[versionGroup.versions.length - 1],
-      adopted: versionGroup.versions.some((version) => version.id === current.value.id),
-    })),
-  )
+  const groupCards = computed(() => {
+    const hasGenerated = work.value.versions.some((version) => version.generated)
+    // Keep the initial draft for discussion references and comparisons, but once
+    // images exist the visible history starts at V1, not an empty starting card.
+    return groups.value
+      .filter(
+        (group) =>
+          !hasGenerated ||
+          group.versions.some(
+            (version) =>
+              version.image || version.generated || version.parentId || version.imageCleared,
+          ),
+      )
+      .map((versionGroup) => ({
+        ...versionGroup,
+        cover:
+          versionGroup.versions.find((version) => version.id === viewedId.value) ??
+          versionGroup.versions.find((version) => version.id === current.value.id) ??
+          versionGroup.versions[versionGroup.versions.length - 1],
+        adopted: versionGroup.versions.some((version) => version.id === current.value.id),
+      }))
+  })
 
   const historical = computed(() => viewed.value.id !== current.value.id)
 

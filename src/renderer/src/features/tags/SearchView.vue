@@ -108,7 +108,7 @@ watch(
       </button>
       <span class="hint ml-auto">
         <span class="add-target">
-          <kbd>单击</kbd>加入
+          添加到
           <ThemeSelect
             class="sm"
             :model-value="targetIndex"
@@ -117,8 +117,6 @@ watch(
             @update:model-value="setTarget"
           />
         </span>
-        <span><kbd>右键</kbd>复制</span>
-        <span><kbd>双击中文</kbd>编辑翻译</span>
       </span>
     </div>
 

@@ -99,7 +99,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey, true))
           <header>
             <div>
               <b>角色位置对比</b>
-              <p>同一角色前后颜色一致，描边的是本次移动过的角色。</p>
             </div>
             <label
               v-if="reference && !referenceFailed"

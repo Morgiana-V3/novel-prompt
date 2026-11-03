@@ -74,7 +74,6 @@ defineExpose({ copyPrompt: () => copy(sectionText(active.value.draft)) })
         :image="image"
         :disabled="readOnly"
         :base-hint="editable ? '下一次生成使用的提示词' : '图片生成时保存的提示词'"
-        char-hint="点「编辑位置」可在画布上拖动角色"
         @change-draft="updateDraft"
       />
       <div class="field-head gen-params-head">

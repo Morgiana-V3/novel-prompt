@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { imageLabel } from '../../../shared/lib/image-label'
 import { promptState } from '../state'
 import { imageState } from '../../generation/public'
 import { settingsState } from '../../settings/state'
@@ -355,7 +356,6 @@ onBeforeUnmount(() => {
               <div
                 ref="canvas"
                 class="pos-canvas"
-                title="拖动圆点或点击定位；方向键微调，Shift 加大步长或吸附网格"
                 :class="{
                   'with-reference': showReference && referenceSize && referenceSettings.opacity > 0,
                 }"
@@ -439,11 +439,11 @@ onBeforeUnmount(() => {
                   </button>
                 </div>
                 <template v-if="reference && !referenceError">
-                  <div
-                    class="pos-reference-name"
-                    :title="reference.name"
-                  >
-                    {{ reference.name }}
+                  <div class="pos-reference-name">
+                    {{ imageLabel(reference)
+                    }}<span v-if="referenceSize">
+                      · {{ referenceSize.w }} × {{ referenceSize.h }}</span
+                    >
                   </div>
                   <label class="pos-opacity">
                     <span
@@ -460,12 +460,11 @@ onBeforeUnmount(() => {
                       aria-label="底图不透明度"
                     />
                   </label>
-                  <div class="pos-reference-note muted">
-                    {{
-                      ratioMismatch
-                        ? '图片比例与当前画幅不同，底图按当前画幅拉伸，点位仍按当前画幅计算。'
-                        : '可对照底图拖动角色圆点。'
-                    }}
+                  <div
+                    v-if="ratioMismatch"
+                    class="pos-reference-note muted"
+                  >
+                    图片比例与当前画幅不同，底图按当前画幅拉伸，点位仍按当前画幅计算。
                   </div>
                 </template>
                 <div
@@ -552,14 +551,6 @@ onBeforeUnmount(() => {
                   />全部清除
                 </button>
               </div>
-              <details class="pos-help muted">
-                <summary class="disclosure">位置说明</summary>
-                位置会实时写回角色提示词。全部留空时由模型自行排布；只要有一个角色设了位置，没设的角色会按顺序从左到右排开（虚线圆点）。{{
-                  characters
-                    ? '完成后返回草稿，保存草稿才会采用修改。'
-                    : '打开前的内容已存入历史，可以撤销。'
-                }}
-              </details>
             </div>
           </div>
 
@@ -910,11 +901,6 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 2px;
-}
-
-.pos-help {
-  font-size: 11.5px;
-  line-height: 1.6;
 }
 
 .pos-foot {

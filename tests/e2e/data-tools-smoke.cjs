@@ -96,6 +96,16 @@ app
       },
     })
     const js = (code) => win.webContents.executeJavaScript(code, true)
+    const pointerClick = async (selector, label) => {
+      const point = await js(`(() => {
+        const button = [...document.querySelectorAll(${JSON.stringify(selector)})].find(item => item.textContent.trim() === ${JSON.stringify(label)})
+        const rect = button.getBoundingClientRect()
+        return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }
+      })()`)
+      win.webContents.sendInputEvent({ type: 'mouseMove', ...point })
+      win.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point })
+      win.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point })
+    }
     const wait = async (code) => {
       for (let i = 0; i < 100; i++) {
         if (await js(code)) {
@@ -170,7 +180,7 @@ app
         `document.querySelector('#settings-tab-tags').dispatchEvent(new KeyboardEvent('keydown',{key:'End',bubbles:true}))`,
       )
       await wait(
-        `document.querySelector('#settings-tab-other').getAttribute('aria-selected')==='true'`,
+        `document.querySelector('#settings-tab-guide').getAttribute('aria-selected')==='true'`,
       )
       await click('.settings-tabs button', '存储与更新')
       await wait(
@@ -310,25 +320,128 @@ app
         `(()=>{const e=document.querySelector(${JSON.stringify(compareField)});e.focus();e.setSelectionRange(12,18);e.previousElementSibling.querySelector('.snippet-trigger').click()})()`,
       )
       await wait(`!!document.querySelector('.snippet-popover:popover-open .snippet-quick-footer')`)
-      await click('.snippet-popover:popover-open .snippet-quick-footer button', '收藏当前内容')
+      await delay(250)
+      await pointerClick(
+        '.snippet-popover:popover-open .snippet-quick-footer button',
+        '收藏当前内容',
+      )
       await wait(`!!document.querySelector('.snippet-popover:popover-open .snippet-quick-save')`)
+      await input('.snippet-popover:popover-open .snippet-quick-save input', '森林')
+      await js(
+        `document.querySelector('.snippet-popover:popover-open [aria-label="片段分类"]').focus(); document.querySelector('.snippet-popover:popover-open [aria-label="片段分类"]').click()`,
+      )
+      await wait(`!!document.querySelector('.snippet-category-menu:popover-open')`)
+      await js(
+        `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))`,
+      )
+      await wait(`!document.querySelector('.snippet-category-menu:popover-open')`)
+      assert.ok(
+        await js(`!!document.querySelector('.snippet-popover:popover-open .snippet-quick-save')`),
+        'Escape closes category choices without cancelling the save form',
+      )
+      await js(
+        `document.querySelector('.snippet-popover:popover-open [aria-label="片段分类"]').click()`,
+      )
+      await wait(`!!document.querySelector('.snippet-category-menu:popover-open')`)
+      await pointerClick('.snippet-category-menu:popover-open button', '光影')
       assert.equal(
         await js(
-          `document.querySelector('.snippet-popover:popover-open .snippet-save-text').textContent`,
+          `document.querySelector('.snippet-popover:popover-open [aria-label="片段分类"]').value`,
         ),
-        'soft light, forest',
+        '光影',
       )
-      await input('.snippet-popover:popover-open .snippet-quick-save input', '森林')
-      await click('.snippet-popover:popover-open .snippet-quick-save button', '保存')
+      await pointerClick('.snippet-popover:popover-open .snippet-quick-save button', '保存')
       await wait(`!document.querySelector('.snippet-popover .snippet-quick-save')`)
       assert.ok(
         snippets
           .listSnippets()
-          .some((item) => item.name === '森林' && item.text === 'soft light, forest'),
+          .some(
+            (item) =>
+              item.name === '森林' &&
+              item.text === 'soft light, forest' &&
+              item.category === '光影',
+          ),
         'popover save persists the whole field',
       )
       await click('.nav-item', '收藏')
       await wait(`document.querySelector('.snippet-list')?.textContent.includes('森林')`)
+      // Empty-library quick save in the embedded creation editor uses real focus/pointer events.
+      const savedSnippets = snippets.listSnippets()
+      for (const item of savedSnippets) {
+        snippets.deleteSnippet(item.id)
+      }
+      await click('.nav-item', '创作实验')
+      win.setSize(1100, 700)
+      const creationField = '#creation-editor textarea[aria-label="主提示词"]'
+      await input(creationField, Array(16).fill('dark skin, genshin impact, soft light').join('\n'))
+      await js(
+        `document.querySelector('#creation-editor .snippet-trigger').scrollIntoView({ block: 'center' })`,
+      )
+      await delay(250)
+      await js(`document.querySelector('#creation-editor .snippet-trigger').click()`)
+      await wait(
+        `document.querySelector('.snippet-popover:popover-open .snippet-quick-list')?.textContent.includes('还没有片段')`,
+      )
+      await delay(250)
+      await pointerClick(
+        '.snippet-popover:popover-open .snippet-quick-footer button',
+        '收藏当前内容',
+      )
+      await wait(`!!document.querySelector('.snippet-popover:popover-open .snippet-quick-save')`)
+      await wait(`document.activeElement?.getAttribute('aria-label') === '片段名称'`)
+      await pointerClick('.snippet-popover:popover-open .snippet-quick-save button', '取消')
+      await wait(`!!document.querySelector('.snippet-popover:popover-open .snippet-quick-footer')`)
+      await pointerClick(
+        '.snippet-popover:popover-open .snippet-quick-footer button',
+        '收藏当前内容',
+      )
+      await wait(`document.activeElement?.getAttribute('aria-label') === '片段名称'`)
+      await input('.snippet-popover:popover-open [aria-label="片段名称"]', '创作片段')
+      await js(
+        `document.querySelector('.snippet-popover:popover-open [aria-label="片段分类"]').focus()`,
+      )
+      await input('.snippet-popover:popover-open [aria-label="片段分类"]', '黑白画风')
+      await wait(
+        `document.querySelector('.snippet-category-menu:popover-open')?.textContent.includes('新建「黑白画风」')`,
+      )
+      await shot('03-create-snippet-category.png')
+      await js(
+        `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))`,
+      )
+      await js(
+        `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))`,
+      )
+      await wait(`!document.querySelector('.snippet-category-menu:popover-open')`)
+      await pointerClick('.snippet-popover:popover-open .snippet-quick-save button', '保存')
+      await wait(
+        `document.querySelector('.snippet-popover:popover-open .snippet-quick-list')?.textContent.includes('创作片段')`,
+      )
+      assert.ok(
+        snippets
+          .listSnippets()
+          .some((item) => item.name === '创作片段' && item.category === '黑白画风'),
+        'custom category is persisted with the snippet',
+      )
+      await js(
+        `document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`,
+      )
+      await input(creationField, '')
+      await js(`document.querySelector('#creation-editor .snippet-trigger').click()`)
+      await wait(
+        `document.querySelector('.snippet-popover:popover-open .snippet-quick-list')?.textContent.includes('创作片段')`,
+      )
+      await delay(250)
+      await pointerClick('.snippet-popover:popover-open .snippet-quick-title b', '创作片段')
+      await wait(`!document.querySelector('.snippet-popover:popover-open')`)
+      assert.equal(
+        await js(`document.querySelector(${JSON.stringify(creationField)}).value`),
+        Array(16).fill('dark skin, genshin impact, soft light').join('\n'),
+        'saved creation snippet inserts the complete original text',
+      )
+      for (const item of savedSnippets) {
+        snippets.saveSnippet({ name: item.name, text: item.text, category: item.category })
+      }
+      win.setSize(1440, 1000)
       await click('.nav-item', '提示词比对')
       await click('.nav-item', '工作台')
       await wait(`!!document.querySelector('.session-card')`)

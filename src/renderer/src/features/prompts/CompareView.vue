@@ -26,7 +26,6 @@ import { deleteSelectedToken } from './prompt-keyboard'
 import TagCard from '../tags/components/TagCard.vue'
 import Icon from '../../shared/ui/Icon.vue'
 import Mascot from '../../shared/ui/Mascot.vue'
-import { vScrollRow } from '../../shared/lib/scroll-row'
 import WorkspaceBar from './components/WorkspaceBar.vue'
 import { usePagePresentation } from '../../shared/lib/page-presentation'
 const { embedded, navigate, editor } = usePagePresentation()
@@ -365,10 +364,7 @@ function formatPrompt() {
       class="pane left"
     >
       <WorkspaceBar />
-      <div
-        v-scroll-row
-        class="section-tabs"
-      >
+      <div class="section-tabs">
         <button
           v-for="sectionItem in sections"
           :key="fieldLabel(sectionItem)"
@@ -419,11 +415,6 @@ function formatPrompt() {
               ><i></i>句子 {{ result.stats.natural + result.stats.text }}</span
             >
           </div>
-          <span
-            v-else
-            class="muted small"
-            >支持 {} [] 1.3:: artist: | source# Text: 等语法</span
-          >
           <div class="actions">
             <button
               class="icon-btn"
@@ -465,10 +456,7 @@ function formatPrompt() {
       class="pane right scroll"
     >
       <template v-if="embedded">
-        <div
-          v-scroll-row
-          class="section-tabs"
-        >
+        <div class="section-tabs">
           <button
             v-for="field in sections"
             :key="fieldLabel(field)"
@@ -572,7 +560,6 @@ function formatPrompt() {
         />
         <div>
           <b>有 {{ result.stats.unknown }} 个 tag 认不出来</b>
-          <div class="muted small">点候选可以一键替换，或者交给 AI 优化</div>
         </div>
         <button
           class="btn accent small ml-auto"

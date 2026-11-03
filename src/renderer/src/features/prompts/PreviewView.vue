@@ -332,10 +332,7 @@ usePageShortcuts(() => isActive('preview'), {
       >
         <WorkspaceBar v-if="!embedded" />
 
-        <PromptEditor
-          v-if="!embedded"
-          neg-hint="用来判断哪些东西被压掉了"
-        />
+        <PromptEditor v-if="!embedded" />
 
         <div
           v-if="!embedded"
@@ -348,11 +345,7 @@ usePageShortcuts(() => isActive('preview'), {
           v-if="!embedded"
           class="field"
         >
-          <label
-            class="field-label"
-            title="填写后会对比推测画面与期望的差距，并给出修改建议"
-            >想要的效果（可选）</label
-          >
+          <label class="field-label">想要的效果（可选）</label>
           <div class="composer short mini">
             <textarea
               v-model="expectation"

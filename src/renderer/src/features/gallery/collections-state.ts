@@ -3,6 +3,7 @@ import { DEFAULT_COLLECTION, type ImageCollection } from '@shared/images/collect
 export const collections = ref<ImageCollection[]>([
   { id: DEFAULT_COLLECTION, name: '默认图集', createdAt: 0 },
 ])
+export const galleryCollection = ref('all')
 export const generationCollection = ref(
   localStorage.getItem('np-generation-collection') || DEFAULT_COLLECTION,
 )
@@ -12,6 +13,12 @@ export function selectGenerationCollection(id: string): void {
 }
 export async function refreshCollections(): Promise<void> {
   collections.value = await window.api.collectionsList()
+  if (
+    galleryCollection.value !== 'all' &&
+    !collections.value.some((c) => c.id === galleryCollection.value)
+  ) {
+    galleryCollection.value = DEFAULT_COLLECTION
+  }
   if (!collections.value.some((c) => c.id === generationCollection.value)) {
     selectGenerationCollection(DEFAULT_COLLECTION)
   }

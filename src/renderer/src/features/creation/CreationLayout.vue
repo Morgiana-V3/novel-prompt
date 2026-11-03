@@ -5,7 +5,6 @@ import { shellState, type Tab } from '../../shared/state/shell'
 import PromptEditor from '../prompts/components/PromptEditor.vue'
 import WorkspaceBar from '../prompts/components/WorkspaceBar.vue'
 import { resizeWithin } from '../../shared/lib/autosize'
-import { vScrollRow } from '../../shared/lib/scroll-row'
 import { promptState } from '../prompts/state'
 
 const props = defineProps<{ active: boolean; panel: string }>()
@@ -43,15 +42,11 @@ watch(
       class="creation-editor scroll"
     >
       <WorkspaceBar />
-      <PromptEditor
-        show-presets
-        base-hint="编辑时，右侧词条检查会跟随当前输入框"
-      />
+      <PromptEditor show-presets />
     </section>
     <section class="creation-results">
       <div
         v-show="active"
-        v-scroll-row
         class="creation-tabs"
         role="tablist"
         aria-label="创作辅助"
@@ -128,6 +123,8 @@ watch(
 
 .creation-tabs {
   display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
   gap: 6px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--line);

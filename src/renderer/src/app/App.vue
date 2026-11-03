@@ -634,10 +634,7 @@ async function onDrop(event2: DragEvent) {
 
     <main class="main">
       <header class="topbar">
-        <div
-          class="topbar-title"
-          :title="current.desc"
-        >
+        <div class="topbar-title">
           <Icon
             :name="current.icon"
             :size="17"

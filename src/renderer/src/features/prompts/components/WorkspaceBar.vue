@@ -89,7 +89,7 @@ const preview = (text: string) => text.replace(/\s+/g, ' ').trim().slice(0, 60) 
         :size="15"
     /></span>
     <div class="work-text">
-      <b title="各页面共用，可拖入 NovelAI 原图">当前提示词</b>
+      <b>当前提示词</b>
       <span>{{ summary }}</span>
     </div>
     <div class="actions">
@@ -167,7 +167,6 @@ const preview = (text: string) => text.replace(/\s+/g, ' ').trim().slice(0, 60) 
       >
         <div class="history-head">
           <b>历史版本</b>
-          <span class="muted small">整体替换前会自动保存，最多 30 条</span>
           <button
             class="btn ghost small ml-auto"
             :disabled="!promptState.history.length"

@@ -16,6 +16,7 @@ import { cleanErr } from '../../../shared/lib/format'
 import { revealSnippets } from '../../favorites/public'
 import { refreshSnippets, saveSnippet as persistSnippet, snippetStore } from '../snippets-state'
 import Icon from '../../../shared/ui/Icon.vue'
+import SnippetCategoryInput from './SnippetCategoryInput.vue'
 
 type InsertMode = 'cursor' | 'append' | 'replace'
 const MODES: { value: InsertMode; label: string; title: string }[] = [
@@ -126,7 +127,7 @@ function hover() {
 function leave() {
   clearTimeout(openTimer)
   closeTimer = setTimeout(() => {
-    if (!panel.value?.contains(document.activeElement)) {
+    if (!saving.value && !panel.value?.contains(document.activeElement)) {
       close()
     }
   }, 180)
@@ -172,6 +173,12 @@ function detach() {
 }
 function popupKey(event: KeyboardEvent) {
   if (event.key === 'Escape') {
+    if (
+      event.target instanceof Element &&
+      event.target.matches('[role="combobox"][aria-expanded="true"]')
+    ) {
+      return
+    }
     keyboard(event)
   } else if (
     event.key === 'Tab' &&
@@ -261,8 +268,7 @@ function keyboard(event: KeyboardEvent) {
     event.preventDefault()
     event.stopPropagation()
     if (saving.value) {
-      saving.value = false
-      search.value?.focus({ preventScroll: true })
+      cancelSave()
       return
     }
     const restoreTrigger = panel.value?.contains(document.activeElement)
@@ -287,16 +293,31 @@ function keyboard(event: KeyboardEvent) {
     }
   }
 }
-function focusOut(event: FocusEvent) {
+async function focusOut(event: FocusEvent) {
   const next = event.relatedTarget
   if (next instanceof Node && (panel.value?.contains(next) || next === trigger.value)) {
     return
   }
-  close()
+  // Switching between the footer and form removes the focused button. Check
+  // after Vue updates and the new field receives focus, not during that handoff.
+  await nextTick()
+  if (
+    opened.value &&
+    !panel.value?.contains(document.activeElement) &&
+    document.activeElement !== trigger.value
+  ) {
+    close()
+  }
 }
 async function startSave() {
   // 收藏的是整个输入框的当前内容，不需要先划选
-  const text = fieldText.value
+  const text = target?.value.trim() ?? ''
+  if (!text) {
+    return
+  }
+  keepOpen()
+  // Keep focus on a persistent element while the clicked footer is removed.
+  search.value?.focus({ preventScroll: true })
   Object.assign(saveDraft, {
     text,
     name: text
@@ -308,8 +329,12 @@ async function startSave() {
   saving.value = true
   await nextTick()
   place()
-  nameInput.value?.focus()
+  nameInput.value?.focus({ preventScroll: true })
   nameInput.value?.select()
+}
+function cancelSave() {
+  search.value?.focus({ preventScroll: true })
+  saving.value = false
 }
 async function saveSnippet() {
   if (saveBusy.value || !saveDraft.text) {
@@ -318,6 +343,7 @@ async function saveSnippet() {
   saveBusy.value = true
   try {
     const item = await persistSnippet(saveDraft)
+    search.value?.focus({ preventScroll: true })
     saving.value = false
     toast(`已存为片段「${item.name}」`)
     await nextTick()
@@ -535,9 +561,8 @@ onBeforeUnmount(() => {
             @click="insert(item.text)"
           >
             <span class="snippet-quick-title"
-              ><b>{{ item.name }}</b
-              ><small v-if="item.category">{{ item.category }}</small></span
-            ><span class="snippet-excerpt">{{ item.text }}</span>
+              ><b>{{ item.name }}</b></span
+            >
           </button>
           <p v-if="!filtered.length">
             {{
@@ -553,7 +578,6 @@ onBeforeUnmount(() => {
         class="snippet-quick-save"
         @submit.prevent="saveSnippet"
       >
-        <p class="snippet-save-text">{{ saveDraft.text }}</p>
         <div>
           <input
             ref="nameInput"
@@ -563,33 +587,16 @@ onBeforeUnmount(() => {
             placeholder="片段名称"
             aria-label="片段名称"
             required
-          /><input
+          /><SnippetCategoryInput
             v-model="saveDraft.category"
-            class="input"
-            maxlength="80"
-            placeholder="分类"
-            aria-label="片段分类"
+            :categories="categories"
           />
-        </div>
-        <div
-          v-if="categories.length"
-          class="snippet-save-categories"
-        >
-          <button
-            v-for="name in categories"
-            :key="name"
-            type="button"
-            :class="{ on: saveDraft.category === name }"
-            @click="saveDraft.category = saveDraft.category === name ? '' : name"
-          >
-            {{ name }}
-          </button>
         </div>
         <div>
           <button
             type="button"
             class="btn ghost small"
-            @click="saving = false"
+            @click="cancelSave"
           >
             取消</button
           ><button
@@ -799,8 +806,7 @@ onBeforeUnmount(() => {
 
 .snippet-quick-list button {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
   width: 100%;
   padding: 9px 10px;
   text-align: left;
@@ -818,7 +824,6 @@ onBeforeUnmount(() => {
 .snippet-quick-title {
   display: flex;
   align-items: center;
-  gap: 8px;
   width: 100%;
   min-width: 0;
 }
@@ -828,28 +833,6 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
-}
-
-.snippet-quick-title small {
-  flex-shrink: 0;
-  max-width: 96px;
-  margin-left: auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.snippet-excerpt {
-  display: -webkit-box;
-  max-width: 100%;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  color: var(--muted);
-  font: 11px/1.6 var(--mono);
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
 .snippet-quick-list p {
@@ -915,17 +898,6 @@ onBeforeUnmount(() => {
   animation: fade-in var(--dur-base) var(--ease-out);
 }
 
-.snippet-save-text {
-  display: -webkit-box;
-  margin: 0;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  color: var(--text2);
-  font: 11px/1.6 var(--mono);
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
 .snippet-quick-save > div {
   display: flex;
   gap: 6px;
@@ -933,25 +905,6 @@ onBeforeUnmount(() => {
 
 .snippet-quick-save > div:last-child {
   justify-content: flex-end;
-}
-
-.snippet-quick-save > .snippet-save-categories {
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.snippet-save-categories button {
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: var(--hover);
-  color: var(--text2);
-  font-size: 11px;
-}
-
-.snippet-save-categories button.on {
-  background: var(--pink-soft);
-  color: var(--pink-deep);
 }
 
 .snippet-quick-save .input {

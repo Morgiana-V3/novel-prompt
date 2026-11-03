@@ -108,8 +108,10 @@ const {
   gallery,
   current,
   galleryFilter,
+  galleryCollection,
+  galleryCollections,
+  showGenerated,
   visibleGallery,
-  galleryHint,
   latestBatchTemporary,
   refreshGallery,
   pendingDelete,
@@ -181,7 +183,7 @@ defineExpose({ prepareUpdate })
 async function onInpaintGenerated(response: NaiGenResult) {
   last.value = response
   if (response.images.length) {
-    current.value = response.images[response.images.length - 1]
+    showGenerated(response.images[response.images.length - 1])
   }
   try {
     await refreshGallery()
@@ -312,7 +314,7 @@ async function run() {
       sentRecipes.value[img.name] = recipeKey
     }
     if (generationResult.images.length) {
-      current.value = generationResult.images[generationResult.images.length - 1]
+      showGenerated(generationResult.images[generationResult.images.length - 1])
     }
     if (generationResult.stopped && !generationResult.images.length) {
       error.value = generationResult.stopped
@@ -473,7 +475,6 @@ function openImageWorkspace() {
           <PromptEditor
             v-if="!embedded"
             :disabled="running"
-            char-hint="点「编辑位置」可在画布上拖动角色"
           />
 
           <div class="field-head gen-params-head">
@@ -754,13 +755,6 @@ function openImageWorkspace() {
           @workspace="openImageWorkspace"
         />
 
-        <p
-          v-if="current?.storage === 'workspace'"
-          class="muted small gallery-delete-note"
-        >
-          工作台引用中，请进入对应项目清理图片；已删除项目的图片可在 工作台首页「清理遗留图片」。
-        </p>
-
         <div
           v-if="!embedded && matchedPreview"
           class="result-card"
@@ -801,7 +795,7 @@ function openImageWorkspace() {
           v-if="gallery.length"
           class="group"
         >
-          <div class="group-head">
+          <div class="group-head gallery-head">
             <span class="group-badge nl"
               ><Icon
                 name="image"
@@ -809,15 +803,19 @@ function openImageWorkspace() {
             /></span>
             <h3>图片</h3>
             <ThemeSelect
+              v-model="galleryCollection"
+              :options="galleryCollections"
+              aria-label="图片图集"
+            />
+            <ThemeSelect
               v-model="galleryFilter"
               :options="[
-                { value: 'all', label: '全部' },
+                { value: 'all', label: '全部状态' },
                 { value: 'temporary', label: '临时未留存' },
                 { value: 'saved', label: '已留存' },
                 { value: 'workspace', label: '工作台归档' },
               ]"
               aria-label="图库筛选"
-              :title="galleryHint"
             />
             <span class="group-count">{{ visibleGallery.length }}</span>
             <button
@@ -830,6 +828,12 @@ function openImageWorkspace() {
               />打开文件夹
             </button>
           </div>
+          <p
+            v-if="!visibleGallery.length"
+            class="muted small"
+          >
+            当前筛选下没有图片
+          </p>
           <div class="gallery">
             <div
               v-for="(image, index) in visibleGallery"
@@ -872,11 +876,6 @@ function openImageWorkspace() {
                   v-else
                   class="icon-btn sm"
                   :disabled="!!deleting || image.storage === 'workspace'"
-                  :title="
-                    image.storage === 'workspace'
-                      ? '工作台引用中，无法从图库删除'
-                      : '删除（移到回收站）'
-                  "
                   aria-label="删除"
                   @click.stop="remove(image)"
                 >
@@ -895,11 +894,13 @@ function openImageWorkspace() {
     <ImageViewer
       v-if="lightbox && current"
       :image="current"
+      :images="visibleGallery"
       :can-previous="galleryIndex > 0"
       :can-next="galleryIndex >= 0 && galleryIndex < visibleGallery.length - 1"
       :can-delete="current.storage !== 'workspace'"
       :confirm-delete="pendingDelete === current.name"
       :deleting="!!deleting"
+      @select="current = $event"
       @close="lightbox = false"
       @previous="changeImage(-1)"
       @next="changeImage(1)"
@@ -1032,5 +1033,14 @@ function openImageWorkspace() {
   gap: 4px;
   font-size: 11px;
   height: 30px;
+}
+
+.gallery-head {
+  flex-wrap: wrap;
+}
+
+.gallery-head :deep(.theme-select) {
+  min-width: 0;
+  max-width: 170px;
 }
 </style>

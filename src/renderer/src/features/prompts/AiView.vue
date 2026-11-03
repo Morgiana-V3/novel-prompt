@@ -437,11 +437,7 @@ usePageShortcuts(() => isActive('ai'), {
           v-if="!embedded"
           :class="['prompt-group', { 'is-ignored': mode === 'semantic' && hasPrompt }]"
         >
-          <PromptEditor
-            char-label="角色提示词（可选）"
-            :char-hint="hasPrompt ? '多人画面时填写' : '留空则由 AI 按描述拆分'"
-            neg-hint="留空则由 AI 按规范生成"
-          />
+          <PromptEditor char-label="角色提示词（可选）" />
         </div>
 
         <div

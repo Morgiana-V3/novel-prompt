@@ -5,6 +5,7 @@ import { deleteSnippet, refreshSnippets, saveSnippet, snippetStore } from '../sn
 import { cleanErr } from '../../../shared/lib/format'
 import { copy, reportError, toast } from '../../../shared/lib/notifications'
 import Icon from '../../../shared/ui/Icon.vue'
+import SnippetCategoryInput from './SnippetCategoryInput.vue'
 
 const items = toRef(snippetStore, 'items')
 const query = ref('')
@@ -164,28 +165,10 @@ function copyText(item: PromptSnippet) {
               placeholder="片段名称，例如：暖色电影光影"
               aria-label="片段名称"
               required
-            /><input
+            /><SnippetCategoryInput
               v-model="draft.category"
-              class="input"
-              maxlength="80"
-              placeholder="分类（可选）"
-              aria-label="片段分类"
+              :categories="categories"
             />
-          </div>
-          <div
-            v-if="categories.length"
-            class="snippet-form-categories"
-          >
-            <span>已有分类</span
-            ><button
-              v-for="name in categories"
-              :key="name"
-              type="button"
-              :class="{ on: draft.category === name }"
-              @click="draft.category = draft.category === name ? '' : name"
-            >
-              {{ name }}
-            </button>
           </div>
           <textarea
             v-model="draft.text"
@@ -505,8 +488,6 @@ function copyText(item: PromptSnippet) {
 .snippet-card.open .snippet-full pre {
   margin-bottom: 12px;
   padding: 10px 12px;
-  max-height: 320px;
-  overflow: auto;
 }
 
 .snippet-form {
@@ -526,32 +507,6 @@ function copyText(item: PromptSnippet) {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
   gap: 8px;
-}
-
-.snippet-form-categories {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  color: var(--muted);
-}
-
-.snippet-form-categories button {
-  height: 22px;
-  padding: 0 9px;
-  border-radius: 999px;
-  background: var(--hover);
-  color: var(--text2);
-  font-size: 11.5px;
-  transition:
-    background-color var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out);
-}
-
-.snippet-form-categories button.on {
-  background: var(--pink-soft);
-  color: var(--pink-deep);
 }
 
 .snippet-text {

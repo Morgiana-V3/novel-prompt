@@ -282,10 +282,35 @@ module.exports = async function checkCreation({
     assert.ok(
       await js(`['.creation-tabs', '.compare .section-tabs'].every(selector => {
         const row = document.querySelector(selector)
-        const tops = [...row.children].map(child => Math.round(child.getBoundingClientRect().top))
-        return row.classList.contains('scroll-row') && new Set(tops).size === 1
+        const bounds = row.getBoundingClientRect()
+        return !row.classList.contains('scroll-row') && getComputedStyle(row).flexWrap === 'wrap'
+          && row.scrollWidth <= row.clientWidth + 1
+          && [...row.children].every(child => {
+            const rect = child.getBoundingClientRect()
+            return rect.left >= bounds.left && rect.right <= bounds.right + 1
+              && rect.top >= bounds.top && rect.bottom <= bounds.bottom + 1
+          })
       })`),
-      'tab rows stay on one line and scroll sideways instead of wrapping',
+      'tab rows display every item fully and wrap without horizontal scrolling',
+    )
+    assert.ok(
+      await js(`(() => {
+        const row = document.querySelector('.compare .section-tabs')
+        const samples = Array.from({ length: 12 }, (_, index) => {
+          const chip = row.firstElementChild.cloneNode(true)
+          chip.textContent = '角色 ' + (index + 1) + ' 负面 26'
+          row.append(chip)
+          return chip
+        })
+        const bounds = row.getBoundingClientRect()
+        const fits = row.scrollWidth <= row.clientWidth + 1 && samples.every(chip => {
+          const rect = chip.getBoundingClientRect()
+          return rect.left >= bounds.left && rect.right <= bounds.right + 1 && rect.bottom <= bounds.bottom + 1
+        }) && new Set(samples.map(chip => chip.offsetTop)).size > 1
+        samples.forEach(chip => chip.remove())
+        return fits
+      })()`),
+      'long character lists use multiple complete rows',
     )
     writeFileSync(
       join(profile, `creation-check-${width}.png`),

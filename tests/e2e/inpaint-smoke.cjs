@@ -166,6 +166,8 @@ net.fetch = async (url, init) => {
   return new Response(generated, { headers: { 'content-type': 'image/png' } })
 }
 const handlers = {
+  'collections:list': () => [{ id: 'default', name: '默认图集', createdAt: 0 }],
+  'storage:info': () => ({ path: profile, bytes: 0, pending: null, previous: null, error: null }),
   'snippets:list': () => [
     { id: 'inpaint-fixture', name: '柔光', text: 'soft lighting', category: '光影' },
   ],
@@ -693,7 +695,10 @@ app.whenReady().then(async () => {
       'fit restores gallery zoom',
     )
     await zoomAtPointer('.iv-canvas')
-    await run(`document.querySelector('.iv-toolbar button[title="下一张（→）"]').click()`)
+    await run(`document.querySelector('.iv-next').click()`)
+    await wait(
+      `document.querySelector('.iv-stage')?.getAttribute('aria-busy') === 'false' && !document.querySelector('.iv-image-enter-active')`,
+    )
     await check(
       `document.querySelector('.iv-zoom').textContent==='100%'`,
       'switching image resets zoom and pan',
