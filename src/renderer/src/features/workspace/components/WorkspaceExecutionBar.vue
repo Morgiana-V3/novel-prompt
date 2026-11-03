@@ -4,6 +4,8 @@ import { regionIds } from '@shared/workspace/regions'
 import type { PageExecution, PageVersion, PageEditorState } from '@shared/workspace/model'
 import type { AppTask } from '@shared/tasks/model'
 import ThemeSelect from '../../../shared/ui/ThemeSelect.vue'
+import CollectionPicker from '../../gallery/CollectionPicker.vue'
+import { DEFAULT_COLLECTION } from '@shared/images/collections'
 import Icon from '../../../shared/ui/Icon.vue'
 const props = defineProps<{
   current: PageVersion
@@ -17,6 +19,7 @@ const props = defineProps<{
   hasExecutionRegion: boolean
   progress: string
   generateTask?: AppTask
+  collectionId?: string
 }>()
 const emit = defineEmits<{
   execution: [value: PageExecution]
@@ -25,6 +28,7 @@ const emit = defineEmits<{
   generate: []
   preview: []
   cancel: [id: string]
+  collection: [id: string]
 }>()
 const executionIds = computed(() => regionIds(props.execution))
 const executionChoice = computed(() => {
@@ -99,6 +103,13 @@ const generationLabel = computed(() => {
     >
       查看范围
     </button>
+    <CollectionPicker
+      class="pw-collection"
+      :model-value="collectionId ?? DEFAULT_COLLECTION"
+      :disabled="!!operation || remoteBusy"
+      title="本项目生成和修图的图片存入的图集（之后生成的图片生效）"
+      @update:model-value="emit('collection', $event)"
+    />
     <span class="muted small pw-execution-summary"
       >{{ nextEditor.params.width }}×{{ nextEditor.params.height }} ·
       {{ nextEditor.params.steps }} 步</span
@@ -108,24 +119,25 @@ const generationLabel = computed(() => {
         v-if="editingPrompt"
         class="btn pw-config-back"
         :disabled="!!operation || remoteBusy"
+        title="保存下一版配置并返回"
         @click="emit('returnFromConfig')"
       >
         <Icon
-          name="arrow"
-          class="pw-back-arrow"
+          name="check"
           :size="16"
-        />返回查看
+        />完成
       </button>
       <button
         v-else
         class="btn pw-config-edit"
         :disabled="busy"
+        title="基于蓝本编辑下一次生成的提示词与参数；本版配置保持不变"
         @click="emit('editConfig')"
       >
         <Icon
           name="sliders"
           :size="16"
-        />编辑配置
+        />编辑下一版
       </button>
       <button
         class="btn accent pw-generate"
@@ -277,6 +289,28 @@ const generationLabel = computed(() => {
   font-size: 12px;
   padding: 0 12px;
   box-shadow: none;
+}
+
+/* 窄屏时图集选择先收缩，执行方式保持可读 */
+.pw-execution > :deep(.theme-select) {
+  flex-shrink: 0;
+  min-width: 140px;
+}
+
+.pw-execution .pw-collection {
+  flex: 0 3 140px;
+  min-width: 84px;
+}
+
+.pw-execution .pw-collection :deep(.theme-select) {
+  width: 100%;
+  max-width: none;
+}
+
+.pw-execution .pw-collection :deep(.theme-select > span) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (width <= 800px) {

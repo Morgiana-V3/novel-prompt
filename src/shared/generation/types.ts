@@ -81,6 +81,16 @@ export interface NaiInpaintRequest extends NaiGenRequest {
   }
 }
 
+/** 图生图（精修 / 变体）：起点图片由主进程读取，不经渲染进程传输。 */
+export interface NaiImg2ImgRequest extends NaiGenRequest {
+  img2img: {
+    /** 0.01～0.99，越高改动越大 */
+    strength: number
+    /** 额外噪声 0～0.99 */
+    noise: number
+  }
+}
+
 export interface NaiGenResult {
   images: NaiImage[]
   /** 本次生成前后的 Anlas 变化（负数 = 扣除），查询失败时为 undefined */

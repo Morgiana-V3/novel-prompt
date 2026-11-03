@@ -158,6 +158,7 @@ for (const [name, handler] of Object.entries({
   'update:check': () => null,
   'reverse:status': () => ({ phase: 'idle', ready: false, models: [] }),
   'recipes:list': () => [],
+  'collections:list': () => [{ id: 'default', name: '默认图集', createdAt: 0 }],
   'update:state': () => null,
   'storage:info': () => require('../../src/main/modules/settings/storage.ts').storageInfo(),
   'nai:list': () => imageAccess.listImages(),
@@ -544,8 +545,8 @@ app.whenReady().then(async () => {
       ).versions[0].editor.draft.base,
       '1girl, blue eyes',
     )
-    await click('.pw-view-tabs button', '生图配置')
-    await click('.pw-execution button', '编辑配置')
+    await click('.pw-view-tabs button', '本版配置')
+    await click('.pw-execution button', '编辑下一版')
     await assert.rejects(
       a.tool('propose_workspace_edit', {
         id: w.id,
@@ -556,7 +557,7 @@ app.whenReady().then(async () => {
       /正在编辑/,
     )
     await ui(`!!document.querySelector('.pw-config-back')`)
-    await click('.pw-execution button', '返回查看')
+    await click('.pw-execution button', '完成')
     await js(
       `(()=>{const e=document.querySelector('.pw-compose textarea');e.value='用户还没发送的新想法';e.dispatchEvent(new Event('input',{bubbles:true}))})()`,
     )
@@ -711,7 +712,7 @@ app.whenReady().then(async () => {
       /用户或其他 Agent/,
     )
     assert.equal((await a.data('get_app_state')).connection.workspace.editor.ownership, 'user')
-    await click('.pw-execution button', '返回查看')
+    await click('.pw-execution button', '完成')
     const orphan = connectAgent()
     await orphan.request('initialize', { clientInfo: { name: 'orphan-draft-fixture' } })
     const orphanAct = async (args) =>

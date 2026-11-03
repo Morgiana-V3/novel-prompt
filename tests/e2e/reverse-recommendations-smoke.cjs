@@ -154,7 +154,7 @@ app.whenReady().then(async () => {
     )
     await js(`document.querySelector('.reverse-run').click()`)
     await wait(
-      `!!document.querySelector('.reverse-recognition-empty[aria-busy="true"] .mascot.m-busy img')`,
+      `!!document.querySelector('.reverse-recognition-empty[aria-busy="true"] .mascot.m-search.m-motion img')`,
     )
     await delay(200)
     writeFileSync(
@@ -163,8 +163,9 @@ app.whenReady().then(async () => {
     )
     assert.ok(
       await js(
-        `getComputedStyle(document.querySelector('.reverse-recognition-empty .mascot img')).animationName.includes('scribble')`,
+        `(()=>{const img=document.querySelector('.reverse-recognition-empty .mascot img');return img.src.includes('search')&&img.src.includes('.webp')&&getComputedStyle(img).animationName==='none'})()`,
       ),
+      'recognition loops the search scene animation without the old CSS sway',
     )
     finishRecognition()
     await wait(`document.querySelectorAll('.recommendation').length===5`)

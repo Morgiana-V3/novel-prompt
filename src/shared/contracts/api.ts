@@ -29,19 +29,14 @@ import type {
   SkillInput,
   SkillImportPreview,
 } from '../skills/types'
-import type {
-  DbStatus,
-  SearchHit,
-  SearchOptions,
-  TagCategory,
-  UpdateProgress,
-} from '../tags/types'
+import type { DbStatus, SearchHit, SearchOptions, TagCategory, UpdateProgress } from '../tags/types'
 import type { AiStep, NaiStep, TaskSnapshot } from '../tasks/model'
 import type { UpdateInfo } from '../updates/types'
 import type {
   PageAction,
   PageAgentIdentity,
   PageExecution,
+  PageImageTool,
   PageExternalReply,
   PageWorkspace,
   PageWorkspaceSummary,
@@ -155,6 +150,8 @@ export interface Api {
     execution: PageExecution,
     actionId?: string,
   ) => Promise<PageWorkspace>
+  /** 在当前蓝本上放大、扩图或精修，结果保存为新候选 */
+  pagesImageTool: (id: string, revision: number, tool: PageImageTool) => Promise<PageWorkspace>
   setImagePreviewActive: (active: boolean) => Promise<void>
   dbStatus: () => Promise<DbStatus>
   dbUpdate: () => Promise<DbStatus>
@@ -367,6 +364,10 @@ export interface IpcContract {
   'pages:generate': {
     args: Parameters<Api['pagesGenerate']>
     result: Awaited<ReturnType<Api['pagesGenerate']>>
+  }
+  'pages:image-tool': {
+    args: Parameters<Api['pagesImageTool']>
+    result: Awaited<ReturnType<Api['pagesImageTool']>>
   }
   'window:image-preview': {
     args: Parameters<Api['setImagePreviewActive']>

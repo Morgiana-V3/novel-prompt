@@ -19,6 +19,8 @@ import { useConfigEditor } from '../use-config-editor'
 import { useAgentState } from '../use-agent-state'
 
 import WorkspaceCandidates from './WorkspaceCandidates.vue'
+import WorkspaceOutpaintDialog from './WorkspaceOutpaintDialog.vue'
+import WorkspaceToolPopover from './WorkspaceToolPopover.vue'
 import WorkspaceVersionSidebar from './WorkspaceVersionSidebar.vue'
 import { createWorkspaceCommands } from '../commands'
 
@@ -31,10 +33,16 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type {
   PageExecution,
   PageEditorState,
+  PageImageTool,
   PageMessage,
   PageWorkspace,
 } from '@shared/workspace/model'
-import { pageContextKey, pageLatestProposal } from '@shared/workspace/model'
+import {
+  pageContextKey,
+  pageEditorBaseline,
+  pageEditorChanges,
+  pageLatestProposal,
+} from '@shared/workspace/model'
 
 import { cleanErr } from '../../../shared/lib/format'
 
@@ -42,6 +50,7 @@ import Icon from '../../../shared/ui/Icon.vue'
 
 import InpaintEditor from '../../inpaint/components/InpaintEditor.vue'
 import ThemeSelect from '../../../shared/ui/ThemeSelect.vue'
+import SplitHandle from '../../../shared/ui/SplitHandle.vue'
 
 import WorkspacePrompt from './WorkspacePrompt.vue'
 import WorkspaceIterations from './WorkspaceIterations.vue'
@@ -497,6 +506,22 @@ async function setExecution(execution: PageExecution) {
   }
 }
 
+async function setCollection(collectionId: string) {
+  if (operation.value || remoteBusy.value || collectionId === work.value.collectionId) {
+    return
+  }
+  operation.value = 'save'
+  error.value = ''
+  try {
+    await flushNotes()
+    await mutate({ type: 'collection', collectionId })
+  } catch (error2) {
+    error.value = cleanErr(error2)
+  } finally {
+    operation.value = ''
+  }
+}
+
 function planLabel(execution?: PageExecution, versionId = current.value.id) {
   if (execution?.kind !== 'inpaint') {
     return '按提示词生成新图'
@@ -557,6 +582,50 @@ async function generate() {
     if (!current.value.editor.regions.some((region2) => region2.id === regionId.value)) {
       regionId.value = null
     }
+    emit('updated')
+  } catch (error2) {
+    error.value = cleanErr(error2)
+    try {
+      work.value = await window.api.pagesRead(work.value.id)
+    } catch {
+      /* Keep existing state. */
+    }
+  } finally {
+    operation.value = ''
+    progress.value = ''
+    await scrollEnd()
+  }
+}
+/** 扩图用对话框；放大、精修用按钮下方的轻量面板 */
+const openTool = ref<{
+  kind: PageImageTool['kind']
+  anchor: { left: number; bottom: number }
+} | null>(null)
+function openImageTool(kind: PageImageTool['kind'], anchor: { left: number; bottom: number }) {
+  openTool.value = openTool.value?.kind === kind ? null : { kind, anchor }
+}
+async function runToolFromPanel(tool: PageImageTool) {
+  openTool.value = null
+  await runImageTool(tool)
+}
+async function runImageTool(tool: PageImageTool) {
+  if (operation.value || remoteBusy.value) {
+    return
+  }
+  error.value = ''
+  progress.value = '正在准备修图…'
+  operation.value = 'generate'
+  try {
+    await finishConfig()
+    await flushNotes()
+    work.value = await window.api.pagesImageTool(
+      work.value.id,
+      work.value.revision,
+      JSON.parse(JSON.stringify(tool)),
+    )
+    await nextTick()
+    viewedId.value = work.value.latestGeneratedVersionId ?? current.value.id
+    pane.value = 'canvas'
     emit('updated')
   } catch (error2) {
     error.value = cleanErr(error2)
@@ -820,6 +889,114 @@ function updateConfigDraft(patch: Partial<PageEditorState>) {
   configOwner.value = null
   Object.assign(configDraft.value, patch)
 }
+/* ---------- 下一版配置：本版配置只读，修改都写进基于蓝本的下一版 ---------- */
+const tabsLocked = computed(() => editingPrompt.value && (!!operation.value || remoteBusy.value))
+const currentBaseline = computed(() => pageEditorBaseline(current.value))
+const nextChanges = computed(() => {
+  if (!currentBaseline.value) {
+    return null
+  }
+  return pageEditorChanges(currentBaseline.value, {
+    ...nextEditor.value,
+    model: nextEditor.value.model ?? work.value.model,
+  })
+})
+const nextChangesText = computed(() => {
+  if (!nextChanges.value) {
+    return ''
+  }
+  if (!nextChanges.value.count) {
+    return '与蓝本配置相同'
+  }
+  const parts = []
+  if (nextChanges.value.prompt.length) {
+    parts.push(`提示词 ${nextChanges.value.prompt.length} 处`)
+  }
+  if (nextChanges.value.parameters.length) {
+    parts.push(`参数 ${nextChanges.value.parameters.length} 项`)
+  }
+  return `已修改 ${parts.join(' · ')}`
+})
+const nextChangesTitle = computed(() => {
+  const labels = nextChanges.value?.parameters ?? []
+  return labels.length ? `修改的参数：${labels.join('、')}` : nextChangesText.value
+})
+const configDirty = computed(
+  () =>
+    !!configDraft.value &&
+    JSON.stringify(configDraft.value) !== JSON.stringify(current.value.editor),
+)
+async function openPane(target: typeof pane.value) {
+  if (editingPrompt.value) {
+    await returnFromConfig()
+    if (editingPrompt.value) {
+      return
+    }
+  }
+  if (target === 'changes') {
+    review(viewed.value.id)
+    return
+  }
+  pane.value = target
+}
+async function openNextConfig() {
+  if (editingPrompt.value) {
+    return
+  }
+  await beginConfigFromButton()
+}
+async function discardConfig() {
+  if (!configDraft.value || operation.value || remoteBusy.value) {
+    return
+  }
+  configDraft.value = JSON.parse(JSON.stringify(current.value.editor))
+  configOwner.value = null
+}
+function baselinePatch(baseline: {
+  model?: PageEditorState['model']
+  draft: PageEditorState['draft']
+  params: PageEditorState['params']
+}): Partial<PageEditorState> {
+  const params = { ...JSON.parse(JSON.stringify(baseline.params)) }
+  if (configSizeLocked.value && configDraft.value) {
+    params.width = configDraft.value.params.width
+    params.height = configDraft.value.params.height
+  }
+  return {
+    draft: JSON.parse(JSON.stringify(baseline.draft)),
+    params,
+    ...(baseline.model ? { model: baseline.model } : {}),
+  }
+}
+function restoreBaseline() {
+  if (!currentBaseline.value) {
+    return
+  }
+  updateConfigDraft(baselinePatch(currentBaseline.value))
+}
+/** 从「本版配置」进入下一版：蓝本直接编辑；历史版本把它的配置载入下一版 */
+async function editFromSnapshot() {
+  const source = viewed.value
+  const baseline = pageEditorBaseline(source)
+  const snapshot = snapshotEditor.value
+  const loadSnapshot = historical.value
+  await beginConfigFromButton()
+  if (!editingPrompt.value || !loadSnapshot) {
+    return
+  }
+  if (baseline) {
+    updateConfigDraft(baselinePatch(baseline))
+  } else if (snapshot) {
+    // 旧版本只有实际请求（质量词已拼入），载入后不重复追加，并恢复随机种子
+    updateConfigDraft(
+      baselinePatch({
+        model: snapshot.model,
+        draft: snapshot.draft,
+        params: { ...snapshot.params, seed: null },
+      }),
+    )
+  }
+}
 async function beginConfigFromButton() {
   try {
     await beginConfig()
@@ -838,36 +1015,45 @@ async function beginConfigFromButton() {
   >
     <header class="pw-header">
       <div class="pw-header-tools">
-        <b
-          v-if="editingPrompt"
-          class="pw-edit-title"
-          >编辑下一版配置</b
-        >
-        <div
-          v-else
-          class="pw-view-tabs seg"
-        >
+        <div class="pw-view-tabs seg">
           <button
-            :class="{ on: pane === 'canvas' }"
-            @click="pane = 'canvas'"
+            :class="{ on: !editingPrompt && pane === 'canvas' }"
+            :disabled="tabsLocked"
+            @click="openPane('canvas')"
           >
             画布</button
           ><button
-            :class="{ on: pane === 'prompt' }"
-            @click="pane = 'prompt'"
+            :class="{ on: !editingPrompt && pane === 'prompt' }"
+            :disabled="tabsLocked"
+            title="查看这张图生成时使用的配置（只读）"
+            @click="openPane('prompt')"
           >
-            生图配置</button
+            本版配置</button
           ><button
-            :class="{ on: pane === 'changes' }"
-            @click="review(viewed.id)"
+            class="pw-next-tab"
+            :class="{ on: editingPrompt }"
+            :disabled="tabsLocked"
+            :title="'基于蓝本 ' + displayVersionLabel(current.label) + ' 编辑下一次生成的配置'"
+            @click="openNextConfig"
+          >
+            下一版配置<span
+              v-if="nextChanges?.count"
+              class="pw-tab-badge"
+              >{{ nextChanges.count }}</span
+            ></button
+          ><button
+            :class="{ on: !editingPrompt && pane === 'changes' }"
+            :disabled="tabsLocked"
+            @click="openPane('changes')"
           >
             修改对比</button
           ><button
             class="pw-images-tab"
-            :class="{ on: pane === 'images' }"
+            :class="{ on: !editingPrompt && pane === 'images' }"
+            :disabled="tabsLocked"
             title="本版图片"
             aria-label="本版图片"
-            @click="pane = 'images'"
+            @click="openPane('images')"
           >
             <Icon
               name="image"
@@ -1001,10 +1187,60 @@ async function beginConfigFromButton() {
         </div>
         <div
           v-if="editingPrompt"
-          class="pw-scope-bar"
+          class="pw-scope-bar pw-next-bar"
         >
-          <span class="muted small">基于 {{ current.label }}</span
-          ><span class="muted small ml-auto">返回时保存</span>
+          <div class="pw-scope-label">
+            <b>下一版</b
+            ><span
+              class="muted small"
+              :title="'基于蓝本 ' + current.label"
+              >基于 {{ displayVersionLabel(current.label) }}</span
+            >
+            <span
+              class="small pw-next-summary"
+              :class="{ changed: !!nextChanges?.count }"
+              :title="nextChangesTitle"
+              >{{ nextChangesText }}</span
+            >
+          </div>
+          <div class="pw-scope-actions">
+            <button
+              v-if="configDirty"
+              class="btn ghost small"
+              :disabled="!!operation || remoteBusy"
+              title="放弃这次打开后的修改，恢复到打开前的下一版配置"
+              aria-label="撤销本次修改"
+              @click="discardConfig"
+            >
+              <Icon
+                name="x"
+                :size="13"
+              /><span>撤销本次修改</span>
+            </button>
+            <button
+              v-if="currentBaseline"
+              class="btn ghost small"
+              :disabled="!!operation || remoteBusy || !nextChanges?.count"
+              title="把提示词和参数恢复为生成蓝本时使用的配置"
+              aria-label="恢复蓝本配置"
+              @click="restoreBaseline"
+            >
+              <Icon
+                name="reset"
+                :size="13"
+              /><span>恢复蓝本配置</span>
+            </button>
+            <button
+              class="icon-btn sm"
+              title="复制完整提示词"
+              @click="promptEditor?.copyPrompt()"
+            >
+              <Icon
+                name="copy"
+                :size="15"
+              />
+            </button>
+          </div>
         </div>
         <div
           v-else
@@ -1030,9 +1266,15 @@ async function beginConfigFromButton() {
             >
               <Icon
                 name="chat"
-                :size="15"
+                :size="16"
               />
             </button>
+            <span
+              v-if="pane === 'prompt'"
+              class="pill"
+              title="这是生成这张图时使用的配置，不能修改；要调整请编辑下一版"
+              >只读</span
+            >
             <button
               class="btn small pw-adopt"
               :class="{ ghost: !historical }"
@@ -1046,13 +1288,6 @@ async function beginConfigFromButton() {
             >
               {{ historical ? '设为蓝本' : '当前蓝本' }}
             </button>
-            <button
-              v-if="pane === 'canvas' && viewed.image"
-              class="btn ghost small"
-              @click="viewport?.reset()"
-            >
-              {{ zoom }}% · 适应画布
-            </button>
             <ThemeSelect
               v-if="pane === 'changes'"
               v-model="compareVersionId"
@@ -1065,6 +1300,22 @@ async function beginConfigFromButton() {
             v-if="pane === 'prompt'"
             class="pw-prompt-actions"
           >
+            <button
+              v-if="snapshotEditor"
+              class="btn ghost small"
+              :disabled="busy"
+              :title="
+                historical
+                  ? '把这一版的提示词和参数载入下一版配置（蓝本图片不变）'
+                  : '在本版配置的基础上编辑下一版'
+              "
+              @click="editFromSnapshot"
+            >
+              <Icon
+                name="edit"
+                :size="13"
+              />{{ historical ? '载入到下一版' : '编辑下一版' }}
+            </button>
             <button
               class="icon-btn sm"
               title="复制完整提示词"
@@ -1103,9 +1354,11 @@ async function beginConfigFromButton() {
           :busy="busy"
           :display-regions="displayRegions"
           :overlay-mode="overlayMode"
+          :active-tool="openTool?.kind ?? null"
           @missing="markVersionMissing"
           @recover="recoverImage"
           @edit="openEditor"
+          @tool="openImageTool"
         />
         <WorkspaceCandidates
           v-else-if="pane === 'images'"
@@ -1159,7 +1412,9 @@ async function beginConfigFromButton() {
           :has-execution-region="!!executionRegions.length"
           :progress="progress"
           :generate-task="generateTask"
+          :collection-id="work.collectionId"
           @execution="setExecution"
+          @collection="setCollection"
           @edit-config="beginConfigFromButton"
           @return-from-config="returnFromConfig"
           @generate="generate"
@@ -1167,6 +1422,17 @@ async function beginConfigFromButton() {
           @cancel="cancelTask"
         />
       </div>
+      <SplitHandle
+        v-show="!aiCollapsed"
+        storage-key="workspace-chat"
+        variable="--pw-chat-user"
+        scope=".pw-shell"
+        side="end"
+        :min="300"
+        :max="820"
+        :reserve="420"
+        label="AI 对话栏宽度"
+      />
       <div
         id="workspace-ai-panel"
         class="pw-ai-dock"
@@ -1214,6 +1480,30 @@ async function beginConfigFromButton() {
       </div>
     </div>
 
+    <WorkspaceOutpaintDialog
+      v-if="openTool?.kind === 'outpaint' && current.image"
+      :width="current.image.width ?? current.editor.params.width"
+      :height="current.image.height ?? current.editor.params.height"
+      :image-url="current.image.url"
+      :count="current.editor.params.count"
+      :steps="current.editor.params.steps"
+      :disabled="busy"
+      @run="runImageTool"
+      @close="openTool = null"
+    />
+    <WorkspaceToolPopover
+      v-if="openTool && openTool.kind !== 'outpaint' && current.image"
+      :key="openTool.kind"
+      :kind="openTool.kind"
+      :anchor="openTool.anchor"
+      :width="current.image.width ?? current.editor.params.width"
+      :height="current.image.height ?? current.editor.params.height"
+      :count="current.editor.params.count"
+      :steps="current.editor.params.steps"
+      :disabled="busy"
+      @run="runToolFromPanel"
+      @close="openTool = null"
+    />
     <InpaintEditor
       v-if="editing && current.image"
       ref="inpaintEditor"
@@ -1255,6 +1545,12 @@ async function beginConfigFromButton() {
 
 .pw-ai-collapsed .pw-ai-dock {
   width: 0;
+}
+
+/* 拖动分隔条时宽度实时跟随，不走开合动画 */
+:global(body.split-resizing) .pw-ai-dock,
+:global(body.split-resizing) .pw-header {
+  transition: none;
 }
 
 .pw-ai-collapsed .pw-ai-dock > :deep(.pw-conversation) {
@@ -1630,6 +1926,53 @@ async function beginConfigFromButton() {
   min-width: 70px;
 }
 
+/* 与旁边「当前蓝本 / 设为蓝本」文字按钮的中文墨迹对齐 */
+.pw-scope-actions > .icon-btn > .icon {
+  transform: translateY(0.5px);
+}
+
+.pw-tab-badge {
+  min-width: 16px;
+  height: 16px;
+  margin-left: 5px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--pink);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 16px;
+  text-align: center;
+}
+
+.pw-next-summary {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pw-next-summary.changed {
+  color: var(--pink-deep);
+}
+
+.pw-next-bar .pw-scope-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+@media (width <= 1250px) {
+  .pw-next-bar .pw-scope-actions .btn span {
+    display: none;
+  }
+}
+
+.pw-prompt-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .pw-scope-bar .pw-prompt-actions {
   margin-left: 0;
 }
@@ -1638,10 +1981,6 @@ async function beginConfigFromButton() {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.pw-edit-title {
-  font-size: 14px;
 }
 
 .pw-scope-bar {
@@ -1700,7 +2039,7 @@ async function beginConfigFromButton() {
   flex-direction: column;
   background: var(--bg);
   outline: none;
-  --pw-chat-width: 380px;
+  --pw-chat-width: var(--pw-chat-user, 380px);
 }
 
 .pw-header {
@@ -1835,7 +2174,7 @@ async function beginConfigFromButton() {
 
 @media (width <= 1050px) {
   .pw-shell {
-    --pw-chat-width: 320px;
+    --pw-chat-width: var(--pw-chat-user, 320px);
   }
 
   .pw-header-tools {
@@ -1850,7 +2189,7 @@ async function beginConfigFromButton() {
 
 @media (width <= 800px) {
   .pw-shell {
-    --pw-chat-width: 280px;
+    --pw-chat-width: var(--pw-chat-user, 280px);
   }
 
   .pw-header-actions {

@@ -23,6 +23,7 @@ const cases = {
   'reverse:models': ['node', 'tests/unit/reverse-models-smoke.cjs', false],
   'reverse:recommendations': ['electron', 'tests/e2e/reverse-recommendations-smoke.cjs', true],
   'mcp:launch': ['node', 'tests/unit/mcp-launch-smoke.cjs', false],
+  'optimize:convergence': ['node', 'tests/unit/optimize-convergence-checks.cjs', false],
   'mcp:relay': ['node', 'tests/integration/mcp-relay-smoke.cjs', false],
   'mcp:recovery': ['electron', 'tests/integration/mcp-recovery-smoke.cjs', false],
   'mcp:context': ['electron', 'tests/integration/mcp-context-smoke.cjs', false],
@@ -55,7 +56,14 @@ const optionalCases = {
 }
 let selected = process.argv.slice(2)
 if (mode === 'quick') {
-  selected = ['artifacts', 'mcp:launch', 'mcp:relay', 'mcp:index', 'workspace:cleanup']
+  selected = [
+    'artifacts',
+    'mcp:launch',
+    'optimize:convergence',
+    'mcp:relay',
+    'mcp:index',
+    'workspace:cleanup',
+  ]
 } else if (mode === 'full') {
   selected = Object.keys(cases)
 }

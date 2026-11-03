@@ -60,6 +60,20 @@ export interface AiOptimizeRequest {
   /** 语义描述 / 额外要求 */
   instruction: string
   version: NaiVersion
+  /** 上一轮优化的输出与依据；用于判断用户是否已全部采纳，避免每轮都重新大改 */
+  previous?: AiPreviousRound
+}
+
+/** 收敛判断：converged = 已达标无需修改；changes = 有明确问题并做了修改 */
+export type AiVerdict = 'converged' | 'changes'
+
+export interface AiPreviousRound {
+  positive: string
+  negative: string
+  characters: AiCharacter[]
+  instruction: string
+  changes: Pick<AiChange, 'scope' | 'text' | 'basis'>[]
+  verdict?: AiVerdict
 }
 
 export interface AiCharacter {
@@ -119,6 +133,11 @@ export interface AiOptimizeResult {
   /** 必须逐字保留却被改写的内容（画面文字），无论 changes 是否说明 */
   fidelity: string[]
   evidence: EvidenceInfo
+  /** AI 与程序共同给出的收敛判断；旧结果没有此字段 */
+  verdict?: AiVerdict
+  verdictReason?: string
+  /** 程序为保证收敛而撤回的改写（如仅调换顺序、上一轮已全部采纳后的经验性微调） */
+  stabilized?: string[]
 }
 
 export interface PreviewParams {

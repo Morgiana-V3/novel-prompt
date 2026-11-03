@@ -30,6 +30,7 @@ import Icon from '../../shared/ui/Icon.vue'
 import Mascot from '../../shared/ui/Mascot.vue'
 import WorkspaceBar from './components/WorkspaceBar.vue'
 import { usePagePresentation } from '../../shared/lib/page-presentation'
+import SplitHandle from '../../shared/ui/SplitHandle.vue'
 const { embedded, navigate, editor, isActive } = usePagePresentation()
 
 const analyzed = ref<{ key: string; result: AnalysisResult } | null>(null)
@@ -526,6 +527,15 @@ function formatPrompt() {
       </div>
     </section>
 
+    <SplitHandle
+      v-if="!embedded"
+      storage-key="prompt-views-left"
+      variable="--pane-left-width"
+      :min="320"
+      :max="1000"
+      :reserve="380"
+      label="左侧编辑区宽度"
+    />
     <section
       ref="rightPane"
       class="pane right scroll"

@@ -6,6 +6,7 @@ import PromptEditor from '../prompts/components/PromptEditor.vue'
 import WorkspaceBar from '../prompts/components/WorkspaceBar.vue'
 import { resizeWithin } from '../../shared/lib/autosize'
 import { promptState } from '../prompts/state'
+import SplitHandle from '../../shared/ui/SplitHandle.vue'
 
 const props = defineProps<{ active: boolean; panel: string }>()
 const emit = defineEmits<{ navigate: [panel: Tab] }>()
@@ -86,6 +87,16 @@ watch(
       <WorkspaceBar />
       <PromptEditor show-presets />
     </section>
+    <SplitHandle
+      v-show="active"
+      class="creation-split"
+      storage-key="creation-editor"
+      variable="--creation-editor-width"
+      :min="280"
+      :max="900"
+      :reserve="360"
+      label="提示词编辑区宽度"
+    />
     <section class="creation-results">
       <div
         v-show="active"
@@ -178,7 +189,7 @@ watch(
 
 .creation-active {
   display: grid;
-  grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.1fr);
+  grid-template-columns: var(--creation-editor-width, minmax(280px, 0.9fr)) 0 minmax(360px, 1.1fr);
   grid-template-rows: minmax(0, 1fr) auto;
   height: 100%;
   min-height: 0;
@@ -206,8 +217,13 @@ watch(
   flex-shrink: 0;
 }
 
-.creation-active .creation-results {
+.creation-split {
   grid-column: 2;
+  grid-row: 1 / 3;
+}
+
+.creation-active .creation-results {
+  grid-column: 3;
   grid-row: 1 / 3;
   display: flex;
   flex-direction: column;
@@ -336,7 +352,7 @@ watch(
 
 @media (width <= 1050px) {
   .creation-active {
-    grid-template-columns: minmax(250px, 1fr) minmax(300px, 1.1fr);
+    grid-template-columns: var(--creation-editor-width, minmax(250px, 1fr)) 0 minmax(300px, 1.1fr);
   }
 
   .creation-editor {
@@ -357,6 +373,10 @@ watch(
     flex-shrink: 0;
     overflow: visible;
     max-height: none;
+  }
+
+  .creation-split {
+    display: none;
   }
 
   .creation-active .creation-results {

@@ -1133,18 +1133,16 @@ app.whenReady().then(async () => {
     console.log('PASS blank comments are skipped by analysis without blocking later annotations')
     assert.notEqual(lastPlanRequest.regions[0].mask, lastPlanRequest.regions[1].mask)
     await check(
-      `document.querySelector('.ip-plan .diff-chip.add')?.textContent.includes('white shirt') && document.querySelector('.ip-plan .diff-chip.del')?.textContent.includes('red dress') && !document.querySelector('.ip-full-change[open]')`,
-      'AI suggestions show only changed tags with full text collapsed',
+      `(()=>{const words=(side,kind)=>[...document.querySelectorAll('.ip-plan .'+side+' .'+kind)].map(e=>e.textContent).join(' ');return words('after','added').includes('white')&&words('after','added').includes('shirt')&&words('before','removed').includes('red')&&words('before','removed').includes('dress')&&!document.querySelector('.ip-full-change[open]')})()`,
+      'AI suggestions highlight changed words in the unified before/after view',
     )
     console.log(
       'PASS AI sees images and independent annotations, dedicated Skill, no generation before adoption',
     )
-    await run(`document.querySelector('.ip-plan .diff-context').click()`)
     await check(
       `document.querySelector('.ip-plan .before p').textContent.includes('red dress') && document.querySelector('.ip-plan .after p').textContent.includes('white shirt') && document.querySelector('.ip-plan input[type=checkbox]').checked`,
       'full prompt inspection preserves the selected change',
     )
-    await run(`document.querySelector('.ip-plan .diff-context').click()`)
     await clickText('.ip-ai-section button', '采纳各区域')
     await check(
       `[...document.querySelectorAll('.ip-foot button')].some(e=>e.textContent.includes('2 个区域'))`,

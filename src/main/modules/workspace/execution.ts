@@ -102,10 +102,16 @@ export async function renderPage(
     }
     const groupNumber = resolveGroupNumber()
     const candidateNumber = same ? (latest!.candidateNumber ?? 1) + 1 : 1
-    const result = await generateImages(request, progress, cancelled, {
-      ...options,
-      workspaceId: id,
-    })
+    // 图集只决定图片归类，不参与方案分组（schemeKey 已在上方计算）
+    const result = await generateImages(
+      { ...request, collectionId: workspace.collectionId },
+      progress,
+      cancelled,
+      {
+        ...options,
+        workspaceId: id,
+      },
+    )
     if (cancelled()) {
       result.stopped ??= '已停止，已完成的图片已保留'
     }
@@ -132,6 +138,11 @@ export async function renderPage(
           params: actual.params,
           execution: selectedExecution,
           sourceVersionId: version.id,
+          editor: {
+            model: workspace.model,
+            draft: structuredClone(draft),
+            params: { ...version.editor.params },
+          },
           ...(selectedExecution.kind === 'inpaint'
             ? {
                 inpaint: {

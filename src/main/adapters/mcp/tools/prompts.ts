@@ -166,6 +166,9 @@ export function createOptimizePromptTool(): McpTool {
         invalid: optimization.invalid,
         dropped: optimization.dropped,
         fidelity: optimization.fidelity,
+        verdict: optimization.verdict ?? 'changes',
+        verdict_reason: optimization.verdictReason ?? '',
+        stabilized: optimization.stabilized ?? [],
         ...(semantic
           ? {
               note: '语义转换没有原提示词可比对，dropped 为 null 不代表无遗漏；请对照描述逐项核对年龄、数量、左右、归属、画面文字等要求是否写进了实际提示词',

@@ -1,5 +1,10 @@
 import type { PageWorkspace } from '@shared/workspace/model'
-import { pageComparison, pageCurrent, pageGroups } from '@shared/workspace/model'
+import {
+  pageComparison,
+  pageCurrent,
+  pageGroups,
+  pageImageToolLabel,
+} from '@shared/workspace/model'
 import type { Ref } from 'vue'
 import { displayVersionLabel } from './labels'
 import { computed, ref } from 'vue'
@@ -97,6 +102,9 @@ export function useVersionBrowser(work: Ref<PageWorkspace>) {
 
   function versionDetail(version: PageWorkspace['versions'][number]) {
     const resolveValue = () => {
+      if (version.generated?.tool) {
+        return pageImageToolLabel(version.generated.tool)
+      }
       if (version.generated) {
         return `${version.generated.execution.kind === 'inpaint' ? '局部重绘' : '提示词生成'} · 种子 ${version.generated.params.seed}`
       }

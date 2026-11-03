@@ -40,6 +40,10 @@ export interface PageVersion {
     params: NaiGenParams
     execution: PageExecution
     sourceVersionId: string
+    /** 生成时使用的可编辑配置（未拼入质量词/UC 预设），用于判断下一版改了什么；旧数据没有 */
+    editor?: { model?: NaiVersion; draft: InpaintDraft; params: NaiGenParams }
+    /** 修图操作（放大、扩图、精修）产生的版本；普通生成与局部重绘没有此字段 */
+    tool?: PageImageTool
     inpaint?: {
       mask: string
       strength: number
@@ -50,6 +54,54 @@ export interface PageVersion {
     }
   }
 }
+/** 基于当前蓝本图片的修图操作，对应 NovelAI 官方编辑器里的 Upscale、扩展画布与 Enhance。 */
+export type PageImageTool =
+  | { kind: 'upscale' }
+  | { kind: 'outpaint'; left: number; right: number; top: number; bottom: number }
+  | { kind: 'enhance'; scale: 1 | 1.5; strength: number; noise: number }
+
+export const PAGE_IMAGE_TOOL_NAMES: Record<PageImageTool['kind'], string> = {
+  upscale: '放大 2×',
+  outpaint: '扩图',
+  enhance: '精修',
+}
+
+export function pageImageToolLabel(tool: PageImageTool): string {
+  if (tool.kind === 'outpaint') {
+    const sides = [
+      ['左', tool.left],
+      ['右', tool.right],
+      ['上', tool.top],
+      ['下', tool.bottom],
+    ]
+      .filter(([, size]) => Number(size) > 0)
+      .map(([side, size]) => `${side} ${size}`)
+    return `扩图 · ${sides.join(' / ')}`
+  }
+  if (tool.kind === 'enhance') {
+    return `精修 · ${tool.scale}× · 强度 ${tool.strength}`
+  }
+  return PAGE_IMAGE_TOOL_NAMES.upscale
+}
+
+/** 扩图/精修后的目标尺寸（64 的倍数）；放大固定 2 倍，不受 64 对齐约束 */
+export function pageImageToolSize(
+  tool: PageImageTool,
+  width: number,
+  height: number,
+): { width: number; height: number } {
+  if (tool.kind === 'outpaint') {
+    return { width: width + tool.left + tool.right, height: height + tool.top + tool.bottom }
+  }
+  if (tool.kind === 'enhance') {
+    return {
+      width: Math.max(64, Math.round((width * tool.scale) / 64) * 64),
+      height: Math.max(64, Math.round((height * tool.scale) / 64) * 64),
+    }
+  }
+  return { width: width * 2, height: height * 2 }
+}
+
 export interface PageExecution {
   kind: 'generate' | 'inpaint'
   regionId: string | null
@@ -172,6 +224,8 @@ export interface PageWorkspace {
   messages: PageMessage[]
   composer: string
   execution: PageExecution
+  /** 本项目生成、修图的图片存入的图集；未设置时为默认图集 */
+  collectionId?: string
   agentMode?: 'internal' | 'external'
   externalAgent?: PageAgentIdentity | null
 }
@@ -217,6 +271,7 @@ export type PageAction =
   | { type: 'switch'; versionId: string }
   | { type: 'proposal'; messageId: string; decision: 'accept' | 'reject' | 'undo' }
   | { type: 'execution'; execution: PageExecution }
+  | { type: 'collection'; collectionId: string }
 
 export function pageCurrent(workspace: PageWorkspace): PageVersion {
   const version = workspace.versions.find((version2) => version2.id === workspace.currentVersionId)
@@ -291,33 +346,66 @@ export function pageComparison(workspace: PageWorkspace, id: string, compareId?:
     changes: result && before ? pageChanges(before.draft, result.draft) : [],
   }
 }
+export const PAGE_PARAM_FIELDS: [keyof NaiGenParams, string][] = [
+  ['width', '宽度'],
+  ['height', '高度'],
+  ['steps', '步数'],
+  ['scale', 'Prompt Guidance'],
+  ['cfgRescale', 'Guidance Rescale'],
+  ['sampler', '采样器'],
+  ['noiseSchedule', '噪声调度'],
+  ['seed', '种子'],
+  ['count', '张数'],
+  ['qualityTags', 'Add Quality Tags'],
+  ['qualityMode', '质量词档位'],
+  ['ucPreset', 'UC 预设'],
+]
+
+export interface PageEditorBaseline {
+  model?: NaiVersion
+  draft: InpaintDraft
+  params: NaiGenParams
+}
+
+/**
+ * 蓝本的「原配置」：生成时使用的可编辑配置，导入/起点版本使用 initial。
+ * 旧版本只保存了拼入质量词后的实际请求，无法可靠还原，返回 null。
+ */
+export function pageEditorBaseline(version: PageVersion): PageEditorBaseline | null {
+  if (version.generated) {
+    return version.generated.editor ?? null
+  }
+  return version.initial ?? null
+}
+
+/** 下一版配置相对蓝本原配置的修改：提示词逐段、参数逐项 */
+export function pageEditorChanges(
+  baseline: PageEditorBaseline,
+  editor: Pick<PageEditorState, 'model' | 'draft' | 'params'>,
+) {
+  const prompt = pageChanges(baseline.draft, editor.draft)
+  const parameters = PAGE_PARAM_FIELDS.filter(
+    ([key]) => (baseline.params[key] ?? null) !== (editor.params[key] ?? null),
+  ).map(([, label]) => label)
+  if (baseline.model && editor.model && baseline.model !== editor.model) {
+    parameters.unshift('模型')
+  }
+  return { prompt, parameters, count: prompt.length + parameters.length }
+}
+
 /** Only differing generation settings; missing legacy snapshots are not equality. */
 export function pageConfigurationChanges(workspace: PageWorkspace, id: string, compareId?: string) {
   const comparison = pageComparison(workspace, id, compareId)
   if (!comparison.before || !comparison.snapshot) {
     return { ...comparison, parameters: [], maskChanged: false }
   }
-  const fields: [keyof NaiGenParams, string][] = [
-    ['width', '宽度'],
-    ['height', '高度'],
-    ['steps', '步数'],
-    ['scale', 'Prompt Guidance'],
-    ['cfgRescale', 'Guidance Rescale'],
-    ['sampler', '采样器'],
-    ['noiseSchedule', '噪声调度'],
-    ['seed', '种子'],
-    ['count', '张数'],
-    ['qualityTags', 'Add Quality Tags'],
-    ['qualityMode', '质量词档位'],
-    ['ucPreset', 'UC 预设'],
-  ]
-  const parameters: { label: string; before: unknown; after: unknown }[] = fields
-    .filter(([key]) => comparison.before!.params[key] !== comparison.snapshot!.params[key])
-    .map(([key, label]) => ({
-      label,
-      before: comparison.before!.params[key],
-      after: comparison.snapshot!.params[key],
-    }))
+  const parameters: { label: string; before: unknown; after: unknown }[] = PAGE_PARAM_FIELDS.filter(
+    ([key]) => comparison.before!.params[key] !== comparison.snapshot!.params[key],
+  ).map(([key, label]) => ({
+    label,
+    before: comparison.before!.params[key],
+    after: comparison.snapshot!.params[key],
+  }))
   const add = (label: string, before: unknown, after: unknown) => {
     if (before !== after) {
       parameters.push({ label, before, after })
@@ -329,6 +417,11 @@ export function pageConfigurationChanges(workspace: PageWorkspace, id: string, c
   if (sourceGeneration && resultGeneration) {
     add('生成方式', sourceGeneration.execution.kind, resultGeneration.execution.kind)
   }
+  add(
+    '修图',
+    sourceGeneration?.tool ? pageImageToolLabel(sourceGeneration.tool) : undefined,
+    resultGeneration?.tool ? pageImageToolLabel(resultGeneration.tool) : undefined,
+  )
   add('重绘强度', sourceGeneration?.inpaint?.strength, resultGeneration?.inpaint?.strength)
   add('区域批注', sourceGeneration?.inpaint?.instruction, resultGeneration?.inpaint?.instruction)
   add('区域对应角色', sourceGeneration?.inpaint?.target, resultGeneration?.inpaint?.target)

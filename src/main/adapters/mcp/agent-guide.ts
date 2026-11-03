@@ -86,14 +86,14 @@ ${AGENT_ENTRY}
 ## D. 版本与比较的共同概念
 - 版本组（groupId）：同一配置的一组生成结果；左栏显示版本 V1 / V2。
 - 候选（versionId）：组内某一张图片，有稳定 id 和独立生成记录；version_id 参数始终接受候选 id，不能传组 id。
-- 查看对象（viewedVersionId / viewedGroupId）：画布、生图配置、修改对比、本版图片共用同一候选，切 tab 不改变它；查看不会采用。
+- 查看对象（viewedVersionId / viewedGroupId）：画布、本版配置、修改对比、本版图片共用同一候选，切 tab 不改变它；查看不会采用。
 - 本版图片（pane:images）：展示查看版本组内的候选缩略图。选择候选只查看，不采用；采用需要 ui_review_workspace(decision:switch)。
 - 当前蓝本（adoptedVersionId / currentVersionId；旧状态字段 versionId，字段名兼容保留）：后续修改、批注、生成的目标。历史图片配置只读；ui_review_workspace(decision:switch) 对应界面「设为蓝本」，明确切换下一版草稿的起点。
 - 对比对象（comparisonVersionId）：仅作差异参照；comparisonMode=source 默认实际来源，specified 为指定候选，不改变查看与采用对象。ui_view_workspace(pane:changes,compare_version_id) 控制参照；空字符串恢复默认。compare_workspace_versions 可在后台只读比较。
 - 图像生成快照（generated）与该候选可编辑草稿（editor）不同；initial 是会话起始稿，不能推断为导入图片的实际生成参数。
-- 生图配置页（pane:prompt）始终只读 generated/initial 快照，已采用图片也不例外。底部「编辑配置」打开下一版草稿，独立于版本页签；返回时保存，直接生成也先保存。查看其他版本不会覆盖下一版草稿。张数 count 支持 1/2/4，qualityTags 和 ucPreset 可编辑；同批逐张保存，停止时保留已完成图片。遮罩存在时尺寸锁定，disabledFields 会说明原因。
+- 本版配置页（pane:prompt）始终只读 generated/initial 快照，已采用图片也不例外。「下一版配置」页签或底部「编辑下一版」打开基于蓝本的下一版草稿（pane 报告为 config-edit），切换到其他页签或点「完成」时保存，直接生成也先保存；页签上的数字是相对蓝本原配置的修改数。查看其他版本不会覆盖下一版草稿。张数 count 支持 1/2/4，qualityTags 和 ucPreset 可编辑；同批逐张保存，停止时保留已完成图片。遮罩存在时尺寸锁定，disabledFields 会说明原因。
 - 手动编辑的前台入口是 ui_edit_workspace_config：begin → update(patch.draft/params/strength) → save 或 cancel，不需要 AI 建议。每一步使用最新 token。get_app_state.desktop.workspace.config 返回 open、owner、dirty、sourceVersionId、draft、params、strength、disabledFields。只允许本 MCP 连接继续自己打开的编辑；用户触碰表单后归用户所有，不能强行取消或保存。重新连接时请让用户完成/退出编辑，不能接管旧连接的编辑。
-- 修改对比仅展示有变化的配置，完整内容在生图配置中查看。方案留在对应对话消息内；pane:suggestions 是兼容入口，只展开消息中的方案，不再切换到独立页签。focusedProposalId 表示通过操作定位的方案，不代表已采纳。
+- 修改对比仅展示有变化的配置，完整内容在本版配置中查看。方案留在对应对话消息内；pane:suggestions 是兼容入口，只展开消息中的方案，不再切换到独立页签。focusedProposalId 表示通过操作定位的方案，不代表已采纳。
 - 多区域修改：region_ids 指定本轮勾选区域；get_workspace_context.selectedRegions 给出各区说明与预览。联合讨论并在 reply 按区域说明修改及冲突。inpaint 方案的 execution.regionIds 必须包含本轮全部选中区域；统一草稿、统一强度、合并遮罩执行一次。未选区域不加入；region_id 仍可用于单区。
 - 讨论对象（discussion）在发送时冻结；建议的 editTarget 始终是已采用稿。引用（referenceIds）仅为讨论资料，也不等于对比对象或重绘底图。
 

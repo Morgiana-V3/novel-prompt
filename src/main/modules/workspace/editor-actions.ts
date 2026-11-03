@@ -1,5 +1,7 @@
 import { regionIds } from '../../../shared/workspace/regions'
 import { isNaiVersion } from '../../../shared/generation/types'
+import { DEFAULT_COLLECTION } from '../../../shared/images/collections'
+import { imageCollections } from '../images/collections'
 import { pageCurrent, type PageAction, type PageWorkspace } from '../../../shared/workspace/model'
 import { clone, pageEvent, pageMessage } from './snapshot'
 import { checkDraft, checkEditor, checkPageParams, validateExecution } from './validation'
@@ -85,6 +87,21 @@ export function applyEditor(
   ) {
     workspace.execution = { kind: 'generate', regionId: null }
   }
+}
+
+/** 只影响之后生成的图片；已有图片的图集归属保持不变，可在图库里单独移动 */
+export function applyCollection(
+  workspace: PageWorkspace,
+  action: Extract<PageAction, { type: 'collection' }>,
+): void {
+  if (imageCollections.resolve(action.collectionId) !== action.collectionId) {
+    throw new Error('图集不存在，请重新选择')
+  }
+  if (action.collectionId === DEFAULT_COLLECTION) {
+    delete workspace.collectionId
+    return
+  }
+  workspace.collectionId = action.collectionId
 }
 
 export function applyExecution(

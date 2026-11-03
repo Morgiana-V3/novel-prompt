@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import idle from '../../assets/mascot/idle.png'
 import happy from '../../assets/mascot/happy.png'
 import busy from '../../assets/mascot/busy.png'
@@ -20,6 +20,11 @@ import thumbs from '../../assets/mascot/thumbs.png'
 import ok from '../../assets/mascot/ok.png'
 import check from '../../assets/mascot/check.png'
 import crystal from '../../assets/mascot/crystal.png'
+import ready from '../../assets/mascot/ready.png'
+import readyMotion from '../../assets/mascot/motion/ready.webp'
+import readingMotion from '../../assets/mascot/motion/reading.webp'
+import searchMotion from '../../assets/mascot/motion/search.webp'
+import paintMotion from '../../assets/mascot/motion/paint.webp'
 
 const SRC = {
   idle,
@@ -42,20 +47,68 @@ const SRC = {
   ok,
   check,
   crystal,
+  ready,
+}
+
+/**
+ * 带动作的场景动图（透明循环 WebP）。静态图与动图同一裁切范围，播完切回静态时位置不跳。
+ * durationMs 是一轮循环的时长，用于「只播一轮」。
+ */
+const MOTION: Partial<Record<keyof typeof SRC, { src: string; durationMs: number }>> = {
+  ready: { src: readyMotion, durationMs: 5082 },
+  reading: { src: readingMotion, durationMs: 5082 },
+  search: { src: searchMotion, durationMs: 5082 },
+  paint: { src: paintMotion, durationMs: 4914 },
 }
 
 export type MascotMood = keyof typeof SRC
 
-const props = withDefaults(defineProps<{ mood?: MascotMood; size?: number }>(), {
-  mood: 'idle',
-  size: 120,
-})
-const src = computed(() => SRC[props.mood])
+const props = withDefaults(
+  defineProps<{
+    mood?: MascotMood
+    size?: number
+    /**
+     * 有场景动图时的播放方式：loop 长任务期间循环；once 播一轮后停在静态图（空态默认）；
+     * none 始终静态。系统开启「减少动态效果」时一律静态。
+     */
+    motion?: 'loop' | 'once' | 'none'
+  }>(),
+  {
+    mood: 'idle',
+    size: 120,
+    motion: 'once',
+  },
+)
+
+const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+const playing = ref(true)
+let stopTimer: ReturnType<typeof setTimeout> | undefined
+const motionSource = computed(() => MOTION[props.mood])
+const animated = computed(
+  () => !!motionSource.value && props.motion !== 'none' && !reducedMotion && playing.value,
+)
+const src = computed(() => (animated.value ? motionSource.value!.src : SRC[props.mood]))
+
+/** 每次换表情或播放方式都从头播；只播一轮时按时长切回静态图 */
+watch(
+  () => [props.mood, props.motion] as const,
+  () => {
+    clearTimeout(stopTimer)
+    playing.value = true
+    if (props.motion === 'once' && motionSource.value) {
+      stopTimer = setTimeout(() => {
+        playing.value = false
+      }, motionSource.value.durationMs)
+    }
+  },
+  { immediate: true },
+)
+onBeforeUnmount(() => clearTimeout(stopTimer))
 </script>
 
 <template>
   <div
-    :class="['mascot', `m-${mood}`]"
+    :class="['mascot', `m-${mood}`, { 'm-motion': !!motionSource }]"
     :style="{ height: size + 'px' }"
   >
     <transition
@@ -181,6 +234,11 @@ const src = computed(() => SRC[props.mood])
   animation:
     m-jump 1.2s var(--bounce) 2,
     m-breathe 3.4s ease-in-out 2.4s infinite;
+}
+
+/* 场景动图自带动作：不再叠加整图的呼吸、摇摆和悬停弹跳 */
+.mascot.m-motion img {
+  animation: none;
 }
 
 .mascot-swap-enter-active {

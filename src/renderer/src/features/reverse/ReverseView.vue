@@ -23,6 +23,7 @@ import ReverseComparison from './ReverseComparison.vue'
 import { useReverseTrials, type ReverseTrial } from './use-reverse-trials'
 import { modelSize as size, summarizeReverseModels } from './model-summary'
 import { loadReversePreferences, saveReversePreferences } from './preferences'
+import SplitHandle from '../../shared/ui/SplitHandle.vue'
 
 const status = ref<ReverseStatus>()
 const preferences = loadReversePreferences()
@@ -575,6 +576,16 @@ async function source(url: string) {
           <span v-else-if="cropEnabled && !hasCrop">在图上拖动框选</span>
         </div>
       </section>
+      <SplitHandle
+        v-show="stage === 'recognition'"
+        class="reverse-split"
+        storage-key="reverse-reference"
+        variable="--reverse-reference-width"
+        :min="240"
+        :max="900"
+        :reserve="380"
+        label="参考图栏宽度"
+      />
       <section
         v-show="stage === 'recognition'"
         class="reverse-adjustments"
@@ -733,7 +744,8 @@ async function source(url: string) {
           :aria-busy="running"
         >
           <Mascot
-            :mood="running ? 'busy' : 'search'"
+            mood="search"
+            :motion="running ? 'loop' : 'once'"
             :size="running ? 150 : 136"
           />
           <strong>{{ running ? '正在识别参考图…' : '等待识别' }}</strong>
@@ -1119,9 +1131,14 @@ progress {
 
 .reverse-workspace.is-recognition {
   display: grid;
-  grid-template-columns: minmax(240px, 0.8fr) minmax(380px, 1.2fr);
+  grid-template-columns: var(--reverse-reference-width, minmax(240px, 0.8fr)) 0 minmax(
+      380px,
+      1.2fr
+    );
   grid-template-rows: minmax(0, 1fr);
-  gap: 12px;
+
+  /* 中间 0 宽列是分隔条，两侧各 6px 合计仍是 12px */
+  gap: 12px 6px;
   flex: 1;
   min-height: 0;
 }
@@ -1514,6 +1531,10 @@ progress {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto auto;
     flex: none;
+  }
+
+  .reverse-split {
+    display: none;
   }
 
   .reverse-input {

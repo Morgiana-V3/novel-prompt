@@ -4,13 +4,18 @@ import { groupFavorites, type FavoriteGroup } from '@shared/images/favorite-grou
 import { favorites, refreshFavorites } from './state'
 import { shellState } from '../../shared/state/shell'
 import { importGenerationRequest, sectionText } from '../prompts/actions'
+import { loadPreferences, setLoadKeepSeed } from '../generation/public'
 import { copy, toast } from '../../shared/lib/notifications'
 import { cleanErr } from '../../shared/lib/format'
 import Icon from '../../shared/ui/Icon.vue'
+import PositionCompareDialog, {
+  type RolePosition,
+} from '../prompts/components/PositionCompareDialog.vue'
 import Mascot from '../../shared/ui/Mascot.vue'
 import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 import FavoriteButton from './components/FavoriteButton.vue'
 import SnippetLibrary from '../prompts/components/SnippetLibrary.vue'
+import SplitHandle from '../../shared/ui/SplitHandle.vue'
 
 const favoriteTab = computed({
   get: () => favorites.tab,
@@ -26,7 +31,11 @@ const loaded = ref(false)
 const busy = ref(false)
 const error = ref('')
 const editing = ref(false)
-const keepSeed = ref(true)
+/** 与其他载入入口共用的「保留种子」偏好，默认不保留 */
+const keepSeed = computed({
+  get: () => loadPreferences.keepSeed,
+  set: (value: boolean) => setLoadKeepSeed(value),
+})
 const failedImage = ref(false)
 const imageReady = ref(false)
 const draft = reactive({ name: '', note: '', tags: '' })
@@ -118,6 +127,23 @@ const variantOptions = computed(() =>
   })),
 )
 const request = computed(() => selected.value?.recipe.request)
+/** 图例里显示「角色 N · 首个词条」，便于和提示词对应 */
+function roleLabel(prompt: string, index: number) {
+  const firstTag = prompt.split(/[,\n]/)[0]?.trim() ?? ''
+  const short = firstTag.length > 18 ? `${firstTag.slice(0, 18)}…` : firstTag
+  return short ? `角色 ${index + 1} · ${short}` : `角色 ${index + 1}`
+}
+/** 角色位置布局弹窗：只读展示当前配方的角色坐标 */
+const layoutOpen = ref(false)
+const layoutRoles = computed<RolePosition[]>(() =>
+  (request.value?.characters ?? []).map((character, index) => ({
+    label: roleLabel(character.prompt, index),
+    position: character.position ?? '',
+  })),
+)
+watch(selectedId, () => {
+  layoutOpen.value = false
+})
 watch(
   () => selected.value?.id,
   (id) => {
@@ -196,10 +222,7 @@ async function load() {
   const snapshot = JSON.parse(JSON.stringify(request.value))
   busy.value = true
   try {
-    if (!keepSeed.value) {
-      snapshot.params.seed = null
-    }
-    await importGenerationRequest(snapshot, '已载入收藏')
+    await importGenerationRequest(snapshot, '已载入收藏', { keepSeed: keepSeed.value })
     loaded.value = true
   } catch (e) {
     error.value = cleanErr(e)
@@ -555,6 +578,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             </div>
           </div>
         </div>
+        <SplitHandle
+          storage-key="favorites-detail"
+          variable="--favorites-detail-width"
+          side="end"
+          :min="300"
+          :max="900"
+          :reserve="320"
+          label="收藏详情栏宽度"
+        />
         <aside
           class="favorite-details"
           aria-label="收藏的生成配置"
@@ -621,6 +653,22 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 </div>
               </div>
               <div class="favorite-head-actions">
+                <button
+                  class="icon-btn sm"
+                  aria-label="查看角色位置布局"
+                  :title="
+                    request.characters.length
+                      ? '查看各角色在画面中的位置'
+                      : '此配方没有角色提示词，无位置布局'
+                  "
+                  :disabled="!request.characters.length"
+                  @click="layoutOpen = true"
+                >
+                  <Icon
+                    name="frame"
+                    :size="15"
+                  />
+                </button>
                 <button
                   class="icon-btn sm"
                   aria-label="导出收藏原图"
@@ -725,8 +773,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               <p class="muted small">收藏于 {{ createdAt }}</p>
             </section>
           </div>
+          <PositionCompareDialog
+            v-if="layoutOpen"
+            single
+            :before="[]"
+            :after="layoutRoles"
+            :width="request.params.width"
+            :height="request.params.height"
+            :reference="selected.imageUrl ? { url: selected.imageUrl, opacity: 55 } : null"
+            @close="layoutOpen = false"
+          />
           <footer>
-            <label title="不勾选时种子改为随机，其余配置不变"
+            <label
+              title="勾选后载入时沿用原种子，用于复现原图；默认不勾选，种子随机便于用这组提示词多试几张。图库、拖入图片等载入入口共用此设置"
               ><input
                 v-model="keepSeed"
                 type="checkbox"
@@ -1057,10 +1116,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 /* ---------- 详情 ---------- */
 .favorites-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(340px, 0.72fr);
+  grid-template-columns: minmax(0, 1fr) 0 var(--favorites-detail-width, minmax(340px, 0.72fr));
   flex: 1;
   min-height: 0;
-  gap: 18px;
+
+  /* 中间是 0 宽的分隔条列，两侧各 9px 合计仍是 18px 间距 */
+  gap: 18px 9px;
   animation: view-in var(--dur-base) var(--ease-out);
 }
 
@@ -1455,8 +1516,8 @@ footer label {
   }
 
   .favorites-body {
-    grid-template-columns: minmax(0, 1fr) minmax(300px, 1fr);
-    gap: 12px;
+    grid-template-columns: minmax(0, 1fr) 0 var(--favorites-detail-width, minmax(300px, 1fr));
+    gap: 12px 6px;
   }
 
   .favorite-variants :deep(.favorite-seed) {

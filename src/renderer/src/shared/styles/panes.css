@@ -14,7 +14,8 @@
 }
 
 .pane.left {
-  flex: 0 0 44%;
+  /* --pane-left-width 由左右分隔条写入；未拖动过时保持 44% */
+  flex: 0 0 var(--pane-left-width, 44%);
   border-right: 1px solid var(--line);
   background: var(--panel);
 }

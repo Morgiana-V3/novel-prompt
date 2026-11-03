@@ -347,7 +347,7 @@ app.whenReady().then(async () => {
     await click('.theme-select-option', '复制当前提示词')
     await click('.session-create button', '开始项目')
     await waitUI(`!!document.querySelector('.pw-shell')`)
-    await click('.pw-view-tabs button', '生图配置')
+    await click('.pw-view-tabs button', '本版配置')
     await js(`document.querySelector('[title="复制完整提示词"]').click()`)
     await wait(() => !!copied)
     assert.deepEqual(parsePromptText(copied), {
@@ -468,6 +468,43 @@ app.whenReady().then(async () => {
       'PASS one request box: optimizes the current prompt, or regenerates from scratch without sending it',
     )
 
+    // 收敛：AI 判定已达标时显示明确状态、不提供无意义的采纳；再次优化会带上上一轮输出
+    reviewResult = (req) => ({
+      positive: req.prompt,
+      negative: req.negative,
+      characters: req.characters,
+      notes: '',
+      changes: [],
+      invalid: [],
+      dropped: [],
+      fidelity: [],
+      evidence: { related: [], wiki: [], failed: [], implications: true },
+      verdict: 'converged',
+      verdictReason: '没有发现需要修正的问题',
+    })
+    lastOptimize = null
+    await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+    await waitUI(`!!document.querySelector('.ai .verdict-card.converged')`)
+    assert.ok(
+      await js(
+        `document.querySelector('.ai .verdict-card').textContent.includes('已达标，无需继续优化')&&document.querySelector('.ai .verdict-card').textContent.includes('没有发现需要修正的问题')&&document.querySelector('.ai .cheer').textContent.includes('已达标')&&!document.querySelector('.ai .cheer .actions')`,
+      ),
+      'converged result shows a clear verdict without an adopt action',
+    )
+    await new Promise((resolve) => setTimeout(resolve, 700))
+    writeFileSync(join(profile, 'ai-converged.png'), (await win.webContents.capturePage()).toPNG())
+    const convergedPrompt = lastOptimize.prompt
+    lastOptimize = null
+    await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+    await wait(() => lastOptimize?.mode === 'optimize')
+    assert.equal(lastOptimize.previous?.positive, convergedPrompt)
+    assert.equal(lastOptimize.previous?.verdict, 'converged')
+    await waitUI(`!!document.querySelector('.ai .verdict-card.converged')`)
+    reviewResult = null
+    console.log(
+      'PASS converged optimize verdict is shown and the next round carries the previous output',
+    )
+
     // Ctrl+Enter 执行当前页主操作；有弹窗时不触发
     const beforeKey = optimizeCalls
     await js(
@@ -574,7 +611,15 @@ app.whenReady().then(async () => {
     await click('.nav-item', 'AI 优化')
     await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
     await waitUI(`document.querySelectorAll('.ai .review-group').length === 3`)
-    await js(`document.querySelector('.ai [data-group="global"] .diff-context').click()`)
+    // 统一的前后对比直接显示两侧原文并逐词高亮；短提示词不需要展开
+    assert.equal(
+      await js(`!!document.querySelector('.ai [data-group="global"] .diff-context')`),
+      false,
+    )
+    assert.equal(
+      await js(`document.querySelector('.ai [data-group="global"] .after .added').textContent`),
+      ', detailed lineart',
+    )
     assert.equal(
       await js(`document.querySelector('.ai [data-group="global"] .before p').textContent`),
       'manga, monochrome',
@@ -583,7 +628,6 @@ app.whenReady().then(async () => {
       await js(`document.querySelector('.ai [data-group="global"] .after p').textContent`),
       reviewResult.positive,
     )
-    await js(`document.querySelector('.ai [data-group="global"] .diff-context').click()`)
     assert.equal(await js(`!!document.querySelector('.ai [data-group="character-0"]')`), false)
     assert.equal(
       await js(

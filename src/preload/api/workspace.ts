@@ -4,6 +4,7 @@ import type {
   PageAction,
   PageAgentIdentity,
   PageExecution,
+  PageImageTool,
   PageExternalReply,
   PageWorkspace,
   PageWorkspaceSummary,
@@ -71,4 +72,6 @@ export const workspaceApi = {
     execution: PageExecution,
     actionId?: string,
   ): Promise<PageWorkspace> => invoke('pages:generate', id, revision, execution, actionId),
+  pagesImageTool: (id: string, revision: number, tool: PageImageTool): Promise<PageWorkspace> =>
+    invoke('pages:image-tool', id, revision, tool),
 }

@@ -344,16 +344,22 @@ app.whenReady().then(async () => {
     )
     assert.equal(await js(`JSON.parse(localStorage.getItem('np-workspace-v1')).params.width`), 64)
     await tab('生图预览')
-    assert.equal(await js(`document.querySelector('input[aria-label="种子"]').value`), '456')
+    assert.equal(
+      await js(`document.querySelector('input[aria-label="种子"]').value`),
+      '',
+      'loading defaults to a random seed',
+    )
     await tab('收藏')
     await js(`document.querySelector('.favorite-details footer input').click()`)
     await clickText('.favorite-details footer button', '载入配置')
     await delay(150)
+    await tab('生图预览')
     assert.equal(
       await js(`document.querySelector('input[aria-label="种子"]').value`),
-      '',
-      'unchecked seed loads as random',
+      '456',
+      'checked keep-seed reproduces the saved seed',
     )
+    await tab('收藏')
     // Cancel confirmation does not mutate the record; confirmed removal affects just this image.
     await js(`document.querySelector('.favorite-preview .favorite-button').click()`)
     await wait(`document.querySelector('.favorite-confirm:popover-open')`)

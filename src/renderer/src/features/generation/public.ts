@@ -12,4 +12,6 @@ export {
   setPreviewImage,
   clearWorkspaceImage,
   applyGenerationParams,
+  loadPreferences,
+  setLoadKeepSeed,
 } from './state'

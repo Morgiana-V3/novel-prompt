@@ -658,6 +658,19 @@ app.whenReady().then(async () => {
     )
     let batch = await pages.createPage('page-fixture.png', params, 'v5', draft)
     const batchSource = batch.currentVersionId
+    // 项目级图集：之后生成的图片存入所选图集，无效图集被拒绝
+    const { imageCollections } = require('../../src/main/modules/images/collections.ts')
+    const projectCollection = imageCollections.create('工作台测试图集')
+    assert.throws(
+      () =>
+        pages.editPage(batch.id, batch.revision, { type: 'collection', collectionId: 'missing' }),
+      /图集不存在/,
+    )
+    batch = pages.editPage(batch.id, batch.revision, {
+      type: 'collection',
+      collectionId: projectCollection.id,
+    })
+    assert.equal(batch.collectionId, projectCollection.id)
     batch = pages.editPage(batch.id, batch.revision, {
       type: 'editor',
       versionId: batchSource,
@@ -676,6 +689,14 @@ app.whenReady().then(async () => {
     )
     const generatedBatch = batch.versions.filter((v) => v.generated)
     assert.equal(generatedBatch.length, 4)
+    for (const version of generatedBatch) {
+      assert.equal(
+        imageCollections.forImage(version.image.name),
+        projectCollection.id,
+        'workspace generation stores images in the project collection',
+      )
+      assert.equal(version.generated.editor.draft.base, draft.base, 'editable config recorded')
+    }
     assert.equal(batch.currentVersionId, batchSource)
     assert.equal(new Set(generatedBatch.map((v) => v.groupId)).size, 1)
     assert.deepEqual(
@@ -964,9 +985,10 @@ app.whenReady().then(async () => {
     await click('.toast-action', '查看')
     await wait(`document.querySelector('.nav-item.active')?.textContent.includes('收藏')`)
     await wait(`!!document.querySelector('.favorite-details')`)
-    assert.ok(
+    assert.equal(
       await js(`document.querySelector('.favorite-details footer input').checked`),
-      'loading defaults to exact saved seed',
+      false,
+      'loading defaults to a random seed so the prompt can be tried again',
     )
     await click('.favorite-details footer button', '载入配置')
     await wait(`!!document.querySelector('.favorite-go')`)
@@ -982,6 +1004,18 @@ app.whenReady().then(async () => {
     await run(
       `[...document.querySelectorAll('.gallery .thumb')].find(e=>e.querySelector('img').src.includes('${ordinary.images[0].name}')).click()`,
     )
+    // 固定种子是可切换状态：再点一次恢复随机；不再提供「加载并推测画面」
+    const seedToggle = `document.querySelector('.viewer .seed-toggle')`
+    assert.equal(await js(`${seedToggle}.getAttribute('aria-pressed')`), 'false')
+    await run(`${seedToggle}.click()`)
+    await wait(
+      `${seedToggle}.getAttribute('aria-pressed')==='true'&&${seedToggle}.classList.contains('on')&&document.querySelector('input[aria-label="种子"]').value==='${ordinary.images[0].seed}'`,
+    )
+    await run(`${seedToggle}.click()`)
+    await wait(
+      `${seedToggle}.getAttribute('aria-pressed')==='false'&&document.querySelector('input[aria-label="种子"]').value===''`,
+    )
+    assert.equal(await js(`!!document.querySelector('.viewer [title*="推测画面"]')`), false)
     await run(`document.querySelector('.viewer .favorite-button').click()`)
     await wait(
       `document.querySelector('.viewer .favorite-button')?.getAttribute('aria-pressed')==='true'`,
@@ -1004,9 +1038,59 @@ app.whenReady().then(async () => {
     await wait(`document.querySelectorAll('.favorite-card').length===1`)
     await shot('13-recipe-library.png')
     await click('.favorite-card', '可复用的灰衣配方')
+    // 默认载入改为随机种子并在提示里给出原种子；勾选「保留种子」后沿用并记住选择
+    await click('.favorite-details footer button', '载入配置')
+    await wait(`document.querySelector('.toast')?.textContent.includes('种子随机，原种子')`)
+    await run(`document.querySelector('.favorite-details footer input').click()`)
+    assert.equal(await js(`localStorage.getItem('np-load-keep-seed')`), '1')
+    await click('.favorite-details footer button', '载入配置')
+    await wait(
+      `document.querySelector('.toast')?.textContent.includes('已载入收藏')&&!document.querySelector('.toast').textContent.includes('种子随机')`,
+    )
+    await run(`document.querySelector('.favorite-details footer input').click()`)
+    assert.equal(await js(`localStorage.getItem('np-load-keep-seed')`), '0')
+    assert.ok(
+      await js(`document.querySelector('[aria-label="查看角色位置布局"]').disabled`),
+      'layout button is disabled for recipes without characters',
+    )
     await click('.favorite-details footer button', '载入配置')
     await wait(`document.querySelector('.toast')?.textContent.includes('已载入收藏')`)
     await input('input[aria-label="搜索收藏"]', '')
+    // 收藏配方的角色位置布局：只读弹窗，未设坐标的角色单独列出并说明排布规则
+    const recipeModule = require('../../src/main/modules/images/recipes.ts')
+    const layoutRecipe = recipeModule.createConfigRecipe({
+      ...draft,
+      characters: [
+        { prompt: 'girl, twintails', negative: '', position: '0.3,0.6' },
+        { prompt: 'boy, glasses', negative: '', position: '' },
+      ],
+      version: 'v5',
+      params,
+    })
+    recipeModule.updateRecipe(layoutRecipe.id, { name: '双角色布局配方', note: '', tags: [] })
+    await click('.nav-item', '生图预览')
+    await click('.nav-item', '收藏')
+    await click('.favorites-navigation button', '全部收藏')
+    await wait(
+      `[...document.querySelectorAll('.favorite-card')].some(e=>e.textContent.includes('双角色布局配方'))`,
+    )
+    await click('.favorite-card', '双角色布局配方')
+    await wait(`!document.querySelector('[aria-label="查看角色位置布局"]')?.disabled`)
+    await run(`document.querySelector('[aria-label="查看角色位置布局"]').click()`)
+    await wait(`!!document.querySelector('.position-compare.single')`)
+    assert.equal(
+      await js(`document.querySelectorAll('.position-compare .position-marker').length`),
+      1,
+    )
+    assert.ok(
+      await js(
+        `document.querySelector('.position-compare').textContent.includes('角色 1 · girl')&&document.querySelector('.position-compare .unplaced').textContent.includes('角色 2 · boy')&&document.querySelector('.position-note').textContent.includes('从左到右')`,
+      ),
+      'layout dialog lists placed and automatic characters',
+    )
+    await shot('29-favorite-layout.png')
+    await run(`document.querySelector('.position-compare header .icon-btn').click()`)
+    await wait(`!document.querySelector('.position-compare')`)
     await click('.nav-item', '生图预览')
     assert.equal(
       require('../../src/main/modules/images/library.ts').imageInfo(ordinary.images[0].name)
@@ -1163,6 +1247,54 @@ app.whenReady().then(async () => {
       await shot('21-header-' + testWidth + '.png')
     }
     win.setSize(1440, 960)
+    await pause(150)
+    // AI 对话栏可拖拽调宽：标题列同步、宽度持久化、键盘微调、双击恢复默认
+    const chatWidth = () =>
+      js(`Math.round(document.querySelector('.pw-conversation').getBoundingClientRect().width)`)
+    const defaultChatWidth = await chatWidth()
+    const splitter = await js(
+      `(()=>{const r=document.querySelector('.pw-main > .split-handle').getBoundingClientRect();return{x:Math.round(r.x),y:Math.round(r.y+r.height/2)}})()`,
+    )
+    win.webContents.sendInputEvent({ type: 'mouseMove', ...splitter })
+    win.webContents.sendInputEvent({
+      type: 'mouseDown',
+      button: 'left',
+      clickCount: 1,
+      ...splitter,
+    })
+    win.webContents.sendInputEvent({ type: 'mouseMove', x: splitter.x - 120, y: splitter.y })
+    win.webContents.sendInputEvent({
+      type: 'mouseUp',
+      button: 'left',
+      clickCount: 1,
+      x: splitter.x - 120,
+      y: splitter.y,
+    })
+    await pause(600)
+    assert.equal(await chatWidth(), defaultChatWidth + 120, 'dragging widens the AI dock')
+    assert.ok(
+      await js(
+        `Math.abs(document.querySelector('.pw-heading').getBoundingClientRect().width-document.querySelector('.pw-conversation').getBoundingClientRect().width)<2`,
+      ),
+      'project title column follows the resized dock',
+    )
+    assert.equal(
+      await js(`localStorage.getItem('np-split:workspace-chat')`),
+      String(defaultChatWidth + 120),
+    )
+    await run(`document.querySelector('.pw-main > .split-handle').focus()`)
+    await run(
+      `document.querySelector('.pw-main > .split-handle').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}))`,
+    )
+    await pause(50)
+    assert.equal(await chatWidth(), defaultChatWidth + 136, 'arrow key nudges the separator')
+    await shot('28-resized-chat.png')
+    await run(
+      `document.querySelector('.pw-main > .split-handle').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}))`,
+    )
+    await pause(50)
+    assert.equal(await chatWidth(), defaultChatWidth, 'double click restores the default width')
+    assert.equal(await js(`localStorage.getItem('np-split:workspace-chat')`), null)
     await click('.pw-rename', '很长的创作项目名称')
     await input('.pw-heading input', '通用创作会话测试')
     await run(
@@ -1213,7 +1345,7 @@ app.whenReady().then(async () => {
       ),
       'new proposal does not navigate away from canvas',
     )
-    assert.equal(await js(`document.querySelectorAll('.pw-view-tabs button').length`), 4)
+    assert.equal(await js(`document.querySelectorAll('.pw-view-tabs button').length`), 5)
     assert.ok(await js(`!!document.querySelector('.pw-thread .pw-proposal[open]')`))
     assert.ok(
       await js(
@@ -1280,7 +1412,7 @@ app.whenReady().then(async () => {
       'original description and stable history references remain intact',
     )
     await run(`document.querySelector('[aria-label="版本记录"]').click()`)
-    await click('.pw-canvas-actions button', '区域批注')
+    await click('.pw-image-toolbar button', '局部重绘')
     await wait(`document.querySelector('.ip-active-mask')?.getBoundingClientRect().width>100`)
     await pause(300)
     const bounds = await js(
@@ -1330,7 +1462,7 @@ app.whenReady().then(async () => {
     await wait(`document.querySelector('.pw-region-checklist input')?.checked`)
     // Explicitly unchecked regions remain unchecked after reopening the editor.
     await run(`document.querySelector('.pw-region-checklist input').click()`)
-    await click('.pw-canvas-actions button', '区域批注')
+    await click('.pw-image-toolbar button', '局部重绘')
     await wait(`!!document.querySelector('.ip-foot')`)
     await pause(200)
     await click('.ip-foot button', '保存并返回讨论')
@@ -1349,9 +1481,32 @@ app.whenReady().then(async () => {
     await click('.pw-thread .pw-proposal[open] button', '采纳方案')
     assert.equal(pages.readPage(ui.id).execution.kind, 'inpaint')
     await shot('03-proposal-and-execution.png')
-    await click('.pw-execution button', '返回查看')
+    await click('.pw-execution button', '完成')
     await click('.pw-view-tabs button', '画布')
     await shot('04-mask-review.png')
+    // 修图拆分：放大、精修在按钮下方的小面板确认，扩图单独对话框，不再有三合一分页
+    await click('.pw-image-toolbar button', '放大')
+    await wait(
+      `document.querySelector('.pw-tool-popover')?.textContent.includes('约 1 Anlas')&&!document.querySelector('.pit-dialog')`,
+    )
+    assert.ok(
+      await js(
+        `[...document.querySelectorAll('.pw-image-toolbar button')].find(e=>e.textContent.includes('放大')).getAttribute('aria-expanded')==='true'`,
+      ),
+    )
+    await shot('30-upscale-popover.png')
+    await click('.pw-image-toolbar button', '放大')
+    await wait(`!document.querySelector('.pw-tool-popover')`)
+    await click('.pw-image-toolbar button', '精修')
+    await wait(`document.querySelectorAll('.pw-tool-popover input[type=range]').length===2`)
+    await shot('31-enhance-popover.png')
+    await run(`window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))`)
+    await wait(`!document.querySelector('.pw-tool-popover')`)
+    await click('.pw-image-toolbar button', '扩图')
+    await wait(`!!document.querySelector('.pit-dialog')&&!document.querySelector('.pit-modes')`)
+    assert.ok(await js(`document.querySelector('.pit-dialog h3').textContent==='扩图'`))
+    await click('.pit-foot button', '取消')
+    await wait(`!document.querySelector('.pit-dialog')`)
     await click('.pw-execution button', '执行重绘')
     await wait(`document.querySelector('.pw-scope-label')?.textContent.includes('版本 V2')`)
     assert.equal(pages.readPage(ui.id).currentVersionId, pages.readPage(ui.id).versions[1].id)
@@ -1390,8 +1545,8 @@ app.whenReady().then(async () => {
     )
     await click('.pw-version b', '版本 V2')
     await run(`document.querySelector('[aria-label="版本记录"]').click()`)
-    await click('.pw-view-tabs button', '生图配置')
-    await click('.pw-execution button', '编辑配置')
+    await click('.pw-view-tabs button', '本版配置')
+    await click('.pw-execution button', '编辑下一版')
     const sharedValues = await js(
       `[...document.querySelectorAll('.view textarea,.view .char-head input')].map(e=>e.value)`,
     )
@@ -1514,13 +1669,13 @@ app.whenReady().then(async () => {
       ),
       'hidden pane resumes correct height',
     )
-    await click('.pw-execution button', '返回查看')
+    await click('.pw-execution button', '完成')
     assert.equal(
       pageCurrent(pages.readPage(ui.id)).editor.draft.characters.length,
       1,
       'return saves manual changes',
     )
-    await click('.pw-execution button', '编辑配置')
+    await click('.pw-execution button', '编辑下一版')
     await moveCharacter(0.3, 0.6)
     await input('.workspace-prompt textarea', 'A revised grey object stands on a table.')
     assert.ok(
@@ -1537,7 +1692,7 @@ app.whenReady().then(async () => {
     await click('.theme-select-option', 'karras')
     win.setSize(1440, 960)
     await pause(150)
-    await click('.pw-execution button', '返回查看')
+    await click('.pw-execution button', '完成')
     await wait(`!document.querySelector('.workspace-prompt[data-editing="true"]')`)
     const saved = pages.readPage(ui.id)
     assert.equal(pageCurrent(saved).editor.params.cfgRescale, 0.4)
@@ -1778,7 +1933,7 @@ app.whenReady().then(async () => {
     assert.equal(imageAccess.imagePath(clearedImage), null)
     assert.equal(pages.readPage(ui.id).versions.length, beforeClear.versions.length)
     assert.deepEqual(pageCurrent(pages.readPage(ui.id)).generated, clearedSnapshot)
-    await click('.pw-view-tabs button', '生图配置')
+    await click('.pw-view-tabs button', '本版配置')
     assert.ok(
       await js(`!!document.querySelector('.workspace-prompt')`),
       'cleared image keeps readable generation snapshot',

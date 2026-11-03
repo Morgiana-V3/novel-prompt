@@ -52,6 +52,17 @@ export const ICONS = {
     '<path d="M12 4l8 4.2-8 4.2-8-4.2z"/><path d="M4 12.2l8 4.2 8-4.2"/><path d="M4 16l8 4.2 8-4.2"/>',
   panel:
     '<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M14.5 4.5v15"/><path d="M16.8 8.5h1.4M16.8 11.5h1.4"/>',
+  expand:
+    '<path d="M15 3.5h5.5V9"/><path d="M9 20.5H3.5V15"/><path d="M20.5 3.5 14 10"/><path d="M3.5 20.5 10 14"/>',
+  /* 修图工具：按 NovelAI 图片工具的常见图形语汇自绘（四芒星、虚线画框、对角放大箭头、笔） */
+  'tool-enhance':
+    '<path d="M10 3.5c.6 3.7 2.4 5.5 6.1 6.1-3.7.6-5.5 2.4-6.1 6.1-.6-3.7-2.4-5.5-6.1-6.1 3.7-.6 5.5-2.4 6.1-6.1z"/><path d="M18 14.2c.3 1.5 1 2.2 2.5 2.5-1.5.3-2.2 1-2.5 2.5-.3-1.5-1-2.2-2.5-2.5 1.5-.3 2.2-1 2.5-2.5z"/>',
+  'tool-upscale':
+    '<rect x="4" y="13" width="7" height="7" rx="1.2"/><path d="M4 9V5.2C4 4.5 4.5 4 5.2 4H9M15 4h3.8c.7 0 1.2.5 1.2 1.2V9M20 15v3.8c0 .7-.5 1.2-1.2 1.2H15" stroke-dasharray="2 2.4"/><path d="M12.5 11.5 18 6M13.8 6H18v4.2"/>',
+  'tool-outpaint':
+    '<rect x="3" y="3" width="18" height="18" rx="2.5" stroke-dasharray="2.2 2.4"/><rect x="7" y="7" width="10" height="10" rx="1.4"/><path d="M7.4 15.2 10.3 12l2 2 1.6-1.6 2.7 2.8"/>',
+  'tool-inpaint':
+    '<path d="M5 19.2 6.3 14.6 15.9 5a1.8 1.8 0 0 1 2.6 0l.5.5a1.8 1.8 0 0 1 0 2.6l-9.6 9.6z"/><path d="M14.3 6.6l3.1 3.1"/>',
 } as const
 
 export type IconName = keyof typeof ICONS

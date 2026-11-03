@@ -15,9 +15,13 @@ const props = withDefaults(
     height?: number
     /** 参考底图：与角色位置编辑器相同的当前预览图 */
     reference?: { url: string; opacity: number } | null
+    /** 只读查看一份布局（使用 after），不做前后对比 */
+    single?: boolean
+    title?: string
   }>(),
-  { width: 832, height: 1216, reference: null },
+  { width: 832, height: 1216, reference: null, single: false, title: '' },
 )
+const heading = computed(() => props.title || (props.single ? '角色位置布局' : '角色位置对比'))
 const showReference = ref(true)
 const referenceFailed = ref(false)
 const emit = defineEmits<{ close: [] }>()
@@ -28,32 +32,53 @@ const close = () => {
 }
 const COLORS = ['#ff6b9a', '#3b82f6', '#1f9d68', '#c97f00', '#8b5cf6', '#0ea5e9']
 const aspect = computed(() => `${props.width} / ${props.height}`)
+/** 单图模式下按视口高度限制宽度，保持画幅比例不被 max-height 压扁 */
+const canvasStyle = computed(() => ({
+  aspectRatio: aspect.value,
+  ...(props.single ? { width: `min(100%, calc(56vh * ${props.width} / ${props.height}))` } : {}),
+}))
 /** 同一个角色在前后两侧用同一个颜色和编号；位置变了的角色额外描边 */
-const panels = computed(() => {
+const moved = computed(() => {
+  if (props.single) {
+    return new Set<number>()
+  }
   const roles = Math.max(props.before.length, props.after.length)
-  const moved = new Set(
+  return new Set(
     Array.from({ length: roles }, (_, index) => index).filter(
       (index) => (props.before[index]?.position ?? '') !== (props.after[index]?.position ?? ''),
     ),
   )
-  const markers = (list: RolePosition[]) =>
-    list.flatMap((role, index) => {
-      const point = parsePosition(role.position)
-      return point
-        ? [
-            {
-              index,
-              label: role.label,
-              position: role.position,
-              moved: moved.has(index),
-              color: COLORS[index % COLORS.length],
-              style: { left: `${point.x * 100}%`, top: `${point.y * 100}%` },
-            },
-          ]
-        : []
-    })
-  const unplaced = (list: RolePosition[]) =>
-    list.filter((role) => !parsePosition(role.position)).map((role) => role.label)
+})
+function markers(list: RolePosition[]) {
+  return list.flatMap((role, index) => {
+    const point = parsePosition(role.position)
+    return point
+      ? [
+          {
+            index,
+            label: role.label,
+            position: role.position,
+            moved: moved.value.has(index),
+            color: COLORS[index % COLORS.length],
+            style: { left: `${point.x * 100}%`, top: `${point.y * 100}%` },
+          },
+        ]
+      : []
+  })
+}
+function unplaced(list: RolePosition[]) {
+  return list.filter((role) => !parsePosition(role.position)).map((role) => role.label)
+}
+const panels = computed(() => {
+  const after = {
+    key: 'after',
+    title: props.single ? '' : '修改后',
+    markers: markers(props.after),
+    unplaced: unplaced(props.after),
+  }
+  if (props.single) {
+    return [after]
+  }
   return [
     {
       key: 'before',
@@ -61,13 +86,22 @@ const panels = computed(() => {
       markers: markers(props.before),
       unplaced: unplaced(props.before),
     },
-    {
-      key: 'after',
-      title: '修改后',
-      markers: markers(props.after),
-      unplaced: unplaced(props.after),
-    },
+    after,
   ]
+})
+/** 只读布局时说明未设坐标的角色会如何摆放（与请求体 characterCaptions 一致） */
+const autoNote = computed(() => {
+  if (!props.single || !props.after.length) {
+    return ''
+  }
+  const placed = props.after.filter((role) => parsePosition(role.position)).length
+  if (!placed) {
+    return '未设置坐标：角色位置由模型根据提示词自行决定。'
+  }
+  if (placed < props.after.length) {
+    return '部分角色未设置坐标：生成时会按顺序从左到右均匀排开。'
+  }
+  return ''
 })
 function onKey(event: KeyboardEvent) {
   if (event.key === 'Escape') {
@@ -94,11 +128,13 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey, true))
           class="position-compare modal-panel"
           role="dialog"
           aria-modal="true"
-          aria-label="角色位置前后对比"
+          :class="{ single }"
+          :aria-label="single ? heading : '角色位置前后对比'"
         >
           <header>
             <div>
-              <b>角色位置对比</b>
+              <b>{{ heading }}</b>
+              <p v-if="single">{{ width }} × {{ height }} · 共 {{ after.length }} 个角色</p>
             </div>
             <label
               v-if="reference && !referenceFailed"
@@ -110,7 +146,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey, true))
             >
             <button
               class="icon-btn"
-              aria-label="关闭位置对比"
+              :aria-label="single ? '关闭角色位置布局' : '关闭位置对比'"
               @click="close"
             >
               <Icon
@@ -124,10 +160,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey, true))
               v-for="panel in panels"
               :key="panel.key"
             >
-              <figcaption>{{ panel.title }}</figcaption>
+              <figcaption v-if="panel.title">{{ panel.title }}</figcaption>
               <div
                 class="position-canvas"
-                :style="{ aspectRatio: aspect }"
+                :style="canvasStyle"
               >
                 <img
                   v-if="reference && showReference && !referenceFailed"
@@ -167,6 +203,12 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey, true))
               </ul>
             </figure>
           </div>
+          <p
+            v-if="autoNote"
+            class="position-note"
+          >
+            {{ autoNote }}
+          </p>
         </section>
       </div>
     </Transition>
@@ -338,6 +380,25 @@ figcaption {
   margin-left: auto;
   font: 11px var(--mono);
   color: var(--muted);
+}
+
+.position-compare.single {
+  width: min(440px, 100%);
+}
+
+.single .position-panels {
+  grid-template-columns: 1fr;
+}
+
+.single .position-canvas {
+  max-height: none;
+  margin: 0 auto;
+}
+
+.position-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 @media (width <= 700px) {

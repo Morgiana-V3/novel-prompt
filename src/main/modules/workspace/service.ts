@@ -15,7 +15,13 @@ import {
   stageImportedImage,
 } from '../images/library'
 import { readPngPrompt } from '../prompts/png-import'
-import { applyEditor, applyExecution, applyNotes, applyRecipe } from './editor-actions'
+import {
+  applyCollection,
+  applyEditor,
+  applyExecution,
+  applyNotes,
+  applyRecipe,
+} from './editor-actions'
 import { pageLocks } from './locks'
 import { applyProposalDecision } from './proposals'
 import { readPage, savePage } from './repository'
@@ -166,6 +172,8 @@ export function editPage(id: string, revision: number, action: PageAction): Page
     applyEditor(workspace, action)
   } else if (action.type === 'execution') {
     applyExecution(workspace, action)
+  } else if (action.type === 'collection') {
+    applyCollection(workspace, action)
   } else if (action.type === 'switch') {
     adoptVersion(workspace, action)
   } else if (action.type === 'proposal') {

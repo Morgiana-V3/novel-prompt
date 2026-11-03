@@ -24,6 +24,7 @@ import EvidenceNote from './components/EvidenceNote.vue'
 import type { IconName } from '../../shared/ui/icons'
 import { activeTask, cancelTask } from '../../shared/state/tasks'
 import { usePageShortcuts, runKeyLabel, runKeyShort } from '../../shared/lib/shortcuts'
+import SplitHandle from '../../shared/ui/SplitHandle.vue'
 
 const { embedded, navigate, isActive, editor } = usePagePresentation()
 
@@ -430,6 +431,15 @@ usePageShortcuts(() => isActive('preview'), {
       </Teleport>
     </section>
 
+    <SplitHandle
+      v-if="!embedded"
+      storage-key="prompt-views-left"
+      variable="--pane-left-width"
+      :min="320"
+      :max="1000"
+      :reserve="380"
+      label="左侧编辑区宽度"
+    />
     <section class="pane right scroll">
       <div
         v-if="embedded && error"

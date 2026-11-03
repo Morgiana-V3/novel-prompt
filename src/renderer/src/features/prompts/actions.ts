@@ -4,7 +4,7 @@ import type { TagCategory } from '@shared/tags/types'
 import { watch } from 'vue'
 import { toast, reportError } from '../../shared/lib/notifications'
 import { settingsState, saveSettings } from '../settings/state'
-import { applyGenerationParams, generationParams } from '../generation/public'
+import { applyGenerationParams, generationParams, loadPreferences } from '../generation/public'
 import type { FieldRef, Persisted, Snapshot } from './state'
 import { DEFAULT_PARAMS, MAX_HISTORY, promptState, STORE_KEY, toDrafts } from './state'
 
@@ -279,9 +279,17 @@ export function clearWorkspace(): void {
 
 /** Apply full image/favorite settings through one path, with a complete undo snapshot. */
 export async function importGenerationRequest(
-  request: NaiGenRequest,
+  original: NaiGenRequest,
   source: string,
+  options: { keepSeed?: boolean } = {},
 ): Promise<void> {
+  // 载入默认用随机种子；需要复现时由「保留种子」偏好或调用方明确指定
+  const keepSeed = options.keepSeed ?? loadPreferences.keepSeed
+  const originalSeed = original.params.seed
+  const request =
+    keepSeed || originalSeed === null
+      ? original
+      : { ...original, params: { ...original.params, seed: null } }
   const before = {
     content: current('导入前'),
     params: { ...promptState.params },
@@ -307,7 +315,8 @@ export async function importGenerationRequest(
     applyGenerationParams(before.generation)
     toast('已恢复导入前的提示词、模型和生成参数')
   }
-  toast(`${source}：提示词、模型和生成参数`, {
+  const seedNote = keepSeed || originalSeed === null ? '' : `（种子随机，原种子 ${originalSeed}）`
+  toast(`${source}：提示词、模型和生成参数${seedNote}`, {
     label: '撤销导入',
     run: () => {
       void undo().catch(reportError)

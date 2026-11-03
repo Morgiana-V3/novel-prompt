@@ -188,45 +188,6 @@
     var(--shadow);
 }
 
-.diff-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  padding: 0 16px 12px;
-  margin-top: -4px;
-}
-
-.diff-chip {
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 7px;
-  font-size: 11.5px;
-  font-family: var(--mono);
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.diff-chip.add {
-  background: var(--ok-soft);
-  color: var(--ok);
-}
-
-.diff-chip.del {
-  background: var(--bad-soft);
-  color: var(--bad);
-  text-decoration: line-through;
-  text-decoration-color: color-mix(in srgb, var(--bad) 45%, transparent);
-}
-
-.diff-chip.mod {
-  background: var(--alias-soft);
-  color: var(--alias);
-}
-
 .link-btn {
   color: inherit;
   font-weight: 600;

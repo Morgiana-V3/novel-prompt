@@ -38,6 +38,7 @@ import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 import { usePageShortcuts, runKeyLabel, runKeyShort } from '../../shared/lib/shortcuts'
 import { usePagePresentation } from '../../shared/lib/page-presentation'
 import { useSettingsPopover } from './use-settings-popover'
+import SplitHandle from '../../shared/ui/SplitHandle.vue'
 const { embedded, navigate, isActive } = usePagePresentation()
 const {
   open: parametersOpen,
@@ -339,8 +340,22 @@ usePageShortcuts(() => isActive('generate') || (embedded.value && isActive('comp
   cancel,
   canCancel: () => running.value && !cancelling.value,
 })
-function useSeed(img: NaiImage) {
+/** 当前参数是否已固定为这张图的种子（种子输入框可能是字符串） */
+const seedFixed = computed(
+  () =>
+    current.value?.seed !== undefined &&
+    gen.seed !== null &&
+    (gen.seed as unknown) !== '' &&
+    Number(gen.seed) === current.value.seed,
+)
+/** 固定 / 取消固定：再次点击恢复随机种子 */
+function toggleSeed(img: NaiImage) {
   if (img.seed === undefined) {
+    return
+  }
+  if (seedFixed.value) {
+    gen.seed = null
+    toast('已取消固定种子，恢复随机')
     return
   }
   gen.seed = img.seed
@@ -382,21 +397,6 @@ async function loadFromImage(img: NaiImage) {
     } catch (error) {
       reportError(error)
     }
-  }
-}
-async function previewImage(img: NaiImage) {
-  if (running.value) {
-    return
-  }
-  const importedPrompt = await readMeta(img)
-  if (!importedPrompt) {
-    return
-  }
-  try {
-    await importImagePrompt(importedPrompt, '已加载原图')
-    navigate('preview')
-  } catch (error) {
-    reportError(error)
   }
 }
 
@@ -659,6 +659,15 @@ function openImageWorkspace() {
       </section>
     </Teleport>
 
+    <SplitHandle
+      v-if="!embedded"
+      storage-key="prompt-views-left"
+      variable="--pane-left-width"
+      :min="320"
+      :max="1000"
+      :reserve="380"
+      label="左侧编辑区宽度"
+    />
     <section class="pane right scroll">
       <p
         v-if="
@@ -677,6 +686,7 @@ function openImageWorkspace() {
       >
         <Mascot
           mood="paint"
+          motion="loop"
           :size="240"
         />
         <p>
@@ -688,7 +698,7 @@ function openImageWorkspace() {
         class="empty"
       >
         <Mascot
-          :mood="hasToken ? 'idle' : 'key'"
+          :mood="hasToken ? 'ready' : 'key'"
           :size="230"
         />
         <p v-if="hasToken">
@@ -741,9 +751,9 @@ function openImageWorkspace() {
           :latest-batch-temporary="latestBatchTemporary"
           :pending-delete="pendingDelete"
           :deleting="deleting"
-          @seed="useSeed"
+          :seed-fixed="seedFixed"
+          @seed="toggleSeed"
           @load-prompt="loadFromImage"
-          @preview="previewImage"
           @copy-image="copyImage"
           @reveal="reveal"
           @save="saveAs"

@@ -12,11 +12,12 @@ const props = defineProps<{
   latestBatchTemporary: NaiImage[]
   pendingDelete: string | null
   deleting: string | null
+  /** 当前生图参数已固定为这张图的种子 */
+  seedFixed: boolean
 }>()
 const emit = defineEmits<{
   seed: [image: NaiImage]
   loadPrompt: [image: NaiImage]
-  preview: [image: NaiImage]
   copyImage: [image: NaiImage]
   reveal: [image: NaiImage]
   save: [image: NaiImage]
@@ -69,8 +70,11 @@ const deleteLabel = computed(() => {
       </button>
       <div class="actions ml-auto">
         <button
-          class="icon-btn sm"
-          title="固定这个种子"
+          class="icon-btn sm seed-toggle"
+          :class="{ on: seedFixed }"
+          :aria-pressed="seedFixed"
+          :aria-label="seedFixed ? '取消固定种子' : '固定这个种子'"
+          :title="seedFixed ? '已固定此种子，点击恢复随机' : '固定这个种子'"
           @click="emit('seed', current)"
         >
           <Icon
@@ -85,16 +89,6 @@ const deleteLabel = computed(() => {
         >
           <Icon
             name="paste"
-            :size="15"
-          />
-        </button>
-        <button
-          class="icon-btn sm"
-          title="加载这张图的配置并推测画面"
-          @click="emit('preview', current)"
-        >
-          <Icon
-            name="eye"
             :size="15"
           />
         </button>
@@ -224,6 +218,17 @@ const deleteLabel = computed(() => {
 </template>
 
 <style scoped>
+/* 固定种子是可切换状态：选中时显示粉色底，再点一次恢复随机 */
+.seed-toggle.on {
+  background: var(--pink-soft);
+  color: var(--pink-deep);
+  box-shadow: inset 0 0 0 1px var(--pink-line);
+}
+
+.seed-toggle.on:hover {
+  background: color-mix(in srgb, var(--pink) 16%, var(--bg));
+}
+
 /*
  * 查看区按自身宽度适配（容器查询），三行都不换行：
  * 窄时标题里的徽标先隐藏、尺寸省略；底部次要操作收成图标（保留 title），主操作和「确认删除」保留文字。

@@ -77,6 +77,21 @@ export function applyGenerationParams(params: GenOnly): void {
   }
 }
 
+const LOAD_KEEP_SEED_KEY = 'np-load-keep-seed'
+
+/**
+ * 从图片 / 收藏 / 图库载入配置时是否沿用原种子。
+ * 默认不沿用：载入多半是想用这组提示词再试几张，固定种子只会反复出同一张图。
+ */
+export const loadPreferences = reactive({
+  keepSeed: localStorage.getItem(LOAD_KEEP_SEED_KEY) === '1',
+})
+
+export function setLoadKeepSeed(keepSeed: boolean): void {
+  loadPreferences.keepSeed = keepSeed
+  localStorage.setItem(LOAD_KEEP_SEED_KEY, keepSeed ? '1' : '0')
+}
+
 export function setPreviewImage(image: NaiImage | null): void {
   imageState.currentImage = image
 }

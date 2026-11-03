@@ -116,6 +116,43 @@
   user-select: text;
 }
 
+.verdict-card {
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--text2);
+  font-size: 12.5px;
+  line-height: 1.7;
+  animation: fade-up var(--dur-slow) var(--ease-out) backwards;
+}
+
+.verdict-card > .icon {
+  flex: none;
+  margin-top: 3px;
+  color: var(--alias);
+}
+
+.verdict-card.converged {
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+  background: var(--ok-soft);
+}
+
+.verdict-card.converged > .icon {
+  color: var(--ok);
+}
+
+.verdict-card b {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.verdict-card p {
+  margin: 2px 0 0;
+}
+
 .warn-card {
   border-color: #f8e7c4;
 }

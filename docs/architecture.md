@@ -73,6 +73,7 @@ Electron 主进程是唯一应用宿主，窗口和 MCP 客户端共享服务、
 | `pages:external-cancel` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts` |
 | `pages:external-reply` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts` |
 | `pages:generate` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts` |
+| `pages:image-tool` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts` |
 | `pages:import` | `src/main/adapters/ipc/workspace.ts` |
 | `pages:list` | `src/main/adapters/ipc/workspace.ts` |
 | `pages:read` | `src/main/adapters/ipc/workspace.ts` |

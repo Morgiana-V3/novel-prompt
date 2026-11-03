@@ -1,10 +1,15 @@
 import type { IpcActions } from '../../../shared/contracts/api'
-import type { PageExecution, PageExternalReply } from '../../../shared/workspace/model'
+import type {
+  PageExecution,
+  PageExternalReply,
+  PageImageTool,
+} from '../../../shared/workspace/model'
 import { getSettings } from '../settings/service'
 import type { TaskContext } from '../tasks/context'
 import { agentConnections } from './agent-sessions'
 import { discussPage } from './discussion'
 import { renderPage } from './execution'
+import { runImageTool } from './image-tools'
 import {
   cancelExternalRequest,
   queueExternalRequest,
@@ -137,5 +142,24 @@ export function createWorkspaceActions(context: TaskContext) {
         },
       )
     },
+    'pages:image-tool': (id: string, revision: number, tool: PageImageTool) =>
+      tasks.run(
+        'page-generate',
+        async ({ id: taskId, signal, progress }) => {
+          const result = await runImageTool(
+            id,
+            revision,
+            tool,
+            (step) => {
+              progress(step)
+              send('nai:step', { id: taskId, kind: 'page-generate', step })
+            },
+            () => signal.aborted,
+          )
+          send('gallery:changed', null)
+          return result
+        },
+        { resource: 'generation', targetId: id, cancelMode: 'after-current' },
+      ),
   } satisfies Partial<IpcActions>
 }

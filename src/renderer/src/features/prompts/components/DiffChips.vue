@@ -1,4 +1,9 @@
 <script setup lang="ts">
+/**
+ * 全项目统一的提示词前后对比：以「创作实验 · 智能优化」的样式为准，
+ * 左右（窄时上下）两栏原文，逐词高亮删除/新增，保留词条所在位置与上下文。
+ * fullContext 时始终显示全文；否则把很长的未变化片段折叠，可展开查看。
+ */
 import { computed, ref, watch } from 'vue'
 import type { TagDiff } from '../tag-diff'
 import { foldContext, wordParts, type ContextPart } from '../prompt-diff'
@@ -6,63 +11,43 @@ import { foldContext, wordParts, type ContextPart } from '../prompt-diff'
 const props = withDefaults(
   defineProps<{
     fullContext?: boolean
-    diff: TagDiff
+    /** 兼容旧调用方；展示统一基于前后原文计算 */
+    diff?: TagDiff
     beforeLabel?: string
     afterLabel?: string
     beforeText?: string
     afterText?: string
   }>(),
-  { beforeLabel: '修改前', afterLabel: '修改后', beforeText: '', afterText: '' },
+  {
+    diff: undefined,
+    beforeLabel: '修改前',
+    afterLabel: '修改后',
+    beforeText: '',
+    afterText: '',
+  },
 )
 const expanded = ref(false)
-const fullTags = computed(
-  () =>
-    !props.diff.sentences?.length &&
-    !!props.beforeText &&
-    !!props.afterText &&
-    props.beforeText !== props.afterText,
-)
-const documents = computed<{ before: string; after: string; parts: ContextPart[] }[]>(() =>
-  props.fullContext
-    ? [
-        {
-          before: props.beforeText,
-          after: props.afterText,
-          parts: wordParts(props.beforeText, props.afterText),
-        },
-      ]
-    : (fullTags.value && expanded.value
-        ? [
-            {
-              before: props.beforeText,
-              after: props.afterText,
-              parts: wordParts(props.beforeText, props.afterText),
-            },
-          ]
-        : (props.diff.sentences ?? [])
-      ).map((sentence) => ({
-        ...sentence,
-        parts: foldContext(sentence.parts),
-      })),
-)
-const hasContext = computed(
-  () =>
-    fullTags.value ||
-    documents.value.some((document) => document.parts.some((part) => part.hiddenText)),
-)
-const contextLabel = computed(() => {
-  if (expanded.value) {
-    return '仅看变化'
+/** 没有传原文的旧调用方，退回到句子级差异里保存的前后文本 */
+const texts = computed(() => {
+  if (props.beforeText || props.afterText) {
+    return [{ before: props.beforeText, after: props.afterText }]
   }
-  return fullTags.value ? '查看完整提示词' : '展开未变化的上下文'
+  return (props.diff?.sentences ?? []).map(({ before, after }) => ({ before, after }))
 })
+const documents = computed<{ before: string; after: string; parts: ContextPart[] }[]>(() =>
+  texts.value
+    .filter(({ before, after }) => before !== after)
+    .map(({ before, after }) => {
+      const parts = wordParts(before, after)
+      return { before, after, parts: props.fullContext ? parts : foldContext(parts) }
+    }),
+)
+const hasContext = computed(() =>
+  documents.value.some((document) => document.parts.some((part) => part.hiddenText)),
+)
+const contextLabel = computed(() => (expanded.value ? '收起未变化的内容' : '展开未变化的上下文'))
 watch(
-  () =>
-    JSON.stringify([
-      props.beforeText,
-      props.afterText,
-      props.diff.sentences?.map(({ before, after }) => [before, after]),
-    ]),
+  () => JSON.stringify(texts.value),
   () => {
     expanded.value = false
   },
@@ -71,35 +56,8 @@ watch(
 
 <template>
   <div class="prompt-diff">
-    <div
-      v-if="
-        !fullContext &&
-        !(fullTags && expanded) &&
-        (diff.added.length || diff.removed.length || diff.changed.length)
-      "
-      class="diff-row"
-    >
-      <span
-        v-for="tag in diff.removed"
-        :key="'removed-' + tag.key"
-        class="diff-chip del"
-        >− {{ tag.text }}</span
-      >
-      <span
-        v-for="change in diff.changed"
-        :key="'changed-' + change.to.key"
-        class="diff-chip mod"
-        >{{ change.from.text }} → {{ change.to.text }}</span
-      >
-      <span
-        v-for="tag in diff.added"
-        :key="'added-' + tag.key"
-        class="diff-chip add"
-        >＋ {{ tag.text }}</span
-      >
-    </div>
     <button
-      v-if="!fullContext && hasContext"
+      v-if="hasContext"
       type="button"
       class="diff-context"
       :aria-expanded="expanded"
@@ -156,24 +114,6 @@ watch(
   min-width: 0;
   container-type: inline-size;
   user-select: text;
-}
-
-.diff-row {
-  margin: 0;
-  padding: 12px 16px;
-}
-
-.diff-chip {
-  max-width: 100%;
-  height: auto;
-  min-height: 22px;
-  white-space: pre-wrap;
-  overflow: visible;
-  overflow-wrap: anywhere;
-}
-
-.diff-chip.del {
-  text-decoration: none;
 }
 
 .diff-context {

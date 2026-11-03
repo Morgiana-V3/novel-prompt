@@ -4,7 +4,12 @@ import { promptState } from './state'
 import { settingsState } from '../settings/state'
 import { usePagePresentation } from '../../shared/lib/page-presentation'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { AiCharacter, AiOptimizeResult, ChangeScope } from '@shared/prompts/types'
+import type {
+  AiCharacter,
+  AiOptimizeResult,
+  AiPreviousRound,
+  ChangeScope,
+} from '@shared/prompts/types'
 import { copy, toast } from '../../shared/lib/notifications'
 import { applyWorkspace, revertTo, sectionText, workKey, current } from './actions'
 import { cleanErr } from '../../shared/lib/format'
@@ -26,6 +31,7 @@ import { usePartialAdoption } from './use-partial-adoption'
 import { imageState } from '../generation/public'
 import { activeTask, cancelTask } from '../../shared/state/tasks'
 import { usePageShortcuts, runKeyLabel, runKeyShort } from '../../shared/lib/shortcuts'
+import SplitHandle from '../../shared/ui/SplitHandle.vue'
 
 const { embedded, navigate, isActive } = usePagePresentation()
 
@@ -67,6 +73,28 @@ const adopted = ref(false)
 const partial = usePartialAdoption()
 const isAdopted = computed(() => (embedded.value ? partial.all.value : adopted.value))
 const sentKey = ref('')
+/** 上一轮发出的修改要求；与上一轮输出一起交给 AI 判断是否已收敛 */
+const sentInstruction = ref('')
+/** 已达标：AI 判定且程序确认无需修改 */
+const converged = computed(() => result.value?.verdict === 'converged')
+/** 「按描述重新生成」不带当前提示词，也不带上一轮 */
+const scratchless = () => !(fresh.value && hasPrompt.value)
+/** 上一轮的输出与修改依据：只有优化模式且有结果时才带上 */
+function previousRound(): AiPreviousRound | undefined {
+  if (!result.value || !sent.value || mode.value !== 'optimize') {
+    return undefined
+  }
+  return JSON.parse(
+    JSON.stringify({
+      positive: result.value.positive,
+      negative: result.value.negative,
+      characters: result.value.characters,
+      instruction: sentInstruction.value,
+      changes: result.value.changes.map(({ scope, text, basis }) => ({ scope, text, basis })),
+      verdict: result.value.verdict,
+    }),
+  )
+}
 const presetKey = () =>
   JSON.stringify([
     settingsState.settings?.naiVersion,
@@ -245,6 +273,7 @@ async function run() {
   running.value = true
   error.value = ''
   steps.value = []
+  const previous = scratchless() ? previousRound() : undefined
   result.value = null
   adopted.value = false
   // 「按描述重新生成」时不带当前提示词，避免 AI 把旧内容当作要保留的部分
@@ -262,6 +291,7 @@ async function run() {
   const negative = scratch ? '' : promptState.negative
   sent.value = { base, negative, characters }
   sentKey.value = workKey()
+  sentInstruction.value = request.value
   sentPresetKey.value = presetKey()
   try {
     result.value = await window.api.optimize({
@@ -270,6 +300,7 @@ async function run() {
       negative,
       characters,
       instruction: request.value,
+      ...(previous ? { previous } : {}),
       version: settingsState.settings.naiVersion,
       promptPresets: {
         qualityTags: promptState.params.qualityTags,
@@ -347,6 +378,24 @@ function undoAdopt() {
   nextTick(resizeAll).catch(reportError)
 }
 
+const cheerTitle = computed(() => {
+  if (isAdopted.value) {
+    return '已采用到当前提示词'
+  }
+  if (converged.value && !review.value.length) {
+    return '已达标，无需修改'
+  }
+  if (result.value?.invalid.length) {
+    return '大部分搞定了，还有几个 tag 要你看看'
+  }
+  return '优化好啦！'
+})
+const cheerMood = computed(() => {
+  if (result.value?.invalid.length) {
+    return 'confused' as const
+  }
+  return converged.value ? ('thumbs' as const) : ('wink' as const)
+})
 const fullText = (optimization: AiOptimizeResult) =>
   sectionText({
     base: optimization.positive,
@@ -515,6 +564,15 @@ usePageShortcuts(() => isActive('ai'), {
       </Teleport>
     </section>
 
+    <SplitHandle
+      v-if="!embedded"
+      storage-key="prompt-views-left"
+      variable="--pane-left-width"
+      :min="320"
+      :max="1000"
+      :reserve="380"
+      label="左侧编辑区宽度"
+    />
     <section class="pane right scroll">
       <div
         v-if="embedded && error"
@@ -532,6 +590,7 @@ usePageShortcuts(() => isActive('ai'), {
       >
         <Mascot
           mood="reading"
+          motion="loop"
           :size="240"
         />
         <p>
@@ -586,17 +645,11 @@ usePageShortcuts(() => isActive('ai'), {
         >
           <Mascot
             v-if="!embedded"
-            :mood="result.invalid.length ? 'confused' : 'wink'"
+            :mood="cheerMood"
             :size="76"
           />
           <div>
-            <b>{{
-              isAdopted
-                ? '已采用到当前提示词'
-                : result.invalid.length
-                  ? '大部分搞定了，还有几个 tag 要你看看'
-                  : '优化好啦！'
-            }}</b>
+            <b>{{ cheerTitle }}</b>
             <div
               v-if="!embedded"
               class="muted small"
@@ -609,7 +662,10 @@ usePageShortcuts(() => isActive('ai'), {
               <template v-if="totalChanges"> · 共 {{ totalChanges }} 处字段改动</template>
             </div>
           </div>
-          <div class="actions ml-auto">
+          <div
+            v-if="!(converged && !review.length)"
+            class="actions ml-auto"
+          >
             <button
               v-if="isAdopted"
               class="btn small"
@@ -633,6 +689,34 @@ usePageShortcuts(() => isActive('ai'), {
           </div>
         </div>
 
+        <div
+          v-if="converged || result.stabilized?.length"
+          class="verdict-card"
+          :class="{ converged }"
+          role="status"
+        >
+          <Icon
+            :name="converged ? 'check' : 'warn'"
+            :size="15"
+          />
+          <div>
+            <b>{{ converged ? '已达标，无需继续优化' : '部分改写未应用' }}</b>
+            <p v-if="result.verdictReason">{{ result.verdictReason }}</p>
+            <p
+              v-for="note in result.stabilized ?? []"
+              :key="note"
+              class="muted"
+            >
+              {{ note }}
+            </p>
+            <p
+              v-if="converged"
+              class="muted"
+            >
+              提示词不变时再次优化会得到同样的结论；要继续调整，请写下新的修改要求。
+            </p>
+          </div>
+        </div>
         <AiReviewOverview
           v-if="embedded"
           :notes="result.notes"
@@ -674,7 +758,7 @@ usePageShortcuts(() => isActive('ai'), {
           </template>
         </component>
         <p
-          v-if="!review.length"
+          v-if="!review.length && !converged"
           class="muted"
         >
           提示词没有变化。
@@ -730,7 +814,7 @@ usePageShortcuts(() => isActive('ai'), {
           </div>
 
           <div
-            v-if="!embedded"
+            v-if="!embedded && !(converged && !result.notes && !result.changes.length)"
             class="result-card"
             style="--d: 240ms"
           >

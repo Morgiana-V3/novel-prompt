@@ -54,6 +54,7 @@ lowres, worst quality, bad quality, ...
 optimize_prompt / preview_prompt 调用内置 DeepSeek，消耗用户额度；用了也要复核结果：
 - dropped：optimize 模式下被删掉且没有说明的原有内容；semantic 模式没有原提示词可比，为 null，需要你对照描述逐项核对。
 - fidelity：必须逐字保留却被改写的画面文字（Text: 块），不为空时把原文恢复后再交付。
+- verdict：converged 表示已达标、提示词原样返回，不要为了“有产出”再次调用优化；stabilized 列出程序为保持收敛而撤回的细微改写。
 - invalid 为空只代表 tag 都存在，不代表语义要求都保住了。
 
 ## 生图（用户明确要求时）

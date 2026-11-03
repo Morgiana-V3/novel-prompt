@@ -4,7 +4,12 @@ import {
   parsePosition,
   withQualityTags,
 } from '../../../shared/generation/presets'
-import type { NaiGenRequest, NaiInpaintRequest, NaiVersion } from '../../../shared/generation/types'
+import type {
+  NaiGenRequest,
+  NaiImg2ImgRequest,
+  NaiInpaintRequest,
+  NaiVersion,
+} from '../../../shared/generation/types'
 import type { AiCharacter } from '../../../shared/prompts/types'
 
 export const MODEL_ID: Record<NaiVersion, string> = {
@@ -106,4 +111,36 @@ export function buildInpaintBody(
     parameters.prefer_brownian = true
   }
   return body
+}
+
+/**
+ * 图生图（官方客户端的 Enhance / Variations 都走这一动作）：
+ * 原图作为起点，strength 控制改动幅度，noise 为额外噪声。模型与文生图相同，不用 inpainting 模型。
+ */
+export function buildImg2ImgBody(
+  req: NaiImg2ImgRequest,
+  seed: number,
+  imageBase64: string,
+): Record<string, unknown> {
+  const body = buildBody(req, seed)
+  const parameters = body.parameters as Record<string, unknown>
+  body.action = 'img2img'
+  Object.assign(parameters, {
+    image: imageBase64,
+    strength: req.img2img.strength,
+    noise: req.img2img.noise,
+    extra_noise_seed: (seed + 4_294_967_295) >>> 0,
+  })
+  if (req.params.sampler === 'k_euler_ancestral') {
+    parameters.deliberate_euler_ancestral_bug = false
+    parameters.prefer_brownian = true
+  }
+  return body
+}
+
+/** 放大接口（官方客户端 2026-10 起固定 2 倍，使用共享的 V5 Curated 放大模型）。 */
+export const UPSCALE_MODEL = 'nai-diffusion-5-curated'
+
+export function buildUpscaleBody(imageBase64: string): Record<string, unknown> {
+  return { image: imageBase64, model: UPSCALE_MODEL, declared_blur_sigma: 0 }
 }

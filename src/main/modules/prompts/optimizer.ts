@@ -21,6 +21,7 @@ import { chat } from './chat'
 import { gatherEvidence, type EvSection } from './evidence'
 import { TAG_TOOL_DEFS as TOOLS, runTool, type ToolLog } from './tag-tools'
 import { presetContext } from './preset-context'
+import { adoptedPreviousRound, parseVerdict, stabilizeResult } from './convergence'
 
 const MAX_TOOL_ROUNDS = 10
 const MAX_FIX_ROUNDS = 2
@@ -45,7 +46,8 @@ function systemPrompt(version: NaiVersion, skillText: string): string {
   - 互动前缀 \`source#动作\` / \`target#动作\` / \`mutual#动作\` 只能写在角色提示词里。
 - 角色提示词（characters）：${pos}。它是带位置的区域提示词，内容会集中在 position 附近。
 - 完成后只输出一个 JSON 对象（不要多余文字）：
-{"positive":"主提示词","negative":"完整的负面提示词，可空","characters":[{"prompt":"角色提示词","position":"位置","negative":"该角色的负面提示词，可空"}],"assessment":"整体评估，一两句话","changes":[{"scope":"positive","text":"twin tails → twintails","basis":"rule","evidence":"validate_tags：别名"}]}
+{"verdict":"changes 或 converged","verdictReason":"一句话说明为什么需要修改或为什么已达标","positive":"主提示词","negative":"完整的负面提示词，可空","characters":[{"prompt":"角色提示词","position":"位置","negative":"该角色的负面提示词，可空"}],"assessment":"整体评估，一两句话","changes":[{"scope":"positive","text":"twin tails → twintails","basis":"rule","evidence":"validate_tags：别名"}]}
+- **稳定性原则（收敛）**：优化的目标是一次修到位，而不是每轮都找新问题。只在有明确问题时修改：硬规则错误（rule）、工具数据证实的问题（data）、违反启用 Skill 的明确要求（doc），或用户本次提出的要求。以下都**不算问题**，不要改：同义替换、措辞润色、调换词条顺序、调整空格/逗号/大小写、把已正确的写法换成另一种等价写法、增删不影响画面的修饰词。没有上述明确问题时，verdict 填 converged，positive / negative / characters 原样返回，changes 为空（审美建议仍可放 scope=optional）。有修改时 verdict 填 changes，每条修改都要能说出具体问题。
 - scope 取 positive / character / negative / optional。basis 取值：rule = 可被程序校验的硬规则（tag 不存在、别名、语法、版本、位置写法）；data = 统计数据或工具结果；doc = 依据启用的 Skill 或官方文档（evidence 写出 Skill 名称）；taste = 你自己的审美判断。**basis 为 taste 的内容只能放在 scope=optional，不能直接改进提示词**；按 Skill 要求做的修改属于 doc，不是 taste。
 - 删除或改写了用户原有的内容时，changes 的 text 里要写出原文；Text: 块里的文字必须逐字符保留。
 - scope=character 的每条说明必须用 characterIndex（从 0 开始）、characterField（prompt / negative / position）定位到一个角色字段。characterSide=after 表示输出角色列表；删除角色用 characterSide=before 和输入列表的序号。涉及多个角色或字段时分别写明，不把多项解释混在一起。无法归属具体字段的整体建议用 optional。
@@ -149,9 +151,26 @@ function userPrompt(
     rules.length ? '本地解析检查：\n' + rules.join('\n') : '',
     dataIssues.length ? '数据检查：\n' + dataIssues.join('\n') : '',
     evidenceBlock,
+    previousRoundBlock(req),
   ]
     .filter(Boolean)
     .join('\n\n')
+}
+
+/** 上一轮的修改与当前状态：已全部采纳时要求只修正新出现的硬问题 */
+function previousRoundBlock(req: AiOptimizeRequest): string {
+  const previous = req.previous
+  if (!previous || req.mode !== 'optimize') {
+    return ''
+  }
+  const changes = (Array.isArray(previous.changes) ? previous.changes : [])
+    .filter((change) => change.scope !== 'optional')
+    .map((change) => `- [${change.basis}] ${change.text}`)
+    .join('\n')
+  const header = adoptedPreviousRound(req)
+    ? '上一轮优化：当前提示词就是你上一轮的输出，用户已全部采纳，且没有提出新的要求。上一轮已经按 Skill 和规则检查过一遍；除非发现上一轮遗漏的 rule / data 级硬错误，否则必须判定 converged 并原样返回，不要再调整措辞、顺序或换用等价写法。'
+    : '上一轮优化：用户只采纳了部分修改或之后另行编辑过。未采纳的修改代表用户的选择，不要重复提出同样的修改；只处理仍然存在的明确问题和本次的新要求。'
+  return [header, changes ? `上一轮做过的修改：\n${changes}` : '上一轮没有修改。'].join('\n')
 }
 
 function collectInvalid(result: AiOptimizeResult, version: NaiVersion): string[] {
@@ -378,6 +397,8 @@ function normalizeResult(raw: Record<string, unknown>, evidence: EvidenceInfo): 
     negative: String(raw.negative ?? ''),
     characters: normalizedCharacters.filter((character) => character.prompt),
     notes: String(raw.assessment ?? raw.notes ?? '').trim(),
+    verdict: parseVerdict(raw.verdict),
+    verdictReason: String(raw.verdictReason ?? '').trim(),
     changes,
     invalid: [],
     dropped: [],
@@ -511,6 +532,14 @@ export async function optimizePrompt(
   if (!result) {
     throw new Error('AI 未返回有效结果')
   }
+  // 收敛校验：AI 判定已达标或只做了无实质改写时保持原提示词，警告按最终内容重算
+  const stable = stabilizeResult(req, result)
+  if ((stable.stabilized?.length ?? 0) !== (result.stabilized?.length ?? 0)) {
+    stable.invalid = collectInvalid(stable, req.version)
+    stable.dropped = droppedItems(req, stable)
+    stable.fidelity = fidelityIssues(req, stable)
+  }
+  result = stable
   result.evidence = evidence()
   onStep('完成')
   return result
