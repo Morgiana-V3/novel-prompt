@@ -18,15 +18,8 @@ function lastScope(list: Scope[], kind: Scope['kind']): number {
   return -1
 }
 
-/** Remove occurrences, then clean only the affected separators and newly empty weight scopes. */
-export function removePromptTokens(input: string, targets: Range[]): string {
+function scanPrompt(input: string) {
   const tokens = parsePrompt(input)
-  const removed = new Set(
-    tokens.filter((t) => targets.some((r) => r.start === t.start && r.end === t.end)),
-  )
-  if (!removed.size) {
-    return input
-  }
   const byStart = new Map(tokens.map((t) => [t.start, t]))
   const stack: Scope[] = []
   const terminated: Scope[] = []
@@ -84,6 +77,51 @@ export function removePromptTokens(input: string, targets: Range[]): string {
     }
     atoms.push({ start: i, end: i + 1, kind: ch === '|' ? 'section' : 'gap' })
     i++
+  }
+  return { tokens, scopes, atoms }
+}
+
+/** Include weight syntax only when every token sharing that syntax is selected. */
+export function promptSelectionRanges(input: string, targets: Range[]): Range[] {
+  const { tokens, scopes, atoms } = scanPrompt(input)
+  const selected = new Set(
+    tokens.filter((t) => targets.some((r) => r.start === t.start && r.end === t.end)),
+  )
+  const ownedScopes = new Set(
+    scopes.filter((scope) => {
+      const contained = tokens.filter((t) => t.start >= scope.contentStart && t.end <= scope.end)
+      return contained.length > 0 && contained.every((t) => selected.has(t))
+    }),
+  )
+  const ranges: Range[] = [...selected].map(({ start, end }) => ({ start, end }))
+  for (const atom of atoms) {
+    if (atom.scopes?.length && atom.scopes.every((scope) => ownedScopes.has(scope))) {
+      ranges.push({ start: atom.start, end: atom.end })
+    }
+  }
+  const merged: Range[] = []
+  for (const range of ranges.sort((a, b) => a.start - b.start)) {
+    const previous = merged.at(-1)
+    if (
+      previous &&
+      (range.start <= previous.end || /^\s*$/.test(input.slice(previous.end, range.start)))
+    ) {
+      previous.end = Math.max(previous.end, range.end)
+    } else {
+      merged.push({ ...range })
+    }
+  }
+  return merged
+}
+
+/** Remove occurrences, then clean only the affected separators and newly empty weight scopes. */
+export function removePromptTokens(input: string, targets: Range[]): string {
+  const { tokens, scopes, atoms } = scanPrompt(input)
+  const removed = new Set(
+    tokens.filter((t) => targets.some((r) => r.start === t.start && r.end === t.end)),
+  )
+  if (!removed.size) {
+    return input
   }
   // Do not clean pre-existing empty syntax unrelated to this removal.
   const empty = new Set(

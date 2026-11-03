@@ -91,6 +91,7 @@ const handlers = {
     tokens: [],
     stats: { total: 0, valid: 0, alias: 0, unknown: 0, natural: 0, text: 0 },
   }),
+  'collections:list': () => [],
   'reverse:status': () => ({
     phase: 'idle',
     ready: true,
@@ -101,7 +102,10 @@ const handlers = {
       bytes: 1,
     })),
   }),
-  'reverse:analyze': () => result,
+  'reverse:analyze': () =>
+    new Promise((resolve) => {
+      finishRecognition = () => resolve(result)
+    }),
   'nai:generate': () => ({
     images: [{ name: `demo-${++generated}.png`, url: imageUrl, createdAt: Date.now(), seed: 1 }],
     anlasDelta: 0,
@@ -111,6 +115,7 @@ const handlers = {
 for (const [channel, fn] of Object.entries(handlers)) {
   ipcMain.handle(channel, fn)
 }
+let finishRecognition
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 app.whenReady().then(async () => {
   const win = new BrowserWindow({
@@ -148,7 +153,22 @@ app.whenReady().then(async () => {
       `document.querySelector('.reverse-run') && !document.querySelector('.reverse-run').disabled`,
     )
     await js(`document.querySelector('.reverse-run').click()`)
+    await wait(
+      `!!document.querySelector('.reverse-recognition-empty[aria-busy="true"] .mascot.m-busy img')`,
+    )
+    await delay(200)
+    writeFileSync(
+      join(profile, 'recognition-loading.png'),
+      (await win.webContents.capturePage()).toPNG(),
+    )
+    assert.ok(
+      await js(
+        `getComputedStyle(document.querySelector('.reverse-recognition-empty .mascot img')).animationName.includes('scribble')`,
+      ),
+    )
+    finishRecognition()
     await wait(`document.querySelectorAll('.recommendation').length===5`)
+    assert.equal(await js(`!!document.querySelector('.reverse-recognition-empty')`), false)
     assert.equal(await js(`document.querySelector('.recognition-details').open`), false)
     await js(`document.querySelector('.recommendation').click()`)
     await wait(`document.querySelector('.recommendation').getAttribute('aria-pressed')==='true'`)

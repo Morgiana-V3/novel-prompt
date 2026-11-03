@@ -11,6 +11,7 @@ const electron = require('electron')
 const mode = process.argv[2] ?? 'quick'
 const output = temporaryProfile('novel-prompt-check-')
 const cases = {
+  'images:clipboard': ['electron', 'tests/integration/image-clipboard-smoke.cjs', false],
   collections: ['electron', 'tests/integration/collections-smoke.cjs', false],
   statistics: ['electron', 'tests/integration/statistics-smoke.cjs', false],
   'chat:presets': ['electron', 'tests/integration/chat-presets-smoke.cjs', false],

@@ -31,8 +31,8 @@ module.exports = async function checkPresetSettings({
   await select(quality, '质量词 · None')
   await select('#creation-editor [aria-label="内置负面预设"]', 'UC · 无')
   const requestBefore = getOptimize()
-  await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
-  await waitUI(`!document.querySelector('.ai .run-bar .btn.accent').disabled`)
+  await js(`document.querySelector('.creation-ai-actions .run-bar .btn.accent').click()`)
+  await waitUI(`!document.querySelector('.creation-ai-actions .run-bar .btn.accent').disabled`)
   assert.notEqual(getOptimize(), requestBefore)
   assert.deepEqual(getOptimize().promptPresets, {
     qualityTags: false,
@@ -47,9 +47,9 @@ module.exports = async function checkPresetSettings({
   await select(quality, '质量词 · Light')
   await select('#creation-editor [aria-label="内置负面预设"]', 'UC · Human Focus')
   await waitUI(`!!document.querySelector('.preset-change-note')`)
-  await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+  await js(`document.querySelector('.creation-ai-actions .run-bar .btn.accent').click()`)
   await waitUI(
-    `!document.querySelector('.ai .run-bar .btn.accent').disabled && !document.querySelector('.preset-change-note')`,
+    `!document.querySelector('.creation-ai-actions .run-bar .btn.accent').disabled && !document.querySelector('.preset-change-note')`,
   )
   assert.deepEqual(getOptimize().promptPresets, {
     qualityTags: true,
@@ -57,9 +57,9 @@ module.exports = async function checkPresetSettings({
     ucPreset: 'human',
   })
   await js(
-    `document.querySelector('#creation-tab-preview').click(); document.querySelector('.preview .run-bar .btn.accent').click()`,
+    `document.querySelector('#creation-tab-preview').click(); document.querySelector('.creation-preview-actions .run-bar .btn.accent').click()`,
   )
-  await waitUI(`!document.querySelector('.preview .run-bar .btn.accent').disabled`)
+  await waitUI(`!document.querySelector('.creation-preview-actions .run-bar .btn.accent').disabled`)
   assert.equal(getPreview().params.qualityTags, true)
   assert.equal(getPreview().params.qualityMode, 'light')
   assert.equal(getPreview().params.ucPreset, 'human')

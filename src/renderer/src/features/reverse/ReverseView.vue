@@ -11,6 +11,7 @@ import { imageState } from '../generation/public'
 import { settingsState } from '../settings/state'
 import { reverseTrialParams } from './trial-defaults'
 import Icon from '../../shared/ui/Icon.vue'
+import Mascot from '../../shared/ui/Mascot.vue'
 import ReverseModels from './ReverseModels.vue'
 import ReverseCharacters from './ReverseCharacters.vue'
 import ReverseReference from './ReverseReference.vue'
@@ -726,17 +727,26 @@ async function source(url: string) {
         </p>
 
         <div
-          v-if="!result"
+          v-if="!result || running"
           class="reverse-recognition-empty"
+          role="status"
+          :aria-busy="running"
         >
-          <Icon
-            name="search"
-            :size="30"
+          <Mascot
+            :mood="running ? 'busy' : 'search'"
+            :size="running ? 150 : 136"
           />
           <strong>{{ running ? '正在识别参考图…' : '等待识别' }}</strong>
+          <div
+            v-if="running"
+            class="recognition-dots"
+            aria-hidden="true"
+          >
+            <i></i><i></i><i></i>
+          </div>
         </div>
         <div
-          v-show="!!result"
+          v-show="!!result && !running"
           class="seg reverse-adjustment-tabs"
         >
           <button
@@ -760,7 +770,7 @@ async function source(url: string) {
           </button>
         </div>
         <section
-          v-show="!!result && pane === 'recognition'"
+          v-show="!!result && !running && pane === 'recognition'"
           class="reverse-output"
           :data-ready="!!result"
           aria-label="反推结果"
@@ -875,7 +885,7 @@ async function source(url: string) {
           </footer>
         </section>
         <ReverseCharacters
-          v-show="!!result && pane === 'characters'"
+          v-show="!!result && !running && pane === 'characters'"
           v-model:threshold="activeCharacterThreshold"
           v-model:base="characterText"
           v-model:characters="characters"
@@ -1169,6 +1179,41 @@ progress {
 .reverse-recognition-empty strong {
   color: var(--text);
   font-size: 15px;
+}
+
+.recognition-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.recognition-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--pink);
+  animation: recognition-pulse 1.2s ease-in-out infinite;
+}
+
+.recognition-dots i:nth-child(2) {
+  animation-delay: 150ms;
+}
+
+.recognition-dots i:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+@keyframes recognition-pulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+
+  40% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
 }
 
 .reverse-recognition-empty p {

@@ -21,14 +21,16 @@ import {
 import { type FieldRef } from './state'
 import { parsePromptText } from '@shared/prompts/import'
 import { findTextBlock } from '@shared/generation/presets'
-import { removePromptTokens } from '@shared/prompts/remove-tokens'
+import { promptSelectionRanges, removePromptTokens } from '@shared/prompts/remove-tokens'
 import { deleteSelectedToken } from './prompt-keyboard'
+import { revealTextareaRange } from '../../shared/lib/reveal-textarea-range'
+import { highlightTextareaRanges } from '../../shared/lib/textarea-highlights'
 import TagCard from '../tags/components/TagCard.vue'
 import Icon from '../../shared/ui/Icon.vue'
 import Mascot from '../../shared/ui/Mascot.vue'
 import WorkspaceBar from './components/WorkspaceBar.vue'
 import { usePagePresentation } from '../../shared/lib/page-presentation'
-const { embedded, navigate, editor } = usePagePresentation()
+const { embedded, navigate, editor, isActive } = usePagePresentation()
 
 const analyzed = ref<{ key: string; result: AnalysisResult } | null>(null)
 const textarea = ref<HTMLTextAreaElement>()
@@ -99,6 +101,31 @@ const analysisKey = computed(() =>
 const result = computed(() =>
   analyzed.value?.key === analysisKey.value ? analyzed.value.result : null,
 )
+const selectedTokens = ref<AnalyzedToken[]>([])
+const ctrlSelection = ref(false)
+let clearHighlights: (() => void) | undefined
+function clearSelection() {
+  ctrlSelection.value = false
+  selectedTokens.value = []
+}
+watch(
+  () => [selectedTokens.value, ctrlSelection.value, isActive('compare'), embedded.value],
+  () => {
+    clearHighlights?.()
+    clearHighlights = undefined
+    const input = activeTextarea()
+    if (input && ctrlSelection.value && selectedTokens.value.length && isActive('compare')) {
+      clearHighlights = highlightTextareaRanges(
+        input,
+        promptSelectionRanges(input.value, selectedTokens.value),
+        clearSelection,
+      )
+    }
+  },
+  { flush: 'post' },
+)
+onBeforeUnmount(() => clearHighlights?.())
+watch(analysisKey, clearSelection, { flush: 'sync' })
 const isNeg = computed(
   () => target.value.kind === 'negative' || (target.value.kind === 'char' && !!target.value.neg),
 )
@@ -211,18 +238,66 @@ const allGood = computed(
     !result.value.stats.alias,
 )
 
-function locate(analyzedToken: AnalyzedToken) {
+function locate(analyzedToken: AnalyzedToken, event?: MouseEvent | KeyboardEvent) {
   if (!currentTokens([analyzedToken])) {
     return
   }
+  if (event?.ctrlKey || event?.metaKey) {
+    event.preventDefault()
+    ctrlSelection.value = true
+    selectedTokens.value = selectedTokens.value.includes(analyzedToken)
+      ? selectedTokens.value.filter((token) => token !== analyzedToken)
+      : [...selectedTokens.value, analyzedToken]
+    ;(event.target as HTMLElement)
+      ?.closest<HTMLElement>('.token-selectable')
+      ?.focus({ preventScroll: true })
+    const input = activeTextarea()
+    input?.setSelectionRange(input.selectionEnd, input.selectionEnd)
+    return
+  }
+  clearHighlights?.()
+  clearHighlights = undefined
+  ctrlSelection.value = false
+  selectedTokens.value = []
   const el = activeTextarea()
   if (!el) {
     return
   }
-  // 先失焦再设选区后聚焦，Chromium 才会把滚动条滚到选区位置
-  el.blur()
-  el.setSelectionRange(analyzedToken.start, analyzedToken.end)
-  el.focus()
+  el.focus({ preventScroll: true })
+  const ranges = promptSelectionRanges(el.value, [analyzedToken])
+  const range = ranges.length === 1 ? ranges[0] : analyzedToken
+  el.setSelectionRange(range.start, range.end)
+  revealTextareaRange(el, range.start, range.end)
+}
+
+function removeSelected() {
+  if (!currentTokens(selectedTokens.value)) {
+    clearSelection()
+    return
+  }
+  setPrompt(removePromptTokens(text.value, selectedTokens.value))
+  clearSelection()
+}
+function selectionKey(event: KeyboardEvent) {
+  if (
+    (event.target as HTMLElement).closest('input, textarea, [contenteditable="true"]') ||
+    event.isComposing
+  ) {
+    return
+  }
+  if (event.key === 'Escape') {
+    clearSelection()
+  } else if (
+    ['Delete', 'Backspace'].includes(event.key) &&
+    selectedTokens.value.length &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey
+  ) {
+    event.preventDefault()
+    event.stopPropagation()
+    removeSelected()
+  }
 }
 
 /** 通过 execCommand 写入文本框，保留原生撤销栈，误清空/误替换后可以 Ctrl+Z 恢复 */
@@ -454,6 +529,7 @@ function formatPrompt() {
     <section
       ref="rightPane"
       class="pane right scroll"
+      @keydown="selectionKey"
     >
       <template v-if="embedded">
         <div class="section-tabs">
@@ -491,6 +567,16 @@ function formatPrompt() {
             >
           </div>
           <div class="check-actions">
+            <button
+              v-if="selectedTokens.length > 1"
+              class="btn ghost small"
+              @click="removeSelected"
+            >
+              <Icon
+                name="trash"
+                :size="13"
+              />删除所选
+            </button>
             <button
               class="btn ghost small"
               @click="formatPrompt"
@@ -599,12 +685,18 @@ function formatPrompt() {
         <div
           v-for="(group, index) in groups.unknown"
           :key="'u' + index"
-          class="unknown-item"
+          class="unknown-item token-selectable"
+          :class="{ 'token-selected': ctrlSelection && selectedTokens.includes(group) }"
+          tabindex="0"
+          role="button"
+          :aria-pressed="ctrlSelection && selectedTokens.includes(group)"
           :style="{ '--i': index }"
+          @keydown.enter.self.prevent="locate(group, $event)"
+          @keydown.space.self.prevent="locate(group, $event)"
         >
           <div
             class="unknown-head"
-            @click="locate(group)"
+            @click="locate(group, $event)"
           >
             <span class="tag-raw wavy">{{ group.prefix ?? '' }}{{ group.core }}</span>
             <span
@@ -678,9 +770,15 @@ function formatPrompt() {
         <div
           v-for="(group, index) in groups.alias"
           :key="'a' + index"
-          class="alias-item"
+          class="alias-item token-selectable"
+          :class="{ 'token-selected': ctrlSelection && selectedTokens.includes(group) }"
+          tabindex="0"
+          role="button"
+          :aria-pressed="ctrlSelection && selectedTokens.includes(group)"
           :style="{ '--i': index }"
-          @click="locate(group)"
+          @keydown.enter.self.prevent="locate(group, $event)"
+          @keydown.space.self.prevent="locate(group, $event)"
+          @click="locate(group, $event)"
         >
           <span class="tag-raw">{{ group.core }}</span>
           <span class="arrow"
@@ -724,14 +822,20 @@ function formatPrompt() {
           <div
             v-for="(group, indexItem) in groups.valid"
             :key="'v' + indexItem"
-            class="valid-wrap"
+            class="valid-wrap token-selectable"
+            :class="{ 'token-selected': ctrlSelection && selectedTokens.includes(group) }"
+            tabindex="0"
+            role="button"
+            :aria-pressed="ctrlSelection && selectedTokens.includes(group)"
+            @keydown.enter.self.prevent="locate(group, $event)"
+            @keydown.space.self.prevent="locate(group, $event)"
           >
             <TagCard
               :tag="group.tag!"
               :weight="group.weight"
               :prefix="group.prefix"
               :index="indexItem"
-              @click="locate(group)"
+              @click="locate(group, $event)"
             />
             <div
               v-if="group.warning"
@@ -764,9 +868,15 @@ function formatPrompt() {
         <div
           v-for="(group, index) in groups.other"
           :key="'n' + index"
-          class="nl-item"
+          class="nl-item token-selectable"
+          :class="{ 'token-selected': ctrlSelection && selectedTokens.includes(group) }"
+          tabindex="0"
+          role="button"
+          :aria-pressed="ctrlSelection && selectedTokens.includes(group)"
           :style="{ '--i': index }"
-          @click="locate(group)"
+          @keydown.enter.self.prevent="locate(group, $event)"
+          @keydown.space.self.prevent="locate(group, $event)"
+          @click="locate(group, $event)"
         >
           <span :class="['badge', group.status]">{{
             group.status === 'text' ? '文字' : '句子'
@@ -786,3 +896,24 @@ function formatPrompt() {
     </section>
   </div>
 </template>
+
+<style scoped>
+.token-selectable {
+  border-radius: 12px;
+}
+
+.token-selected:not(.valid-wrap),
+.token-selected :deep(.tag-card) {
+  border-color: var(--pink-line);
+  background: var(--pink-soft);
+  box-shadow: none;
+}
+
+.token-selected :deep(.tag-card:hover) {
+  transform: none;
+}
+
+.token-selected:focus-visible {
+  box-shadow: none;
+}
+</style>

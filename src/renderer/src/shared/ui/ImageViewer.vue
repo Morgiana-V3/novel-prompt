@@ -5,6 +5,8 @@ import type { NaiImage } from '@shared/images/types'
 import ImageViewport from './ImageViewport.vue'
 import Icon from './Icon.vue'
 import { imageLabel } from '../lib/image-label'
+import { toast } from '../lib/notifications'
+import { cleanErr } from '../lib/format'
 
 const props = defineProps<{
   image: NaiImage
@@ -45,6 +47,50 @@ const height = ref(props.image.height || 0)
 const failed = ref(false)
 const viewport = ref<InstanceType<typeof ImageViewport>>()
 const dialog = ref<HTMLElement>()
+const contextMenu = ref<HTMLElement>()
+const menuOpen = ref(false)
+const menuImage = ref<NaiImage>()
+const menuPosition = ref({ x: 0, y: 0 })
+function hideMenu() {
+  contextMenu.value?.hidePopover()
+  menuOpen.value = false
+}
+function dismissMenu() {
+  hideMenu()
+  dialog.value?.focus({ preventScroll: true })
+}
+async function openMenu(event: MouseEvent) {
+  menuImage.value = displayed.value
+  menuPosition.value = { x: event.clientX, y: event.clientY }
+  contextMenu.value?.showPopover()
+  menuOpen.value = true
+  await nextTick()
+  const box = contextMenu.value?.getBoundingClientRect()
+  if (box) {
+    menuPosition.value = {
+      x: Math.max(8, Math.min(event.clientX, innerWidth - box.width - 8)),
+      y: Math.max(8, Math.min(event.clientY, innerHeight - box.height - 8)),
+    }
+  }
+  contextMenu.value?.querySelector('button')?.focus({ preventScroll: true })
+}
+async function copyOriginal() {
+  const image = menuImage.value
+  hideMenu()
+  dialog.value?.focus({ preventScroll: true })
+  if (!image) {
+    return
+  }
+  try {
+    if (await window.api.naiCopyImage(image.name)) {
+      toast('已复制原图')
+    } else {
+      toast('原图不存在或已被删除')
+    }
+  } catch (error) {
+    toast(`复制失败：${cleanErr(error)}`)
+  }
+}
 const previousFocus = document.activeElement as HTMLElement | null
 let leavePreview: (() => void) | undefined
 let dismissPointer: { id: number; x: number; y: number } | undefined
@@ -53,11 +99,14 @@ function isBackdrop(event: PointerEvent) {
   return (
     !!target &&
     !!dialog.value?.contains(target) &&
-    !target.closest('.iv-toolbar, .image-stage, .iv-step, .iv-filmstrip')
+    !target.closest('.iv-toolbar, .image-stage, .iv-step, .iv-filmstrip, .iv-context-menu')
   )
 }
 function startDismiss(event: PointerEvent) {
   dismissPointer = undefined
+  if (menuOpen.value) {
+    return
+  }
   if (event.button === 0 && event.isPrimary && isBackdrop(event)) {
     dismissPointer = { id: event.pointerId, x: event.clientX, y: event.clientY }
   }
@@ -78,11 +127,13 @@ function finishDismiss(event: PointerEvent) {
   dismissPointer = undefined
 }
 const close = () => {
+  hideMenu()
   opened.value = false
 }
 watch(
   () => props.image.url,
   async (url, previousUrl) => {
+    hideMenu()
     const request = ++imageRequest
     const next = props.image
     const previousIndex = props.images?.findIndex((image) => image.url === previousUrl) ?? -1
@@ -132,6 +183,14 @@ function freezeThumbnail(element: Element) {
 }
 function key(event2: KeyboardEvent) {
   if (!opened.value) {
+    return
+  }
+  if (menuOpen.value) {
+    if (event2.key === 'Escape') {
+      event2.preventDefault()
+      hideMenu()
+      dialog.value?.focus({ preventScroll: true })
+    }
     return
   }
   if (
@@ -296,6 +355,7 @@ onBeforeUnmount(() => {
               :width="width"
               :height="height"
               label="图片查看画布"
+              @contextmenu.stop.prevent="openMenu"
             >
               <img
                 :src="displayed.url"
@@ -331,6 +391,30 @@ onBeforeUnmount(() => {
                 :size="28"
                 :stroke="2"
             /></span>
+          </button>
+        </div>
+        <div
+          ref="contextMenu"
+          popover="auto"
+          class="iv-context-menu"
+          role="menu"
+          aria-label="图片操作"
+          :style="{ left: `${menuPosition.x}px`, top: `${menuPosition.y}px` }"
+          @toggle="menuOpen = ($event as ToggleEvent).newState === 'open'"
+          @contextmenu.prevent
+          @keydown.esc.stop.prevent="dismissMenu"
+          @keydown.down.prevent
+          @keydown.up.prevent
+          @keydown.tab.stop.prevent="dismissMenu"
+        >
+          <button
+            role="menuitem"
+            @click.stop="copyOriginal"
+          >
+            <Icon
+              name="copy"
+              :size="15"
+            />复制原图
           </button>
         </div>
         <TransitionGroup
@@ -372,6 +456,35 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.iv-context-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  min-width: 152px;
+  padding: 5px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 12px;
+  background: #29292f;
+  color: #f4f4f6;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 30%);
+}
+
+.iv-context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.iv-context-menu button:hover,
+.iv-context-menu button:focus-visible {
+  background: rgb(255 107 154 / 14%);
+  color: #ff8db4;
+}
+
 .image-viewer {
   position: fixed;
   inset: 0;

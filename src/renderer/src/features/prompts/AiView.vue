@@ -85,8 +85,8 @@ const stale = computed(() =>
 let beforeAdopt: Snapshot | null = null
 
 watch(mode, () => {
-  if (mode.value === 'optimize' && !request.value.trim()) {
-    requestExpanded.value = false
+  if (mode.value === 'semantic') {
+    requestExpanded.value = true
   }
   if (!running.value) {
     error.value = ''
@@ -368,7 +368,10 @@ usePageShortcuts(() => isActive('ai'), {
     :aria-labelledby="embedded ? 'creation-tab-ai' : undefined"
     class="view ai"
   >
-    <section class="pane left with-foot">
+    <section
+      class="pane left with-foot"
+      :class="{ 'creation-request-pane': embedded }"
+    >
       <div
         ref="leftPane"
         class="pane-body scroll"
@@ -454,56 +457,75 @@ usePageShortcuts(() => isActive('ai'), {
         </div>
       </div>
 
-      <footer class="pane-foot">
-        <div
-          v-if="error"
-          class="error-box"
+      <Teleport
+        defer
+        to="#creation-panel-actions"
+        :disabled="!embedded"
+      >
+        <footer
+          v-show="!embedded || isActive('ai')"
+          :class="embedded ? 'creation-ai-actions creation-action-bar' : 'pane-foot'"
         >
-          <Icon
-            name="warn"
-            :size="16"
-          />{{ error }}
-        </div>
-        <div class="row run-bar">
-          <span
-            v-if="charCount && mode === 'optimize'"
-            class="pill nl"
-            ><i></i>{{ charCount }} 个角色</span
+          <div
+            v-if="error && !embedded"
+            class="error-box"
           >
-          <div class="run-actions">
-            <button
-              v-if="running && task"
-              class="btn ghost"
-              :disabled="task.status === 'cancelling'"
-              title="取消（Esc）"
-              @click="cancelTask(task.id)"
-            >
-              {{ task.status === 'cancelling' ? '正在取消…' : '取消' }}
-            </button>
-            <button
-              class="btn accent"
-              :disabled="running"
-              :title="`${runLabel}（${runKeyLabel}）`"
-              @click="run"
-            >
-              <Icon
-                name="sparkle"
-                :size="17"
-                :class="{ spin: running }"
-              />
-              {{ running ? '正在思考' : runLabel
-              }}<span
-                v-if="!running"
-                class="kbd"
-                >{{ runKeyShort }}</span
-              >
-            </button>
+            <Icon
+              name="warn"
+              :size="16"
+            />{{ error }}
           </div>
-        </div>
-      </footer>
+          <div class="row run-bar">
+            <span
+              v-if="!embedded && charCount && mode === 'optimize'"
+              class="pill nl"
+              ><i></i>{{ charCount }} 个角色</span
+            >
+            <div class="run-actions">
+              <button
+                v-if="running && task"
+                class="btn ghost"
+                :disabled="task.status === 'cancelling'"
+                :title="embedded ? undefined : '取消（Esc）'"
+                @click="cancelTask(task.id)"
+              >
+                {{ task.status === 'cancelling' ? '正在取消…' : '取消' }}
+              </button>
+              <button
+                class="btn accent"
+                :disabled="running"
+                :title="embedded ? undefined : `${runLabel}（${runKeyLabel}）`"
+                @click="run"
+              >
+                <Icon
+                  name="sparkle"
+                  :size="embedded ? 14 : 17"
+                  :class="{ spin: running }"
+                />
+                {{ running ? '正在思考' : runLabel
+                }}<span
+                  v-if="!running && !embedded"
+                  class="kbd"
+                  >{{ runKeyShort }}</span
+                >
+              </button>
+            </div>
+          </div>
+        </footer>
+      </Teleport>
     </section>
 
     <section class="pane right scroll">
+      <div
+        v-if="embedded && error"
+        class="error-box"
+        role="alert"
+      >
+        <Icon
+          name="warn"
+          :size="16"
+        />{{ error }}
+      </div>
       <div
         v-if="running && !result"
         class="empty"
@@ -524,7 +546,9 @@ usePageShortcuts(() => isActive('ai'), {
           mood="oops"
           :size="230"
         />
-        <p>出了点问题，看看左边的报错信息吧</p>
+        <p>
+          {{ embedded ? '出了点问题，请查看上方的报错信息' : '出了点问题，看看左边的报错信息吧' }}
+        </p>
       </div>
       <div
         v-else-if="!result"
@@ -794,7 +818,7 @@ usePageShortcuts(() => isActive('ai'), {
             <Icon
               name="image"
               :size="15"
-            />{{ embedded ? '查看出图结果' : (adopted ? '' : '采用并') + '生图' }}
+            />{{ embedded ? '查看图片' : (adopted ? '' : '采用并') + '生图' }}
           </button>
         </div>
       </template>
@@ -819,11 +843,19 @@ usePageShortcuts(() => isActive('ai'), {
   padding: 8px 16px;
 }
 
+.pane.left.creation-request-pane {
+  background: var(--bg);
+}
+
+.compact-request .request-field {
+  gap: 0;
+}
+
 .request-summary {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 0;
+  padding: 4px 0;
   cursor: pointer;
   font-size: 12px;
   color: var(--text2);
@@ -848,6 +880,6 @@ usePageShortcuts(() => isActive('ai'), {
 }
 
 .request-field[open] > .request-summary {
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 </style>

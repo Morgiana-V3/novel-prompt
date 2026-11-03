@@ -15,6 +15,26 @@ module.exports = async function checkCreation({
   getCopied,
 }) {
   const base = '#creation-editor textarea[aria-label="主提示词"]'
+  const { parsePrompt } = require('../../src/shared/prompts/parser.ts')
+  const { promptSelectionRanges } = require('../../src/shared/prompts/remove-tokens.ts')
+  const selectedText = (text, indices) =>
+    promptSelectionRanges(
+      text,
+      indices.map((i) => parsePrompt(text)[i]),
+    ).map((range) => text.slice(range.start, range.end))
+  assert.deepEqual(selectedText('0.8::artist:saeki shun::, sky', [0]), ['0.8::artist:saeki shun::'])
+  assert.deepEqual(selectedText('{{cat}}, [[dog]], -1::bird::', [0, 1, 2]), [
+    '{{cat}}',
+    '[[dog]]',
+    '-1::bird::',
+  ])
+  assert.deepEqual(selectedText('1.2::{cat}, dog::', [0]), ['{cat}'])
+  assert.deepEqual(selectedText('1.2::{cat}, dog::', [0, 1]), ['1.2::{cat}', 'dog::'])
+  assert.deepEqual(selectedText('"{{literal}}", Text: 0.8::hello::', [0, 1]), [
+    '"{{literal}}"',
+    'Text: 0.8::hello::',
+  ])
+  assert.deepEqual(selectedText('cat\\{ears\\}, dog', [0]), ['cat\\{ears\\}'])
   const edit = async (selector, text) => {
     await js(`(() => {
       const input = document.querySelector(${JSON.stringify(selector)})
@@ -238,6 +258,170 @@ module.exports = async function checkCreation({
   console.log(
     'PASS slash search, spaces, Chinese, exact match, native undo, IME, exit and stale candidate protection',
   )
+  await edit(base, '0.8::masterpiece::, {{twintails}}, bogus')
+  await waitUI(`document.querySelectorAll('.compare .valid-wrap').length === 2`)
+  await js(`document.querySelector('.compare .valid-wrap .tag-card').click()`)
+  assert.equal(
+    await js(`document.querySelectorAll('.compare .token-selected').length`),
+    0,
+    'ordinary click locates text without applying multi-selection card styling',
+  )
+  assert.equal(
+    await js(
+      `(() => { const input = document.querySelector(${JSON.stringify(base)}); return input.value.slice(input.selectionStart, input.selectionEnd) })()`,
+    ),
+    '0.8::masterpiece::',
+  )
+  await js(
+    `document.querySelectorAll('.compare .valid-wrap .tag-card')[1].dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))`,
+  )
+  assert.deepEqual(
+    await js(
+      `[...document.querySelectorAll('.textarea-token-highlights mark')].map(mark => mark.textContent)`,
+    ),
+    ['{{twintails}}'],
+    'first Ctrl-click starts a fresh selection and excludes the previously located tag',
+  )
+  await js(
+    `document.querySelector('.compare .valid-wrap .tag-card').dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))`,
+  )
+  assert.deepEqual(
+    await js(
+      `[...document.querySelectorAll('.textarea-token-highlights mark')].map(mark => mark.textContent)`,
+    ),
+    ['0.8::masterpiece::', '{{twintails}}'],
+  )
+  await js(
+    `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }))`,
+  )
+  assert.equal(await value(), 'bogus')
+  await js(`document.execCommand('undo')`)
+  assert.equal(await value(), '0.8::masterpiece::, {{twintails}}, bogus')
+  await edit(base, 'masterpiece, twin tails, bogus')
+  await waitUI(
+    `document.querySelector('.compare .alias-item') && document.querySelector('.compare .unknown-item')`,
+  )
+  const pointerClick = async (selector, ctrl = false) => {
+    await js(
+      `document.querySelector(${JSON.stringify(selector)}).scrollIntoView({ block: 'nearest' })`,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    const point = await js(`(() => {
+      const box = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect()
+      return { x: Math.round(box.left + 20), y: Math.round(box.top + box.height / 2) }
+    })()`)
+    const modifiers = ctrl ? ['control'] : []
+    win.webContents.sendInputEvent({ type: 'mouseMove', ...point })
+    win.webContents.sendInputEvent({
+      type: 'mouseDown',
+      button: 'left',
+      clickCount: 1,
+      modifiers,
+      ...point,
+    })
+    win.webContents.sendInputEvent({
+      type: 'mouseUp',
+      button: 'left',
+      clickCount: 1,
+      modifiers,
+      ...point,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  await pointerClick('.compare .unknown-head')
+  await pointerClick('.compare .valid-wrap .tag-card', true)
+  assert.equal(await js(`document.querySelectorAll('.compare .token-selected').length`), 1)
+  assert.ok(
+    await js(`(() => {
+    const item = document.querySelector('.compare .valid-wrap')
+    const card = item.querySelector('.tag-card')
+    return document.activeElement === item && getComputedStyle(card).backgroundColor !== 'rgb(255, 255, 255)'
+      && getComputedStyle(item).outlineStyle === 'none'
+  })()`),
+    'the first Ctrl-click paints the focused card immediately without an outer outline',
+  )
+  await pointerClick('.compare .alias-item', true)
+  assert.equal(await js(`document.querySelectorAll('.compare .token-selected').length`), 2)
+  assert.deepEqual(
+    await js(
+      `[...document.querySelectorAll('#creation-editor .textarea-token-highlights mark')].map(mark => mark.textContent)`,
+    ),
+    ['masterpiece', 'twin tails'],
+  )
+  writeFileSync(
+    join(profile, 'ctrl-text-highlights.png'),
+    (await win.webContents.capturePage()).toPNG(),
+  )
+  assert.equal(await js(`!!document.querySelector('.token-selection-actions')`), false)
+  await pointerClick('.compare .alias-item', true)
+  assert.equal(await js(`document.querySelectorAll('.compare .token-selected').length`), 1)
+  assert.deepEqual(
+    await js(
+      `[...document.querySelectorAll('#creation-editor .textarea-token-highlights mark')].map(mark => mark.textContent)`,
+    ),
+    ['masterpiece'],
+  )
+  await pointerClick('.compare .valid-wrap .tag-card', true)
+  assert.equal(await js(`document.querySelectorAll('.compare .token-selected').length`), 0)
+  assert.equal(await js(`!!document.querySelector('.textarea-token-highlights')`), false)
+  await js(`document.querySelector('.compare .valid-wrap .tag-card').click()`)
+  await js(
+    `document.querySelector('.compare .alias-item').dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))`,
+  )
+  assert.equal(await js(`document.querySelectorAll('.compare .token-selected').length`), 1)
+  await js(
+    `document.querySelector('.compare .alias-item').dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))`,
+  )
+  assert.equal(await js(`document.querySelectorAll('.compare .token-selected').length`), 0)
+  await pointerClick('.compare .valid-wrap .tag-card', true)
+  await js(
+    `document.querySelector('.compare .unknown-head').dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))`,
+  )
+  await js(
+    `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }))`,
+  )
+  assert.equal(await value(), 'twin tails', 'batch deletion removes only selected occurrences')
+  await js(`document.execCommand('undo')`)
+  assert.equal(await value(), 'masterpiece, twin tails, bogus', 'batch deletion is one native undo')
+  await edit(base, Array(70).fill('masterpiece').join(',\n') + ',\nbogus')
+  await waitUI(`document.querySelector('.compare .unknown-head')?.textContent.includes('bogus')`)
+  await js(`document.querySelector('#creation-editor').scrollTop = 0`)
+  await pointerClick('.compare .unknown-head', true)
+  assert.equal(
+    await js(`document.querySelector('#creation-editor').scrollTop`),
+    0,
+    'Ctrl selecting an offscreen token never scrolls the editor',
+  )
+  assert.deepEqual(
+    await js(
+      `[...document.querySelectorAll('.textarea-token-highlights mark')].map(mark => mark.textContent)`,
+    ),
+    ['bogus'],
+  )
+  await js(`document.querySelector('.compare .unknown-head').click()`)
+  await waitUI(`document.querySelector('#creation-editor').scrollTop > 100`)
+  await new Promise((resolve) => setTimeout(resolve, 550))
+  const locatedScroll = await js(`document.querySelector('#creation-editor').scrollTop`)
+  assert.ok(
+    await js(`(() => {
+    const input = document.querySelector(${JSON.stringify(base)})
+    const panel = document.querySelector('#creation-editor').getBoundingClientRect()
+    const box = input.getBoundingClientRect()
+    const textBottom = box.bottom - parseFloat(getComputedStyle(input).paddingBottom)
+    const textCenter = textBottom - parseFloat(getComputedStyle(input).lineHeight) / 2
+    return input.value.slice(input.selectionStart, input.selectionEnd) === 'bogus'
+      && textBottom <= panel.bottom + 4 && textBottom > panel.top
+      && Math.abs(textCenter - (panel.top + panel.bottom) / 2) < 36
+  })()`),
+    'long text locates the token itself inside the editor viewport',
+  )
+  await js(`document.querySelector('.compare .unknown-head').click()`)
+  await new Promise((resolve) => setTimeout(resolve, 350))
+  assert.ok(
+    Math.abs((await js(`document.querySelector('#creation-editor').scrollTop`)) - locatedScroll) <
+      2,
+    'clicking a visible token leaves editor scroll unchanged',
+  )
   await edit(base, 'masterpiece, twin tails, bogus')
   await waitUI(
     `document.querySelector('.compare .alias-item') && document.querySelector('.compare .unknown-item')`,
@@ -320,13 +504,38 @@ module.exports = async function checkCreation({
   }
 
   await panel('ai')
+  assert.ok(
+    await js(
+      `getComputedStyle(document.querySelector('.creation-request-pane')).backgroundColor === getComputedStyle(document.querySelector('.creation-results')).backgroundColor`,
+    ),
+    'AI request area shares the page background',
+  )
+  for (const width of [1440, 1100]) {
+    win.setSize(width, 960)
+    await new Promise((resolve) => setTimeout(resolve, 180))
+    assert.ok(
+      await js(`(() => {
+      const bar = document.querySelector('.creation-toolbar').getBoundingClientRect()
+      const action = document.querySelector('.creation-ai-actions').getBoundingClientRect()
+      return action.width > 0 && action.top >= bar.top && action.bottom <= bar.bottom
+        && action.right <= innerWidth && bar.height <= 88
+        && !document.querySelector('.ai .pane-foot') && !document.querySelector('.creation-ai-actions .kbd')
+        && getComputedStyle(document.querySelector('.creation-preview-actions')).display === 'none'
+    })()`),
+      'AI action shares the header without a duplicate footer or inactive preview controls',
+    )
+    writeFileSync(
+      join(profile, `creation-ai-header-${width}.png`),
+      (await win.webContents.capturePage()).toPNG(),
+    )
+  }
   assert.equal(await js(`document.querySelectorAll('.ai textarea[data-src]').length`), 0)
-  await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+  await js(`document.querySelector('.creation-ai-actions .run-bar .btn.accent').click()`)
   await waitUI(`document.querySelector('.ai .cheer .actions .primary')`)
   await edit(base, 'sunlight, garden')
   await js(`document.querySelector('.ai .cheer .actions .primary').click()`)
   assert.equal(await value(), 'sunlight, garden', 'stale AI result cannot overwrite edits')
-  await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+  await js(`document.querySelector('.creation-ai-actions .run-bar .btn.accent').click()`)
   await waitUI(`document.querySelector('.ai .cheer .actions .primary')`)
   await js(`document.querySelector('.ai .cheer .actions .primary').click()`)
   await waitUI(`document.querySelector(${JSON.stringify(base)}).value === 'outdoors'`)
@@ -334,8 +543,32 @@ module.exports = async function checkCreation({
   assert.equal(await value(), 'sunlight, garden')
 
   await panel('preview')
+  for (const width of [1440, 1100]) {
+    win.setSize(width, 960)
+    await new Promise((resolve) => setTimeout(resolve, 180))
+    assert.ok(
+      await js(`(() => {
+      const bar = document.querySelector('.creation-toolbar').getBoundingClientRect()
+      const action = document.querySelector('.creation-preview-actions').getBoundingClientRect()
+      return bar.height <= 88 && action.top >= bar.top && action.bottom <= bar.bottom
+        && action.right <= innerWidth && !document.querySelector('.creation-preview-actions .kbd')
+        && document.querySelectorAll('.preview .pane-foot').length === 0
+    })()`),
+      'forecast controls fit in the tab header without a second action panel',
+    )
+    writeFileSync(
+      join(profile, `creation-forecast-header-${width}.png`),
+      (await win.webContents.capturePage()).toPNG(),
+    )
+  }
+  assert.deepEqual(
+    await js(
+      `[...document.querySelectorAll('.creation-tab')].map(button => button.textContent.trim())`,
+    ),
+    ['词条检查', '智能优化', '画面推测', '图片预览'],
+  )
   assert.equal(await js(`document.querySelectorAll('.preview textarea').length`), 0)
-  await js(`document.querySelector('.preview .run-bar .btn.accent').click()`)
+  await js(`document.querySelector('.creation-preview-actions .run-bar .btn.accent').click()`)
   await waitUI(`!!document.querySelector('.preview .forecast-meta')`)
   assert.equal(getPreviewRequest().forecastOnly, true)
   assert.equal(

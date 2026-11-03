@@ -22,6 +22,33 @@ module.exports = async function checkPartialUi({
   await js(`document.querySelector('.ai .request-field').open = false`)
   assert.equal(await js(`document.querySelector('.ai .request-field').open`), false)
   await js(`document.querySelector('.ai .request-summary').click()`)
+  await js(`(() => {
+    const input = document.querySelector('.ai .composer textarea')
+    input.value = ''
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })()`)
+  for (const content of ['', '保留这段修改要求']) {
+    await js(`(() => {
+      const input = document.querySelector('.ai .composer textarea')
+      input.value = ${JSON.stringify(content)}
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })()`)
+    for (let i = 0; i < 4; i++) {
+      await js(`document.querySelector('.ai .fresh-toggle input').click()`)
+      await waitUI(
+        `document.querySelector('.creation-ai-actions .btn.accent').textContent.includes('${i % 2 === 0 ? '生成提示词' : '优化提示词'}')`,
+      )
+      assert.equal(
+        await js(`document.querySelector('.ai .request-field').open`),
+        true,
+        'switching regeneration on/off keeps the request editor expanded even when empty',
+      )
+      assert.equal(await js(`document.querySelector('.ai .composer textarea').value`), content)
+    }
+  }
+  await js(`document.querySelector('.ai .request-summary').click()`)
+  await waitUI(`!document.querySelector('.ai .request-field').open`)
+  await js(`document.querySelector('.ai .request-summary').click()`)
   await edit('负面提示词', 'lowres')
   await js(
     `(() => { const el = document.querySelector('.ai .composer textarea'); el.value = '改成银发、绿眼，调整负面词'; el.dispatchEvent(new Event('input', { bubbles:true })); })()`,
@@ -43,7 +70,7 @@ module.exports = async function checkPartialUi({
     notes: '本次调整全局外观描述及负面词，角色与位置保持不变。',
     evidence: { related: [], wiki: [], failed: [], implications: true },
   }))
-  await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+  await js(`document.querySelector('.creation-ai-actions .run-bar .btn.accent').click()`)
   await waitUI(`!!document.querySelector('#ai-review-compare')`)
   assert.equal(
     await js(`!!document.querySelector('#ai-review-tab-notes, .review-description[title]')`),
@@ -148,7 +175,7 @@ module.exports = async function checkPartialUi({
     notes: '在中间新增一只猫，其他角色保持不变。',
     evidence: { related: [], wiki: [], failed: [], implications: true },
   }))
-  await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+  await js(`document.querySelector('.creation-ai-actions .run-bar .btn.accent').click()`)
   await waitUI(
     `!![...document.querySelectorAll('.field-adopt')].find(el => el.textContent.includes('新增角色'))`,
   )
@@ -171,7 +198,7 @@ module.exports = async function checkPartialUi({
     notes: '删除中间的猫。',
     evidence: { related: [], wiki: [], failed: [], implications: true },
   }))
-  await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+  await js(`document.querySelector('.creation-ai-actions .run-bar .btn.accent').click()`)
   await waitUI(
     `!![...document.querySelectorAll('.field-adopt')].find(el => el.textContent.includes('移除角色'))`,
   )
@@ -194,7 +221,7 @@ module.exports = async function checkPartialUi({
     notes: '把第一个角色移到右下角。',
     evidence: { related: [], wiki: [], failed: [], implications: true },
   }))
-  await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+  await js(`document.querySelector('.creation-ai-actions .run-bar .btn.accent').click()`)
   await waitUI(
     `!![...document.querySelectorAll('.review-scopes button')].find(el => el.textContent.includes('位置变更'))`,
   )
@@ -249,7 +276,7 @@ module.exports = async function checkPartialUi({
     notes: '新增互动目标动作。',
     evidence: { related: [], wiki: [], failed: [], implications: true },
   }))
-  await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+  await js(`document.querySelector('.creation-ai-actions .run-bar .btn.accent').click()`)
   await waitUI(
     `!!document.querySelector('.field-adopt') && document.querySelector('#ai-review-compare').textContent.includes('target#')`,
   )
@@ -278,7 +305,7 @@ module.exports = async function checkPartialUi({
     notes: '调整场景与负面词。',
     evidence: { related: [], wiki: [], failed: [], implications: true },
   }))
-  await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+  await js(`document.querySelector('.creation-ai-actions .run-bar .btn.accent').click()`)
   await waitUI(`document.querySelector('#ai-review-compare').textContent.includes('crowded')`)
   assert.equal(
     await js(`document.querySelectorAll('.ai-change').length`),
@@ -343,7 +370,7 @@ module.exports = async function checkPartialUi({
     notes: '改写光线并补一句细节。',
     evidence: { related: [], wiki: [], failed: [], implications: true },
   }))
-  await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+  await js(`document.querySelector('.creation-ai-actions .run-bar .btn.accent').click()`)
   await waitUI(
     `document.querySelector('#ai-review-compare')?.textContent.includes('A cat') && document.querySelectorAll('.ai-change').length === 2`,
   )

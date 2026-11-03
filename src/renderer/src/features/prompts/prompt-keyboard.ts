@@ -1,5 +1,5 @@
 import { parsePrompt } from '@shared/prompts/parser'
-import { removePromptTokens } from '@shared/prompts/remove-tokens'
+import { promptSelectionRanges, removePromptTokens } from '@shared/prompts/remove-tokens'
 
 /** Whole-token selections (including click-to-locate) delete their empty syntax; ordinary typing stays native. */
 export function deleteSelectedToken(event: KeyboardEvent) {
@@ -23,9 +23,16 @@ export function deleteSelectedToken(event: KeyboardEvent) {
   if (start === end) {
     return
   }
-  const token = parsePrompt(input.value).find((t) => t.start === start && t.end === end)
-  if (!token) {
+  const contained = parsePrompt(input.value).filter((t) => t.start >= start && t.end <= end)
+  if (contained.length !== 1) {
     return
+  }
+  const token = contained[0]
+  if (token.start !== start || token.end !== end) {
+    const ranges = promptSelectionRanges(input.value, [token])
+    if (ranges.length !== 1 || ranges[0].start !== start || ranges[0].end !== end) {
+      return
+    }
   }
   const next = removePromptTokens(input.value, [token])
   event.preventDefault()

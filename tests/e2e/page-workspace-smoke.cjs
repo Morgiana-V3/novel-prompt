@@ -1921,6 +1921,47 @@ app.whenReady().then(async () => {
     await run(`document.querySelector('.viewer-stage').click()`)
     await wait(`!!document.querySelector('.image-viewer')`)
     await wait(`document.querySelectorAll('.iv-thumbnail').length === 2`)
+    let copiedImage
+    ipcMain.handle('nai:copyImage', (_e, name) => {
+      copiedImage = name
+      return true
+    })
+    const openImageMenu = async () => {
+      await pause(350)
+      const point = await js(`(() => {
+        const rect = document.querySelector('.iv-canvas .image-stage').getBoundingClientRect()
+        return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }
+      })()`)
+      win.webContents.sendInputEvent({ type: 'mouseMove', ...point })
+      win.webContents.sendInputEvent({
+        type: 'mouseDown',
+        button: 'right',
+        clickCount: 1,
+        ...point,
+      })
+      win.webContents.sendInputEvent({ type: 'mouseUp', button: 'right', clickCount: 1, ...point })
+      await wait(`!!document.querySelector('.iv-context-menu:popover-open')`)
+    }
+    await openImageMenu()
+    assert.ok(
+      await js(`(() => {
+      const box = document.querySelector('.iv-context-menu').getBoundingClientRect()
+      return box.right <= innerWidth && box.bottom <= innerHeight && box.left >= 0 && box.top >= 0
+    })()`),
+      'image menu fits at viewport edges',
+    )
+    await run(
+      `document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))`,
+    )
+    await wait(`!document.querySelector('.iv-context-menu:popover-open')`)
+    assert.ok(
+      await js(`!!document.querySelector('.image-viewer:not(.modal-leave-active)')`),
+      'Escape dismisses only the context menu',
+    )
+    await openImageMenu()
+    await run(`document.querySelector('.iv-context-menu button').click()`)
+    await wait(`!document.querySelector('.iv-context-menu:popover-open')`)
+    assert.ok(copiedImage, 'context menu copies the selected original image')
     const clickBoundary = async (selector) => {
       const point = await js(`(() => {
         const button = document.querySelector(${JSON.stringify(selector)})

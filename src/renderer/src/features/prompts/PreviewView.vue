@@ -369,58 +369,78 @@ usePageShortcuts(() => isActive('preview'), {
         </div>
       </div>
 
-      <footer class="pane-foot">
-        <div
-          v-if="error"
-          class="error-box"
+      <Teleport
+        defer
+        to="#creation-panel-actions"
+        :disabled="!embedded"
+      >
+        <footer
+          v-show="!embedded || isActive('preview')"
+          :class="embedded ? 'creation-preview-actions creation-action-bar' : 'pane-foot'"
         >
-          <Icon
-            name="warn"
-            :size="16"
-          />{{ error }}
-        </div>
-        <div class="row run-bar">
-          <button
-            class="icon-btn"
-            title="选择推测使用的 Skill"
-            @click="openSkill"
+          <div
+            v-if="error && !embedded"
+            class="error-box"
           >
-            <Icon name="layers" />
-          </button>
-          <div class="run-actions">
-            <button
-              v-if="running && task"
-              class="btn ghost"
-              :disabled="task.status === 'cancelling'"
-              title="取消（Esc）"
-              @click="cancelTask(task.id)"
-            >
-              {{ task.status === 'cancelling' ? '正在取消…' : '取消' }}
-            </button>
-            <button
-              class="btn accent"
-              :disabled="running"
-              :title="`开始推测（${runKeyLabel}）`"
-              @click="run"
-            >
-              <Icon
-                name="eye"
-                :size="17"
-                :class="{ 'spin-slow': running }"
-              />
-              {{ running ? '正在想象' : '开始推测'
-              }}<span
-                v-if="!running"
-                class="kbd"
-                >{{ runKeyShort }}</span
-              >
-            </button>
+            <Icon
+              name="warn"
+              :size="16"
+            />{{ error }}
           </div>
-        </div>
-      </footer>
+          <div class="row run-bar">
+            <button
+              class="icon-btn"
+              :title="embedded ? undefined : '选择推测使用的 Skill'"
+              aria-label="推测 Skill"
+              @click="openSkill"
+            >
+              <Icon name="layers" />
+            </button>
+            <div class="run-actions">
+              <button
+                v-if="running && task"
+                class="btn ghost"
+                :disabled="task.status === 'cancelling'"
+                title="取消（Esc）"
+                @click="cancelTask(task.id)"
+              >
+                {{ task.status === 'cancelling' ? '正在取消…' : '取消' }}
+              </button>
+              <button
+                class="btn accent"
+                :disabled="running"
+                :title="embedded ? undefined : `开始推测（${runKeyLabel}）`"
+                @click="run"
+              >
+                <Icon
+                  name="eye"
+                  :size="embedded ? 14 : 17"
+                  :class="{ 'spin-slow': running }"
+                />
+                {{ running ? '正在想象' : '开始推测'
+                }}<span
+                  v-if="!running && !embedded"
+                  class="kbd"
+                  >{{ runKeyShort }}</span
+                >
+              </button>
+            </div>
+          </div>
+        </footer>
+      </Teleport>
     </section>
 
     <section class="pane right scroll">
+      <div
+        v-if="embedded && error"
+        class="error-box"
+        role="alert"
+      >
+        <Icon
+          name="warn"
+          :size="16"
+        />{{ error }}
+      </div>
       <div
         v-if="running"
         class="empty"

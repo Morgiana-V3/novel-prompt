@@ -1,5 +1,9 @@
-import { clipboard, ClipboardItem, dialog, shell } from 'electron'
-import { copyFileSync, readFileSync } from 'node:fs'
+import { app, clipboard, ClipboardItem, dialog, shell } from 'electron'
+import { copyFileSync, mkdirSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { writeFileAtomic } from '../../infrastructure/atomic-file'
 import type { NaiGenParams, NaiSubscription, NaiVersion } from '../../../shared/generation/types'
 import { freeCheck } from '../../modules/generation/costs'
 import { getSubscription } from '../../modules/generation/service'
@@ -161,8 +165,21 @@ export function registerImagesIpc(context: IpcContext): void {
     if (!src) {
       return false
     }
-    const blob = new Blob([readFileSync(src)], { type: 'image/png' })
-    await clipboard.write([new ClipboardItem({ 'image/png': blob })])
+    const bytes = imageBytesWithRecipe(name)
+    const blob = new Blob([new Uint8Array(bytes)], { type: 'image/png' })
+    // A clipboard file snapshot survives deletion/temporary-library cleanup after copying.
+    const directory = join(app.getPath('temp'), 'NovelPrompt-clipboard')
+    mkdirSync(directory, { recursive: true })
+    const original = join(directory, `${createHash('sha256').update(bytes).digest('hex')}.png`)
+    writeFileAtomic(original, bytes)
+    // Image-only receivers get a compatible bitmap; file-aware receivers get the exact
+    // encoded PNG, including text chunks, generation recipe and alpha-channel metadata.
+    await clipboard.write([
+      new ClipboardItem({
+        'image/png': blob,
+        'text/uri-list': new Blob([pathToFileURL(original).href + '\r\n']),
+      }),
+    ])
     return true
   })
 

@@ -15,7 +15,10 @@ const props = defineProps<{
   prefix?: string
   index?: number
 }>()
-const emit = defineEmits<{ (eventName: 'click'): void; (eventName: 'updated'): void }>()
+const emit = defineEmits<{
+  (eventName: 'click', event: MouseEvent): void
+  (eventName: 'updated'): void
+}>()
 
 const savedTranslation = ref<{ name: string; text: string } | null>(null)
 const displayedTranslation = computed(() =>
@@ -33,13 +36,13 @@ function onClick(event2: MouseEvent) {
   }
   const onZh = props.editable && (event2.target as HTMLElement).closest('.tag-zh')
   if (!onZh) {
-    return emit('click')
+    return emit('click', event2)
   }
   if (event2.detail > 1) {
     return
   }
   clearTimeout(clickTimer)
-  clickTimer = setTimeout(() => emit('click'), 260)
+  clickTimer = setTimeout(() => emit('click', event2), 260)
 }
 onBeforeUnmount(() => clearTimeout(clickTimer))
 
