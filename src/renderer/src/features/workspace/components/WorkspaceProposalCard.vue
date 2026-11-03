@@ -29,7 +29,7 @@ const groups = computed(() => {
       (message.proposal.status === 'pending' && !message.proposal.superseded)
     "
   >
-    <summary>
+    <summary class="disclosure">
       <b>{{ message.proposal.title }}</b
       ><span class="pill">{{ statusLabel }}</span>
     </summary>

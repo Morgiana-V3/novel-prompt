@@ -1,0 +1,75 @@
+/* 提示词输入时的 tag 补全浮层（由 tag-complete.ts 挂到 body / 所在对话框） */
+.tag-complete {
+  position: fixed;
+  z-index: 250;
+  width: 300px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: var(--shadow-pop);
+  animation: pop var(--dur-fast) var(--ease-out);
+}
+
+.tag-complete-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+
+.tag-complete-item.active {
+  background: color-mix(in srgb, var(--cb, var(--pink-soft)) 70%, #fff);
+}
+
+.tag-complete-item i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c, var(--muted));
+}
+
+.tag-complete-item b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.tag-complete-zh {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.tag-complete-item small {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* NovelAI 专用写法：粉色圆点 + 「语法」小标，和普通 tag 区分开 */
+.tag-complete-item.syntax {
+  --c: var(--pink);
+}
+
+.tag-complete-item.syntax b {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.tag-complete-item.syntax small {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--pink-soft);
+  color: var(--pink-deep);
+  font-size: 10.5px;
+}

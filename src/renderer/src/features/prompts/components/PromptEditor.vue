@@ -7,6 +7,7 @@ import type { NaiVersion } from '@shared/generation/types'
 import type { NaiImage } from '@shared/images/types'
 import { importPrompt } from '../actions'
 import { vAutosize } from '../../../shared/lib/autosize'
+import { vTagComplete } from '../tag-complete'
 import { parsePromptText } from '@shared/prompts/import'
 import CharacterEditor from './CharacterEditor.vue'
 import PromptPresetControl from './PromptPresetControl.vue'
@@ -99,6 +100,7 @@ function onPaste(event2: ClipboardEvent) {
       <textarea
         v-model="base"
         v-autosize
+        v-tag-complete
         :readonly="disabled"
         aria-label="主提示词"
         data-src="pos"
@@ -132,6 +134,7 @@ function onPaste(event2: ClipboardEvent) {
       <textarea
         v-model="negative"
         v-autosize
+        v-tag-complete
         :readonly="disabled"
         aria-label="负面提示词"
         data-src="neg"

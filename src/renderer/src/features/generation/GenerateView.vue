@@ -266,7 +266,7 @@ async function run() {
     return
   }
   if (!hasToken.value) {
-    error.value = '请先在「设置 / 数据」中填写 NovelAI API Token'
+    error.value = '请先在「设置」中填写 NovelAI API Token'
     return
   }
   if (activeTask('generate') || activeTask('inpaint') || activeTask('page-generate')) {
@@ -487,7 +487,7 @@ function openImageWorkspace() {
               <Icon
                 name="star"
                 :size="14"
-              />收藏当前配置
+              />收藏配置
             </button>
             <button
               class="btn ghost small"
@@ -498,7 +498,7 @@ function openImageWorkspace() {
               <Icon
                 name="layers"
                 :size="14"
-              />从收藏载入
+              />载入收藏
             </button>
             <button
               class="btn ghost small"
@@ -694,7 +694,7 @@ function openImageWorkspace() {
           生图用的是「当前提示词」，和 AI
           优化、画面推测是同一份。点「生成」就能直接看到效果，图片默认临时保存，满意后可留存到图库，或开启自动留存。
         </p>
-        <p v-else>要先在「设置 / 数据」里填写 NovelAI 的 Persistent API Token 才能出图哦</p>
+        <p v-else>要先在「设置」里填写 NovelAI 的 Persistent API Token 才能出图哦</p>
         <button
           v-if="!hasToken"
           class="btn primary"
@@ -817,6 +817,7 @@ function openImageWorkspace() {
                 { value: 'workspace', label: '工作台归档' },
               ]"
               aria-label="图库筛选"
+              :title="galleryHint"
             />
             <span class="group-count">{{ visibleGallery.length }}</span>
             <button
@@ -829,7 +830,6 @@ function openImageWorkspace() {
               />打开文件夹
             </button>
           </div>
-          <p class="muted small">{{ galleryHint }}</p>
           <div class="gallery">
             <div
               v-for="(image, index) in visibleGallery"

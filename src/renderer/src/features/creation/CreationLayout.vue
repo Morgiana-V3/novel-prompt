@@ -5,6 +5,7 @@ import { shellState, type Tab } from '../../shared/state/shell'
 import PromptEditor from '../prompts/components/PromptEditor.vue'
 import WorkspaceBar from '../prompts/components/WorkspaceBar.vue'
 import { resizeWithin } from '../../shared/lib/autosize'
+import { vScrollRow } from '../../shared/lib/scroll-row'
 import { promptState } from '../prompts/state'
 
 const props = defineProps<{ active: boolean; panel: string }>()
@@ -50,6 +51,7 @@ watch(
     <section class="creation-results">
       <div
         v-show="active"
+        v-scroll-row
         class="creation-tabs"
         role="tablist"
         aria-label="创作辅助"
@@ -127,7 +129,6 @@ watch(
 .creation-tabs {
   display: flex;
   gap: 6px;
-  flex-wrap: wrap;
   padding: 8px 12px;
   border-bottom: 1px solid var(--line);
 }

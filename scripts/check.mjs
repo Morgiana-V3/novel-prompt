@@ -15,6 +15,7 @@ const cases = {
   statistics: ['electron', 'tests/integration/statistics-smoke.cjs', false],
   'chat:presets': ['electron', 'tests/integration/chat-presets-smoke.cjs', false],
   'storage:snippets': ['electron', 'tests/integration/storage-snippets-smoke.cjs', false],
+  'tags:complete': ['electron', 'tests/integration/tag-complete-smoke.cjs', false],
   'data:tools': ['electron', 'tests/e2e/data-tools-smoke.cjs', true],
   artifacts: ['node', 'tests/unit/artifact-paths.cjs', false],
   'electron:errors': ['node', 'tests/unit/electron-errors-smoke.cjs', false],

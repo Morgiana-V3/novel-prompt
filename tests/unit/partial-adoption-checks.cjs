@@ -57,6 +57,36 @@ module.exports = function checkPartialAdoption() {
     { base: 'a, 1.4::silver hair, green eyes::, c', negative: '', characters: [] },
   )
   assert.equal(safe.changes.length, 1, 'a weighted group cannot be partially broken')
+  // Prose: a single inserted / rewritten sentence is its own adoptable change.
+  const { granularChanges } = require('../../src/renderer/src/features/prompts/partial-adoption.ts')
+  const proseOld =
+    '1girl, A quiet garden lies behind the house. Soft light falls on the path. The girl waits by the window.'
+  const proseNew =
+    '1girl, A quiet garden lies behind the house. Warm sunset light falls on the path. The girl waits by the window. A cat sleeps on the sill.'
+  const prose = adoptionPlan(
+    { base: proseOld, negative: '', characters: [] },
+    { base: proseNew, negative: '', characters: [] },
+  )
+  assert.equal(prose.changes.length, 2, 'one rewritten sentence and one added sentence')
+  assert.equal(granularChanges(prose.changes).length, 2, 'single-sentence changes are granular')
+  const sentence = prose.changes.find((c) => c.after.includes('A cat'))
+  assert.equal(
+    prose.render(new Set([sentence.id])).base,
+    `${proseOld} A cat sleeps on the sill.`,
+    'adopting only the new sentence keeps the rest untouched',
+  )
+  const rewrite = adoptionPlan(
+    { base: '1girl, One. Two. Three.', negative: '', characters: [] },
+    { base: '1girl, Uno. Dos. Tres.', negative: '', characters: [] },
+  )
+  assert.equal(rewrite.changes.length, 1, 'consecutive rewritten sentences stay one passage')
+  assert.equal(granularChanges(rewrite.changes).length, 0)
+  const zh = adoptionPlan(
+    { base: '她站在窗边。窗外下着雨。', negative: '', characters: [] },
+    { base: '她站在窗边。窗外下着雪。', negative: '', characters: [] },
+  )
+  assert.equal(zh.changes.length, 1)
+  assert.equal(zh.changes[0].before, '窗外下着雨。')
   for (const [base, target] of [
     ['a, b, c', 'a, c'],
     ['a, b', 'a, b, c'],

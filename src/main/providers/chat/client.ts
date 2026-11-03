@@ -50,7 +50,7 @@ export async function requestChat(
   const { reasoningEffort } = settings
   const { apiKey, baseUrl, model } = opts.provider ?? settings
   if (!apiKey) {
-    throw new Error('请先在「设置 / 数据」中填写 AI 服务的 API Key')
+    throw new Error('请先在「设置」中填写 AI 服务的 API Key')
   }
   const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`
   const thinkingOn = opts.thinking !== false && reasoningEffort !== 'off'
@@ -182,7 +182,7 @@ function httpError(status: number, detail: string, retryAfter: string | null): A
   const after = retryAfter && /^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : undefined
   if (status === 401 || status === 403) {
     return new AiServiceError(
-      `AI 服务拒绝了 API Key（HTTP ${status}），请在「设置 / 数据」检查 Key 是否正确、是否过期${tail}`,
+      `AI 服务拒绝了 API Key（HTTP ${status}），请在「设置」检查 Key 是否正确、是否过期${tail}`,
     )
   }
   if (status === 402) {
@@ -238,7 +238,7 @@ async function requestOnce(
     }
     const raw = error instanceof Error ? error.message : String(error)
     if (/Failed to parse URL|Invalid URL/i.test(raw)) {
-      throw new AiServiceError(`AI 服务地址无效，请检查「设置 / 数据」里的 Base URL：${url}`)
+      throw new AiServiceError(`AI 服务地址无效，请检查「设置」里的 Base URL：${url}`)
     }
     const resolveHint = () => {
       if (/NAME_NOT_RESOLVED/i.test(raw)) {

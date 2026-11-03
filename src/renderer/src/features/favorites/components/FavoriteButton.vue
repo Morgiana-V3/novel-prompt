@@ -20,7 +20,8 @@ const pending = ref<SavedRecipe>()
 const opened = ref(false)
 /** 刚收藏成功时播放一次星星闪动，只给这次操作反馈，不在列表初次渲染时播放 */
 const justSaved = ref(false)
-const position = ref({ left: '0px', top: '0px' })
+const position = ref({ left: '0px', top: '0px', '--arrow-x': '50%' })
+const side = ref<'top' | 'bottom'>('bottom')
 onMounted(() => {
   if (!favorites.loaded) {
     void refreshFavorites().catch((error) => toast(cleanErr(error)))
@@ -35,11 +36,21 @@ async function activate() {
   if (selected.value) {
     pending.value = selected.value
     const rect = trigger.value!.getBoundingClientRect()
+    const left = Math.max(8, Math.min(rect.right - 232, window.innerWidth - 240))
     position.value = {
-      left: `${Math.max(8, Math.min(rect.right - 232, window.innerWidth - 240))}px`,
-      top: `${Math.max(8, rect.bottom + 120 < window.innerHeight ? rect.bottom + 8 : rect.top - 116)}px`,
+      left: `${left}px`,
+      top: `${rect.bottom + 10}px`,
+      // 箭头对准星标中心
+      '--arrow-x': `${Math.max(14, Math.min(rect.left + rect.width / 2 - left, 218))}px`,
     }
+    side.value = 'bottom'
     bubble.value?.showPopover()
+    // 下方放不下时翻到上方，按实际高度贴住星标
+    const height = bubble.value?.offsetHeight ?? 0
+    if (rect.bottom + 10 + height > window.innerHeight - 8) {
+      side.value = 'top'
+      position.value = { ...position.value, top: `${Math.max(8, rect.top - height - 10)}px` }
+    }
     return
   }
   try {
@@ -87,7 +98,8 @@ async function confirm() {
     <div
       ref="bubble"
       popover="auto"
-      class="favorite-confirm"
+      class="favorite-confirm pop-arrow"
+      :data-side="side"
       role="dialog"
       aria-label="确认取消收藏"
       :style="position"

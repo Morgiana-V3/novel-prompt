@@ -310,3 +310,68 @@ kbd {
   margin-right: 4px;
   color: var(--text2);
 }
+
+/*
+ * 浮层指向触发点的小箭头（与 HelpTip 同款）：
+ * 容器加 .pop-arrow，data-side 表示浮层在触发点的哪一侧（bottom = 在下方，箭头朝上），
+ * --arrow-x 是箭头相对容器左边的位置。容器不能 overflow: hidden，否则箭头会被裁掉；
+ * [popover] 默认 overflow: auto，伸出边框的箭头会撑出滚动条，这里统一放开。
+ */
+.pop-arrow {
+  overflow: visible;
+}
+
+.pop-arrow::before {
+  content: '';
+  position: absolute;
+  left: var(--arrow-x, 50%);
+  width: 10px;
+  height: 10px;
+  box-sizing: border-box;
+  background: var(--arrow-bg, var(--bg));
+  border: 1px solid var(--arrow-border, var(--line2));
+  transform: translateX(-50%) rotate(45deg);
+  pointer-events: none;
+}
+
+.pop-arrow[data-side='bottom']::before {
+  top: -6px;
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 2px 0 0;
+}
+
+.pop-arrow[data-side='top']::before {
+  bottom: -6px;
+  border-top: 0;
+  border-left: 0;
+  border-radius: 0 0 2px;
+}
+
+/* 折叠标题：替换浏览器默认的 ▶ 三角，统一为细箭头，展开时转向下（加在 <summary> 上） */
+.disclosure {
+  list-style: none;
+  cursor: pointer;
+}
+
+.disclosure::-webkit-details-marker {
+  display: none;
+}
+
+.disclosure::before {
+  content: '';
+  display: inline-block;
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  margin: 0 8px 2px 1px;
+  vertical-align: middle;
+  border-right: 1.5px solid currentcolor;
+  border-bottom: 1.5px solid currentcolor;
+  transform: rotate(-45deg);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+details[open] > .disclosure::before {
+  transform: rotate(45deg);
+}

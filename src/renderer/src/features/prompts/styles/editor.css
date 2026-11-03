@@ -117,9 +117,9 @@
 
 .section-tabs {
   display: flex;
-  flex-wrap: wrap;
   gap: 6px;
   flex-shrink: 0;
+  padding-block: 2px;
 }
 
 .section-tab {

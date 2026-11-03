@@ -17,7 +17,18 @@ export interface TextChangeDescription {
   operation: 'add' | 'remove' | 'replace' | 'format' | 'reorder'
 }
 
-/** Keep punctuation attached to its tag, and keep weighted/quoted groups indivisible. */
+/** 句末标点：中文句号类直接断句，英文的 . ! ? 后面要跟空白（避开 1.5、e.g 这类写法） */
+function sentenceEnd(text: string, i: number) {
+  return '。！？'.includes(text[i]) || ('.!?'.includes(text[i]) && /\s/.test(text[i + 1] ?? ''))
+}
+
+/** 以句末标点结尾的单元是一句自然语言 */
+const isSentence = (raw: string) => /[.!?。！？]$/.test(raw.trim())
+
+/**
+ * Keep punctuation attached to its tag, and keep weighted/quoted groups indivisible.
+ * 自然语言段落按句拆开，这样新增、删除或改写的单句也能单独采纳。
+ */
 function units(text: string): PromptUnit[] {
   const result: PromptUnit[] = []
   const textAt = findTextBlock(text)
@@ -57,8 +68,9 @@ function units(text: string): PromptUnit[] {
       i++
       continue
     }
-    if (!depth && !numeric && /[,\n|]/.test(ch)) {
-      const content = text.slice(start, i).trim()
+    if (!depth && !numeric && (/[,\n|]/.test(ch) || sentenceEnd(text, i))) {
+      // 逗号等分隔符不算内容，句末标点属于这句话
+      const content = text.slice(start, /[,\n|]/.test(ch) ? i : i + 1).trim()
       while (i + 1 < text.length && /\s/.test(text[i + 1])) {
         i++
       }
@@ -141,18 +153,33 @@ export function adoptionTextPatches(before: string, after: string): TextPatch[] 
   let offset = 0
   let old: string[] = []
   let next: string[] = []
-  const flush = () => {
-    if (!old.length && !next.length) {
+  const emit = (from: string[], to: string[]) => {
+    if (!from.length && !to.length) {
       return
     }
-    if (old.length === next.length) {
-      old.forEach((text, i) => {
-        patches.push({ start: offset, before: text, after: next[i] })
+    // 连续改写多句视为改写一整段，保持为一处修改；单句改写和 tag 替换仍逐条拆开
+    const passage = from.length > 1 && [...from, ...to].some(isSentence)
+    if (from.length === to.length && !passage) {
+      from.forEach((text, i) => {
+        patches.push({ start: offset, before: text, after: to[i] })
         offset += text.length
       })
     } else {
-      patches.push({ start: offset, before: old.join(''), after: next.join('') })
-      offset += old.join('').length
+      patches.push({ start: offset, before: from.join(''), after: to.join('') })
+      offset += from.join('').length
+    }
+  }
+  // 内容没变、只是分隔符变了的单元（如末尾追加一句时上一句补了空格）并入它后面的改动，
+  // 它前面的改动仍各自独立
+  const bare = (raw: string) => raw.replace(/[\s,|]+$/, '')
+  const flush = () => {
+    const at = old.findIndex((text) => next.some((other) => bare(other) === bare(text)))
+    const to = at < 0 ? -1 : next.findIndex((other) => bare(other) === bare(old[at]))
+    if (at > 0 || to > 0) {
+      emit(old.slice(0, at), next.slice(0, to))
+      emit(old.slice(at), next.slice(to))
+    } else {
+      emit(old, next)
     }
     old = []
     next = []

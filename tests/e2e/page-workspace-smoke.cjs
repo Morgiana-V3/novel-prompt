@@ -954,7 +954,7 @@ app.whenReady().then(async () => {
     await run(`document.querySelector('.pane-foot input[type=checkbox]').click()`)
     assert.equal(getSettings().naiAutoSave, false)
     // Saving the current configuration needs no image; browsing and loading live on the favorites page.
-    await click('.gen-params-head button', '收藏当前配置')
+    await click('.gen-params-head button', '收藏配置')
     await wait(`document.querySelector('.toast')?.textContent.includes('已收藏当前配置')`)
     const savedConfig = require('../../src/main/modules/images/recipes.ts').listRecipes()[0]
     assert.equal(savedConfig.sourceImage, '')
@@ -1019,6 +1019,21 @@ app.whenReady().then(async () => {
       'saved',
     )
     await shot('14-retained-gallery.png')
+    // Narrow viewer: action and header rows stay on one line; secondary actions collapse to icons.
+    win.setSize(1100, 760)
+    await pause(300)
+    assert.ok(
+      await js(`['.viewer .result-head', '.viewer .viewer-actions'].every(selector => {
+        const row = document.querySelector(selector)
+        const items = [...row.children].filter(child => child.getClientRects().length)
+        const tops = items.map(child => Math.round(child.getBoundingClientRect().top + child.getBoundingClientRect().height / 2))
+        return Math.max(...tops) - Math.min(...tops) <= 2 && row.scrollWidth <= row.clientWidth + 1
+      })`),
+      'viewer rows do not wrap or overflow at narrow widths',
+    )
+    await shot('14-retained-gallery-1100.png')
+    win.setSize(1440, 960)
+    await pause(300)
     const earlierTemp = (
       await client.generateImages(
         { ...draft, version: 'v5', params },
@@ -1579,7 +1594,7 @@ app.whenReady().then(async () => {
     )
     assert.ok(
       await js(
-        `document.querySelector('.pw-discussion-context').textContent.includes('方案 V1 · 候选 1')`,
+        `document.querySelector('.pw-discussion-context').textContent.includes('版本 V1 · 候选 1')`,
       ),
     )
     win.setSize(1100, 760)

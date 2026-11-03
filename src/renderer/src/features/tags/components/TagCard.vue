@@ -76,6 +76,10 @@ async function commit() {
     @click="onClick"
   >
     <div class="tag-top">
+      <i
+        class="tag-dot"
+        aria-hidden="true"
+      ></i>
       <span
         class="tag-en"
         :title="(prefix ?? '') + tag.display"

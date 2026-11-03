@@ -20,7 +20,7 @@ import { compositeInpaint, prepareInpaint, type PreparedInpaint } from './inpain
 export function token(): string {
   const text = getSettings().naiToken.trim()
   if (!text) {
-    throw new Error('请先在「设置 / 数据」中填写 NovelAI API Token')
+    throw new Error('请先在「设置」中填写 NovelAI API Token')
   }
   return text
 }

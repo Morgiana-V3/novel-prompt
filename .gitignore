@@ -5,6 +5,7 @@ release-*
 dist
 *.log
 .DS_Store
+.claude
 
 # Local planning document
 /TODO.md

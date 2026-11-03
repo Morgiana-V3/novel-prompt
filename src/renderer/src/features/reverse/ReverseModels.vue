@@ -80,7 +80,7 @@ onBeforeUnmount(() => dialog.value?.close())
         正在读取模型状态…
       </p>
       <details v-if="status">
-        <summary>存储位置、来源与手动导入</summary>
+        <summary class="disclosure">存储位置、来源与手动导入</summary>
         <p class="model-path">{{ status.directory }}</p>
         <p>手动导入时，请从以下来源下载对应版本的模型及配套文件。</p>
         <div

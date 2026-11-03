@@ -1,6 +1,7 @@
 import type { PageWorkspace } from '@shared/workspace/model'
 import { pageComparison, pageCurrent, pageGroups } from '@shared/workspace/model'
 import type { Ref } from 'vue'
+import { displayVersionLabel } from './labels'
 import { computed, ref } from 'vue'
 export function useVersionBrowser(work: Ref<PageWorkspace>) {
   const current = computed(() => pageCurrent(work.value))
@@ -44,7 +45,7 @@ export function useVersionBrowser(work: Ref<PageWorkspace>) {
       )
       .slice()
       .reverse()
-      .map((version) => ({ value: version.id, label: version.label })),
+      .map((version) => ({ value: version.id, label: displayVersionLabel(version.label) })),
   ])
 
   const reviewVersionId = computed(() => viewed.value.id)
@@ -60,7 +61,9 @@ export function useVersionBrowser(work: Ref<PageWorkspace>) {
   const discussionVersion = viewed
 
   const label = (id: string) =>
-    work.value.versions.find((version) => version.id === id)?.label ?? '历史版本'
+    displayVersionLabel(
+      work.value.versions.find((version) => version.id === id)?.label ?? '历史版本',
+    )
 
   function shortVersion(id: string) {
     const version = work.value.versions.find((version2) => version2.id === id)
@@ -68,7 +71,7 @@ export function useVersionBrowser(work: Ref<PageWorkspace>) {
       return '历史'
     }
     if (version.groupId) {
-      return version.label
+      return displayVersionLabel(version.label)
     }
     const index = work.value.versions.indexOf(version)
     if (index === 0) {
@@ -88,7 +91,7 @@ export function useVersionBrowser(work: Ref<PageWorkspace>) {
       return '' as const
     }
     return [
-      version.label,
+      displayVersionLabel(version.label),
       version.parentId ? `来源：${label(version.parentId)}` : '',
       resolveValue(),
     ]

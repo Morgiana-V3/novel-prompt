@@ -64,6 +64,52 @@ module.exports = async function checkCreation({
       `document.querySelector('#creation-generation-controls .run-bar .btn.accent').offsetHeight > 0`,
     ),
   )
+  // Tag autocomplete: suggestions under the caret, Enter inserts as one undoable edit.
+  await edit(base, 'masterpiece, twi')
+  await js(`document.querySelector(${JSON.stringify(base)}).setSelectionRange(16, 16)`)
+  await js(
+    `document.querySelector(${JSON.stringify(base)}).dispatchEvent(new InputEvent('input', { bubbles: true }))`,
+  )
+  await waitUI(
+    `document.querySelector('.tag-complete .tag-complete-item.active b')?.textContent === 'twintails'`,
+  )
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  writeFileSync(join(profile, 'tag-complete.png'), (await win.webContents.capturePage()).toPNG())
+  await js(
+    `document.querySelector(${JSON.stringify(base)}).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))`,
+  )
+  assert.equal(await value(), 'masterpiece, twintails, ')
+  assert.equal(await js(`!!document.querySelector('.tag-complete')`), false)
+  await js(`document.execCommand('undo')`)
+  assert.equal(await value(), 'masterpiece, twi', 'completion is a single undo step')
+  // NovelAI syntax comes first and inserts without a trailing comma; after artist: only artists are offered.
+  const typeAndWait = async (text, expected) => {
+    await edit(base, text)
+    await js(
+      `(()=>{const el=document.querySelector(${JSON.stringify(base)});el.setSelectionRange(${text.length},${text.length});el.dispatchEvent(new InputEvent('input',{bubbles:true}))})()`,
+    )
+    await waitUI(
+      `document.querySelector('.tag-complete .tag-complete-item.active b')?.textContent === ${JSON.stringify(expected)}`,
+    )
+  }
+  await typeAndWait('masterpiece, te', 'Text:')
+  assert.ok(
+    await js(`document.querySelector('.tag-complete-item.active').classList.contains('syntax')`),
+  )
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  writeFileSync(
+    join(profile, 'tag-complete-syntax.png'),
+    (await win.webContents.capturePage()).toPNG(),
+  )
+  await js(
+    `document.querySelector(${JSON.stringify(base)}).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))`,
+  )
+  assert.equal(await value(), 'masterpiece, Text: ')
+  await typeAndWait('masterpiece, artist:wl', 'artist:wlop')
+  await js(
+    `document.querySelector(${JSON.stringify(base)}).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))`,
+  )
+  assert.equal(await value(), 'masterpiece, artist:wlop, ')
   await edit(base, 'masterpiece, twin tails, bogus')
   await waitUI(
     `document.querySelector('.compare .alias-item') && document.querySelector('.compare .unknown-item')`,
@@ -104,6 +150,14 @@ module.exports = async function checkCreation({
         && generate.width > 60 && generate.right <= innerWidth && generate.bottom <= innerHeight
     })()`),
       'editor, results and generation controls fit the viewport',
+    )
+    assert.ok(
+      await js(`['.creation-tabs', '.compare .section-tabs'].every(selector => {
+        const row = document.querySelector(selector)
+        const tops = [...row.children].map(child => Math.round(child.getBoundingClientRect().top))
+        return row.classList.contains('scroll-row') && new Set(tops).size === 1
+      })`),
+      'tab rows stay on one line and scroll sideways instead of wrapping',
     )
     writeFileSync(
       join(profile, `creation-check-${width}.png`),

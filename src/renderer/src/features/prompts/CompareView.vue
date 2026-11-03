@@ -26,6 +26,7 @@ import { deleteSelectedToken } from './prompt-keyboard'
 import TagCard from '../tags/components/TagCard.vue'
 import Icon from '../../shared/ui/Icon.vue'
 import Mascot from '../../shared/ui/Mascot.vue'
+import { vScrollRow } from '../../shared/lib/scroll-row'
 import WorkspaceBar from './components/WorkspaceBar.vue'
 import { usePagePresentation } from '../../shared/lib/page-presentation'
 const { embedded, navigate, editor } = usePagePresentation()
@@ -364,7 +365,10 @@ function formatPrompt() {
       class="pane left"
     >
       <WorkspaceBar />
-      <div class="section-tabs">
+      <div
+        v-scroll-row
+        class="section-tabs"
+      >
         <button
           v-for="sectionItem in sections"
           :key="fieldLabel(sectionItem)"
@@ -461,7 +465,10 @@ function formatPrompt() {
       class="pane right scroll"
     >
       <template v-if="embedded">
-        <div class="section-tabs">
+        <div
+          v-scroll-row
+          class="section-tabs"
+        >
           <button
             v-for="field in sections"
             :key="fieldLabel(field)"

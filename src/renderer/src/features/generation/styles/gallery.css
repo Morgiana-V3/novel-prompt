@@ -24,6 +24,21 @@
 
 .gen-params-head {
   margin-bottom: -4px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+/* 标题不让出空间（之前会被右侧按钮挤成一字一行），按钮行宽度不够时整体收紧 */
+.gen-params-head .field-label {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.gen-params-head .btn {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .gen-advanced {

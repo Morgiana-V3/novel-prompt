@@ -69,6 +69,17 @@ function levenshtein(leftText: string, rightText: string, max: number): number {
 const HAS_ZH = /[\u4e00-\u9fff]/
 const ASCII_LETTERS = /^[a-z]+$/
 
+/** 补全索引按前两个字符分桶；桶内保持引用数从高到低，查询时命中够数就停 */
+const bucketKey = (text: string) => text.slice(0, 2)
+function pushBucket<T>(buckets: Map<string, T[]>, key: string, item: T) {
+  const bucket = buckets.get(key)
+  if (bucket) {
+    bucket.push(item)
+  } else {
+    buckets.set(key, [item])
+  }
+}
+
 class TagStore {
   private entries: Entry[] = []
   private byName = new Map<string, Entry>()
@@ -85,6 +96,13 @@ class TagStore {
   private zhUserMine: Dict = {}
   private pyMine: Dict<[string, string]> = {}
   private suggestCache = new Map<string, TagInfo[]>()
+  /** 输入补全用的有序索引，首次补全时建立；词库或翻译变化后作废 */
+  private completion?: {
+    names: Map<string, Entry[]>
+    aliases: Map<string, [string, Entry][]>
+    pinyin: Map<string, Entry[]>
+    zh: Entry[]
+  }
   private implications = new Map<string, string[]>()
   private impliedCache = new Map<string, Set<string>>()
   private implicationCount = 0
@@ -214,6 +232,7 @@ class TagStore {
   }
 
   private applyTranslations(): void {
+    this.completion = undefined
     let cacheDirty = false
     for (const entry of this.entries) {
       const builtin =
@@ -381,6 +400,119 @@ class TagStore {
 
     hits.sort((searchHit, searchHit2) => searchHit2.score - searchHit.score)
     return hits.slice(0, limit)
+  }
+
+  /** 单次遍历建立（entries 已按引用数降序），不排序，几十毫秒内完成 */
+  private completionIndex() {
+    if (!this.completion) {
+      const index = {
+        names: new Map<string, Entry[]>(),
+        aliases: new Map<string, [string, Entry][]>(),
+        pinyin: new Map<string, Entry[]>(),
+        zh: [] as Entry[],
+      }
+      for (const entry of this.entries) {
+        pushBucket(index.names, bucketKey(entry.lower), entry)
+        if (entry.pyInit) {
+          pushBucket(index.pinyin, bucketKey(entry.pyInit), entry)
+        }
+        if (entry.info.zh) {
+          index.zh.push(entry)
+        }
+      }
+      const aliases = this.aliasList
+        .map(([alias, target]) => [alias, this.byName.get(target)] as const)
+        .filter((pair): pair is readonly [string, Entry] => !!pair[1])
+        .sort((left, right) => right[1].info.count - left[1].info.count)
+      for (const [alias, entry] of aliases) {
+        pushBucket(index.aliases, bucketKey(alias), [alias, entry])
+      }
+      this.completion = index
+    }
+    return this.completion
+  }
+
+  /**
+   * 输入时的补全：英文名 / 别名 / 拼音首字母做前缀匹配，中文做包含匹配。
+   * 只查对应的桶，并按引用数从高到低取够数量即停，单次通常不到 1 毫秒。
+   */
+  complete(query: string, limit = 8, category?: TagCategory): SearchHit[] {
+    const text = query.trim().toLowerCase().replace(/_/g, ' ')
+    const zhQuery = HAS_ZH.test(text)
+    if (!text || (!zhQuery && text.length < 2)) {
+      return []
+    }
+    const index = this.completionIndex()
+    const enough = limit * 2
+    const picked = new Map<string, SearchHit>()
+    // 命中计数只算符合分类的条目，限定分类（如 artist: 之后）时不会被同前缀的普通 tag 提前占满
+    const allowed = (entry: Entry) => category === undefined || entry.info.category === category
+    const take = (entry: Entry, base: number, viaAlias?: string) => {
+      // NovelAI 专用词（质量 / 美学 / 角色标记等）没有引用数，按 NAI 的用法优先于同前缀的普通 tag
+      const nai = entry.info.category === 100 ? 250 : 0
+      const score = base + nai + Math.log10(entry.info.count + 1) * 40
+      if ((picked.get(entry.info.name)?.score ?? -1) < score) {
+        picked.set(entry.info.name, { ...entry.info, score, ...(viaAlias ? { viaAlias } : {}) })
+      }
+    }
+    if (zhQuery) {
+      let found = 0
+      for (const entry of index.zh) {
+        const zh = entry.info.zh!
+        if (allowed(entry) && zh.includes(text)) {
+          let base = 300
+          if (zh === text) {
+            base = 1000
+          } else if (zh.startsWith(text)) {
+            base = 600
+          }
+          take(entry, base)
+          if (++found >= enough) {
+            break
+          }
+        }
+      }
+    } else {
+      const exact = this.byName.get(normalizeTag(text))
+      if (exact && allowed(exact)) {
+        take(exact, 1000)
+      }
+      const scan = <T>(
+        bucket: T[] | undefined,
+        match: (item: T) => boolean,
+        use: (item: T) => void,
+      ) => {
+        let found = 0
+        for (const item of bucket ?? []) {
+          if (match(item)) {
+            use(item)
+            if (++found >= enough) {
+              break
+            }
+          }
+        }
+      }
+      const key = bucketKey(text)
+      scan(
+        index.names.get(key),
+        (entry) => allowed(entry) && entry.lower.startsWith(text),
+        (entry) => take(entry, 600),
+      )
+      const alias = normalizeTag(text)
+      scan(
+        index.aliases.get(bucketKey(alias)),
+        ([name, entry]) => allowed(entry) && name.startsWith(alias),
+        ([name, entry]) => take(entry, name === alias ? 900 : 450, displayTag(name)),
+      )
+      if (ASCII_LETTERS.test(text)) {
+        scan(
+          index.pinyin.get(key),
+          (entry) => allowed(entry) && entry.pyInit!.startsWith(text),
+          (entry) => take(entry, entry.pyInit === text ? 550 : 350),
+        )
+      }
+    }
+    return [...picked.values()].sort((left, right) => right.score - left.score).slice(0, limit)
   }
 
   /** 为不存在的 tag 给出候选 */

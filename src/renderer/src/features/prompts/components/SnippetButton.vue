@@ -44,7 +44,13 @@ const saving = ref(false)
 const saveBusy = ref(false)
 const saveDraft = reactive({ name: '', category: '', text: '' })
 const fieldText = ref('')
-const position = ref({ left: '0px', top: '0px', width: '360px', maxHeight: '420px' })
+const position = ref({
+  left: '0px',
+  top: '0px',
+  width: '360px',
+  maxHeight: '420px',
+  '--arrow-x': '50%',
+})
 const categories = computed(() => [
   ...new Set(items.value.map((item) => item.category).filter(Boolean)),
 ])
@@ -143,11 +149,14 @@ function place() {
   const maxHeight = Math.max(80, Math.min(420, upwards ? above : below))
   const height = Math.min(panel.value.scrollHeight, maxHeight)
   panel.value.dataset.side = upwards ? 'top' : 'bottom'
+  const left = Math.max(12, Math.min(rect.right - width, innerWidth - width - 12))
   position.value = {
-    left: `${Math.max(12, Math.min(rect.right - width, innerWidth - width - 12))}px`,
-    top: `${upwards ? rect.top - height - 6 : rect.bottom + 6}px`,
+    left: `${left}px`,
+    top: `${upwards ? rect.top - height - 10 : rect.bottom + 10}px`,
     width: `${width}px`,
     maxHeight: `${maxHeight}px`,
+    // 箭头对准星标按钮
+    '--arrow-x': `${Math.max(16, Math.min(rect.left + rect.width / 2 - left, width - 16))}px`,
   }
 }
 function onScroll(event: Event) {
@@ -455,7 +464,7 @@ onBeforeUnmount(() => {
       :id="panelId"
       ref="panel"
       popover="auto"
-      class="snippet-popover"
+      class="snippet-popover pop-arrow"
       role="dialog"
       aria-label="收藏的提示词片段"
       :style="position"
@@ -692,11 +701,13 @@ onBeforeUnmount(() => {
   border: 1px solid var(--line2);
   border-radius: 14px;
   box-shadow: var(--shadow-pop);
-  overflow: hidden;
   transform-origin: top right;
 }
 
 .snippet-popover[data-side='top'] {
+  /* 箭头在底部，与灰色底栏同色 */
+  --arrow-bg: var(--panel);
+
   transform-origin: bottom right;
 }
 
@@ -853,6 +864,7 @@ onBeforeUnmount(() => {
 .snippet-quick-save {
   flex-shrink: 0;
   border-top: 1px solid var(--line);
+  border-radius: 0 0 13px 13px;
   background: var(--panel);
 }
 

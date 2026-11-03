@@ -62,7 +62,7 @@ export function useReverseTrials() {
       return
     }
     if (!settingsState.settings?.naiToken?.trim()) {
-      state.error = '请先在「设置 / 数据」中填写 NovelAI API Token'
+      state.error = '请先在「设置」中填写 NovelAI API Token'
       return
     }
     if (!candidates.length || candidates.length > 6) {

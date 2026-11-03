@@ -110,17 +110,22 @@ function orient(key: Orientation) {
 .resolution-picker {
   display: grid;
   gap: 8px;
+  container-type: inline-size;
 }
 
+/* 参数列最窄 170px：文字不换行、比例图标不被压扁，放不下时只保留文字 */
 .resolution-picker button {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .ratio-symbol {
   display: inline-block;
+  flex: none;
   width: 14px;
   height: 10px;
   border: 1.5px solid currentcolor;
@@ -135,5 +140,11 @@ function orient(key: Orientation) {
 .ratio-symbol.square {
   width: 12px;
   height: 12px;
+}
+
+@container (width < 210px) {
+  .ratio-symbol {
+    display: none;
+  }
 }
 </style>

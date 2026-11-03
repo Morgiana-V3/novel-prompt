@@ -101,7 +101,7 @@ const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: bool
   },
   {
     key: 'settings',
-    label: '设置 / 数据',
+    label: '设置',
     icon: 'sliders',
     desc: '词库、AI 服务与软件设置',
     tool: true,
@@ -674,7 +674,7 @@ async function onDrop(event2: DragEvent) {
             v-else-if="frontend?.status === 'error'"
             class="agent-error"
           >
-            <summary>Agent 操作未完成</summary>
+            <summary class="disclosure">Agent 操作未完成</summary>
             <div role="alert">
               {{ frontend.stage
               }}<button

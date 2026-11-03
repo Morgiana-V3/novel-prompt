@@ -8,16 +8,19 @@ const id = useId()
 const trigger = ref<HTMLButtonElement>()
 const menu = ref<HTMLElement>()
 const opened = ref(false)
-const position = ref({ left: '0px', top: '0px' })
+const position = ref({ left: '0px', top: '0px', '--arrow-x': '50%' })
 
 function toggle() {
   const bounds = trigger.value?.getBoundingClientRect()
   if (!bounds) {
     return
   }
+  const left = Math.max(8, Math.min(bounds.left, innerWidth - 220))
   position.value = {
-    left: `${Math.max(8, Math.min(bounds.left, innerWidth - 220))}px`,
-    top: `${Math.max(48, Math.min(bounds.bottom + 6, innerHeight - 104))}px`,
+    left: `${left}px`,
+    top: `${Math.max(48, Math.min(bounds.bottom + 10, innerHeight - 104))}px`,
+    // 箭头对准导入按钮
+    '--arrow-x': `${Math.max(16, Math.min(bounds.left + bounds.width / 2 - left, 196))}px`,
   }
   menu.value?.togglePopover()
 }
@@ -61,7 +64,8 @@ function select(kind: 'file' | 'directory') {
     :id="id"
     ref="menu"
     popover="auto"
-    class="skill-import-menu"
+    class="skill-import-menu pop-arrow"
+    data-side="bottom"
     :style="position"
     role="group"
     aria-label="选择导入类型"

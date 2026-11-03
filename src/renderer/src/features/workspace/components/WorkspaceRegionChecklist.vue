@@ -11,7 +11,7 @@ const emit = defineEmits<{ locate: [id: string]; change: [] }>()
     class="pw-region-checklist"
     open
   >
-    <summary>
+    <summary class="disclosure">
       本轮修改清单 <span>{{ selected.length }} / {{ regions.length }}</span>
     </summary>
     <div class="pw-region-list scroll">

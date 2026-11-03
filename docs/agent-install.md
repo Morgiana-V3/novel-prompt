@@ -87,7 +87,7 @@ Claude Code（`~/.claude.json` 的 `mcpServers`）、Cursor 等 JSON 格式：
 
 ## 5. 可选：告诉用户还可以配置什么
 
-以下设置都在 NovelPrompt 窗口的「设置 / 数据」页，**请用户自己在界面里填写，不要直接编辑 `settings.json`，也不要让用户把 Token 发给你**：
+以下设置都在 NovelPrompt 窗口的「设置」页，**请用户自己在界面里填写，不要直接编辑 `settings.json`，也不要让用户把 Token 发给你**：
 
 | 设置 | 用途 |
 |---|---|

@@ -103,6 +103,21 @@ const handlers = {
   'pages:read': (_, id) => pages.readPage(id),
   'pages:create': (_, ...args) => pages.createPage(...args),
   'pages:edit': (_, ...args) => pages.editPage(...args),
+  'tag:complete': (_, query, _limit, category) =>
+    category === 1
+      ? [{ name: 'wlop', display: 'wlop', category: 1, count: 3000, score: 1 }]
+      : 'twintails'.startsWith(String(query).trim())
+        ? [
+            {
+              name: 'twintails',
+              display: 'twintails',
+              category: 0,
+              count: 120000,
+              zh: '双马尾',
+              score: 1,
+            },
+          ]
+        : [],
   'prompt:analyze': (_, text) => {
     calls++
     return holdAnalysis

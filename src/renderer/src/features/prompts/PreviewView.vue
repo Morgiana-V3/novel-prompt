@@ -80,7 +80,7 @@ async function run() {
     return
   }
   if (!settingsState.settings?.apiKey) {
-    error.value = '请先在「设置 / 数据」中填写 DeepSeek API Key'
+    error.value = '请先在「设置」中填写 DeepSeek API Key'
     return
   }
   if (
@@ -348,8 +348,10 @@ usePageShortcuts(() => isActive('preview'), {
           v-if="!embedded"
           class="field"
         >
-          <label class="field-label"
-            >想要的效果（可选）<span class="muted"> · 填了会对比差距并给出修改建议</span></label
+          <label
+            class="field-label"
+            title="填写后会对比推测画面与期望的差距，并给出修改建议"
+            >想要的效果（可选）</label
           >
           <div class="composer short mini">
             <textarea
@@ -810,9 +812,8 @@ usePageShortcuts(() => isActive('preview'), {
                 :size="14"
                 :stroke="2.2"
             /></span>
-            <h3>本地校验</h3>
+            <h3 title="查 tag 库和 Danbooru 统计得到，不经过 AI">本地校验</h3>
             <span class="group-count">{{ sortedIssues.length }}</span>
-            <span class="muted small ml-auto">查 tag 库和 Danbooru 统计得到，不经过 AI</span>
           </div>
           <div class="effect-list">
             <div

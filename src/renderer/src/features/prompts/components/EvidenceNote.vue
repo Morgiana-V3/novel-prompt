@@ -33,7 +33,7 @@ const empty = computed(() => !used.value.length && !props.info.failed.length)
       </template>
       <template v-if="!info.implications">
         <span v-if="!empty">；</span>
-        本地还没有包含关系数据，冗余检查未生效，可在「设置 / 数据」中下载
+        本地还没有包含关系数据，冗余检查未生效，可在「设置」中下载
       </template>
     </div>
   </div>

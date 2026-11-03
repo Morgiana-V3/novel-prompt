@@ -189,7 +189,7 @@ const maskUrl = computed(() => {
         v-if="iteration.maskChanged && iteration.result?.inpaint"
         class="wi-mask"
       >
-        <summary>
+        <summary class="disclosure">
           重绘区域已变更{{
             iteration.result.inpaint.label ? ` · ${iteration.result.inpaint.label}` : ''
           }}

@@ -5,6 +5,7 @@ import type { AiChange } from '@shared/prompts/types'
 import { granularChanges, type AdoptionChange } from '../partial-adoption'
 import { reviewExplanations } from '../review-explanations'
 import Icon from '../../../shared/ui/Icon.vue'
+import { vScrollRow } from '../../../shared/lib/scroll-row'
 import PromptReview from './PromptReview.vue'
 import AiExplanations from './AiExplanations.vue'
 import AiChangePicker from './AiChangePicker.vue'
@@ -166,6 +167,7 @@ function navigateScope(event: KeyboardEvent) {
 <template>
   <div class="scoped-review">
     <div
+      v-scroll-row
       class="review-scopes"
       role="tablist"
       aria-label="修改范围"
@@ -376,7 +378,6 @@ function navigateScope(event: KeyboardEvent) {
 <style scoped>
 .review-scopes {
   display: flex;
-  flex-wrap: wrap;
   gap: 6px;
   padding: 12px 0;
 }

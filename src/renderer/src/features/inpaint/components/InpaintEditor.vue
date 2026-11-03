@@ -1193,7 +1193,7 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                       "
                       class="ip-character-note"
                     >
-                      <summary>角色 {{ region.target + 1 }} 提示词</summary>
+                      <summary class="disclosure">角色 {{ region.target + 1 }} 提示词</summary>
                       <textarea
                         v-model="(region.accepted ?? draft).characters[region.target].prompt"
                         v-autosize
@@ -1254,7 +1254,9 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                 </div>
                 <template v-else>
                   <details class="ip-analysis-details">
-                    <summary>本轮 Skill · {{ analysisInfo.skills.length }}</summary>
+                    <summary class="disclosure">
+                      本轮 Skill · {{ analysisInfo.skills.length }}
+                    </summary>
                     {{ analysisInfo.skills.join('、') || '未启用 Skill' }}
                   </details>
                   <button
@@ -1324,7 +1326,7 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                   区域 {{ selected.label }} · 已采纳
                 </div>
                 <details class="ip-analysis-details">
-                  <summary>提示词来源</summary>
+                  <summary class="disclosure">提示词来源</summary>
                   {{ promptNote || '正在读取图片提示词…' }}
                 </details>
                 <fieldset :disabled="loading || running || analyzing">
@@ -1360,7 +1362,9 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                     v-if="editDraft.characters.length"
                     class="ip-details"
                   >
-                    <summary>角色提示词 · {{ editDraft.characters.length }} 个</summary>
+                    <summary class="disclosure">
+                      角色提示词 · {{ editDraft.characters.length }} 个
+                    </summary>
                     <div
                       v-for="(character, index) in editDraft.characters"
                       :key="index"

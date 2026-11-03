@@ -553,7 +553,7 @@ onBeforeUnmount(() => {
                 </button>
               </div>
               <details class="pos-help muted">
-                <summary>位置说明</summary>
+                <summary class="disclosure">位置说明</summary>
                 位置会实时写回角色提示词。全部留空时由模型自行排布；只要有一个角色设了位置，没设的角色会按顺序从左到右排开（虚线圆点）。{{
                   characters
                     ? '完成后返回草稿，保存草稿才会采用修改。'

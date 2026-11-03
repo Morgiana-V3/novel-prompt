@@ -104,7 +104,7 @@ const agreement = computed(() => {
       v-if="result?.artists.length"
       class="recognition-details"
     >
-      <summary>识别详情 <span>模型排名与原始分数</span></summary>
+      <summary class="disclosure">识别详情 <span>模型排名与原始分数</span></summary>
       <p>
         综合推荐按名次融合，偏重靠前候选；不直接平均模型分数。原始分数不代表相似百分比或提示词权重。
       </p>

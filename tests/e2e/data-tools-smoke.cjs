@@ -125,7 +125,7 @@ app
     try {
       await win.loadFile(resolve('out/renderer/index.html'))
       await wait(`!!document.querySelector('.nav-item')`)
-      await click('.nav-item', '设置 / 数据')
+      await click('.nav-item', '设置')
       await shot('00-settings-tabs.png')
       for (const width of [1440, 1100]) {
         win.setSize(width, 1000)

@@ -329,6 +329,35 @@ module.exports = async function checkPartialUi({
   console.log(
     'PASS flat scoped before/after comparison, complete text without repeated headers/folds and atomic long-paragraph adoption/undo',
   )
+  // Prose with one rewritten sentence and one appended sentence: each is its own card.
+  const sentencesBefore =
+    '1girl, A quiet garden lies behind the house. Soft light falls on the path. The girl waits by the window.'
+  const sentenceCat = 'A cat sleeps on the sill.'
+  await edit('主提示词', sentencesBefore)
+  setOptimizeResult((req) => ({
+    positive: `1girl, A quiet garden lies behind the house. Warm sunset light falls on the path. The girl waits by the window. ${sentenceCat}`,
+    negative: req.negative,
+    characters: req.characters,
+    changes: [],
+    invalid: [],
+    notes: '改写光线并补一句细节。',
+    evidence: { related: [], wiki: [], failed: [], implications: true },
+  }))
+  await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+  await waitUI(
+    `document.querySelector('#ai-review-compare')?.textContent.includes('A cat') && document.querySelectorAll('.ai-change').length === 2`,
+  )
+  await js(
+    `[...document.querySelectorAll('.ai-change')].find(el => el.textContent.includes('A cat')).click()`,
+  )
+  assert.equal(await value('主提示词'), `${sentencesBefore} ${sentenceCat}`)
+  await js(`document.getAnimations().forEach(a => { try { a.finish() } catch {} })`)
+  await new Promise((resolve) => setTimeout(resolve, 400))
+  writeFileSync(
+    join(profile, 'sentence-adoption.png'),
+    (await win.webContents.capturePage()).toPNG(),
+  )
+  console.log('PASS single sentences in prose are adopted one by one')
   setOptimizeResult(null)
   console.log(
     'PASS per-change click applies/undoes immediately, marks adopted, preserves unrelated edits and protects manual rewrites',

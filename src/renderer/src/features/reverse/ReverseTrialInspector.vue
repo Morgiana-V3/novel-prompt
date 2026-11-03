@@ -232,20 +232,28 @@ header > div > span {
   color: var(--bad);
 }
 
+/* 主操作独占第一行；第二行固定三列：留存 | 换种子再试 | 收藏星标，宽度对齐不再参差 */
 .preview-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
   gap: 8px;
   padding: 12px 0;
 }
 
 .preview-actions .btn {
   justify-content: center;
+  min-width: 0;
 }
 
 .preview-actions .primary {
   grid-column: 1 / -1;
   grid-row: 1;
+}
+
+.preview-actions :deep(.favorite-button) {
+  grid-column: 3;
+  grid-row: 2;
 }
 
 .preview-details {
@@ -254,8 +262,31 @@ header > div > span {
 }
 
 .preview-details summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   cursor: pointer;
   color: var(--text2);
+  list-style: none;
+}
+
+.preview-details summary::-webkit-details-marker {
+  display: none;
+}
+
+/* 与全站一致的细箭头，展开时转向下 */
+.preview-details summary::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentcolor;
+  border-bottom: 1.5px solid currentcolor;
+  transform: rotate(-45deg);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.preview-details[open] > summary::before {
+  transform: rotate(45deg);
 }
 
 .preview-details p {

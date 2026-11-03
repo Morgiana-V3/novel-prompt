@@ -36,18 +36,25 @@ const clone = (draft: InpaintDraft): InpaintDraft => ({
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 /** Exact text patches are replayed from the request snapshot, never searched by tag spelling. */
+// 说明里多句用「, 」连接，所以句点后跟逗号也算句末
+const SENTENCE_END = /[.!?](?=[\s,|]|$)|[。！？]/g
+const sentenceCount = (text: string) => text.match(SENTENCE_END)?.length ?? 0
+
 /**
- * 可以单独采纳的小改动：tag 级的替换 / 增删。整句改写保持整段采纳，
- * 拆开反而会拼出不通顺的句子。
+ * 可以单独采纳的小改动：tag 级的替换 / 增删，以及单句的新增、删除或改写。
+ * 连续多句的改写保持整段采纳，拆开反而会拼出不通顺的段落。
  */
 export function granularChanges(changes: AdoptionChange[]): AdoptionChange[] {
-  return changes.filter(
-    (change) =>
-      change.kind === 'text' &&
-      change.field !== 'position' &&
-      change.before.length + change.after.length <= 180 &&
-      !/[.!?。！？]\s/.test(change.before + change.after),
-  )
+  return changes.filter((change) => {
+    if (change.kind !== 'text' || change.field === 'position') {
+      return false
+    }
+    // 按实际增删的内容数句数：在末尾追加一句时，补间隔的上一句也会进到同一处补丁里
+    const { before, after } = change.description ?? change
+    const sentences = Math.max(sentenceCount(before), sentenceCount(after))
+    const size = change.before.length + change.after.length
+    return sentences === 0 ? size <= 180 : sentences === 1 && size <= 480
+  })
 }
 
 export function adoptionPlan(original: InpaintDraft, proposal: InpaintDraft) {

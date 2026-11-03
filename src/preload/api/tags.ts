@@ -1,4 +1,4 @@
-import type { DbStatus, SearchHit, SearchOptions } from '../../shared/tags/types'
+import type { DbStatus, SearchHit, SearchOptions, TagCategory } from '../../shared/tags/types'
 import { invoke } from './bridge'
 
 export const tagsApi = {
@@ -6,5 +6,7 @@ export const tagsApi = {
   dbUpdate: (): Promise<DbStatus> => invoke('db:update'),
   dbImplications: (): Promise<DbStatus> => invoke('db:implications'),
   search: (opts: SearchOptions): Promise<SearchHit[]> => invoke('tag:search', opts),
+  tagComplete: (query: string, limit?: number, category?: TagCategory): Promise<SearchHit[]> =>
+    invoke('tag:complete', query, limit, category),
   setZh: (name: string, zh: string): Promise<void> => invoke('tag:setZh', name, zh),
 }

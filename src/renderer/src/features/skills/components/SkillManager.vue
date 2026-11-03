@@ -410,7 +410,7 @@ const openPicker = () => (skillsState.skillPanel = true)
               open
               class="skill-import-warnings"
             >
-              <summary>{{ importing.warnings.length }} 项导入提示</summary>
+              <summary class="disclosure">{{ importing.warnings.length }} 项导入提示</summary>
               <p
                 v-for="warning in importing.warnings"
                 :key="warning"

@@ -29,7 +29,13 @@ import type {
   SkillInput,
   SkillImportPreview,
 } from '../skills/types'
-import type { DbStatus, SearchHit, SearchOptions, UpdateProgress } from '../tags/types'
+import type {
+  DbStatus,
+  SearchHit,
+  SearchOptions,
+  TagCategory,
+  UpdateProgress,
+} from '../tags/types'
 import type { AiStep, NaiStep, TaskSnapshot } from '../tasks/model'
 import type { UpdateInfo } from '../updates/types'
 import type {
@@ -156,6 +162,8 @@ export interface Api {
   dbImplications: () => Promise<DbStatus>
   cancelTask: () => Promise<void>
   search: (opts: SearchOptions) => Promise<SearchHit[]>
+  /** 输入时的 tag 补全：前缀 / 拼音首字母 / 中文，走索引，单次通常不到 1 毫秒 */
+  tagComplete: (query: string, limit?: number, category?: TagCategory) => Promise<SearchHit[]>
   setZh: (name: string, zh: string) => Promise<void>
   analyze: (text: string) => Promise<AnalysisResult>
   getSettings: () => Promise<Settings>
@@ -379,6 +387,10 @@ export interface IpcContract {
     result: Awaited<ReturnType<Api['cancelTask']>>
   }
   'tag:search': { args: Parameters<Api['search']>; result: Awaited<ReturnType<Api['search']>> }
+  'tag:complete': {
+    args: Parameters<Api['tagComplete']>
+    result: Awaited<ReturnType<Api['tagComplete']>>
+  }
   'tag:setZh': { args: Parameters<Api['setZh']>; result: Awaited<ReturnType<Api['setZh']>> }
   'prompt:analyze': {
     args: Parameters<Api['analyze']>

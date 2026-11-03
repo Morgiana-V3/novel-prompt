@@ -255,9 +255,9 @@ app.whenReady().then(async () => {
       )
     await win.loadFile(join(__dirname, '../../out/renderer/index.html'))
     await wait(
-      "[...document.querySelectorAll('button')].some(element => element.textContent.trim() === '设置 / 数据')",
+      "[...document.querySelectorAll('button')].some(element => element.textContent.trim() === '设置')",
     )
-    await click('设置 / 数据')
+    await click('设置')
     await wait("!!document.querySelector('#skill-manager')")
     await js("document.querySelector('#skill-manager').scrollIntoView({ block: 'start' })")
     await new Promise((resolve) => setTimeout(resolve, 500))
@@ -281,7 +281,7 @@ app.whenReady().then(async () => {
       join(profile, 'user-manga-preview.png'),
       (await win.webContents.capturePage()).toPNG(),
     )
-    await js("document.querySelector('.sk-head button').click()")
+    await js("document.querySelector('.sk-head button[title^=关闭]').click()")
     await wait("!document.querySelector('.sk-dialog')")
     await js(
       '[...' +
@@ -289,7 +289,7 @@ app.whenReady().then(async () => {
         ".querySelectorAll('button')].find(b => b.textContent.trim() === '编辑').click()",
     )
     await wait("!!document.querySelector('.cm-editor')")
-    await js("document.querySelector('.sk-head button').click()")
+    await js("document.querySelector('.sk-head button[title^=关闭]').click()")
     await wait("!document.querySelector('.sk-dialog')")
     await js(mangaRow + ".querySelector('button[title=删除]').click()")
     await wait(mangaRow + ".textContent.includes('确认删除')")
@@ -412,7 +412,7 @@ app.whenReady().then(async () => {
       join(profile, 'resource-editor.png'),
       (await win.webContents.capturePage()).toPNG(),
     )
-    await js("document.querySelector('.sk-head button').click()")
+    await js("document.querySelector('.sk-head button[title^=关闭]').click()")
     await wait("!!document.querySelector('.confirm-dialog[open]')")
     assert(await js("document.querySelector('.confirm-dialog').contains(document.activeElement)"))
     writeFileSync(
@@ -422,11 +422,11 @@ app.whenReady().then(async () => {
     await shortcut('Escape')
     await wait("!document.querySelector('.confirm-dialog')")
     assert(await js("document.querySelector('.cm-content').textContent.includes('编辑后的参考')"))
-    await js("document.querySelector('.sk-head button').click()")
+    await js("document.querySelector('.sk-head button[title^=关闭]').click()")
     await wait("!!document.querySelector('.confirm-dialog[open]')")
     await click('继续编辑')
     await wait("!document.querySelector('.confirm-dialog')")
-    await js("document.querySelector('.sk-head button').click()")
+    await js("document.querySelector('.sk-head button[title^=关闭]').click()")
     await wait("!!document.querySelector('.confirm-dialog[open]')")
     await click('保存并关闭')
     await wait("document.querySelector('.confirm-dialog h3')?.textContent === '存在失效引用'")
@@ -443,7 +443,7 @@ app.whenReady().then(async () => {
     await js(
       "(() => { const input = document.querySelector('.sk-meta input'); input.value = 'DISCARDED_NAME'; input.dispatchEvent(new Event('input', { bubbles: true })) })()",
     )
-    await js("document.querySelector('.sk-head button').click()")
+    await js("document.querySelector('.sk-head button[title^=关闭]').click()")
     await wait("!!document.querySelector('.confirm-dialog[open]')")
     await click('放弃修改')
     await wait("!document.querySelector('.sk-dialog')")
@@ -471,7 +471,7 @@ app.whenReady().then(async () => {
       join(profile, 'skill-view-narrow.png'),
       (await win.webContents.capturePage()).toPNG(),
     )
-    await js("document.querySelector('.sk-head button').click()")
+    await js("document.querySelector('.sk-head button[title^=关闭]').click()")
     await wait("!document.querySelector('.sk-dialog')")
     await click('启用与优先级')
     await wait("!!document.querySelector('.sp-pop')")

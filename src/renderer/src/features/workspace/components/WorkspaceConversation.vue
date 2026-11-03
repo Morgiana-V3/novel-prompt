@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { displayVersionLabel } from '../labels'
 import { computed, ref } from 'vue'
 import { regionIds as messageRegionIds } from '@shared/workspace/regions'
 import WorkspaceRegionChecklist from './WorkspaceRegionChecklist.vue'
@@ -101,7 +102,7 @@ defineExpose({
           { value: 'internal', label: '内置 AI' },
           { value: 'external', label: '外部 Agent 接管' },
         ]"
-        aria-label="会话处理方式"
+        aria-label="AI 处理方式"
         @update:model-value="emit('agentMode', $event)"
       /><span
         v-if="external"
@@ -110,7 +111,7 @@ defineExpose({
       >
     </div>
     <div class="pw-context">
-      <span class="pw-context-dot"></span>当前蓝本 <b>{{ current.label }}</b
+      <span class="pw-context-dot"></span>当前蓝本 <b>{{ displayVersionLabel(current.label) }}</b
       ><button
         v-if="historical"
         :disabled="busy"
@@ -167,7 +168,7 @@ defineExpose({
               :disabled="editingPrompt"
               @click="emit('view', messageItem.discussion.versionId)"
             >
-              讨论 {{ messageItem.discussion.label }}</button
+              讨论 {{ displayVersionLabel(messageItem.discussion.label) }}</button
             ><span>建议修改 {{ label(messageItem.versionId) }}</span>
           </div>
           <div
@@ -187,7 +188,7 @@ defineExpose({
             v-if="messageItem.regions?.length"
             class="pw-message-regions"
           >
-            <summary>
+            <summary class="disclosure">
               本轮区域 · {{ messageItem.regions.map((region) => region.label).join('、') }}
             </summary>
             <p
@@ -212,7 +213,7 @@ defineExpose({
             v-if="messageItem.skills"
             class="pw-used-skills"
           >
-            <summary>本轮 Skill · {{ messageItem.skills.length }}</summary>
+            <summary class="disclosure">本轮 Skill · {{ messageItem.skills.length }}</summary>
             {{ messageItem.skills.join('、') || '未启用 Skill' }}
           </details></template
         >
@@ -277,7 +278,7 @@ defineExpose({
       >
         <span
           >{{ pendingRequest ? '已提交讨论' : '本轮讨论' }}
-          <b>{{ discussionContext.label }}</b></span
+          <b>{{ displayVersionLabel(discussionContext.label) }}</b></span
         >
         <span v-if="discussionContext.versionId !== discussionContext.editVersionId"
           >建议修改 <b>{{ discussionContext.editLabel }}</b

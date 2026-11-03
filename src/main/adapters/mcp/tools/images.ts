@@ -84,7 +84,7 @@ export function createGenerateImageTool(): McpTool {
     gate: () => {
       const settings = getSettings()
       if (!settings.mcpAllowGenerate) {
-        return '需要在 NovelPrompt「设置 / 数据 → Agent 接入」中开启「允许生图」'
+        return '需要在 NovelPrompt「设置 → AI 服务 → Agent」中开启「允许生图」'
       }
       if (!settings.naiToken.trim()) {
         return '需要先在 NovelPrompt 设置里填写 NovelAI Token'

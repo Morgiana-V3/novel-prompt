@@ -106,7 +106,7 @@ const emit = defineEmits<{
         v-if="!mcp?.portable"
         class="form-field full manual"
       >
-        <summary>Agent 自动配置</summary>
+        <summary class="disclosure">Agent 自动配置</summary>
         <span class="help"
           >把下面这段话发给你正在用的 agent（Codex、Claude Code、Cursor 等），它会自己把 MCP
           写进它的配置：</span
@@ -133,7 +133,7 @@ const emit = defineEmits<{
         v-if="!mcp?.portable"
         class="form-field full manual"
       >
-        <summary>手动配置</summary>
+        <summary class="disclosure">手动配置</summary>
         <label>Codex（~/.codex/config.toml）</label>
         <div class="code-box">
           <pre>{{ codexConfig }}</pre>
@@ -183,7 +183,7 @@ const emit = defineEmits<{
       </div>
     </div>
     <details class="mcp-log manual">
-      <summary>
+      <summary class="disclosure">
         调用历史<span v-if="mcp?.log.length"> · {{ mcp.log.length }} 条</span>
       </summary>
       <div class="mcp-log-head">

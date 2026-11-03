@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { displayVersionLabel } from '../labels'
 import Icon from '../../../shared/ui/Icon.vue'
 import type { PageWorkspace } from '@shared/workspace/model'
 import type { useVersionBrowser } from '../use-version-browser'
@@ -40,7 +41,7 @@ const emit = defineEmits<{
         <Icon name="chat" />
       </div>
       <div>
-        <b>{{ group.label.replace('方案 ', '版本 ') }}</b
+        <b>{{ displayVersionLabel(group.label) }}</b
         ><span
           v-if="group.adopted"
           class="pw-current"

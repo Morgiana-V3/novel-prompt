@@ -202,6 +202,13 @@ app.whenReady().then(async () => {
       await js(`document.querySelector('.trial-thumbnail').textContent.includes('本轮最接近')`),
     )
     writeFileSync(join(profile, 'comparison.png'), (await win.webContents.capturePage()).toPNG())
+    win.setSize(1100, 700)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    writeFileSync(
+      join(profile, 'comparison-1100.png'),
+      (await win.webContents.capturePage()).toPNG(),
+    )
+    win.setSize(1440, 1000)
     console.log(
       'PASS fusion, unified recommendations, toggle selection, model details, trial effect sorting and stable selection. Artifacts:',
       profile,

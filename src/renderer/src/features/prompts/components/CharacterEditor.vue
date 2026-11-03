@@ -11,6 +11,7 @@ import { parsePosition } from '@shared/generation/presets'
 import { toast } from '../../../shared/lib/notifications'
 import { removeCharacter } from '../actions'
 import { vAutosize } from '../../../shared/lib/autosize'
+import { vTagComplete } from '../tag-complete'
 import Icon from '../../../shared/ui/Icon.vue'
 import PositionEditor from './PositionEditor.vue'
 
@@ -158,6 +159,7 @@ function remove(i: number) {
         <textarea
           v-model="character.prompt"
           v-autosize
+          v-tag-complete
           :readonly="disabled"
           data-src="pos"
           spellcheck="false"
@@ -171,6 +173,7 @@ function remove(i: number) {
         <textarea
           v-model="character.negative"
           v-autosize
+          v-tag-complete
           :readonly="disabled"
           data-src="neg"
           spellcheck="false"

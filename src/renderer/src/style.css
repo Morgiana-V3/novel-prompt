@@ -13,6 +13,7 @@
 @import url('./features/prompts/styles/evidence.css');
 @import url('./features/generation/styles/gallery.css');
 @import url('./features/prompts/styles/editor.css');
+@import url('./features/prompts/styles/tag-complete.css');
 @import url('./features/settings/styles/mcp.css');
 @import url('./shared/styles/forms.css');
 @import url('./shared/styles/notifications.css');

@@ -1,4 +1,4 @@
-import type { SearchOptions } from '../../../shared/tags/types'
+import type { SearchOptions, TagCategory } from '../../../shared/tags/types'
 import { analyzePrompt } from '../../modules/prompts/analyzer'
 import { getSettings } from '../../modules/settings/service'
 import { tagStore } from '../../modules/tags/store'
@@ -12,6 +12,14 @@ export function registerTagsIpc(_context: IpcContext): void {
 
   handle('tag:search', (_e, opts: SearchOptions) => {
     return tagStore.search(opts)
+  })
+
+  handle('tag:complete', (_e, query: string, limit?: number, category?: TagCategory) => {
+    return tagStore.complete(
+      String(query ?? '').slice(0, 80),
+      Math.min(Number(limit) || 8, 20),
+      category,
+    )
   })
 
   handle('tag:setZh', (_e, name: string, zh: string) => {

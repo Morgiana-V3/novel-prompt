@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { displayVersionLabel } from '../labels'
 import { useRemoteWorkspace } from '../use-remote-workspace'
 import { settingsState, saveSettings } from '../../settings/state'
 const aiCollapsed = computed(() => settingsState.settings?.workspaceAiCollapsed ?? false)
@@ -1014,7 +1015,7 @@ async function beginConfigFromButton() {
             class="pw-scope-label"
             :title="viewed.label"
           >
-            <b>{{ viewedGroup.label.replace('方案 ', '版本 ') }}</b
+            <b>{{ displayVersionLabel(viewedGroup.label) }}</b
             ><span class="muted small"
               >第 {{ viewedGroup.versions.findIndex((v) => v.id === viewed.id) + 1 }} 张</span
             >

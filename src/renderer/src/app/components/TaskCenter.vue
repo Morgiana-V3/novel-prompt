@@ -15,6 +15,17 @@ const opened = ref(false)
 const root = ref<HTMLElement>()
 const panel = ref<HTMLElement>()
 const trigger = ref<HTMLButtonElement>()
+/** 箭头对准任务按钮：面板固定在右上角，按打开时按钮的位置算箭头横坐标 */
+const arrowX = ref('50%')
+function togglePanel() {
+  const bounds = trigger.value?.getBoundingClientRect()
+  if (bounds) {
+    const width = Math.min(380, innerWidth - 32)
+    const left = innerWidth - 24 - width
+    arrowX.value = `${Math.max(18, Math.min(bounds.left + bounds.width / 2 - left, width - 18))}px`
+  }
+  opened.value = !opened.value
+}
 const now = ref(Date.now())
 const active = computed(() => taskState.tasks.filter(taskIsActive))
 const recent = computed(() => taskState.tasks.filter((task) => !taskIsActive(task)))
@@ -167,7 +178,7 @@ function closePanel() {
       :title="triggerLabel"
       :aria-expanded="opened"
       aria-controls="task-panel"
-      @click="opened = !opened"
+      @click="togglePanel"
     >
       <span
         class="task-surface"
@@ -200,7 +211,9 @@ function closePanel() {
           v-if="opened"
           id="task-panel"
           ref="panel"
-          class="task-panel"
+          class="task-panel pop-arrow"
+          data-side="bottom"
+          :style="{ '--arrow-x': arrowX }"
           aria-label="任务进度"
         >
           <header>
@@ -551,7 +564,6 @@ function closePanel() {
   border-radius: 18px;
   background: var(--bg);
   box-shadow: var(--shadow-pop);
-  overflow: hidden;
   transform-origin: top right;
   -webkit-app-region: no-drag;
 }
@@ -755,6 +767,7 @@ function closePanel() {
 
 .task-footnote {
   padding: 10px 18px;
+  border-radius: 0 0 17px 17px;
   border-top: 1px solid var(--line);
   font-size: 10px;
   color: var(--muted);

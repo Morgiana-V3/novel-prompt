@@ -231,7 +231,7 @@ async function run() {
     return
   }
   if (!settingsState.settings?.apiKey) {
-    error.value = '请先在「设置 / 数据」中填写 AI 服务的 API Key'
+    error.value = '请先在「设置」中填写 AI 服务的 API Key'
     return
   }
   if (mode.value === 'semantic' && !request.value.trim()) {

@@ -152,10 +152,12 @@ const deleteLabel = computed(() => {
     </div>
     <div
       v-if="current.storage === 'temporary'"
-      class="row"
-      style="padding: 10px 12px; flex-wrap: wrap"
+      class="row viewer-retain"
     >
-      <span class="muted small">满意这张？留存后下次启动仍可查看。</span
+      <span
+        class="muted small"
+        title="满意这张？留存后下次启动仍可查看。"
+        >满意这张？留存后下次启动仍可查看。</span
       ><button
         class="btn small primary"
         @click="emit('retain', [current])"
@@ -169,10 +171,7 @@ const deleteLabel = computed(() => {
         留存最近一批剩余 {{ latestBatchTemporary.length }} 张
       </button>
     </div>
-    <div
-      class="row"
-      style="padding: 10px 12px; flex-wrap: wrap"
-    >
+    <div class="row viewer-actions">
       <FavoriteButton :image="current" />
       <button
         class="btn small gallery-delete"
@@ -183,12 +182,13 @@ const deleteLabel = computed(() => {
             ? '工作台引用中，无法从图库删除'
             : '删除图片（移到回收站）'
         "
+        :aria-label="deleteLabel"
         @click="emit('remove', current)"
       >
         <Icon
           name="trash"
           :size="14"
-        />{{ deleteLabel }}
+        /><span class="action-label">{{ deleteLabel }}</span>
       </button>
       <button
         class="btn small accent"
@@ -208,31 +208,95 @@ const deleteLabel = computed(() => {
             ? '以当前图片为底图，调整角色提示词的位置'
             : '先添加角色提示词，再对照图片定位'
         "
+        aria-label="对照图片定位"
         @click="emit('positions')"
       >
         <Icon
           name="frame"
           :size="14"
-        />对照图片定位
+        /><span class="action-label">对照图片定位</span>
       </button>
       <button
         class="btn ghost small ml-auto"
         :disabled="running || inpaintBusy"
-        title="以这张图片新建 AI 会话"
+        title="以这张图片新建工作台项目"
+        aria-label="用于新项目"
         @click="emit('workspace')"
       >
         <Icon
           name="chat"
           :size="14"
-        />用于新项目
+        /><span class="action-label">用于新项目</span>
       </button>
     </div>
   </div>
 </template>
 
 <style scoped>
+/*
+ * 查看区按自身宽度适配（容器查询），三行都不换行：
+ * 窄时标题里的徽标先隐藏、尺寸省略；底部次要操作收成图标（保留 title），主操作和「确认删除」保留文字。
+ */
+.viewer {
+  container: viewer / inline-size;
+}
+
 .result-head,
+.viewer-retain,
+.viewer-actions {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.result-head h3 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .result-head .actions {
-  flex-wrap: wrap;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+}
+
+.viewer-retain,
+.viewer-actions {
+  padding: 10px 12px;
+}
+
+.viewer-retain > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer-retain .btn,
+.viewer-actions > * {
+  flex-shrink: 0;
+}
+
+@container viewer (width < 560px) {
+  .result-head .group-badge {
+    display: none;
+  }
+
+  .viewer-actions .btn.ghost .action-label,
+  .viewer-actions .gallery-delete:not(.danger-confirm) .action-label {
+    display: none;
+  }
+
+  .viewer-actions .btn.ghost,
+  .viewer-actions .gallery-delete:not(.danger-confirm) {
+    padding: 0 8px;
+  }
+}
+
+@container viewer (width < 440px) {
+  .viewer-retain > span {
+    display: none;
+  }
 }
 </style>

@@ -632,6 +632,7 @@ async function translate() {
             <button
               class="btn primary"
               :disabled="running"
+              title="使用已保存的 AI 服务，会消耗服务额度"
               @click="translate"
             >
               <Icon
@@ -639,8 +640,7 @@ async function translate() {
                 :size="16"
               />开始 AI 翻译
             </button>
-            <span class="muted small">使用已保存的 AI 服务，消耗服务额度</span
-            ><button
+            <button
               class="btn ghost small"
               @click="selectService('ai')"
             >
