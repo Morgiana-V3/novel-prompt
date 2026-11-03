@@ -17,6 +17,11 @@ app.whenReady().then(() => {
     const names = (query) => tagStore.complete(query, 8).map((hit) => hit.name)
     assert.deepEqual(tagStore.complete('b'), [], 'single letters are too broad to suggest')
     assert.equal(names('twi')[0], 'twintails')
+    assert.equal(
+      tagStore.complete('ha', 100).length,
+      100,
+      'larger configured result sets are supported',
+    )
     assert.equal(names('blue h')[0], 'blue_hair')
     assert.ok(names('long ha').includes('long_hair'))
     assert.ok(names('蓝').includes('blue_eyes'), 'Chinese translations are matched')

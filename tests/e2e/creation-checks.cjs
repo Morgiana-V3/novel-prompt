@@ -64,52 +64,180 @@ module.exports = async function checkCreation({
       `document.querySelector('#creation-generation-controls .run-bar .btn.accent').offsetHeight > 0`,
     ),
   )
-  // Tag autocomplete: suggestions under the caret, Enter inserts as one undoable edit.
-  await edit(base, 'masterpiece, twi')
-  await js(`document.querySelector(${JSON.stringify(base)}).setSelectionRange(16, 16)`)
-  await js(
-    `document.querySelector(${JSON.stringify(base)}).dispatchEvent(new InputEvent('input', { bubbles: true }))`,
-  )
-  await waitUI(
-    `document.querySelector('.tag-complete .tag-complete-item.active b')?.textContent === 'twintails'`,
-  )
-  await new Promise((resolve) => setTimeout(resolve, 300))
-  writeFileSync(join(profile, 'tag-complete.png'), (await win.webContents.capturePage()).toPNG())
-  await js(
-    `document.querySelector(${JSON.stringify(base)}).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))`,
-  )
-  assert.equal(await value(), 'masterpiece, twintails, ')
-  assert.equal(await js(`!!document.querySelector('.tag-complete')`), false)
-  await js(`document.execCommand('undo')`)
-  assert.equal(await value(), 'masterpiece, twi', 'completion is a single undo step')
-  // NovelAI syntax comes first and inserts without a trailing comma; after artist: only artists are offered.
-  const typeAndWait = async (text, expected) => {
-    await edit(base, text)
-    await js(
-      `(()=>{const el=document.querySelector(${JSON.stringify(base)});el.setSelectionRange(${text.length},${text.length});el.dispatchEvent(new InputEvent('input',{bubbles:true}))})()`,
+  // Slash search uses native input events and keeps surrounding prose/punctuation intact.
+  const input = (text) => js(`document.execCommand('insertText', false, ${JSON.stringify(text)})`)
+  const key = (key, composing = false) =>
+    js(
+      `document.querySelector(${JSON.stringify(base)}).dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, isComposing: ${composing}, bubbles: true, cancelable: true }))`,
     )
-    await waitUI(
-      `document.querySelector('.tag-complete .tag-complete-item.active b')?.textContent === ${JSON.stringify(expected)}`,
-    )
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 250))
+  const noPopup = async () => {
+    await settle()
+    assert.equal(await js(`!!document.querySelector('.tag-complete')`), false)
   }
-  await typeAndWait('masterpiece, te', 'Text:')
+  const search = async (query, expected, prefix = 'masterpiece, ', suffix = '') => {
+    await edit(base, prefix + suffix)
+    await js(
+      `document.querySelector(${JSON.stringify(base)}).setSelectionRange(${prefix.length}, ${prefix.length})`,
+    )
+    await input('/')
+    await waitUI(`!!document.querySelector('.tag-complete')`)
+    if (query) {
+      await input(query)
+    }
+    if (expected) {
+      await waitUI(
+        `document.querySelector('.tag-complete .tag-complete-item.active b')?.textContent === ${JSON.stringify(expected)}`,
+      )
+    }
+  }
+  await edit(base, 'many')
+  await waitUI(`document.querySelectorAll('.tag-complete-item').length === 20`)
+  await search('many', 'many 1')
+  assert.equal(await js(`document.querySelectorAll('.tag-complete-item').length`), 20)
+  await js(
+    `document.querySelector('.tag-complete').getAnimations().forEach(animation => animation.finish())`,
+  )
+  assert.equal(
+    await js(`document.querySelectorAll('.tag-complete-hint').length`),
+    0,
+    'candidate results contain no persistent instructions or count',
+  )
+  for (let i = 0; i < 19; i++) {
+    await key('ArrowDown')
+  }
+  assert.equal(
+    await js(`document.querySelector('.tag-complete-item.active b').textContent`),
+    'many 20',
+  )
   assert.ok(
-    await js(`document.querySelector('.tag-complete-item.active').classList.contains('syntax')`),
+    await js(`(() => {
+    const list = document.querySelector('.tag-complete-list')
+    const item = list.querySelector('.active').getBoundingClientRect()
+    const box = list.getBoundingClientRect()
+    return list.scrollTop > 0 && item.top >= box.top && item.bottom <= box.bottom + 1
+  })()`),
+    'keyboard navigation reaches and reveals candidates beyond eight',
   )
-  await new Promise((resolve) => setTimeout(resolve, 300))
-  writeFileSync(
-    join(profile, 'tag-complete-syntax.png'),
-    (await win.webContents.capturePage()).toPNG(),
+  writeFileSync(join(profile, 'tag-search-20.png'), (await win.webContents.capturePage()).toPNG())
+  await key('Enter')
+  assert.equal(await value(), 'masterpiece, many 20')
+  const setCandidateLimit = async (limit) => {
+    await key('Escape')
+    await click('.nav-item', '设置')
+    await click('.settings-tabs button', 'Tag 词库')
+    await edit('#settings-tag-completion-limit', String(limit))
+    await click('.tags-save', '保存词库设置')
+    await waitUI(`!document.querySelector('.tags-save')`)
+    await click('.nav-item', '创作实验')
+  }
+  await setCandidateLimit(8)
+  await edit(base, 'many')
+  await waitUI(`document.querySelectorAll('.tag-complete-item').length === 8`)
+  assert.ok(
+    await js(`(() => {
+    const list = document.querySelector('.tag-complete-list')
+    return list.scrollHeight === list.clientHeight
+  })()`),
+    'eight configured candidates fit without scrolling',
   )
-  await js(
-    `document.querySelector(${JSON.stringify(base)}).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))`,
+  await search('many', 'many 1')
+  assert.equal(await js(`document.querySelectorAll('.tag-complete-item').length`), 8)
+  await setCandidateLimit(20)
+  console.log('PASS saved candidate count immediately applies to automatic and slash search')
+
+  console.log(
+    'PASS automatic and slash search default to twenty; keyboard selection and no persistent hints',
   )
+  await edit(base, 'masterpiece, twi')
+  await waitUI(`document.querySelector('.tag-complete-item.active b')?.textContent === 'twintails'`)
+  await key('Enter')
+  assert.equal(await value(), 'masterpiece, twintails', 'automatic completion adds no separator')
+  await noPopup()
+  await js(`document.execCommand('undo')`)
+  assert.equal(await value(), 'masterpiece, twi')
+  await noPopup()
+  await edit(base, 'artist:wl')
+  await waitUI(
+    `document.querySelector('.tag-complete-item.active b')?.textContent === 'artist:wlop'`,
+  )
+  await key('Tab')
+  assert.equal(await value(), 'artist:wlop')
+  await edit(base, 'Text: twi')
+  await noPopup()
+  console.log(
+    'PASS automatic completion coexists with slash search, artist filter, undo and no trailing separator',
+  )
+  await search('twi', 'twintails')
+  await settle()
+  writeFileSync(join(profile, 'tag-complete.png'), (await win.webContents.capturePage()).toPNG())
+  await key('Enter')
+  assert.equal(await value(), 'masterpiece, twintails')
+  await noPopup()
+  await js(`document.execCommand('undo')`)
+  assert.equal(await value(), 'masterpiece, /twi', 'completion is a single undo step')
+  await noPopup()
+
+  await search('te', 'Text:')
+  await key('Tab')
   assert.equal(await value(), 'masterpiece, Text: ')
-  await typeAndWait('masterpiece, artist:wl', 'artist:wlop')
-  await js(
-    `document.querySelector(${JSON.stringify(base)}).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))`,
+  await search('artist:wl', 'artist:wlop')
+  await key('Enter')
+  assert.equal(await value(), 'masterpiece, artist:wlop')
+
+  await search('long hair', 'long hair', 'A girl with ', ' stands here.')
+  await key('Enter', true)
+  assert.equal(
+    await value(),
+    'A girl with /long hair stands here.',
+    'IME Enter cannot accept a tag',
   )
-  assert.equal(await value(), 'masterpiece, artist:wlop, ')
+  await js(
+    `document.querySelector('.tag-complete-item.active').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))`,
+  )
+  assert.equal(await value(), 'A girl with long hair stands here.')
+  await search('长发', 'long hair')
+  await key('Tab')
+  assert.equal(await value(), 'masterpiece, long hair')
+
+  await search('twi', 'twintails')
+  await key('Escape')
+  await input('n')
+  await noPopup()
+  assert.equal(await value(), 'masterpiece, /twin', 'Escape preserves query and ends the session')
+
+  await search('twi', 'twintails')
+  await js(
+    `(() => { const el = document.querySelector(${JSON.stringify(base)}); el.setSelectionRange(13,14); document.execCommand('delete') })()`,
+  )
+  await noPopup()
+  assert.equal(await value(), 'masterpiece, twi', 'deleting slash ends search without losing query')
+
+  await search('twi', 'twintails')
+  await js(`document.querySelector(${JSON.stringify(base)}).setSelectionRange(0,0)`)
+  await noPopup()
+  await input('hello ')
+  await noPopup()
+
+  await search('twi', 'twintails')
+  await input('zzz')
+  await key('Enter')
+  assert.ok(
+    !(await value()).includes('twintails'),
+    'stale candidates cannot replace new input during debounce',
+  )
+  await waitUI(`document.querySelector('.tag-complete')?.textContent.includes('没有匹配')`)
+  await key('Escape')
+  await edit(base, '')
+  await input('https://example.com/twi')
+  await noPopup()
+  await input('/')
+  await noPopup()
+  await edit(base, '/twi')
+  await noPopup()
+  console.log(
+    'PASS slash search, spaces, Chinese, exact match, native undo, IME, exit and stale candidate protection',
+  )
   await edit(base, 'masterpiece, twin tails, bogus')
   await waitUI(
     `document.querySelector('.compare .alias-item') && document.querySelector('.compare .unknown-item')`,

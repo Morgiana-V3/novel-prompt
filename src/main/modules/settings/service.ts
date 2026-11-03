@@ -1,3 +1,7 @@
+import {
+  tagCompletionLimit,
+  DEFAULT_TAG_COMPLETION_LIMIT,
+} from '../../../shared/settings/tag-completion'
 import { copyFileSync, existsSync, readFileSync, statSync } from 'node:fs'
 import type { Settings } from '../../../shared/settings/types'
 import { inferAiPreset } from '../../../shared/settings/ai-presets'
@@ -14,6 +18,7 @@ const DEFAULTS: Settings = {
   model: DEFAULT_MODEL,
   reasoningEffort: 'low',
   minPostCount: 10,
+  tagCompletionLimit: DEFAULT_TAG_COMPLETION_LIMIT,
   naiVersion: 'v4.5',
   translateMinCount: 50,
   naiToken: '',
@@ -72,7 +77,11 @@ export function getSettings(): Settings {
   ) {
     saved.model = DEFAULT_MODEL
   }
-  cache = { ...DEFAULTS, ...saved }
+  cache = {
+    ...DEFAULTS,
+    ...saved,
+    tagCompletionLimit: tagCompletionLimit(saved.tagCompletionLimit),
+  }
   cache.aiPreset = saved.aiPreset ?? inferAiPreset(cache.baseUrl)
   if (restored) {
     try {
@@ -87,6 +96,7 @@ export function getSettings(): Settings {
 
 export function saveSettings(patch: Partial<Settings>): Settings {
   const nextSettings = { ...getSettings(), ...patch }
+  nextSettings.tagCompletionLimit = tagCompletionLimit(nextSettings.tagCompletionLimit)
   const file = dataFile('settings.json')
   // 保留上一份完好的设置作为备份，主文件意外损坏时可从这里恢复
   if (existsSync(file) && parseFile(file)) {

@@ -3,8 +3,7 @@
   position: fixed;
   z-index: 250;
   width: 300px;
-  max-height: 280px;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 4px;
   border: 1px solid var(--line2);
   border-radius: 12px;
@@ -72,4 +71,18 @@
   background: var(--pink-soft);
   color: var(--pink-deep);
   font-size: 10.5px;
+}
+
+.tag-complete-hint {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* 八个候选完整展示，更多结果在列表内滚动。 */
+.tag-complete-list {
+  position: relative;
+  max-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }

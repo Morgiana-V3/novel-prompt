@@ -14,6 +14,8 @@ export interface Settings {
   model: string
   /** DeepSeek 思考强度，off = 关闭思考模式 */
   reasoningEffort: ReasoningEffort
+  /** 自动补全与 / 搜索共用的候选数量，默认 20。 */
+  tagCompletionLimit?: number
   minPostCount: number
   naiVersion: NaiVersion
   /** AI 补译时只翻译引用数 >= 此值的 tag */

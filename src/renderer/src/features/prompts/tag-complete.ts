@@ -1,19 +1,18 @@
+import { tagCompletionLimit } from '@shared/settings/tag-completion'
+import { settingsState } from '../settings/state'
 import type { SearchHit, TagCategory } from '@shared/tags/types'
 import { CAT_CLASS } from '../tags/state'
 import { fmtCount } from '../../shared/lib/format'
 
 /**
- * 提示词输入时的 tag 补全（参考 NovelAI）：光标停在一个 tag 的末尾时，按这段文字查本地词库，
- * 在光标下方列出几条候选；↑↓ 选择，Tab / Enter 插入（一次可撤销），Esc 关闭。
- * 检索在主进程走索引，单次通常不到 1 毫秒；输入防抖 120ms，过期的结果直接丢弃。
- * NovelAI 的专用写法（artist:、Text:、source# 等）排在最前；写了 artist: 之后只补全画师。
+ * 输入 / 开启一次 Tag 快捷搜索，空格属于查询；选中后仅替换 / 和查询文字。
+ * 同时保留普通输入自动补全；显式搜索优先。Esc、失焦或移出范围结束当前提示。
  */
 
 const DEBOUNCE = 120
-const LIMIT = 8
 const ZH = /[\u4e00-\u9fff]/
 
-/** 候选项：insert 替换整个 token；语法项插入后不追加「, 」，方便接着写 */
+/** 候选项：insert 替换整个搜索范围，不附加分隔符 */
 interface Item {
   insert: string
   name: string
@@ -68,7 +67,7 @@ interface Token {
 }
 
 /** 光标所在的 tag：从上一个分隔符到光标，跳过权重前缀和括号；光标必须在这个 tag 的末尾 */
-function currentToken(el: HTMLTextAreaElement): Token | null {
+function automaticToken(el: HTMLTextAreaElement): Token | null {
   const caret = el.selectionStart
   if (caret !== el.selectionEnd) {
     return null
@@ -86,6 +85,7 @@ function currentToken(el: HTMLTextAreaElement): Token | null {
   // Text: 之后是画面里的文字，不做补全
   if (
     !text ||
+    /[/\\]/.test(text) ||
     /^text:/i.test(text) ||
     text.length > 40 ||
     /::|[{}[\]().!?。！？]/.test(text) ||
@@ -150,12 +150,72 @@ class Completion {
   private token: Token | null = null
   private timer: ReturnType<typeof setTimeout> | undefined
   private request = 0
+  private session: { prefix: string; suffix: string } | null = null
+  private composing = false
+  private message = ''
+  private automatic = false
+  private inserting = false
+
+  private currentToken(): Token | null {
+    const session = this.session
+    if (this.el.readOnly) {
+      return null
+    }
+    if (!session) {
+      return this.automatic ? automaticToken(this.el) : null
+    }
+    const { value, selectionStart, selectionEnd } = this.el
+    const start = session.prefix.length
+    const end = value.length - session.suffix.length
+    if (
+      !value.startsWith(session.prefix + '/') ||
+      !value.endsWith(session.suffix) ||
+      selectionStart < start + 1 ||
+      selectionEnd > end ||
+      end < start + 1
+    ) {
+      return null
+    }
+    const text = value.slice(start + 1, end)
+    if (/[\r\n/]/.test(text)) {
+      return null
+    }
+    return { start, end, text }
+  }
+
+  private onSelection = () => {
+    const current = this.currentToken()
+    if (
+      (this.session || this.automatic) &&
+      (!current ||
+        (this.token &&
+          (current.start !== this.token.start ||
+            current.end !== this.token.end ||
+            current.text !== this.token.text)))
+    ) {
+      this.close()
+    }
+  }
+
+  private onCompositionStart = () => {
+    this.composing = true
+    this.hide()
+  }
+
+  private onCompositionEnd = () => {
+    this.composing = false
+    this.onInput(new Event('input'))
+  }
 
   constructor(private el: HTMLTextAreaElement) {
     el.addEventListener('input', this.onInput)
     el.addEventListener('keydown', this.onKeydown, true)
     el.addEventListener('blur', this.onBlur)
     el.addEventListener('scroll', this.close)
+    el.addEventListener('select', this.onSelection)
+    el.addEventListener('compositionstart', this.onCompositionStart)
+    el.addEventListener('compositionend', this.onCompositionEnd)
+    document.addEventListener('selectionchange', this.onSelection)
   }
 
   dispose() {
@@ -163,13 +223,39 @@ class Completion {
     this.el.removeEventListener('keydown', this.onKeydown, true)
     this.el.removeEventListener('blur', this.onBlur)
     this.el.removeEventListener('scroll', this.close)
+    this.el.removeEventListener('select', this.onSelection)
+    this.el.removeEventListener('compositionstart', this.onCompositionStart)
+    this.el.removeEventListener('compositionend', this.onCompositionEnd)
+    document.removeEventListener('selectionchange', this.onSelection)
     this.close()
   }
 
   private onInput = (event: Event) => {
-    clearTimeout(this.timer)
-    // 输入法拼写中不查（插入候选后光标停在「, 」之后，自然不会再弹出）
-    if ((event as InputEvent).isComposing || this.el.readOnly) {
+    this.hide()
+    const input = event as InputEvent
+    if (this.el.readOnly || this.inserting || /^(history|insertFrom)/.test(input.inputType ?? '')) {
+      this.close()
+      return
+    }
+    if (input.isComposing || this.composing) {
+      return
+    }
+    // Only an explicitly typed slash starts a session, never a pasted URL/path.
+    if (input.inputType === 'insertText' && input.data === '/') {
+      const caret = this.el.selectionStart
+      const before = this.el.value.slice(0, caret - 1)
+      if (this.el.value[caret - 1] === '/' && !/[^\s]*[:/\\][^\s]*$/.test(before)) {
+        this.session = { prefix: before, suffix: this.el.value.slice(caret) }
+      }
+    }
+    // A deleted slash ends its session without immediately reopening automatic suggestions.
+    if (this.session && !this.currentToken()) {
+      this.close()
+      return
+    }
+    this.automatic = !this.session
+    if (!this.currentToken()) {
+      this.close()
       return
     }
     this.timer = setTimeout(() => {
@@ -178,21 +264,28 @@ class Completion {
   }
 
   private async lookup() {
-    const token = currentToken(this.el)
+    const token = this.currentToken()
     const request = ++this.request
     if (!token) {
       this.close()
       return
     }
-    const prefixed = PREFIXED.exec(token.text)
+    const prefixed = PREFIXED.exec(token.text.trim())
     const prefix = prefixed?.[1] ?? ''
-    const query = prefixed ? prefixed[2] : token.text
+    const query = (prefixed ? prefixed[2] : token.text).trim()
     const syntax = prefixed ? [] : syntaxItems(query)
+    const limit = tagCompletionLimit(settingsState.settings?.tagCompletionLimit)
     let hits: SearchHit[] = []
     if (ZH.test(query) || query.trim().length >= 2) {
       try {
-        hits = await window.api.tagComplete(query, LIMIT, PREFIX_CATEGORY[prefix.toLowerCase()])
+        hits = await window.api.tagComplete(query, limit, PREFIX_CATEGORY[prefix.toLowerCase()])
       } catch {
+        if (request === this.request && this.session) {
+          this.token = token
+          this.items = []
+          this.message = '搜索暂不可用，请继续输入重试'
+          this.render()
+        }
         return
       }
     }
@@ -200,12 +293,24 @@ class Completion {
     if (request !== this.request || document.activeElement !== this.el) {
       return
     }
-    const items = [...syntax, ...hits.map((hit) => tagItem(hit, prefix))].slice(0, LIMIT)
-    const exact =
-      items.length === 1 && items[0].name.toLowerCase() === token.text.trim().toLowerCase()
-    if (!items.length || exact) {
+    const items = [...syntax, ...hits.map((hit) => tagItem(hit, prefix))].slice(0, limit)
+    if (
+      !this.session &&
+      (!items.length ||
+        (items.length === 1 && items[0].name.toLowerCase() === token.text.trim().toLowerCase()))
+    ) {
       this.close()
       return
+    }
+    const current = this.currentToken()
+    if (!current || current.text !== token.text) {
+      return
+    }
+    this.message = '没有匹配的 Tag'
+    if (!query) {
+      this.message = '输入 Tag 名称或中文，空格可继续搜索'
+    } else if (!ZH.test(query) && query.length < 2) {
+      this.message = '再输入一个字母开始搜索'
     }
     this.token = token
     this.items = items
@@ -214,16 +319,22 @@ class Completion {
   }
 
   private onKeydown = (event: KeyboardEvent) => {
-    if (!this.popup || event.isComposing) {
+    if (
+      (!this.session && !this.automatic) ||
+      event.isComposing ||
+      this.composing ||
+      event.keyCode === 229
+    ) {
       return
     }
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    if (this.items.length && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
       event.preventDefault()
       event.stopPropagation()
       const step = event.key === 'ArrowDown' ? 1 : -1
       this.active = (this.active + step + this.items.length) % this.items.length
       this.highlight()
     } else if (
+      this.items.length &&
       (event.key === 'Tab' || event.key === 'Enter') &&
       !event.ctrlKey &&
       !event.metaKey &&
@@ -249,34 +360,45 @@ class Completion {
   }
 
   close = () => {
+    this.session = null
+    this.automatic = false
+    this.hide()
+  }
+
+  private hide = () => {
     clearTimeout(this.timer)
     this.request++
     this.popup?.remove()
     this.popup = null
     this.token = null
+    this.items = []
   }
 
   private accept(index: number) {
     const item = this.items[index]
     const token = this.token
-    if (!item || !token) {
+    const current = this.currentToken()
+    if (!item || !token || !current || current.text !== token.text) {
       return
     }
     this.close()
-    const after = this.el.value.slice(token.end)
-    const suffix = item.syntax || /^\s*[,|\n]/.test(after) || /^[)\]}]/.test(after) ? '' : ', '
     this.el.focus()
     this.el.setSelectionRange(token.start, token.end)
     // 一次原生输入，保留撤销并通知 v-model
-    document.execCommand('insertText', false, item.insert + suffix)
+    this.inserting = true
+    try {
+      document.execCommand('insertText', false, item.insert)
+    } finally {
+      this.inserting = false
+    }
   }
 
   private render() {
     if (!this.popup) {
       this.popup = document.createElement('div')
       this.popup.className = 'tag-complete'
-      this.popup.setAttribute('role', 'listbox')
-      this.popup.setAttribute('aria-label', 'tag 补全')
+      this.popup.setAttribute('role', 'group')
+      this.popup.setAttribute('aria-label', this.session ? 'Tag 快捷搜索' : 'Tag 自动补全')
       this.popup.addEventListener('mousedown', (event) => {
         event.preventDefault()
         const option = (event.target as HTMLElement).closest<HTMLElement>('[data-index]')
@@ -286,7 +408,12 @@ class Completion {
       })
       ;(this.el.closest('dialog') ?? document.body).append(this.popup)
     }
-    this.popup.replaceChildren(
+    const list = document.createElement('div')
+    list.className = 'tag-complete-list'
+    list.setAttribute('role', 'listbox')
+    list.setAttribute('aria-label', 'Tag 候选')
+    this.popup.replaceChildren(list)
+    list.replaceChildren(
       ...this.items.map((item, index) => {
         const option = document.createElement('div')
         option.className = `tag-complete-item ${item.cls}`
@@ -304,6 +431,13 @@ class Completion {
         return option
       }),
     )
+    if (!this.items.length) {
+      const hint = document.createElement('div')
+      hint.className = 'tag-complete-hint'
+      hint.setAttribute('role', 'status')
+      hint.textContent = this.message
+      this.popup.append(hint)
+    }
     this.highlight()
     this.place()
   }
@@ -313,7 +447,13 @@ class Completion {
       option.classList.toggle('active', index === this.active)
       option.setAttribute('aria-selected', String(index === this.active))
       if (index === this.active) {
-        option.scrollIntoView({ block: 'nearest' })
+        const list = option.parentElement!
+        const top = option.offsetTop
+        if (top < list.scrollTop) {
+          list.scrollTop = top
+        } else if (top + option.offsetHeight > list.scrollTop + list.clientHeight) {
+          list.scrollTop = top + option.offsetHeight - list.clientHeight
+        }
       }
     })
   }

@@ -1,3 +1,4 @@
+import { tagCompletionLimit } from '../../../shared/settings/tag-completion'
 import type { SearchOptions, TagCategory } from '../../../shared/tags/types'
 import { analyzePrompt } from '../../modules/prompts/analyzer'
 import { getSettings } from '../../modules/settings/service'
@@ -17,7 +18,7 @@ export function registerTagsIpc(_context: IpcContext): void {
   handle('tag:complete', (_e, query: string, limit?: number, category?: TagCategory) => {
     return tagStore.complete(
       String(query ?? '').slice(0, 80),
-      Math.min(Number(limit) || 8, 20),
+      tagCompletionLimit(limit ?? getSettings().tagCompletionLimit),
       category,
     )
   })

@@ -1,5 +1,11 @@
 <script setup lang="ts">
+import {
+  tagCompletionLimit,
+  DEFAULT_TAG_COMPLETION_LIMIT,
+  MAX_TAG_COMPLETION_LIMIT,
+} from '@shared/settings/tag-completion'
 import StorageSettings from './StorageSettings.vue'
+import OperationGuide from './OperationGuide.vue'
 import StatisticsSettings from './StatisticsSettings.vue'
 import { AI_PRESETS, type AiPreset } from '@shared/settings/ai-presets'
 import HelpTip from '../../shared/ui/HelpTip.vue'
@@ -29,6 +35,7 @@ const categories = [
   { id: 'services', label: 'AI 服务', icon: 'sparkle' },
   { id: 'statistics', label: '使用统计', icon: 'tasks' },
   { id: 'other', label: '存储与更新', icon: 'folder' },
+  { id: 'guide', label: '操作说明', icon: 'book' },
 ] as const
 const services = [
   { id: 'nai', label: 'NovelAI' },
@@ -52,6 +59,7 @@ const anchors: Record<string, SettingsSection> = {
   storage: 'other',
   updates: 'other',
   statistics: 'statistics',
+  guide: 'guide',
 }
 function selectCategory(id: SettingsCategory) {
   category.value = id
@@ -97,6 +105,7 @@ const form = reactive({
   model: '',
   reasoningEffort: 'low' as ReasoningEffort,
   minPostCount: 10,
+  tagCompletionLimit: DEFAULT_TAG_COMPLETION_LIMIT,
   translateMinCount: 50,
   naiToken: '',
   naiFreeOnly: true,
@@ -256,7 +265,7 @@ const differs = (...keys: (keyof typeof form)[]) =>
   !!settingsState.settings &&
   keys.some((field) => String(form[field]) !== String(settingsState.settings![field]))
 const dirty = computed(() => ({
-  data: differs('minPostCount'),
+  data: differs('minPostCount', 'tagCompletionLimit'),
   deepseek: differs('apiKey', 'baseUrl', 'model', 'aiPreset'),
   nai: differs('naiToken'),
   translate: differs('translateMinCount'),
@@ -277,11 +286,17 @@ function categoryDirty(id: SettingsSection) {
   return false
 }
 async function saveCategory(id: 'ai' | 'tags', silent = false) {
+  if (id === 'tags') {
+    form.tagCompletionLimit = tagCompletionLimit(
+      String(form.tagCompletionLimit).trim() === '' ? undefined : Number(form.tagCompletionLimit),
+    )
+  }
   const patch =
     id === 'ai'
       ? { apiKey: form.apiKey, baseUrl: form.baseUrl, model: form.model, aiPreset: form.aiPreset }
       : {
           minPostCount: Number(form.minPostCount),
+          tagCompletionLimit: form.tagCompletionLimit,
           translateMinCount: Number(form.translateMinCount),
         }
   await saveSettings(patch)
@@ -503,6 +518,22 @@ async function translate() {
                   : '日期未知'
               }}</span
             >
+          </div>
+
+          <div class="form-field">
+            <label for="settings-tag-completion-limit">Tag 候选数量</label>
+            <div class="inline-field">
+              <input
+                id="settings-tag-completion-limit"
+                v-model.number="form.tagCompletionLimit"
+                class="input number-input"
+                type="number"
+                min="1"
+                :max="MAX_TAG_COMPLETION_LIMIT"
+                step="1"
+              />
+              <span class="help">自动补全与 / 搜索共用，默认 20 个，最多 100 个</span>
+            </div>
           </div>
 
           <div class="form-field">
@@ -903,6 +934,16 @@ async function translate() {
         tabindex="0"
       >
         <StatisticsSettings :active="shellState.tab === 'settings'" />
+      </section>
+      <section
+        v-if="category === 'guide'"
+        id="settings-panel-guide"
+        role="tabpanel"
+        aria-labelledby="settings-tab-guide"
+        tabindex="0"
+        class="settings-panel"
+      >
+        <OperationGuide />
       </section>
       <section
         v-show="category === 'other'"

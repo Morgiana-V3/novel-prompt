@@ -116,6 +116,37 @@ app.whenReady().then(async () => {
     await wait(`document.querySelector('.subscription-status')?.textContent.includes('9,000')`)
     assert.equal(await js(`document.querySelectorAll('.balance-notice').length`), 0)
     await click('.nav-item', '设置')
+    assert.equal(
+      await js(`Number(document.querySelector('#settings-tag-completion-limit').value)`),
+      20,
+    )
+    await input('#settings-tag-completion-limit', '35')
+    await click('.tags-save', '保存词库设置')
+    assert.equal(getSettings().tagCompletionLimit, 35)
+    assert.equal(JSON.parse(readFileSync(dataFile('settings.json'), 'utf8')).tagCompletionLimit, 35)
+    await win.reload()
+    await wait(`!!document.querySelector('.nav-item')`)
+    await click('.nav-item', '设置')
+    assert.equal(
+      await js(`Number(document.querySelector('#settings-tag-completion-limit').value)`),
+      35,
+    )
+    console.log('PASS tag completion default, settings save and reload persistence')
+    await click('.settings-tabs button', '操作说明')
+    await wait(
+      `document.querySelector('#settings-panel-guide')?.textContent.includes('/ 快捷搜索')`,
+    )
+    writeFileSync(
+      join(profile, 'operation-guide.png'),
+      (await win.webContents.capturePage()).toPNG(),
+    )
+    assert.equal(
+      await js(
+        `document.querySelectorAll('textarea[title="输入 / 快捷搜索 Tag，支持中文和空格"]').length`,
+      ),
+      0,
+    )
+
     await click('.settings-tabs button', 'AI 服务')
     await click('.settings-services-nav button', '模型接口')
     await input('.settings input[placeholder="sk-..."]', 'unsaved-ai-draft')

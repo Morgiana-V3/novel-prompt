@@ -103,21 +103,35 @@ const handlers = {
   'pages:read': (_, id) => pages.readPage(id),
   'pages:create': (_, ...args) => pages.createPage(...args),
   'pages:edit': (_, ...args) => pages.editPage(...args),
-  'tag:complete': (_, query, _limit, category) =>
-    category === 1
-      ? [{ name: 'wlop', display: 'wlop', category: 1, count: 3000, score: 1 }]
-      : 'twintails'.startsWith(String(query).trim())
-        ? [
-            {
-              name: 'twintails',
-              display: 'twintails',
-              category: 0,
-              count: 120000,
-              zh: '双马尾',
-              score: 1,
-            },
-          ]
-        : [],
+  'tag:complete': (_, query, limit, category) => {
+    if (query === 'many') {
+      return Array.from({ length: Math.min(limit, 30) }, (_, i) => ({
+        name: `many_${i + 1}`,
+        display: `many ${i + 1}`,
+        category: 0,
+        count: 1000 - i,
+        score: 1,
+      }))
+    }
+    if (category === 1) {
+      return [{ name: 'wlop', display: 'wlop', category: 1, count: 3000, score: 1 }]
+    }
+    if (['long hair', '长发'].includes(String(query).trim())) {
+      return [{ name: 'long_hair', display: 'long hair', category: 0, count: 1000, score: 1 }]
+    }
+    return 'twintails'.startsWith(String(query).trim())
+      ? [
+          {
+            name: 'twintails',
+            display: 'twintails',
+            category: 0,
+            count: 120000,
+            zh: '双马尾',
+            score: 1,
+          },
+        ]
+      : []
+  },
   'prompt:analyze': (_, text) => {
     calls++
     return holdAnalysis
