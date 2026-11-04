@@ -37,13 +37,14 @@ import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 import { usePageShortcuts, runKeyLabel } from '../../shared/lib/shortcuts'
 import { usePagePresentation } from '../../shared/lib/page-presentation'
 import { useSettingsPopover } from './use-settings-popover'
+import { lockTabs, tabRef } from '../creation/tabs'
 const { navigate, isActive } = usePagePresentation()
 const {
   open: parametersOpen,
   dock: settingsDock,
   trigger: parametersTrigger,
 } = useSettingsPopover()
-const sentRecipes = ref<Record<string, string>>({})
+const sentRecipes = tabRef<Record<string, string>>('generate.sentRecipes', () => ({}))
 
 const gen = generationParams
 const params = promptState.params
@@ -127,9 +128,9 @@ watch(
   { flush: 'sync' },
 )
 const cancelling = ref(false)
-const steps = ref<string[]>([])
-const error = ref('')
-const last = ref<NaiGenResult | null>(null)
+const steps = tabRef<string[]>('generate.steps', () => [])
+const error = tabRef('generate.error', () => '')
+const last = tabRef<NaiGenResult | null>('generate.last', () => null)
 const {
   gallery,
   current,
@@ -258,7 +259,14 @@ onMounted(() => {
   })
   window.addEventListener('resize', resizeAll)
 })
+const unlockTabs = lockTabs(
+  () =>
+    (inpaintBusy.value && '正在局部重绘') ||
+    (!!inpaintSource.value && '局部重绘编辑器未关闭') ||
+    (posEditing.value && '角色位置编辑器未关闭'),
+)
 onBeforeUnmount(() => {
+  unlockTabs()
   window.removeEventListener('resize', resizeAll)
   clearTimeout(checkTimer)
   checkEpoch++
@@ -606,7 +614,7 @@ function openImageWorkspace() {
         <Mascot
           mood="paint"
           motion="loop"
-          :size="240"
+          :size="300"
         />
         <p>
           NovelAI 正在画<span class="dots"><i></i><i></i><i></i></span>
@@ -619,7 +627,7 @@ function openImageWorkspace() {
         <Mascot
           :mood="hasToken ? 'ready' : 'sleep'"
           motion="loop"
-          :size="230"
+          :size="280"
         />
         <p v-if="hasToken">等待生成图片</p>
         <p v-else>请先配置 NovelAI 服务</p>
@@ -636,23 +644,12 @@ function openImageWorkspace() {
       </div>
 
       <template v-else>
-        <div
-          v-if="last"
-          :class="['cheer', { warn: last.stopped || (last.anlasDelta ?? 0) < 0 }]"
+        <p
+          v-if="last?.stopped"
+          class="muted small"
         >
-          <Mascot
-            :mood="last.stopped ? 'shrug' : 'thumbs'"
-            motion="loop"
-            :size="64"
-          />
-          <div>
-            <b>{{ last.stopped ?? '生成完成' }}</b>
-            <div class="muted small">
-              本次完成 {{ last.images.length }} 张 ·
-              {{ anlasOutcomeText(last) }}
-            </div>
-          </div>
-        </div>
+          {{ last.stopped }} · {{ anlasOutcomeText(last) }}
+        </p>
 
         <GenerationResult
           v-if="current"

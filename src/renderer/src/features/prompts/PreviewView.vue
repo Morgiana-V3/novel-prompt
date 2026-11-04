@@ -15,12 +15,13 @@ import EvidenceNote from './components/EvidenceNote.vue'
 import type { IconName } from '../../shared/ui/icons'
 import { activeTask, cancelTask } from '../../shared/state/tasks'
 import { usePageShortcuts } from '../../shared/lib/shortcuts'
+import { lockTabs, tabRef } from '../creation/tabs'
 
 const { navigate, isActive, editor } = usePagePresentation()
 
 const running = ref(false)
-const steps = ref<string[]>([])
-const error = ref('')
+const steps = tabRef<string[]>('preview.steps', () => [])
+const error = tabRef('preview.error', () => '')
 const task = computed(() => activeTask('preview'))
 let offStep: (() => void) | undefined
 /** 推测结果存在全局，生图页可以拿它和实际出图对照 */
@@ -36,8 +37,10 @@ onMounted(() => {
     }
   })
 })
+const unlockTabs = lockTabs(() => running.value && '画面推测进行中')
 onBeforeUnmount(() => {
   offStep?.()
+  unlockTabs()
 })
 
 function openSkill() {
@@ -288,7 +291,7 @@ usePageShortcuts(() => isActive('preview'), {
         <Mascot
           mood="search"
           motion="loop"
-          :size="240"
+          :size="300"
         />
         <p>
           正在脑内作画<span class="dots"><i></i><i></i><i></i></span>
@@ -301,7 +304,7 @@ usePageShortcuts(() => isActive('preview'), {
         <Mascot
           mood="shrug"
           motion="loop"
-          :size="230"
+          :size="280"
         />
         <p>推测失败，请查看上方错误信息</p>
       </div>
@@ -312,7 +315,7 @@ usePageShortcuts(() => isActive('preview'), {
         <Mascot
           mood="search"
           motion="loop"
-          :size="230"
+          :size="280"
         />
         <p>点击「开始推测」查看当前提示词可能生成的画面。</p>
       </div>

@@ -21,18 +21,14 @@
 
 完整离线回归不请求真实供应商。安装/升级与性能单独执行，避免普通开发重复打包或跑大规模夹具。未知结果的写入不自动重试。
 
-## 本次发布整理
+## 回归维护约定
 
-- 移除未被测试入口或其他脚本引用的 `tests/support/mcp-call.mjs`、`tests/support/mcp-session-client.mjs`：它们是历史手工调试客户端，不属于隔离回归测试。正式 MCP 验证继续使用下列已登记场景。
 - 一次性调试脚本、生图草稿、视频试片和预览产物放在仓库外，按项目归档；不要把这些制作过程文件放进源码或测试目录。
-- 删除 `tests/integration/mcp-smoke.mjs`：旧手工脚本连接真实开发 profile，协议与宿主检查已由隔离的 `mcp:host`、`mcp:relay` 和 `mcp:context` 覆盖。`npm run mcp:smoke` 改为统一入口的 `mcp:host`。
-- 删除 `tests/integration/mcp-read-smoke.mjs`：面向已有真实项目的只读测量脚本不作为发版回归；保留合成数据的 `mcp:context`、`mcp:index` 和可选 `mcp:performance`。
-- 将账户设置回归 `settings` 加入完整检查，覆盖 Token 保存、清空、失败回滚及余额刷新。
-- 增加 `favorites:dev`：独立启动临时 Vite 服务和隔离 Electron，复用收藏测试，直接验证开发模式初始化。生产与开发两种模式均将前端错误视为失败，防止页面看似可用却隐藏运行异常。
-- 保留收藏、任务、图片清理、Skill 内容指纹、安装升级和更新器测试；这些分别覆盖数据与用户操作风险，不能通过删除失败测试使发版通过。
+- 完整检查保留收藏、任务、图片清理、Skill 内容指纹、安装升级和更新器测试；这些分别覆盖数据与用户操作风险，不能通过删除失败测试使发版通过。
+- `npm run mcp:smoke` 指向统一入口的 `mcp:host`；协议与宿主检查由隔离的 `mcp:host`、`mcp:relay` 和 `mcp:context` 覆盖，不再维护连接真实开发 profile 的手工脚本。
 - 统一文本换行，避免 Windows 检出 CRLF 与 Prettier 的 LF 要求冲突。
 
-`node scripts/check.mjs favorites favorites:dev settings` 验证本版主要交互。测试覆盖 v0.8 旁置 JSON 图片记录、独立收藏、种子分组、普通图库、搜索、滚动位置恢复、气泡确认、提示消息、参数载入、悬停状态和窄窗口布局。不下载真实识别模型，也不调用付费生图。
+`node scripts/check.mjs favorites favorites:dev settings` 验证收藏与账户设置：v0.8 旁置 JSON 图片记录、独立收藏、种子分组、普通图库、搜索、滚动位置恢复、气泡确认、提示消息、参数载入、悬停状态和窄窗口布局。`favorites:dev` 独立启动临时 Vite 服务和隔离 Electron，复用同一套收藏断言，直接验证开发模式初始化。生产与开发两种模式均将前端错误视为失败，防止页面看似可用却隐藏运行异常。不下载真实识别模型，也不调用付费生图。
 
 ## 日志、异常与产物
 

@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { FavoriteButton } from '../favorites/public'
 import type { ReverseTrial } from './use-reverse-trials'
 import { importGenerationRequest } from '../prompts/actions'
+import { openTabForLoad } from '../creation/tabs'
 import { selectReferenceImage } from '../generation/public'
 import { cleanErr } from '../../shared/lib/format'
 import { shellState } from '../../shared/state/shell'
@@ -27,6 +28,9 @@ async function act(action: 'retain' | 'adopt') {
   actionError.value = ''
   try {
     if (action === 'adopt') {
+      if (!openTabForLoad()) {
+        return
+      }
       await importGenerationRequest(JSON.parse(JSON.stringify(trial.request)), '已采用反推方案')
       selectReferenceImage(trial.image)
       shellState.tab = 'generate'

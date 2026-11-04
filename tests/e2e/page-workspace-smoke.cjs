@@ -995,8 +995,6 @@ app.whenReady().then(async () => {
       'loading defaults to a random seed so the prompt can be tried again',
     )
     await click('.favorite-details footer button', '载入配置')
-    await wait(`!!document.querySelector('.favorite-go')`)
-    await click('.favorite-go', '去生图')
     await wait(
       `document.querySelector('.nav-item.active')?.textContent.includes('生图创作')&&document.querySelector('.creation-tab[aria-selected="true"]')?.textContent.includes('图片预览')`,
     )
@@ -1047,12 +1045,14 @@ app.whenReady().then(async () => {
     // 默认载入改为随机种子并在提示里给出原种子；勾选「保留种子」后沿用并记住选择
     await click('.favorite-details footer button', '载入配置')
     await wait(`document.querySelector('.toast')?.textContent.includes('种子随机，原种子')`)
+    await click('.nav-item', '收藏管理')
     await run(`document.querySelector('.favorite-details footer input').click()`)
     assert.equal(await js(`localStorage.getItem('np-load-keep-seed')`), '1')
     await click('.favorite-details footer button', '载入配置')
     await wait(
       `document.querySelector('.toast')?.textContent.includes('已载入收藏')&&!document.querySelector('.toast').textContent.includes('种子随机')`,
     )
+    await click('.nav-item', '收藏管理')
     await run(`document.querySelector('.favorite-details footer input').click()`)
     assert.equal(await js(`localStorage.getItem('np-load-keep-seed')`), '0')
     assert.ok(
@@ -1061,6 +1061,7 @@ app.whenReady().then(async () => {
     )
     await click('.favorite-details footer button', '载入配置')
     await wait(`document.querySelector('.toast')?.textContent.includes('已载入收藏')`)
+    await click('.nav-item', '收藏管理')
     await input('input[aria-label="搜索收藏"]', '')
     // 收藏配方的角色位置布局：只读弹窗，未设坐标的角色单独列出并说明排布规则
     const recipeModule = require('../../src/main/modules/images/recipes.ts')
@@ -1105,6 +1106,10 @@ app.whenReady().then(async () => {
         .storage,
       'temporary',
       'favorite keeps an independent copy without changing source retention',
+    )
+    // 载入收藏开了新标签，新标签没有选中的预览图，先在图库里重新选中
+    await run(
+      `[...document.querySelectorAll('.gallery .thumb')].find(e=>e.querySelector('img').src.includes('${ordinary.images[0].name}')).click()`,
     )
     await click('.viewer button', '留存图片')
     assert.equal(

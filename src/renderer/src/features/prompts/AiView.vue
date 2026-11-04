@@ -20,6 +20,7 @@ import { usePartialAdoption } from './use-partial-adoption'
 import { imageState } from '../generation/public'
 import { activeTask, cancelTask } from '../../shared/state/tasks'
 import { usePageShortcuts } from '../../shared/lib/shortcuts'
+import { lockTabs, tabRef } from '../creation/tabs'
 
 const { navigate, isActive } = usePagePresentation()
 
@@ -30,9 +31,9 @@ const { navigate, isActive } = usePagePresentation()
  * - 已有提示词但想推倒重来：勾选「按描述重新生成」，不带当前提示词（semantic）
  * 以前的两个模式本质是同一流程，「描述转提示词」也会带上当前提示词，和「优化 + 额外要求」几乎重合。
  */
-const request = ref('')
-const fresh = ref(false)
-const requestExpanded = ref(false)
+const request = tabRef('ai.request', () => '')
+const fresh = tabRef('ai.fresh', () => false)
+const requestExpanded = tabRef('ai.requestExpanded', () => false)
 function toggleRequest(event: Event) {
   if (mode.value === 'optimize') {
     requestExpanded.value = (event.target as HTMLDetailsElement).open
@@ -49,20 +50,23 @@ const mode = computed<'optimize' | 'semantic'>(() =>
 )
 const runLabel = computed(() => (mode.value === 'optimize' ? '优化提示词' : '生成提示词'))
 const running = ref(false)
-const steps = ref<string[]>([])
-const result = ref<AiOptimizeResult | null>(null)
-const error = ref('')
+const steps = tabRef<string[]>('ai.steps', () => [])
+const result = tabRef<AiOptimizeResult | null>('ai.result', () => null)
+const error = tabRef('ai.error', () => '')
 const task = computed(() => activeTask('optimize'))
 let offStep: (() => void) | undefined
 /** 发起请求时的提示词，用于对比改动 */
-const sent = ref<{ base: string; negative: string; characters: AiCharacter[] } | null>(null)
+const sent = tabRef<{ base: string; negative: string; characters: AiCharacter[] } | null>(
+  'ai.sent',
+  () => null,
+)
 /** 结果已经采用到当前提示词 */
-const adopted = ref(false)
-const partial = usePartialAdoption()
+const adopted = tabRef('ai.adopted', () => false)
+const partial = usePartialAdoption('ai')
 const isAdopted = computed(() => partial.all.value)
-const sentKey = ref('')
+const sentKey = tabRef('ai.sentKey', () => '')
 /** 上一轮发出的修改要求；与上一轮输出一起交给 AI 判断是否已收敛 */
-const sentInstruction = ref('')
+const sentInstruction = tabRef('ai.sentInstruction', () => '')
 /** 已达标：AI 判定且程序确认无需修改 */
 const converged = computed(() => result.value?.verdict === 'converged')
 /** 「按描述重新生成」不带当前提示词，也不带上一轮 */
@@ -90,7 +94,7 @@ const presetKey = () =>
     promptState.params.qualityMode,
     promptState.params.ucPreset,
   ])
-const sentPresetKey = ref('')
+const sentPresetKey = tabRef('ai.sentPresetKey', () => '')
 const presetsChanged = computed(() => !!result.value && sentPresetKey.value !== presetKey())
 const stale = computed(() => partial.stale.value)
 
@@ -120,8 +124,10 @@ onMounted(() => {
   })
   window.addEventListener('resize', resizeAll)
 })
+const unlockTabs = lockTabs(() => running.value && '智能优化进行中')
 onBeforeUnmount(() => {
   offStep?.()
+  unlockTabs()
   window.removeEventListener('resize', resizeAll)
 })
 
@@ -395,7 +401,7 @@ usePageShortcuts(() => isActive('ai'), {
         <Mascot
           mood="reading"
           motion="loop"
-          :size="240"
+          :size="300"
         />
         <p>
           正在翻 tag 库挑词<span class="dots"><i></i><i></i><i></i></span>
@@ -408,7 +414,7 @@ usePageShortcuts(() => isActive('ai'), {
         <Mascot
           mood="shrug"
           motion="loop"
-          :size="230"
+          :size="280"
         />
         <p>出了点问题，请查看上方的报错信息</p>
       </div>
@@ -417,9 +423,9 @@ usePageShortcuts(() => isActive('ai'), {
         class="empty"
       >
         <Mascot
-          mood="ready"
+          mood="thumbs"
           motion="loop"
-          :size="230"
+          :size="280"
         />
         <p>等待{{ mode === 'semantic' ? '生成' : '优化' }}提示词</p>
       </div>

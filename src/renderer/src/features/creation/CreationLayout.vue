@@ -4,6 +4,7 @@ import { pagePresentation } from '../../shared/lib/page-presentation'
 import { shellState, type Tab } from '../../shared/state/shell'
 import PromptEditor from '../prompts/components/PromptEditor.vue'
 import WorkspaceBar from '../prompts/components/WorkspaceBar.vue'
+import CreationTabs from './CreationTabs.vue'
 import { resizeWithin } from '../../shared/lib/autosize'
 import { promptState } from '../prompts/state'
 import SplitHandle from '../../shared/ui/SplitHandle.vue'
@@ -83,6 +84,7 @@ watch(
       ref="editor"
       class="creation-editor scroll"
     >
+      <CreationTabs />
       <WorkspaceBar />
       <PromptEditor show-presets />
     </section>

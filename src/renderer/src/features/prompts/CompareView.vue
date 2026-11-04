@@ -456,7 +456,7 @@ function formatPrompt() {
         <Mascot
           mood="sleep"
           motion="loop"
-          :size="220"
+          :size="280"
         />
         <p>还没有 tag 数据哦，先去下载 Danbooru 的 tag 库吧</p>
         <button
@@ -476,7 +476,7 @@ function formatPrompt() {
         <Mascot
           mood="reading"
           motion="loop"
-          :size="220"
+          :size="280"
         />
         <p>在左边输入提示词，我会帮你一个个检查～</p>
       </div>

@@ -1,7 +1,7 @@
 {
   "name": "novel-prompt",
-  "version": "0.9.0",
-  "description": "NovelAI 提示词比对 / 搜索 / AI 优化桌面工具",
+  "version": "1.0.0",
+  "description": "NovelAI 提示词创作 / 生图与图片精修桌面工具",
   "main": "./out/main/index.js",
   "author": "holyxie",
   "private": true,
@@ -31,6 +31,7 @@
     "mcp:smoke": "node scripts/check.mjs mcp:host",
     "inpaint:smoke": "electron-vite build && electron tests/e2e/inpaint-smoke.cjs",
     "inpaint:mcp-smoke": "electron tests/integration/inpaint-mcp-smoke.cjs",
+    "creation-tabs:smoke": "electron-vite build && electron tests/e2e/creation-tabs-smoke.cjs",
     "pages:smoke": "electron-vite build && electron tests/e2e/page-workspace-smoke.cjs",
     "retention:smoke": "electron tests/integration/retention-smoke.cjs",
     "workspace:cleanup-smoke": "electron tests/integration/workspace-cleanup-smoke.cjs",

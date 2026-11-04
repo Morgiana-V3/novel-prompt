@@ -11,6 +11,8 @@ import { shellState } from '../../shared/state/shell'
 import { toast, reportError } from '../../shared/lib/notifications'
 import { cleanErr } from '../../shared/lib/format'
 import { importGenerationRequest } from '../prompts/actions'
+import { openTabForLoad } from '../creation/tabs'
+import { selectReferenceImage } from '../generation/public'
 import Icon from '../../shared/ui/Icon.vue'
 import Mascot from '../../shared/ui/Mascot.vue'
 import ImageViewer from '../../shared/ui/ImageViewer.vue'
@@ -156,8 +158,12 @@ async function reuse() {
     if (!recipe) {
       throw new Error('这张图片没有可读取的生成记录')
     }
+    if (!openTabForLoad()) {
+      return
+    }
     await importGenerationRequest(recipe.request, '图库载入')
-    shellState.tab = 'creation'
+    selectReferenceImage(image)
+    shellState.tab = 'generate'
   })
 }
 function step(delta: number) {

@@ -4,6 +4,7 @@ import { groupFavorites, type FavoriteGroup } from '@shared/images/favorite-grou
 import { favorites, refreshFavorites } from './state'
 import { shellState } from '../../shared/state/shell'
 import { importGenerationRequest, sectionText } from '../prompts/actions'
+import { openTabForLoad } from '../creation/tabs'
 import { loadPreferences, setLoadKeepSeed } from '../generation/public'
 import { copy, toast } from '../../shared/lib/notifications'
 import { cleanErr } from '../../shared/lib/format'
@@ -27,7 +28,6 @@ const query = ref('')
 const tag = ref('')
 const selectedId = ref('')
 const selectedGroupKey = ref('')
-const loaded = ref(false)
 const busy = ref(false)
 const error = ref('')
 const editing = ref(false)
@@ -220,10 +220,13 @@ async function load() {
     return
   }
   const snapshot = JSON.parse(JSON.stringify(request.value))
+  if (!openTabForLoad(selected.value?.name)) {
+    return
+  }
   busy.value = true
   try {
     await importGenerationRequest(snapshot, '已载入收藏', { keepSeed: keepSeed.value })
-    loaded.value = true
+    shellState.tab = 'generate'
   } catch (e) {
     error.value = cleanErr(e)
   } finally {
@@ -791,23 +794,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 type="checkbox"
               />保留种子</label
             >
-            <Transition name="fade">
-              <button
-                v-if="loaded"
-                class="btn ghost small favorite-go"
-                title="前往生图创作的图片预览"
-                @click="shellState.tab = 'generate'"
-              >
-                去生图<Icon
-                  name="arrow"
-                  :size="13"
-                />
-              </button>
-            </Transition>
             <button
               class="btn primary"
               :disabled="busy"
-              title="载入提示词、模型和全部生成参数，留在当前页"
+              title="在新标签中载入提示词、模型和全部生成参数，并前往生图创作"
               @click="load"
             >
               载入配置
@@ -1461,14 +1451,6 @@ footer {
 }
 
 footer .primary {
-  margin-left: auto;
-}
-
-.favorite-go + .primary {
-  margin-left: 0;
-}
-
-.favorite-go {
   margin-left: auto;
 }
 

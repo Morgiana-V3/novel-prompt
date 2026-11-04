@@ -343,10 +343,11 @@ app.whenReady().then(async () => {
     assert.deepEqual(readPngRecipe(fs.readFileSync(exported)), record('dog, outdoors', 456))
     await clickText('.favorite-details footer button', '载入配置')
     await wait(`JSON.parse(localStorage.getItem('np-workspace-v1'))?.prompt==='dog, outdoors'`)
+    await wait(`document.querySelector('.topbar-title').textContent.trim()==='生图创作'`)
     assert.equal(
-      await js(`document.querySelector('.topbar-title').textContent.trim()`),
-      '收藏管理',
-      'loading stays on the same page',
+      await js(`document.querySelector('.creation-tab[aria-selected="true"]').textContent.trim()`),
+      '图片预览',
+      'loading opens the generation preview',
     )
     assert.deepEqual(win.getBounds(), beforeBounds, 'loading preserves window bounds')
     assert.equal(
@@ -361,9 +362,19 @@ app.whenReady().then(async () => {
       'loading defaults to a random seed',
     )
     await tab('收藏')
+    assert.equal(
+      await js(`document.querySelectorAll('.session-tab').length`),
+      1,
+      'loading into a blank creation tab reuses it',
+    )
     await js(`document.querySelector('.favorite-details footer input').click()`)
     await clickText('.favorite-details footer button', '载入配置')
     await delay(150)
+    assert.equal(
+      await js(`document.querySelectorAll('.session-tab').length`),
+      2,
+      'loading over existing content opens a new creation tab',
+    )
     await tab('生图预览')
     assert.equal(
       await js(`document.querySelector('input[aria-label="种子"]').value`),
@@ -470,7 +481,7 @@ app.whenReady().then(async () => {
     )
     assert.deepEqual(rendererErrors, [], 'renderer must start and run without hidden errors')
     console.log(
-      'PASS durable storage, seed grouping, distinct configurations, ordinary gallery/search and scroll restoration, browse isolation, in-place loading, seed choice, confirmation, toasts, compact stars, hover stability, window bounds and compact layout. Artifacts:',
+      'PASS durable storage, seed grouping, distinct configurations, ordinary gallery/search and scroll restoration, browse isolation, loading into creation tabs, seed choice, confirmation, toasts, compact stars, hover stability, window bounds and compact layout. Artifacts:',
       profile,
     )
     app.exit(0)
