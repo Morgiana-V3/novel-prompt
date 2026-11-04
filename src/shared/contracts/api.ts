@@ -21,7 +21,8 @@ import type {
   AnalysisResult,
   InpaintDraft,
 } from '../prompts/types'
-import type { Settings } from '../settings/types'
+import type { Settings, VisionTestResult } from '../settings/types'
+import type { VisionProvider } from '../settings/vision'
 import type { ReverseModel, ReverseResult, ReverseStatus } from '../reverse/types'
 import type {
   SkillConfigItem,
@@ -168,6 +169,8 @@ export interface Api {
   analyze: (text: string) => Promise<AnalysisResult>
   getSettings: () => Promise<Settings>
   saveSettings: (patch: Partial<Settings>) => Promise<Settings>
+  /** 用填写中的接口发一张测试图，确认模型能否识图 */
+  aiVisionTest: (provider: VisionProvider) => Promise<VisionTestResult>
   planInpaint: (req: AiInpaintRequest) => Promise<AiInpaintResult>
   cancelInpaintPlan: () => Promise<void>
   optimize: (req: AiOptimizeRequest) => Promise<AiOptimizeResult>
@@ -408,6 +411,10 @@ export interface IpcContract {
   'settings:save': {
     args: Parameters<Api['saveSettings']>
     result: Awaited<ReturnType<Api['saveSettings']>>
+  }
+  'ai:vision-test': {
+    args: Parameters<Api['aiVisionTest']>
+    result: Awaited<ReturnType<Api['aiVisionTest']>>
   }
   'ai:inpaint-plan': {
     args: Parameters<Api['planInpaint']>

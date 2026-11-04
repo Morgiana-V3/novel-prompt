@@ -16,7 +16,7 @@ import { extractJson, type ChatInputMessage, type ChatPart } from '../../provide
 import { prepareInpaint } from '../generation/inpaint'
 import { imagePath } from '../images/access'
 import { analyzePrompt } from '../prompts/analyzer'
-import { chat } from '../prompts/chat'
+import { chat, IMAGE_SKIPPED_NOTE, visionRoute } from '../prompts/chat'
 import { ReadOnlyToolSession } from '../prompts/tool-session'
 import { TAG_TOOL_DEFS, tagTool } from '../prompts/tag-tools'
 import { composeSkills } from '../skills/service'
@@ -434,7 +434,9 @@ export async function discussPage(
         `目标：${workspace.goal || '未指定'}${workspace.preserve ? '\n保留：' + workspace.preserve : ''}`,
       )
     }
-    const message = pageMessage('assistant', raw.reply, version.id)
+    const reply =
+      visionRoute(messages) === 'text' ? `${raw.reply}\n\n（${IMAGE_SKIPPED_NOTE}）` : raw.reply
+    const message = pageMessage('assistant', reply, version.id)
     message.toolUsage = toolUsage()
     message.discussion = structuredClone(discussion)
     message.author = { kind: 'internal', name: '内置 AI' }

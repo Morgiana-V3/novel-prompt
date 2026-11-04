@@ -9,6 +9,7 @@ import OperationGuide from './OperationGuide.vue'
 import { operationTopics } from './operation-guides'
 import StatisticsSettings from './StatisticsSettings.vue'
 import { AI_PRESETS, type AiPreset } from '@shared/settings/ai-presets'
+import { modelVision, VISION_SUGGESTIONS, visionProvider } from '@shared/settings/vision'
 import UpdateSettings from './UpdateSettings.vue'
 
 import AgentSettings from './AgentSettings.vue'
@@ -125,6 +126,9 @@ const form = reactive({
   agentFreeOnly: true,
   mcpAllowAi: false,
   mcpAllowGenerate: false,
+  visionModel: '',
+  visionBaseUrl: '',
+  visionApiKey: '',
 })
 const presetDrafts = new Map<AiPreset, { apiKey: string; baseUrl: string; model: string }>()
 const modelSuggestions = computed(() => {
@@ -167,6 +171,74 @@ function choosePreset(next: AiPreset) {
           model: preset.model,
         })
   Object.assign(form, draft, { aiPreset: next })
+}
+/* ---------- 识图：图片精修的 AI 讨论和局部重绘方案需要看图 ---------- */
+const mainVision = computed(() => modelVision(form.model))
+const visionSuggestion = computed(() => VISION_SUGGESTIONS[form.aiPreset] ?? '')
+const visionDraft = computed(() => visionProvider(form))
+const visionNote = computed(() => {
+  const model = form.model.trim()
+  if (!model) {
+    return null
+  }
+  const routed = visionDraft.value
+    ? `带图片的请求将改用识图模型 ${visionDraft.value.model}。`
+    : '未配置识图模型时，这两项只能依据文字分析，回复中会注明没有看到图片。'
+  const switchTo =
+    visionSuggestion.value && visionSuggestion.value !== model
+      ? `可改用 ${visionSuggestion.value}，或在下方配置识图模型。`
+      : '可在下方配置识图模型。'
+  if (mainVision.value === 'yes') {
+    return {
+      tone: 'ok',
+      text: `${model} 支持识图，图片精修的 AI 讨论和局部重绘方案可以看图。`,
+    }
+  }
+  if (mainVision.value === 'no') {
+    return {
+      tone: visionDraft.value ? 'ok' : 'bad',
+      text: `${model} 不能识图，而图片精修的 AI 讨论和局部重绘方案需要看图。${visionDraft.value ? routed : switchTo + routed}`,
+    }
+  }
+  return {
+    tone: visionDraft.value ? 'ok' : 'alias',
+    text: `尚未确认 ${model} 能否识图，可点「测试识图」验证。${routed}`,
+  }
+})
+const visionTesting = ref(false)
+const visionResults = ref<{ ok: boolean; message: string }[]>([])
+watch(
+  () => [
+    form.apiKey,
+    form.baseUrl,
+    form.model,
+    form.visionModel,
+    form.visionBaseUrl,
+    form.visionApiKey,
+  ],
+  () => {
+    visionResults.value = []
+  },
+)
+async function testVision() {
+  if (visionTesting.value) {
+    return
+  }
+  visionTesting.value = true
+  visionResults.value = []
+  try {
+    const targets = [
+      { apiKey: form.apiKey, baseUrl: form.baseUrl, model: form.model },
+      ...(visionDraft.value ? [{ ...visionDraft.value }] : []),
+    ]
+    for (const target of targets) {
+      visionResults.value.push(await window.api.aiVisionTest(target))
+    }
+  } catch (error) {
+    visionResults.value.push({ ok: false, message: cleanErr(error) })
+  } finally {
+    visionTesting.value = false
+  }
 }
 const deepSeekProvider = computed(
   () => /deepseek/i.test(form.baseUrl) || /^deepseek/i.test(form.model),
@@ -272,7 +344,15 @@ const differs = (...keys: (keyof typeof form)[]) =>
   keys.some((field) => String(form[field]) !== String(settingsState.settings![field]))
 const dirty = computed(() => ({
   data: differs('minPostCount', 'tagCompletionLimit'),
-  deepseek: differs('apiKey', 'baseUrl', 'model', 'aiPreset'),
+  deepseek: differs(
+    'apiKey',
+    'baseUrl',
+    'model',
+    'aiPreset',
+    'visionModel',
+    'visionBaseUrl',
+    'visionApiKey',
+  ),
   nai: differs('naiToken'),
   translate: differs('translateMinCount'),
 }))
@@ -299,7 +379,15 @@ async function saveCategory(id: 'ai' | 'tags', silent = false) {
   }
   const patch =
     id === 'ai'
-      ? { apiKey: form.apiKey, baseUrl: form.baseUrl, model: form.model, aiPreset: form.aiPreset }
+      ? {
+          apiKey: form.apiKey,
+          baseUrl: form.baseUrl,
+          model: form.model,
+          aiPreset: form.aiPreset,
+          visionModel: form.visionModel.trim(),
+          visionBaseUrl: form.visionBaseUrl.trim(),
+          visionApiKey: form.visionApiKey.trim(),
+        }
       : {
           minPostCount: Number(form.minPostCount),
           tagCompletionLimit: form.tagCompletionLimit,
@@ -878,6 +966,50 @@ async function translate() {
                   </button>
                 </div>
               </div>
+              <p
+                v-if="visionNote"
+                :class="['form-field', 'full', 'vision-note', visionNote.tone]"
+                data-vision-note
+              >
+                <Icon
+                  :name="visionNote.tone === 'ok' ? 'eye' : 'warn'"
+                  :size="14"
+                />
+                <span>{{ visionNote.text }}</span>
+              </p>
+              <div class="form-field full vision-head">
+                <label for="vision-model">识图模型（可选）</label>
+                <span class="muted small"
+                  >主模型不能识图时，带图片的请求改用它；只填模型 ID 时沿用上方的地址和 Key</span
+                >
+              </div>
+              <div class="form-field">
+                <input
+                  id="vision-model"
+                  v-model="form.visionModel"
+                  aria-label="识图模型名称"
+                  class="input"
+                  :placeholder="visionSuggestion ? `如 ${visionSuggestion}` : '模型 ID'"
+                />
+              </div>
+              <div class="form-field">
+                <input
+                  v-model="form.visionBaseUrl"
+                  aria-label="识图模型 Base URL"
+                  class="input"
+                  placeholder="Base URL，留空则与上方相同"
+                />
+              </div>
+              <div class="form-field full">
+                <input
+                  v-model="form.visionApiKey"
+                  aria-label="识图模型 API Key"
+                  class="input"
+                  type="password"
+                  data-mcp-private
+                  placeholder="API Key，留空则与上方相同"
+                />
+              </div>
             </div>
             <div class="row">
               <button
@@ -890,12 +1022,36 @@ async function translate() {
                   :size="16"
                 />保存
               </button>
+              <button
+                class="btn"
+                :disabled="visionTesting || !form.baseUrl.trim() || !form.model.trim()"
+                title="发一张测试图片，确认模型能否识图（会产生少量调用费用）"
+                @click="testVision"
+              >
+                <Icon
+                  name="eye"
+                  :size="15"
+                />{{ visionTesting ? '测试中…' : '测试识图' }}
+              </button>
               <span
                 v-if="dirty.deepseek"
                 class="pill alias"
                 ><i></i>有未保存的修改</span
               >
             </div>
+            <ul
+              v-if="visionResults.length"
+              class="vision-results"
+              data-vision-results
+            >
+              <li
+                v-for="(item, index) in visionResults"
+                :key="index"
+                :class="item.ok ? 'ok' : 'bad'"
+              >
+                {{ item.ok ? '✓' : '✕' }} {{ item.message }}
+              </li>
+            </ul>
           </div>
           <StatisticsSettings
             v-if="category === 'services' && service === 'ai'"
@@ -1256,5 +1412,58 @@ async function translate() {
 .model-picker :deep(.model-suggestions) {
   width: 120px;
   flex-shrink: 0;
+}
+
+.vision-note {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--alias);
+  background: var(--alias-soft);
+}
+
+.vision-note :deep(svg) {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
+.vision-note.ok {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+
+.vision-note.bad {
+  color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.vision-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.vision-results {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.vision-results .ok {
+  color: var(--ok);
+}
+
+.vision-results .bad {
+  color: var(--bad);
 }
 </style>

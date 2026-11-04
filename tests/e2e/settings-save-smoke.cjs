@@ -422,7 +422,7 @@ app.whenReady().then(async () => {
     )
     await input('[aria-label="AI 模型名称"]', 'my-gpt-model')
     for (const [preset, endpoint, model] of [
-      ['qwen', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen-plus'],
+      ['qwen', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen3.7-plus'],
       ['glm', 'https://open.bigmodel.cn/api/paas/v4', 'glm-5.3'],
       ['kimi', 'https://api.moonshot.cn/v1', 'kimi-k3.1-pro'],
     ]) {
@@ -434,6 +434,25 @@ app.whenReady().then(async () => {
         '',
       )
     }
+    // 识图提示：GLM 文本模型不能识图，推荐 glm-5v-turbo；填入识图模型后提示改为将分流
+    await choosePreset('glm')
+    assert.ok(await js(`document.querySelector('[data-vision-note]').classList.contains('bad')`))
+    assert.match(
+      await js(`document.querySelector('[data-vision-note]').textContent`),
+      /glm-5\.3 不能识图.*glm-5v-turbo/,
+    )
+    await input('[aria-label="识图模型名称"]', 'glm-5v-turbo')
+    assert.ok(await js(`document.querySelector('[data-vision-note]').classList.contains('ok')`))
+    assert.match(
+      await js(`document.querySelector('[data-vision-note]').textContent`),
+      /改用识图模型 glm-5v-turbo/,
+    )
+    await input('[aria-label="识图模型名称"]', '')
+    await choosePreset('kimi')
+    assert.ok(
+      await js(`document.querySelector('[data-vision-note]').classList.contains('ok')`),
+      'kimi-k3.1-pro can see images',
+    )
     await choosePreset('deepseek')
     assert.equal(
       await js(`document.querySelector('.settings input[placeholder="sk-..."]').value`),
@@ -463,6 +482,20 @@ app.whenReady().then(async () => {
     )
     console.log(
       'PASS official presets, draft switching, credential isolation and custom endpoint persistence',
+    )
+    // 自定义的 deepseek-chat 是纯文本模型；配置识图模型并保存
+    assert.ok(await js(`document.querySelector('[data-vision-note]').classList.contains('bad')`))
+    await input('[aria-label="识图模型名称"]', 'deepseek-flash')
+    await click('#settings-panel-ai .primary', '保存')
+    assert.equal(getSettings().visionModel, 'deepseek-flash')
+    assert.equal(getSettings().visionBaseUrl, '')
+    writeFileSync(
+      join(profile, 'settings-vision.png'),
+      (await win.webContents.capturePage()).toPNG(),
+    )
+    console.log(
+      'PASS vision capability hints, vision model routing note and persistence. Screenshot: ' +
+        join(profile, 'settings-vision.png'),
     )
 
     app.exit(0)

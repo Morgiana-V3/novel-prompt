@@ -117,7 +117,11 @@ net.fetch = async (url, init) => {
     aiUrl = url
     aiAuth = init.headers.Authorization
     aiCalls++
-    if (aiRejectImages && Array.isArray(aiBody.messages[1].content)) {
+    if (
+      aiRejectImages &&
+      Array.isArray(aiBody.messages[1].content) &&
+      aiBody.messages[1].content.some((part) => part.type === 'image_url')
+    ) {
       return Response.json({ message: '模型不支持图片输入' }, { status: 400 })
     }
     await new Promise((resolve, reject) => {
@@ -1303,17 +1307,17 @@ app.whenReady().then(async () => {
     await planInpaint(visionReq)
     assert.equal(aiBody.model, 'fixture-shared-vision')
     saveSettings({ model: previousModel })
+    // 模型拒收图片且未配置识图模型：去图重发一次，方案中注明没有看到图片；旧版识图配置不启用
     aiRejectImages = true
     const beforeUnsupported = aiCalls
-    await assert.rejects(planInpaint(visionReq), /不支持图片/)
-    assert.equal(
-      aiCalls,
-      beforeUnsupported + 1,
-      'unsupported images must not silently retry as text or use the legacy provider',
-    )
+    const textOnly = await planInpaint(visionReq)
+    assert.equal(aiCalls, beforeUnsupported + 2, 'one rejected image request, one text-only retry')
+    assert.equal(aiUrl, 'https://fixture.test/v1/chat/completions', 'legacy vision provider unused')
+    assert.ok(!JSON.stringify(aiBody.messages).includes('image_url'))
+    assert.ok(textOnly.plans.every((plan) => plan.warning.includes('没有看到图片')))
     aiRejectImages = false
     console.log(
-      'PASS image analysis uses shared credentials, endpoint and current model; legacy vision settings are ignored',
+      'PASS image analysis uses shared credentials, endpoint and current model; legacy vision settings are ignored; rejected images fall back to labelled text-only plans',
     )
     const change = vision.plans[0].changes[0]
     assert.throws(

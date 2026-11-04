@@ -1,11 +1,102 @@
 import {
+  AiServiceError,
+  hasImages,
   requestChat,
+  VisionUnsupportedError,
   type ChatInputMessage,
   type ChatMessage,
   type ChatOptions,
 } from '../../providers/chat/client'
 import { getSettings } from '../settings/service'
 import type { PageSkillSnapshot } from '../../../shared/workspace/model'
+import { modelVision, visionProvider } from '../../../shared/settings/vision'
+
+/**
+ * 带图对话走哪条路：main = 主模型看图；vision = 改走识图模型；text = 去掉图片只发文字。
+ * 同一份 messages 的多轮请求保持同一条路，避免思考模式的多轮对话中途换模型。
+ */
+export type VisionRoute = 'main' | 'vision' | 'text'
+const visionRoutes = new WeakMap<ChatInputMessage[], VisionRoute>()
+
+/** 这份对话最终如何处理图片；没有图片时为 undefined */
+export const visionRoute = (messages: ChatInputMessage[]) => visionRoutes.get(messages)
+
+export const IMAGE_SKIPPED_NOTE =
+  '当前模型不能识图，这次没有看到图片，只依据文字记录分析。可在「设置 → AI 服务 → 模型接口」配置识图模型。'
+
+/** 原地把图片换成说明文字：后续轮次也不再带图，模型也知道自己没看到画面 */
+function dropImages(messages: ChatInputMessage[]): void {
+  for (const message of messages) {
+    if (!Array.isArray(message.content)) {
+      continue
+    }
+    let dropped = false
+    message.content = message.content.flatMap((part) => {
+      if (part.type !== 'image_url') {
+        return [part]
+      }
+      if (dropped) {
+        return []
+      }
+      dropped = true
+      return [
+        {
+          type: 'text' as const,
+          text: '【图片未发送：当前模型不能识图。不得声称看过画面，只能依据文字记录、批注和坐标分析，并在回复中说明这一点。】',
+        },
+      ]
+    })
+  }
+}
+
+/** 发送一轮请求；带图时按主模型和识图模型的能力分流，不能识图时降级为纯文字 */
+async function send(messages: ChatInputMessage[], options: ChatOptions): Promise<ChatMessage> {
+  const settings = getSettings()
+  if (!hasImages(messages)) {
+    return requestChat(messages, settings, options)
+  }
+  const vision = visionProvider(settings)
+  const mainSupport = modelVision(settings.model)
+  let route = visionRoutes.get(messages)
+  if (!route) {
+    if (vision && mainSupport !== 'yes') {
+      route = 'vision'
+    } else if (!vision && mainSupport === 'no') {
+      route = 'text'
+    } else {
+      route = 'main'
+    }
+  }
+  if (route === 'text') {
+    dropImages(messages)
+    visionRoutes.set(messages, route)
+    return requestChat(messages, settings, options)
+  }
+  visionRoutes.set(messages, route)
+  try {
+    return await requestChat(
+      messages,
+      settings,
+      route === 'vision' && vision ? { ...options, provider: vision } : options,
+    )
+  } catch (error) {
+    if (!(error instanceof VisionUnsupportedError)) {
+      throw error
+    }
+    if (route === 'vision') {
+      throw new AiServiceError(
+        `识图模型 ${error.model} 不支持图片输入，请在「设置 → AI 服务 → 模型接口」更换识图模型${error.detail ? `（服务端说明：${error.detail}）` : ''}`,
+      )
+    }
+    if (vision) {
+      visionRoutes.set(messages, 'vision')
+      return requestChat(messages, settings, { ...options, provider: vision })
+    }
+    visionRoutes.set(messages, 'text')
+    dropImages(messages)
+    return requestChat(messages, settings, options)
+  }
+}
 
 const readSessions = new WeakMap<ChatInputMessage[], { rounds: number; delivered: Set<string> }>()
 
@@ -28,7 +119,7 @@ export async function chat(
     options.skillSnapshot?.sections?.filter((section) => section.resourcePath) ?? []
   if (!references.length || options.allowSkillReads === false) {
     options.onRequest?.()
-    return requestChat(messages, getSettings(), options)
+    return send(messages, options)
   }
   const state = readSessions.get(messages) ?? { rounds: 0, delivered: new Set<string>() }
   readSessions.set(messages, state)
@@ -61,7 +152,7 @@ export async function chat(
   while (state.rounds < 8) {
     options.signal?.throwIfAborted()
     options.onRequest?.()
-    const reply = await requestChat(messages, getSettings(), { ...options, tools })
+    const reply = await send(messages, { ...options, tools })
     const reads =
       reply.tool_calls?.filter((call) => call.function.name === 'read_skill_reference') ?? []
     if (!reads.length) {
@@ -123,5 +214,5 @@ export async function chat(
       '参考资料读取阶段已结束。请基于已读取的正文继续当前任务，未读取或无法确认的内容明确说明；不要重复请求资料。',
   })
   options.onRequest?.()
-  return requestChat(messages, getSettings(), options)
+  return send(messages, options)
 }

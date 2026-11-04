@@ -26,6 +26,9 @@ const DEFAULTS: Settings = {
   naiAutoSave: false,
   mcpAllowAi: false,
   mcpAllowGenerate: false,
+  visionModel: '',
+  visionBaseUrl: '',
+  visionApiKey: '',
 }
 
 let cache: Settings | null = null

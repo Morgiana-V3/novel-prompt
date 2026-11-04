@@ -5,6 +5,7 @@ import { storageInfo, scheduleMigration, cancelMigration } from '../../modules/s
 import { listSnippets, saveSnippet, deleteSnippet } from '../../modules/prompts/snippets'
 import type { Settings } from '../../../shared/settings/types'
 import { getSettings, saveSettings } from '../../modules/settings/service'
+import { testVision } from '../../modules/prompts/vision-test'
 import type { IpcContext } from './context'
 import { handle } from './handle'
 
@@ -31,6 +32,7 @@ export function registerSettingsIpc(_context: IpcContext): void {
   handle('snippets:list', listSnippets)
   handle('snippets:save', (_e, input) => saveSnippet(input))
   handle('snippets:delete', (_e, id) => deleteSnippet(id))
+  handle('ai:vision-test', (_e, provider) => testVision(provider))
   handle('settings:get', () => {
     return getSettings()
   })

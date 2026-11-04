@@ -43,6 +43,12 @@ export type ChatInputMessage = Omit<ChatMessage, 'content'> & {
   content: string | null | ChatPart[]
 }
 
+export const hasImages = (messages: ChatInputMessage[]) =>
+  messages.some(
+    (message) =>
+      Array.isArray(message.content) && message.content.some((part) => part.type === 'image_url'),
+  )
+
 export async function requestChat(
   messages: ChatInputMessage[],
   settings: { apiKey: string; baseUrl: string; model: string; reasoningEffort: ReasoningEffort },
@@ -118,7 +124,8 @@ export async function requestChat(
         recorded = true
         reportUsage(provider, model, readTokenUsage(usage))
       })
-    } catch (error) {
+    } catch (caught) {
+      const error = hasImages(messages) ? visionError(caught, model) : caught
       // 限流、服务繁忙、网络抖动可以稍后重试；Key 错误、参数错误、超时、用户取消不重试
       if (
         !(error instanceof AiServiceError) ||
@@ -145,10 +152,50 @@ export class AiServiceError extends Error {
     message: string,
     readonly retryable = false,
     readonly retryAfterMs?: number,
+    readonly status?: number,
+    readonly detail = '',
   ) {
     super(message)
     this.name = 'AiServiceError'
   }
+}
+
+/** 模型不接收图片输入（纯文本模型收到 image_url） */
+export class VisionUnsupportedError extends AiServiceError {
+  constructor(
+    readonly model: string,
+    detail: string,
+  ) {
+    super(
+      `模型 ${model} 不支持图片输入。图片精修的 AI 讨论和局部重绘方案需要识图：请在「设置 → AI 服务 → 模型接口」改用支持识图的模型，或配置识图模型${detail ? `（服务端说明：${detail}）` : ''}`,
+      false,
+      undefined,
+      400,
+      detail,
+    )
+    this.name = 'VisionUnsupportedError'
+  }
+}
+
+/**
+ * 带图请求被拒时，判断是否因为模型不支持图片：各家措辞不同
+ * （DeepSeek：unknown variant `image_url`；其他常见 image / vision / multimodal / 多模态）。
+ * 图片过大、格式不对等问题不算，避免误判后丢掉图片。
+ */
+function visionError(error: unknown, model: string): unknown {
+  if (
+    error instanceof AiServiceError &&
+    !(error instanceof VisionUnsupportedError) &&
+    error.status !== undefined &&
+    [400, 415, 422].includes(error.status) &&
+    /image|vision|multi-?modal|unknown variant|多模态|图片|图像|视觉/i.test(error.detail) &&
+    !/too large|exceed|resolution|decode|corrupt|invalid image|image format|过大|超过|解码|损坏/i.test(
+      error.detail,
+    )
+  ) {
+    return new VisionUnsupportedError(model, error.detail)
+  }
+  return error
 }
 
 function wait(ms: number, signal?: AbortSignal): Promise<void> {
@@ -196,6 +243,10 @@ function httpError(status: number, detail: string, retryAfter: string | null): A
   if (status === 401 || status === 403) {
     return new AiServiceError(
       `AI 服务拒绝了 API Key（HTTP ${status}），请在「设置」检查 Key 是否正确、是否过期${tail}`,
+      false,
+      undefined,
+      status,
+      detail,
     )
   }
   if (status === 402) {
@@ -220,7 +271,7 @@ function httpError(status: number, detail: string, retryAfter: string | null): A
       after,
     )
   }
-  return new AiServiceError(`AI 服务请求失败（HTTP ${status}）${tail}`)
+  return new AiServiceError(`AI 服务请求失败（HTTP ${status}）${tail}`, false, undefined, status, detail)
 }
 
 async function requestOnce(

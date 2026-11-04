@@ -2,13 +2,25 @@ import type { NaiVersion } from '../generation/types'
 import type { SkillEntry } from '../skills/types'
 import type { AiPreset } from './ai-presets'
 
+/** 设置页「测试识图」的结果 */
+export interface VisionTestResult {
+  ok: boolean
+  message: string
+}
+
 export type ReasoningEffort = 'off' | 'low' | 'high' | 'max'
 
 export interface Settings {
   aiPreset?: AiPreset
   workspaceAiCollapsed?: boolean
-  /** Legacy profile data; inpainting now uses the shared AI configuration. */
+  /** Legacy profile data; ignored. The optional vision model is visionModel / visionBaseUrl / visionApiKey. */
   inpaintVision?: { apiKey: string; baseUrl: string; model: string }
+  /** 识图模型：主模型不能识图时，带图片的请求改走它。为空表示未配置 */
+  visionModel?: string
+  /** 识图模型的接口地址，为空时沿用主接口 */
+  visionBaseUrl?: string
+  /** 识图模型的 API Key，为空时沿用主接口 */
+  visionApiKey?: string
   apiKey: string
   baseUrl: string
   model: string

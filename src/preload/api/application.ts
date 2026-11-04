@@ -1,6 +1,7 @@
 import type { ConfirmationRequest } from '../../shared/contracts/confirmation'
 import type { McpInfo } from '../../shared/contracts/mcp'
-import type { Settings } from '../../shared/settings/types'
+import type { Settings, VisionTestResult } from '../../shared/settings/types'
+import type { VisionProvider } from '../../shared/settings/vision'
 import type { UpdateProgress } from '../../shared/tags/types'
 import type { AiStep, NaiStep, TaskSnapshot } from '../../shared/tasks/model'
 import type { UpdateInfo } from '../../shared/updates/types'
@@ -31,6 +32,8 @@ export const applicationApi = {
   cancelTask: (): Promise<void> => invoke('task:cancel'),
   getSettings: (): Promise<Settings> => invoke('settings:get'),
   saveSettings: (patch: Partial<Settings>): Promise<Settings> => invoke('settings:save', patch),
+  aiVisionTest: (provider: VisionProvider): Promise<VisionTestResult> =>
+    invoke('ai:vision-test', provider),
   cancelInpaintPlan: (): Promise<void> => invoke('ai:inpaint-plan-cancel'),
   copy: (text: string): Promise<void> => invoke('clipboard:write', text),
   readClipboard: (): Promise<string> => invoke('clipboard:read'),

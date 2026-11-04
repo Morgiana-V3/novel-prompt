@@ -9,13 +9,13 @@ import type {
   InpaintChange,
   InpaintPlan,
 } from '../../../shared/prompts/types'
-import { extractJson, type ChatPart } from '../../providers/chat/client'
+import { extractJson, type ChatInputMessage, type ChatPart } from '../../providers/chat/client'
 import { prepareInpaint } from '../generation/inpaint'
 import { imagePath } from '../images/access'
 import { composeSkills } from '../skills/service'
 import { tagStore } from '../tags/store'
 import { analyzePrompt } from './analyzer'
-import { chat } from './chat'
+import { chat, IMAGE_SKIPPED_NOTE, visionRoute } from './chat'
 
 const fields = ['base', 'negative', 'character', 'characterNegative']
 export function normalizePlans(raw: unknown, req: AiInpaintRequest): InpaintPlan[] {
@@ -229,14 +229,22 @@ export async function planInpaint(
     original: req.draft,
     regions,
   })
-  const reply = await chat(
-    [
-      { role: 'system', content: system },
-      { role: 'user', content: [{ type: 'text', text }, ...visual] },
-    ],
-    { thinking: false, temperature: 0.3, signal, skillSnapshot: skills.snapshot },
-  )
+  const messages: ChatInputMessage[] = [
+    { role: 'system', content: system },
+    { role: 'user', content: [{ type: 'text', text }, ...visual] },
+  ]
+  const reply = await chat(messages, {
+    thinking: false,
+    temperature: 0.3,
+    signal,
+    skillSnapshot: skills.snapshot,
+  })
   const plans = normalizePlans(extractJson(reply.content ?? ''), req)
+  if (visionRoute(messages) === 'text') {
+    for (const plan of plans) {
+      plan.warning = [IMAGE_SKIPPED_NOTE, plan.warning].filter(Boolean).join('\n')
+    }
+  }
   if (tagStore.loaded) {
     for (const plan of plans) {
       const unknown = new Set<string>()

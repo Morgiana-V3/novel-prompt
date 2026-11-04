@@ -1,6 +1,7 @@
 export type AiPreset = 'deepseek' | 'openai' | 'qwen' | 'glm' | 'kimi' | 'custom'
 
 // Official Chat Completions base URLs, checked against vendor docs on 2026-11-02.
+// Image input support per model lives in ./vision.ts (checked 2026-11-04).
 // https://api-docs.deepseek.com/
 // https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create
 // https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope
@@ -25,15 +26,17 @@ export const AI_PRESETS = [
     id: 'qwen',
     label: '通义千问（百炼·北京）',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    model: 'qwen-plus',
-    models: ['qwen-plus', 'qwen-flash', 'qwen3.8-max'],
+    // qwen3.5 以后的 Plus / Flash / Max 原生支持识图；旧别名 qwen-plus 未确认
+    model: 'qwen3.7-plus',
+    models: ['qwen3.7-plus', 'qwen3.8-flash', 'qwen3.8-max'],
   },
   {
     id: 'glm',
     label: '智谱 GLM',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     model: 'glm-5.3',
-    models: ['glm-5.3', 'glm-5.2'],
+    // GLM-5.x 只接收文本；识图用 glm-5v-turbo
+    models: ['glm-5.3', 'glm-5.2', 'glm-5v-turbo'],
   },
   {
     id: 'kimi',
