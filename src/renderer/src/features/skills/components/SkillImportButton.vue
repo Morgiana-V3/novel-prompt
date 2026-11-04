@@ -64,7 +64,7 @@ function select(kind: 'file' | 'directory') {
     :id="id"
     ref="menu"
     popover="auto"
-    class="skill-import-menu pop-arrow"
+    class="skill-import-menu pop-arrow pop-motion"
     data-side="bottom"
     :style="position"
     role="group"
@@ -98,10 +98,6 @@ function select(kind: 'file' | 'directory') {
   background: var(--bg);
   color: var(--text);
   box-shadow: var(--shadow-pop);
-}
-
-.skill-import-menu:popover-open {
-  animation: pop var(--dur-base) var(--ease-out);
 }
 
 .skill-import-menu button {

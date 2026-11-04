@@ -262,7 +262,28 @@ select.input:hover:not(:disabled) {
   object-fit: contain;
   border-radius: 10px;
   box-shadow: 0 10px 30px rgb(20 20 30 / 12%);
-  animation: pop var(--dur-slow) var(--ease-out);
+}
+
+/* 生成下一张时，画面上缓慢扫过一道柔光，提示仍在工作 */
+.viewer-stage.busy::after {
+  content: '';
+  position: absolute;
+  inset: 14px;
+  border-radius: 10px;
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent 35%, rgb(255 255 255 / 38%) 50%, transparent 65%);
+  background-size: 250% 100%;
+  animation: viewer-sweep 1.8s ease-in-out infinite;
+}
+
+@keyframes viewer-sweep {
+  from {
+    background-position: 130% 0;
+  }
+
+  to {
+    background-position: -130% 0;
+  }
 }
 
 .viewer-busy {

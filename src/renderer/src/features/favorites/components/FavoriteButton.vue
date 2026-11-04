@@ -142,7 +142,7 @@ async function confirm() {
     <div
       ref="bubble"
       popover="auto"
-      class="favorite-confirm pop-arrow"
+      class="favorite-confirm pop-arrow pop-motion"
       :data-side="side"
       role="dialog"
       aria-label="确认取消收藏"
@@ -323,10 +323,6 @@ async function confirm() {
   color: var(--text);
   box-shadow: var(--shadow-pop);
   font-size: 12px;
-}
-
-.favorite-confirm:popover-open {
-  animation: pop var(--dur-base) var(--ease-out);
 }
 
 .favorite-confirm p {

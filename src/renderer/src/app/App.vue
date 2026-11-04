@@ -13,6 +13,7 @@ import { refreshDb } from '../features/tags/state'
 import { loadSkills } from '../features/skills/state'
 import { saveSettings, checkUpdate, dismissUpdate, receiveUpdate } from '../features/settings/state'
 import { importImagePrompt, flushWorkspace, applyWorkspace } from '../features/prompts/actions'
+import { openTabForLoad } from '../features/creation/tabs'
 import { cleanErr } from '../shared/lib/format'
 import { toast, runToastAction } from '../shared/lib/notifications'
 import { type Tab } from '../shared/state/shell'
@@ -159,6 +160,37 @@ const settingsView = ref<InstanceType<typeof SettingsView>>()
 const reverseView = ref<InstanceType<typeof ReverseView>>()
 const generateView = ref<InstanceType<typeof GenerateView>>()
 const contentEl = ref<HTMLElement>()
+
+/** 侧栏选中项的白色高亮块：切换页面时滑到新位置，而不是瞬间跳过去 */
+const navEl = ref<HTMLElement>()
+const navMark = ref({ y: 0, height: 0, visible: false, animate: false })
+function placeNavMark() {
+  const active = navEl.value?.querySelector<HTMLElement>('.nav-item.active')
+  if (!active) {
+    navMark.value = { ...navMark.value, visible: false }
+    return
+  }
+  navMark.value = {
+    y: active.offsetTop,
+    height: active.offsetHeight,
+    visible: true,
+    // 首次定位不播放滑动
+    animate: navMark.value.visible,
+  }
+}
+watch(() => shellState.tab, placeNavMark, { flush: 'post' })
+let navObserver: ResizeObserver | undefined
+onMounted(() => {
+  placeNavMark()
+  navObserver = new ResizeObserver(() => {
+    navMark.value.animate = false
+    placeNavMark()
+  })
+  if (navEl.value) {
+    navObserver.observe(navEl.value)
+  }
+})
+onBeforeUnmount(() => navObserver?.disconnect())
 
 /** toast 默认贴底居中；当前页面底部有操作栏（data-toast-avoid）时抬到栏上方，避免盖住生成等按钮 */
 const toastBottom = ref(28)
@@ -581,7 +613,11 @@ async function onDrop(event2: DragEvent) {
     return
   }
   try {
-    await importImagePrompt(await readPngPrompt(file), '已读取原图')
+    const imported = await readPngPrompt(file)
+    // 拖入原图等同「载入配置」：当前标签有内容时新开标签承接
+    if (openTabForLoad()) {
+      await importImagePrompt(imported, '已读取原图')
+    }
   } catch (err) {
     toast(cleanErr(err))
   }
@@ -621,7 +657,20 @@ async function onDrop(event2: DragEvent) {
         </div>
       </div>
 
-      <nav>
+      <nav
+        ref="navEl"
+        :class="{ sliding: navMark.visible }"
+      >
+        <span
+          class="nav-mark"
+          :class="{ animate: navMark.animate }"
+          :style="{
+            opacity: navMark.visible ? 1 : 0,
+            transform: `translateY(${navMark.y}px)`,
+            height: `${navMark.height}px`,
+          }"
+          aria-hidden="true"
+        ></span>
         <template
           v-for="(t, index) in tabs"
           :key="t.key"

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vFadeImg } from '../../shared/lib/fade-image'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { groupFavorites, type FavoriteGroup } from '@shared/images/favorite-groups'
 import { favorites, refreshFavorites } from './state'
@@ -449,6 +450,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             <div class="favorite-cover">
               <img
                 v-if="group.cover.thumbnail"
+                v-fade-img
                 :src="group.cover.thumbnail"
                 alt=""
                 loading="lazy"
@@ -540,6 +542,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               >
                 <img
                   v-if="item.thumbnail"
+                  v-fade-img
                   :src="item.thumbnail"
                   alt=""
                   loading="lazy"
@@ -1017,7 +1020,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform var(--dur-emph) var(--ease-out);
+  transition:
+    transform var(--dur-emph) var(--ease-out),
+    opacity var(--dur-slow) var(--ease-out);
 }
 
 .favorite-card:hover .favorite-cover {

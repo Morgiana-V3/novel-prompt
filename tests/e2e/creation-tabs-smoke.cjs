@@ -108,12 +108,10 @@ app.whenReady().then(async () => {
     }
     const tabTitles = () =>
       js(
-        `[...document.querySelectorAll('.session-tab:not(.session-tab-leave-active) .session-tab-title')].map(e=>e.textContent.trim())`,
+        `[...document.querySelectorAll('.session-tab:not(.leaving) .session-tab-title')].map(e=>e.textContent.trim())`,
       )
     const clickTab = async (index) => {
-      await js(
-        `document.querySelectorAll('.session-tab:not(.session-tab-leave-active)')[${index}].click()`,
-      )
+      await js(`document.querySelectorAll('.session-tab:not(.leaving)')[${index}].click()`)
       await pause(80)
     }
     const aiText = () => js(`document.querySelector('#creation-panel-ai').innerText`)
@@ -124,17 +122,19 @@ app.whenReady().then(async () => {
 
     // 第一个标签：写提示词
     await setMain('tab one prompt, solo')
-    assert.deepEqual(await tabTitles(), ['tab one prompt'])
+    assert.deepEqual(await tabTitles(), ['新标签'], 'tab names do not follow the prompt')
 
     // 新标签是全新开始；标签以展开动画进场
     await js(`document.querySelector('.session-tab-add').click()`)
     await pause(20)
     assert.ok(
-      await js(`!!document.querySelector('.session-tab-enter-active')`),
+      await js(
+        `!![...document.querySelectorAll('.session-tab')].some(e=>e.getAnimations().length)`,
+      ),
       'tab enter animates',
     )
     await pause(80)
-    assert.equal((await tabTitles()).length, 2)
+    assert.deepEqual(await tabTitles(), ['新标签', '新标签'])
     assert.equal(await js(`${main}.value`), '')
     assert.equal(
       await js(`document.querySelectorAll('.session-tab')[1].classList.contains('active')`),
@@ -171,12 +171,9 @@ app.whenReady().then(async () => {
     // 关闭标签可撤销
     await js(`document.querySelectorAll('.session-tab-close')[0].click()`)
     await pause(20)
-    assert.ok(
-      await js(`!!document.querySelector('.session-tab-leave-active')`),
-      'tab leave animates',
-    )
+    assert.ok(await js(`!!document.querySelector('.session-tab.leaving')`), 'tab leave animates')
     await pause(60)
-    assert.deepEqual(await tabTitles(), ['tab two prompt'])
+    assert.deepEqual(await tabTitles(), ['新标签'])
     // toast 抬到底部生成栏上方，不盖住「生成」按钮
     assert.ok(
       await js(
@@ -186,24 +183,40 @@ app.whenReady().then(async () => {
     )
     assert.equal(await js(`${main}.value`), 'tab two prompt')
     await click('button', '撤销')
-    assert.equal((await tabTitles()).length, 2)
+    assert.deepEqual(await tabTitles(), ['新标签', '新标签'])
     assert.equal(await js(`${main}.value`), 'tab one prompt, solo')
     console.log('PASS closing a tab can be undone from the toast')
+
+    // 新标签总是加在最右边，而不是插在当前标签后面
+    await clickTab(0)
+    await js(`document.querySelector('.session-tab-add').click()`)
+    await pause(260)
+    assert.ok(
+      await js(
+        `(()=>{const t=[...document.querySelectorAll('.session-tab')];return t.length===3&&t.at(-1).classList.contains('active')})()`,
+      ),
+      'new tab is appended at the far right',
+    )
+    await js(`document.querySelector('.session-tab.active .session-tab-close').click()`)
+    await pause(260)
+    assert.equal((await tabTitles()).length, 2)
+    console.log('PASS new tabs are always appended on the right with the fixed default name')
 
     // 标签多到放不下时换行，而不是横向滚动
     for (let i = 0; i < 8; i++) {
       await js(`document.querySelector('.session-tab-add').click()`)
       await pause(40)
-      await setMain(`wrap check prompt number ${i}`)
+      await setMain(`squeeze check prompt number ${i}`)
     }
     assert.equal(await js(`document.querySelector('.session-tab-add').disabled`), true)
     assert.ok(
       await js(
-        `(()=>{const t=[...document.querySelectorAll('.session-tab')];return t.at(-1).offsetTop>t[0].offsetTop})()`,
+        `(()=>{const s=document.querySelector('.creation-session-tabs');const t=[...s.querySelectorAll('.session-tab')];const add=s.querySelector('.session-tab-add').getBoundingClientRect();return t.every(e=>e.offsetTop===t[0].offsetTop)&&s.scrollWidth<=s.clientWidth&&add.right<=s.getBoundingClientRect().right})()`,
       ),
-      'tabs wrap onto another row when the editor is narrow',
+      'tabs stay on one row and shrink like Chrome instead of wrapping',
     )
-    console.log('PASS tabs wrap when squeezed and stop at the limit')
+    console.log('PASS tabs shrink on one row and stop at the limit')
+    await pause(300) // 等最后一个标签的进场动画播完再截图
     const shot = join(profile, 'creation-tabs.png')
     require('node:fs').writeFileSync(shot, (await win.webContents.capturePage()).toPNG())
     console.log('All creation tab checks passed. Screenshot: ' + shot)

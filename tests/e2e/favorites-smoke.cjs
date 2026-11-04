@@ -380,8 +380,8 @@ app.whenReady().then(async () => {
     )
     assert.equal(
       loadedTitles[1],
-      `${loadedTitles[0]} (2)`,
-      'same favorite twice gets a numbered tab',
+      loadedTitles[0],
+      'loading a favorite names the tab after it; duplicates are fine',
     )
     await tab('生图预览')
     assert.equal(

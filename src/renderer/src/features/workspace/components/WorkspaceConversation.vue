@@ -473,6 +473,15 @@ defineExpose({
   min-height: 0;
   padding: 6px 20px 20px;
   scroll-behavior: smooth;
+
+  /* 上下边缘渐隐：滚到顶部条下面的内容柔和消失，不再被一刀切断 */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 12px,
+    #000 calc(100% - 12px),
+    transparent 100%
+  );
 }
 
 .pw-welcome {

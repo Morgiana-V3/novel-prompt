@@ -201,6 +201,43 @@
   }
 }
 
+/*
+ * 原生 popover 的进出场（加 .pop-motion）：打开时淡入并从 96% 放大，关闭时淡出。
+ * display / overlay 用 allow-discrete 延后切换，关闭动画播完才真正隐藏。
+ */
+.pop-motion {
+  opacity: 0;
+  transform: scale(0.96);
+  transition:
+    opacity var(--dur-fast) var(--ease-in),
+    transform var(--dur-fast) var(--ease-in),
+    overlay var(--dur-fast) allow-discrete,
+    display var(--dur-fast) allow-discrete;
+}
+
+.pop-motion:popover-open {
+  opacity: 1;
+  transform: none;
+  transition-duration: var(--dur-base);
+  transition-timing-function: var(--ease-out);
+}
+
+@starting-style {
+  .pop-motion:popover-open {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+/* 图片加载完成后淡入（v-fade-img），加载前露出容器底色 */
+img[data-fade] {
+  transition: opacity var(--dur-slow) var(--ease-out);
+}
+
+img[data-fade]:not(.img-ready) {
+  opacity: 0;
+}
+
 /* 列表增删：TransitionGroup name="list"，离场元素由 detachLeaving 移出文档流 */
 .list-enter-from {
   opacity: 0;

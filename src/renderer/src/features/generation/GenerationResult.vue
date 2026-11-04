@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vFadeImg } from '../../shared/lib/fade-image'
 import { computed } from 'vue'
 import type { NaiImage } from '@shared/images/types'
 import Icon from '../../shared/ui/Icon.vue'
@@ -124,11 +125,12 @@ const deleteLabel = computed(() => {
       </div>
     </div>
     <div
-      class="viewer-stage"
+      :class="['viewer-stage', { busy: running }]"
       @click="emit('lightbox')"
     >
       <img
         :key="current.url"
+        v-fade-img
         :src="current.url"
         alt="生成结果"
         draggable="false"

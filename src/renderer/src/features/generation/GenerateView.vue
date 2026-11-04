@@ -37,8 +37,9 @@ import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 import { usePageShortcuts, runKeyLabel } from '../../shared/lib/shortcuts'
 import { usePagePresentation } from '../../shared/lib/page-presentation'
 import { useSettingsPopover } from './use-settings-popover'
-import { lockTabs, tabRef } from '../creation/tabs'
+import { lockTabs, openTabForLoad, tabRef } from '../creation/tabs'
 import { detachLeaving } from '../../shared/lib/list-motion'
+import { vFadeImg } from '../../shared/lib/fade-image'
 const { navigate, isActive } = usePagePresentation()
 const {
   open: parametersOpen,
@@ -410,12 +411,15 @@ async function loadFromImage(img: NaiImage) {
     return
   }
   const importedPrompt = await readMeta(img)
-  if (importedPrompt) {
-    try {
-      await importImagePrompt(importedPrompt, '已加载原图')
-    } catch (error) {
-      reportError(error)
-    }
+  // 与图集、收藏的「载入配置」一致：当前标签有内容时新开标签承接，并在新标签里选中这张图
+  if (!importedPrompt || !openTabForLoad()) {
+    return
+  }
+  try {
+    await importImagePrompt(importedPrompt, '已加载原图')
+    imageState.currentImage = img
+  } catch (error) {
+    reportError(error)
   }
 }
 
@@ -733,6 +737,7 @@ function openImageWorkspace() {
               @click="current = image"
             >
               <img
+                v-fade-img
                 :src="image.url"
                 loading="lazy"
                 alt=""

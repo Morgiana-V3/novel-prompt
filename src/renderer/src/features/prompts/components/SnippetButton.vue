@@ -490,7 +490,7 @@ onBeforeUnmount(() => {
       :id="panelId"
       ref="panel"
       popover="auto"
-      class="snippet-popover pop-arrow"
+      class="snippet-popover pop-arrow pop-motion"
       role="dialog"
       aria-label="收藏的提示词片段"
       :style="position"
@@ -721,7 +721,6 @@ onBeforeUnmount(() => {
 .snippet-popover:popover-open {
   display: flex;
   flex-direction: column;
-  animation: pop var(--dur-base) var(--ease-out);
 }
 
 .snippet-quick-search {

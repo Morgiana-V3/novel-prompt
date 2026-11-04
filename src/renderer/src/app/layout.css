@@ -55,9 +55,37 @@
 }
 
 nav {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* 选中项的白色高亮块，切换时平滑滑动 */
+.nav-mark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+}
+
+.nav-mark.animate {
+  transition:
+    transform var(--dur-slow) var(--ease-out),
+    height var(--dur-slow) var(--ease-out);
+}
+
+nav .nav-item {
+  position: relative;
+}
+
+nav.sliding .nav-item.active {
+  background: transparent;
+  box-shadow: none;
 }
 
 .nav-item {

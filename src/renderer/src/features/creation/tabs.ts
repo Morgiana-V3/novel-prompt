@@ -214,6 +214,12 @@ function loadTabs(): { activeId: string; list: TabEntry[] } {
 }
 
 const initial = loadTabs()
+// 开发期间试过的「创作 N」自动编号统一回到默认名
+for (const entry of initial.list) {
+  if (/^创作 \d+$/.test(entry.title)) {
+    entry.title = ''
+  }
+}
 
 export const creationTabs = reactive({
   activeId: initial.activeId,
@@ -263,7 +269,7 @@ export function switchTab(id: string): void {
   enter(target)
 }
 
-/** 新建一个空白标签（提示词、参数、历史全部从默认开始），成功时返回 true */
+/** 新建一个空白标签（提示词、参数、历史全部从默认开始），加在最右边；成功时返回 true */
 export function createTab(title = ''): boolean {
   if (creationTabs.list.length >= MAX_TABS) {
     toast(`最多同时打开 ${MAX_TABS} 个标签，请先关闭不用的标签`)
@@ -272,10 +278,13 @@ export function createTab(title = ''): boolean {
   if (!leaveActive()) {
     return false
   }
-  const index = creationTabs.list.findIndex((tab) => tab.id === creationTabs.activeId)
-  const entry: TabEntry = { id: newId(), title, content: null, session: null }
-  creationTabs.list.splice(index + 1, 0, entry)
-  enter(creationTabs.list[index + 1])
+  creationTabs.list.push({
+    id: newId(),
+    title: title.trim().slice(0, 40),
+    content: null,
+    session: null,
+  })
+  enter(creationTabs.list[creationTabs.list.length - 1])
   return true
 }
 
@@ -286,7 +295,7 @@ export function createTab(title = ''): boolean {
 export function openTabForLoad(title = ''): boolean {
   const live: TabContent = { ...blankContent(), ...capture().content }
   if (hasContent(live)) {
-    return createTab(title && uniqueTitle(title))
+    return createTab(title)
   }
   const reason = blocker()
   if (reason) {
@@ -294,26 +303,10 @@ export function openTabForLoad(title = ''): boolean {
     return false
   }
   if (title) {
-    activeEntry().title = uniqueTitle(title, creationTabs.activeId)
+    activeEntry().title = title.trim().slice(0, 40)
     saveTabs()
   }
   return true
-}
-
-/** 同名标签自动加序号，例如多次载入同一个收藏：灰衣配方、灰衣配方 (2)… */
-function uniqueTitle(title: string, exceptId?: string): string {
-  const base = title.trim().slice(0, 36)
-  const used = new Set(
-    creationTabs.list.filter((tab) => tab.id !== exceptId).map((tab) => tabTitle(tab)),
-  )
-  if (!used.has(base)) {
-    return base
-  }
-  let n = 2
-  while (used.has(`${base} (${n})`)) {
-    n++
-  }
-  return `${base} (${n})`
 }
 
 export function closeTab(id: string): void {
@@ -352,26 +345,15 @@ export function closeTab(id: string): void {
 export function renameTab(id: string, title: string): void {
   const entry = creationTabs.list.find((tab) => tab.id === id)
   if (entry) {
+    // 清空名字即回到默认的「新标签」
     entry.title = title.trim().slice(0, 40)
     saveTabs()
   }
 }
 
-/** 标签上显示的名字：自定义名称 > 主提示词开头 > 第一个角色 > 「新标签」 */
+/** 标签名：用户改的名字或载入来源（如收藏名）；默认统一叫「新标签」，同名无妨（内部按 id 区分） */
 export function tabTitle(entry: TabEntry): string {
-  if (entry.title) {
-    return entry.title
-  }
-  const content = entry.content
-  const base = content ? content.prompt : promptState.prompt
-  const characters = content ? content.characters : promptState.characters
-  const text =
-    base.trim() || characters.find((character) => character.prompt.trim())?.prompt.trim() || ''
-  const first = text
-    .split(/[,\n]/)
-    .map((part) => part.trim())
-    .find(Boolean)
-  return first ? first.slice(0, 18) : '新标签'
+  return entry.title || '新标签'
 }
 
 export const tabsLocked = computed(() => !!blocker())

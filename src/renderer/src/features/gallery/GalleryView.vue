@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vFadeImg } from '../../shared/lib/fade-image'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { NaiImage } from '@shared/images/types'
 import { DEFAULT_COLLECTION } from '@shared/images/collections'
@@ -311,6 +312,7 @@ function step(delta: number) {
               @dblclick="lightbox = true"
             >
               <img
+                v-fade-img
                 :src="image.url"
                 alt="生成图片"
                 loading="lazy"
@@ -352,6 +354,7 @@ function step(delta: number) {
             @click="lightbox = true"
           >
             <img
+              v-fade-img
               :src="current.url"
               alt="当前图片"
             />
