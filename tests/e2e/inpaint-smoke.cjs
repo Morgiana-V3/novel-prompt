@@ -443,7 +443,8 @@ app.whenReady().then(async () => {
     )
     win.reload()
     await pause(600)
-    await clickText('.nav-item', '生图预览')
+    await clickText('.nav-item', '生图创作')
+    await clickText('.creation-tab', '图片预览')
     await wait(`!!document.querySelector('.thumb')`)
     await run(`document.querySelector('.thumb').click()`)
     await clickText('.viewer button', '局部重绘')
@@ -663,7 +664,7 @@ app.whenReady().then(async () => {
     )
     await wait(`!document.querySelector('.ip-mask')`)
     await check(
-      `document.querySelector('.view.generate textarea[data-src="pos"]').value==='workspace unchanged' && document.querySelectorAll('.thumb').length>=3`,
+      `document.querySelector('#creation-editor textarea[data-src="pos"]').value==='workspace unchanged' && document.querySelectorAll('.thumb').length>=3`,
       'workspace unchanged; source and results remain in gallery',
     )
     await run(`document.querySelector('.viewer-stage').click()`)
@@ -1333,7 +1334,7 @@ app.whenReady().then(async () => {
     await run(`document.querySelector('.ip-close-confirm .danger')?.click()`)
     await wait(`!document.querySelector('.ip-mask')`)
     await check(
-      `document.querySelector('.view.generate textarea[data-src="pos"]').value==='workspace unchanged'`,
+      `document.querySelector('#creation-editor textarea[data-src="pos"]').value==='workspace unchanged'`,
       'AI collaboration keeps workspace unchanged',
     )
     // Backend validation and compositing boundaries, including partial alpha.

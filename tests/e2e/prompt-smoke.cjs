@@ -252,7 +252,11 @@ app.whenReady().then(async () => {
       }
       throw new Error('Timed out: ' + predicate)
     }
-    const waitUI = (code) => wait(() => js(code))
+    // 超时时附上等待的条件，定位失败位置
+    const waitUI = (code) =>
+      wait(() => js(code)).catch((error) => {
+        throw new Error(`${error.message}: ${code}`)
+      })
     const click = async (selector, text) => {
       await js(
         `(()=>{const b=[...document.querySelectorAll(${JSON.stringify(selector)})].find(e=>e.textContent.trim()===${JSON.stringify(text)}&&!e.disabled);if(!b)throw new Error('Missing button: '+${JSON.stringify(text)});b.click()})()`,
@@ -261,13 +265,16 @@ app.whenReady().then(async () => {
     }
     const input = (value) =>
       js(
-        `(()=>{const e=document.querySelector('.compare textarea');e.value=${JSON.stringify(value)};e.dispatchEvent(new Event('input',{bubbles:true}))})()`,
+        `(()=>{const e=(document.querySelector('.compare .section-tab.on')?.textContent.trim().startsWith('负面')?document.querySelector('#creation-editor textarea[aria-label="负面提示词"]'):document.querySelector('#creation-editor textarea[aria-label="主提示词"]'));e.value=${JSON.stringify(value)};e.dispatchEvent(new Event('input',{bubbles:true}))})()`,
       )
     const paste = (value) =>
       js(
-        `(()=>{const data=new DataTransfer();data.setData('text/plain',${JSON.stringify(value)});document.querySelector('.compare textarea').dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}))})()`,
+        `(()=>{const data=new DataTransfer();data.setData('text/plain',${JSON.stringify(value)});(document.querySelector('.compare .section-tab.on')?.textContent.trim().startsWith('负面')?document.querySelector('#creation-editor textarea[aria-label="负面提示词"]'):document.querySelector('#creation-editor textarea[aria-label="主提示词"]')).dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}))})()`,
       )
-    const value = () => js(`document.querySelector('.compare textarea').value`)
+    const value = () =>
+      js(
+        `(document.querySelector('.compare .section-tab.on')?.textContent.trim().startsWith('负面')?document.querySelector('#creation-editor textarea[aria-label="负面提示词"]'):document.querySelector('#creation-editor textarea[aria-label="主提示词"]')).value`,
+      )
     await win.loadFile(join(buildDirectory, 'renderer/index.html'))
     await waitUI(`document.querySelector('.side-bottom .seg')?.textContent.includes('V5')`)
     await paste('[Prompt]\ntwin tails\n[Undesired Content]\nlowres, blurry')
@@ -280,16 +287,16 @@ app.whenReady().then(async () => {
     assert.equal(await js(`document.querySelectorAll('.alias-item').length`), 0)
     console.log('PASS switching fields cannot apply stale alias offsets')
 
-    await click('.section-tab', '主提示词1')
+    await click('.section-tab', '主提示词 1')
     await waitUI(`!!document.querySelector('.alias-item button')`)
     await js(
-      `(()=>{const old=document.querySelector('.alias-item button');const t=document.querySelector('.compare textarea');t.value='outdoors';t.dispatchEvent(new Event('input',{bubbles:true}));old.click()})()`,
+      `(()=>{const old=document.querySelector('.alias-item button');const t=(document.querySelector('.compare .section-tab.on')?.textContent.trim().startsWith('负面')?document.querySelector('#creation-editor textarea[aria-label="负面提示词"]'):document.querySelector('#creation-editor textarea[aria-label="主提示词"]'));t.value='outdoors';t.dispatchEvent(new Event('input',{bubbles:true}));old.click()})()`,
     )
     assert.equal(await value(), 'outdoors')
     await input('bogus')
     await waitUI(`!!document.querySelector('.unknown-head button')`)
     await js(
-      `(()=>{const old=document.querySelector('.unknown-head button');const t=document.querySelector('.compare textarea');t.value='outdoors';t.dispatchEvent(new Event('input',{bubbles:true}));old.click()})()`,
+      `(()=>{const old=document.querySelector('.unknown-head button');const t=(document.querySelector('.compare .section-tab.on')?.textContent.trim().startsWith('负面')?document.querySelector('#creation-editor textarea[aria-label="负面提示词"]'):document.querySelector('#creation-editor textarea[aria-label="主提示词"]'));t.value='outdoors';t.dispatchEvent(new Event('input',{bubbles:true}));old.click()})()`,
     )
     assert.equal(await value(), 'outdoors')
     console.log('PASS editing text invalidates both stale replacement and removal actions')
@@ -323,24 +330,31 @@ app.whenReady().then(async () => {
       'PASS late replies are ignored; equal-text fields reanalyze; current results remain actionable',
     )
 
-    await click('.nav-item', 'AI 优化')
-    await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+    await click('.nav-item', '生图创作')
+
+    await click('.creation-tab', '智能优化')
+    await js(`document.querySelector('.creation-ai-actions .run-bar .btn.accent').click()`)
     await waitUI(`!!document.querySelector('.ai .cheer .primary')`)
-    await click('.ai .cheer .primary', '采用')
-    assert.equal(await js(`document.querySelector('.ai textarea[data-src="neg"]').value`), '')
+    await click('.ai .cheer .primary', '全部采纳')
+    assert.equal(
+      await js(`document.querySelector('#creation-editor textarea[data-src="neg"]').value`),
+      '',
+    )
     await click('.ai .cheer button', '撤销采用')
     assert.equal(
-      await js(`document.querySelector('.ai textarea[data-src="neg"]').value`),
+      await js(`document.querySelector('#creation-editor textarea[data-src="neg"]').value`),
       'twintails',
     )
     console.log('PASS adopting an empty negative clears it; undo restores the original')
 
-    await click('.nav-item', '提示词比对')
-    await click('.section-tab', '主提示词1')
+    await click('.nav-item', '生图创作')
+
+    await click('.creation-tab', '词条检查')
+    await click('.section-tab', '主提示词 1')
     await paste(
       '[Prompt]\noutdoors\n[Character 1 @ B3]\nsilver hair\n[Character 1 Undesired Content]\nglasses\n[Undesired Content]\nblurry',
     )
-    await click('.nav-item', '工作台')
+    await click('.nav-item', '图片精修')
     await click('.sessions-home header button', '新建项目')
     // Select the current shared prompt as the new session's starting point.
     await js(`document.querySelector('.session-create .theme-select').click()`)
@@ -356,7 +370,8 @@ app.whenReady().then(async () => {
       characters: [{ prompt: 'silver hair', negative: 'glasses', position: 'B3' }],
       structured: true,
     })
-    await click('.nav-item', '提示词比对')
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '词条检查')
     await paste(copied)
     assert.equal(await value(), 'outdoors')
     console.log(
@@ -366,7 +381,8 @@ app.whenReady().then(async () => {
     // 新建项目沿用生图页参数，而不是写死的默认值
     const created = pages.listPages().map((s) => pages.readPage(s.id))
     assert.ok(created.length >= 1)
-    await click('.nav-item', '生图预览')
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '图片预览')
     // Change the live controls: writing storage directly does not update the mounted state.
     await js(`(() => {
       document.querySelector('.gen-advanced').open = true;
@@ -382,7 +398,7 @@ app.whenReady().then(async () => {
     await click('.theme-select-option', 'DPM++ 2M')
     await js(`document.querySelector('[aria-label="噪声调度"]').click()`)
     await click('.theme-select-option', 'karras')
-    await click('.nav-item', '工作台')
+    await click('.nav-item', '图片精修')
     await js(`document.querySelector('.pw-back[aria-label="返回项目"]').click()`)
     await waitUI(`!!document.querySelector('.sessions-home header button')`)
     await click('.sessions-home header button', '新建项目')
@@ -396,17 +412,16 @@ app.whenReady().then(async () => {
     )
     console.log('PASS new sessions inherit generation settings (single image, random seed)')
 
-    // 推测建议带到 AI 优化，且不覆盖用户已写的修改要求
+    // 修改要求：后面的优化请求会带上它
     const request = `document.querySelector('.ai .pane-body .field textarea')`
-    const runText = () => js(`document.querySelector('.ai .run-bar .btn.accent').textContent`)
-    await click('.nav-item', 'AI 优化')
+    const runText = () =>
+      js(`document.querySelector('.creation-ai-actions .run-bar .btn.accent').textContent`)
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '智能优化')
     await js(
       `(()=>{const t=${request};t.value='保持水彩';t.dispatchEvent(new Event('input',{bubbles:true}))})()`,
     )
-    await click('.nav-item', '画面推测')
-    await js(
-      `(()=>{const t=[...document.querySelectorAll('.preview textarea')].find(e=>e.placeholder.includes('樱花树下并肩'));t.value='想要更明亮';t.dispatchEvent(new Event('input',{bubbles:true}))})()`,
-    )
+    // 画面推测的模拟结果：服务端仍可能返回差距与建议，创作实验只展示推测本身（creation-checks 核对不显示）
     previewResult = {
       summary: 's',
       style: pt,
@@ -424,37 +439,19 @@ app.whenReady().then(async () => {
       tagCount: 1,
       evidence: { related: [], wiki: [], failed: [], implications: true },
     }
-    await js(
-      `[...document.querySelectorAll('.preview .run-bar button')].find(b=>b.textContent.includes('开始推测')).click()`,
-    )
-    await waitUI(
-      `[...document.querySelectorAll('.preview button')].some(b=>b.textContent.includes('带着建议去 AI 优化'))`,
-    )
-    await js(
-      `[...document.querySelectorAll('.preview button')].find(b=>b.textContent.includes('带着建议去 AI 优化')).click()`,
-    )
-    await waitUI(`${request}?.value.includes('整体偏暗')`)
-    const extra = await js(`${request}.value`)
-    assert.ok(extra.startsWith('保持水彩'), extra)
-    for (const s of ['想要更明亮', '整体偏暗', 'bright lighting', '光线太暗']) {
-      assert.ok(extra.includes(s), s)
-    }
-    console.log(
-      'PASS preview suggestions carry into AI optimize without overwriting the user request',
-    )
 
     // 一个输入框：有提示词时优化（带上当前提示词），勾选重新生成时不带当前提示词
     assert.ok((await runText()).includes('优化提示词'))
-    await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+    await js(`document.querySelector('.creation-ai-actions .run-bar .btn.accent').click()`)
     await wait(() => lastOptimize?.mode === 'optimize')
     assert.ok(lastOptimize.prompt.trim())
     assert.ok(lastOptimize.instruction.includes('保持水彩'))
     await js(`(()=>{const c=document.querySelector('.ai .fresh-toggle input');c.click()})()`)
     await waitUI(
-      `document.querySelector('.ai .run-bar .btn.accent').textContent.includes('生成提示词') && !!document.querySelector('.ai .prompt-group.is-ignored')`,
+      `document.querySelector('.creation-ai-actions .run-bar .btn.accent').textContent.includes('生成提示词')`,
     )
     lastOptimize = null
-    await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+    await js(`document.querySelector('.creation-ai-actions .run-bar .btn.accent').click()`)
     await wait(() => lastOptimize?.mode === 'semantic')
     assert.deepEqual(
       [lastOptimize.prompt, lastOptimize.negative, lastOptimize.characters],
@@ -462,7 +459,7 @@ app.whenReady().then(async () => {
     )
     await js(`document.querySelector('.ai .fresh-toggle input').click()`)
     await waitUI(
-      `document.querySelector('.ai .run-bar .btn.accent').textContent.includes('优化提示词')`,
+      `document.querySelector('.creation-ai-actions .run-bar .btn.accent').textContent.includes('优化提示词')`,
     )
     console.log(
       'PASS one request box: optimizes the current prompt, or regenerates from scratch without sending it',
@@ -483,7 +480,7 @@ app.whenReady().then(async () => {
       verdictReason: '没有发现需要修正的问题',
     })
     lastOptimize = null
-    await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+    await js(`document.querySelector('.creation-ai-actions .run-bar .btn.accent').click()`)
     await waitUI(`!!document.querySelector('.ai .verdict-card.converged')`)
     assert.ok(
       await js(
@@ -495,7 +492,7 @@ app.whenReady().then(async () => {
     writeFileSync(join(profile, 'ai-converged.png'), (await win.webContents.capturePage()).toPNG())
     const convergedPrompt = lastOptimize.prompt
     lastOptimize = null
-    await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
+    await js(`document.querySelector('.creation-ai-actions .run-bar .btn.accent').click()`)
     await wait(() => lastOptimize?.mode === 'optimize')
     assert.equal(lastOptimize.previous?.positive, convergedPrompt)
     assert.equal(lastOptimize.previous?.verdict, 'converged')
@@ -520,37 +517,16 @@ app.whenReady().then(async () => {
     await pause(150)
     assert.equal(optimizeCalls, beforeKey + 1)
     await js(`document.getElementById('fake-modal').remove()`)
-    // 底栏在滚动区之外：不覆盖内容，内容也不会从它下面滚过
-    for (const view of ['ai', 'preview', 'generate']) {
-      await click('.nav-item', { ai: 'AI 优化', preview: '画面推测', generate: '生图预览' }[view])
-      assert.ok(
-        await js(`(()=>{const f=document.querySelector('.${view} .pane-foot'),b=document.querySelector('.${view} .pane-body');
-        return f.parentElement.classList.contains('left') && !b.contains(f) && getComputedStyle(f).position==='static'
-          && f.getBoundingClientRect().top >= b.getBoundingClientRect().bottom - 1 && !!f.querySelector('.run-bar .btn.accent')})()`),
-        view,
-      )
-    }
-    await click('.nav-item', '提示词比对')
-    await js(
-      `window.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',ctrlKey:true,bubbles:true,cancelable:true}))`,
-    )
-    await pause(150)
-    assert.equal(optimizeCalls, beforeKey + 1)
-    console.log(
-      'PASS Ctrl+Enter runs only the visible page action; action bars sit below the scroll area without overlapping content',
-    )
+    console.log('PASS Ctrl+Enter runs only the visible panel action and is blocked by open dialogs')
 
     // 角色提示词入口必须沿用当前预览图片，跨页面也应保留底图。
-    await click('.nav-item', '生图预览')
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '图片预览')
     await waitUI(`!!document.querySelector('.generate .gallery .thumb')`)
     await js(`document.querySelector('.generate .gallery .thumb').click()`)
-    for (const [view, label] of [
-      ['generate', '生图预览'],
-      ['preview', '画面推测'],
-      ['ai', 'AI 优化'],
-    ]) {
-      await click('.nav-item', label)
-      await click(`.${view} button`, '编辑位置')
+    for (const label of ['图片预览', '画面推测', '智能优化']) {
+      await click('.creation-tab', label)
+      await click('#creation-editor button', '编辑位置')
       await waitUI(`document.querySelector('.pos-reference-image')?.naturalWidth === 2`)
       assert.equal(
         await js(`document.querySelector('.pos-reference-image').getAttribute('src')`),
@@ -567,13 +543,18 @@ app.whenReady().then(async () => {
     )
 
     // 删除有内容的角色可撤销
-    await click('.nav-item', 'AI 优化')
-    const charsBefore = await js(`document.querySelectorAll('.ai .char-block').length`)
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '智能优化')
+    const charsBefore = await js(`document.querySelectorAll('#creation-editor .char-block').length`)
     if (charsBefore) {
-      await js(`document.querySelector('.ai .char-block button[title="删除角色"]').click()`)
+      await js(
+        `document.querySelector('#creation-editor .char-block button[title="删除角色"]').click()`,
+      )
       await waitUI(`document.querySelector('.toast-action')?.textContent==='撤销'`)
       await js(`document.querySelector('.toast-action').click()`)
-      await waitUI(`document.querySelectorAll('.ai .char-block').length===${charsBefore}`)
+      await waitUI(
+        `document.querySelectorAll('#creation-editor .char-block').length===${charsBefore}`,
+      )
       console.log('PASS deleting a character can be undone from the toast')
     }
 
@@ -585,8 +566,9 @@ app.whenReady().then(async () => {
     const nextProse =
       unchangedContext +
       'She stands beside the doorway, with both arms still, looking directly at the viewer, and the background stays empty.'
-    await click('.nav-item', '提示词比对')
-    await click('.section-tab', '主提示词1')
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '词条检查')
+    await click('.section-tab', '主提示词 1')
     await paste(
       `[Prompt]\nmanga, monochrome\n[Character 1 @ B3]\nsilver hair\n[Character 1 Undesired Content]\nglasses\n[Character 2 @ C3]\n${previousProse}\n[Character 2 Undesired Content]\nblurry\n[Undesired Content]\nlowres`,
     )
@@ -608,74 +590,43 @@ app.whenReady().then(async () => {
       notes: '',
       evidence: { related: [], wiki: [], failed: [], implications: true },
     }
-    await click('.nav-item', 'AI 优化')
-    await js(`document.querySelector('.ai .run-bar .btn.accent').click()`)
-    await waitUI(`document.querySelectorAll('.ai .review-group').length === 3`)
-    // 统一的前后对比直接显示两侧原文并逐词高亮；短提示词不需要展开
-    assert.equal(
-      await js(`!!document.querySelector('.ai [data-group="global"] .diff-context')`),
-      false,
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '智能优化')
+    await js(`document.querySelector('.creation-ai-actions .run-bar .btn.accent').click()`)
+    // 创作实验的分段审阅：只列出有变化的范围；新增角色时角色修改合为「角色结构」整组审阅，位置变化单独汇总
+    await waitUI(`document.querySelectorAll('.ai .review-scopes button').length > 0`)
+    assert.deepEqual(
+      await js(
+        `[...document.querySelectorAll('.ai .review-scopes button')].map(b=>b.textContent.trim())`,
+      ),
+      ['主提示词', '角色结构', '位置变更2'],
     )
+    // 统一的前后对比：两侧原文逐词高亮，创作实验显示完整上下文，不折叠
+    assert.equal(await js(`!!document.querySelector('.ai .scoped-field .diff-context')`), false)
     assert.equal(
-      await js(`document.querySelector('.ai [data-group="global"] .after .added').textContent`),
+      await js(`document.querySelector('.ai .scoped-field .after .added').textContent`),
       ', detailed lineart',
     )
     assert.equal(
-      await js(`document.querySelector('.ai [data-group="global"] .before p').textContent`),
+      await js(`document.querySelector('.ai .scoped-field .before p').textContent`),
       'manga, monochrome',
     )
     assert.equal(
-      await js(`document.querySelector('.ai [data-group="global"] .after p').textContent`),
+      await js(`document.querySelector('.ai .scoped-field .after p').textContent`),
       reviewResult.positive,
     )
-    assert.equal(await js(`!!document.querySelector('.ai [data-group="character-0"]')`), false)
-    assert.equal(
-      await js(
-        `[...document.querySelectorAll('.ai .review-field-head')].some(node => node.textContent.includes('负面词') && !node.closest('[data-group="character-2"]'))`,
-      ),
-      false,
-    )
-    assert.equal(
-      await js(`document.querySelectorAll('.ai [data-group="character-1"] .diff-prose').length`),
-      1,
-    )
-    assert.equal(
-      await js(
-        `document.querySelectorAll('.ai [data-group="character-1"] .review-position').length`,
-      ),
-      1,
-    )
-    assert.equal(
-      await js(
-        `document.querySelectorAll('.ai [data-group="character-2"] .review-status.added').length`,
-      ),
-      1,
-    )
-    assert.ok(
-      await js(
-        `document.querySelector('.ai [data-group="character-1"] .diff-context').getAttribute('aria-expanded') === 'false'`,
-      ),
-    )
-    await js(`document.querySelector('.ai [data-group="character-1"] .diff-context').click()`)
-    assert.equal(
-      await js(`document.querySelector('.ai [data-group="character-1"] .before p').textContent`),
-      previousProse,
-    )
-    assert.equal(
-      await js(`document.querySelector('.ai [data-group="character-1"] .after p').textContent`),
-      nextProse,
-    )
-    await js(
-      `document.querySelector('.ai [data-group="character-1"] button[title="复制完整提示词"]').click()`,
-    )
-    await wait(() => copied === nextProse)
-    await js(`document.querySelector('.ai [data-group="character-1"] .diff-context').click()`)
+    const revisionBeforeReview = pages.listPages().map((page) => pages.readPage(page.id).revision)
+    await click('.ai .review-scopes button', '角色结构')
+    // 角色结构里有多张角色卡：按原文找到长句那一段的对比
+    const proseDiff = `[...document.querySelectorAll('.ai .scoped-field .prompt-diff')].find(d=>d.querySelector('.before p')?.textContent===${JSON.stringify(previousProse)})`
+    await waitUI(`!!${proseDiff}`)
+    assert.equal(await js(`${proseDiff}.querySelector('.after p').textContent`), nextProse)
     for (const width of [2000, 1100]) {
       win.setSize(width, 960)
       await pause(180)
       assert.ok(
         await js(`(() => {
-        const field = document.querySelector('.ai [data-group="character-1"] .prompt-diff')
+        const field = ${proseDiff}
         const panes = [...field.querySelectorAll('.diff-sentence')].map(node => node.getBoundingClientRect())
         return panes.every(rect => rect.width > 0 && rect.left >= 0 && rect.right <= innerWidth + 1)
           && (field.clientWidth < 600 ? panes[1].top >= panes[0].bottom - 1 : Math.abs(panes[0].top - panes[1].top) < 1)
@@ -687,15 +638,13 @@ app.whenReady().then(async () => {
         (await win.webContents.capturePage()).toPNG(),
       )
     }
-    const revisionBeforeReview = pages.listPages().map((page) => pages.readPage(page.id).revision)
-    await js(`document.querySelector('.ai [data-group="character-1"] summary').click()`)
     assert.deepEqual(
       pages.listPages().map((page) => pages.readPage(page.id).revision),
       revisionBeforeReview,
       'review controls never write workspace data',
     )
     console.log(
-      'PASS grouped review hides unchanged fields, preserves prose/commas/copy, folds context and adapts to narrow containers',
+      'PASS scoped review lists only changed scopes, keeps full prose context and adapts to narrow containers',
     )
 
     reviewResult = null

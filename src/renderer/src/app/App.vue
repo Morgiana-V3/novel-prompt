@@ -44,64 +44,52 @@ import { prepareUpdateKey, updateLabel } from '../features/settings/updates'
 import { connectTasks, taskState, cancelTask } from '../shared/state/tasks'
 import { taskIsActive } from '@shared/tasks/model'
 
-/** 按工作流排序：写 → 校验 → 优化 → 推测 → 出图；搜索与设置是工具 */
+/**
+ * 侧栏统一用四字「对象 + 动作」名称：先查词，再写提示词并试图，从图片反推，围绕一张图精修；
+ * 图集、收藏、设置是工具。
+ */
 const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: boolean }[] = [
   {
+    key: 'search',
+    label: '词库检索',
+    icon: 'tag',
+    desc: '检索本地 Danbooru 词库：中文、英文、拼音首字母都能搜，单击加到最近编辑的输入框',
+  },
+  {
     key: 'creation',
-    label: '创作实验',
+    label: '生图创作',
     icon: 'sparkle',
-    desc: '在同一页编辑、检查、优化提示词并生成图片，与原页面对比体验',
+    desc: '在同一页编辑提示词，检查词条、AI 优化、推测画面并生成图片',
   },
-  {
-    key: 'compare',
-    label: '提示词比对',
-    icon: 'compare',
-    desc: '逐段检查主提示词、角色和负面里有没有不存在的 tag',
-  },
-  {
-    key: 'ai',
-    label: 'AI 优化',
-    icon: 'sparkle',
-    desc: '让 AI 帮你挑 tag、排顺序，采用后写回当前提示词',
-  },
-  { key: 'preview', label: '画面推测', icon: 'eye', desc: '让 AI 猜猜当前提示词会画成什么样' },
   {
     key: 'reverse',
     label: '图片反推',
     icon: 'search',
-    desc: '在本机识别基础提示词与画师风格，不上传图片',
+    desc: '从参考图在本机识别基础提示词与画师风格，不上传图片',
   },
-  { key: 'generate', label: '生图预览', icon: 'image', desc: '用 NovelAI 接口直接出图看效果' },
   {
     key: 'workspace',
-    label: '工作台',
-    icon: 'chat',
-    desc: '围绕一个目标持续讨论、生成和调整，保留每次尝试',
+    label: '图片精修',
+    icon: 'wand',
+    desc: '围绕一张图持续讨论、局部重绘和修图，保留每个版本',
   },
   {
     key: 'gallery',
-    label: '图库',
+    label: '图集管理',
     icon: 'folder',
     desc: '按图集整理、查看和复用生成图片',
     tool: true,
   },
   {
     key: 'favorites',
-    label: '收藏',
+    label: '收藏管理',
     icon: 'star',
     desc: '查看收藏图片与生成记录，按需载入提示词',
     tool: true,
   },
   {
-    key: 'search',
-    label: 'Tag 搜索',
-    icon: 'search',
-    desc: '中文、英文、拼音首字母都能搜，单击加到最近编辑的输入框',
-    tool: true,
-  },
-  {
     key: 'settings',
-    label: '设置',
+    label: '应用设置',
     icon: 'sliders',
     desc: '词库、AI 服务与软件设置',
     tool: true,
@@ -110,12 +98,23 @@ const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: bool
 const current = computed(() => tabs.find((tab) => tab.key === shellState.tab)!)
 const creationPanel = ref<Tab>('compare')
 const creationActive = computed(() => shellState.tab === 'creation')
+/**
+ * 词条检查、智能优化、画面推测、图片预览只在创作实验里提供。
+ * 其他页面、任务中心或 MCP 仍可能跳到这些旧页签名称：统一转为创作实验的对应分页。
+ */
+const CREATION_PANELS: Tab[] = ['compare', 'ai', 'preview', 'generate']
+watch(
+  () => shellState.tab,
+  (tab) => {
+    if (CREATION_PANELS.includes(tab)) {
+      creationPanel.value = tab
+      shellState.tab = 'creation'
+    }
+  },
+  { flush: 'sync', immediate: true },
+)
 function navigateCreation(tab: Tab) {
-  if (creationActive.value && ['compare', 'ai', 'preview', 'generate'].includes(tab)) {
-    creationPanel.value = tab
-  } else {
-    shellState.tab = tab
-  }
+  shellState.tab = tab
 }
 const pageVisible = (tab: Tab) =>
   creationActive.value ? creationPanel.value === tab : shellState.tab === tab
@@ -278,10 +277,11 @@ function desktopSnapshot(): DesktopState {
     blockers.push(cleanErr(error))
   }
   if (workspaceView.value?.isCreating()) {
-    blockers.push('正在新建工作台项目')
+    blockers.push('正在新建图片精修项目')
   }
   const value = {
     tab: shellState.tab,
+    creationPanel: creationPanel.value,
     draft: {
       base: promptState.prompt,
       negative: promptState.negative,
@@ -412,7 +412,7 @@ provide(prepareUpdateKey, async () => {
   settingsView.value?.prepareUpdate()
   generateView.value?.prepareUpdate()
   if (!(await workspaceView.value?.prepareUpdate())) {
-    throw new Error('请先保存或完成 工作台中的编辑，再重启更新')
+    throw new Error('请先保存或完成图片精修中的编辑，再重启更新')
   }
   flushWorkspace()
 })

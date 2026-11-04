@@ -14,7 +14,7 @@ export type Tab =
   | 'favorites'
 
 export const shellState = reactive({
-  tab: 'compare' as Tab,
+  tab: 'creation' as Tab,
 
   toast: '',
 

@@ -373,7 +373,7 @@ app.whenReady().then(async () => {
     await a.request('resources/subscribe', { uri: 'novelprompt://app/state' })
     let s = await a.data('get_app_state')
     await js(
-      `(()=>{const e=document.querySelector('.compare textarea');e.value='1girl, glasses';e.dispatchEvent(new Event('input',{bubbles:true}))})()`,
+      `(()=>{const e=(document.querySelector('.compare .section-tab.on')?.textContent.trim().startsWith('负面')?document.querySelector('#creation-editor textarea[aria-label="负面提示词"]'):document.querySelector('#creation-editor textarea[aria-label="主提示词"]'));e.value='1girl, glasses';e.dispatchEvent(new Event('input',{bubbles:true}))})()`,
     )
     await wait(() => a.events.some((e) => e.method === 'notifications/resources/updated'))
     await assert.rejects(
@@ -388,14 +388,18 @@ app.whenReady().then(async () => {
       expected_token: s.desktop.token,
       draft: { base: '1girl, outdoors', negative: 'blurry', characters: [] },
     })
-    await ui(`document.querySelector('.compare textarea').value==='1girl, outdoors'`)
+    await ui(
+      `(document.querySelector('.compare .section-tab.on')?.textContent.trim().startsWith('负面')?document.querySelector('#creation-editor textarea[aria-label="负面提示词"]'):document.querySelector('#creation-editor textarea[aria-label="主提示词"]')).value==='1girl, outdoors'`,
+    )
     assert.ok(
       await js(
         `JSON.parse(localStorage.getItem('np-workspace-v1')).history.some(h=>h.base==='1girl, glasses')`,
       ),
     )
     await a.tool('navigate_app', { tab: 'ai' })
-    await ui(`document.querySelector('.nav-item.active').textContent.includes('AI 优化')`)
+    await ui(
+      `document.querySelector('.nav-item.active').textContent.includes('生图创作')&&document.querySelector('.creation-tab[aria-selected="true"]')?.textContent.includes('智能优化')`,
+    )
     assert.equal(
       win.isVisible(),
       true,
@@ -434,7 +438,9 @@ app.whenReady().then(async () => {
         screenshot.structuredContent.displayed.height,
       ) <= 1024,
     )
-    assert.equal(screenshot.structuredContent.desktop.tab, 'ai')
+    // 旧页签 ai 已并入创作实验：页签报告 creation，分页报告智能优化
+    assert.equal(screenshot.structuredContent.desktop.tab, 'creation')
+    assert.equal(screenshot.structuredContent.desktop.creationPanel, 'ai')
     assert.equal(screenshot.structuredContent.redactedFields, 1)
     assert.equal(
       await js(`getComputedStyle(document.getElementById('capture-private-fixture')).visibility`),
@@ -784,7 +790,7 @@ app.whenReady().then(async () => {
     assert.ok(
       stages.some(
         (s) =>
-          s.frontend.stage === '已填写新建项目表单' && s.blockers.includes('正在新建工作台项目'),
+          s.frontend.stage === '已填写新建项目表单' && s.blockers.includes('正在新建图片精修项目'),
       ),
     )
     const stale = front.token

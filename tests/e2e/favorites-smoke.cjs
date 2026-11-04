@@ -260,10 +260,21 @@ app.whenReady().then(async () => {
     }
     throw new Error('Timed out: ' + code)
   }
-  const tab = (name) =>
-    js(
-      `[...document.querySelectorAll('.nav-item')].find(el=>el.textContent.trim()===${JSON.stringify(name)}).click()`,
+  // 生图预览等已并入创作实验：先进创作实验，再切到对应分页
+  const CREATION_PANELS = { 生图预览: '图片预览' }
+  const NAV_LABELS = { 收藏: '收藏管理' }
+  const tab = async (name) => {
+    const panel = CREATION_PANELS[name]
+    const nav = panel ? '生图创作' : (NAV_LABELS[name] ?? name)
+    await js(
+      `[...document.querySelectorAll('.nav-item')].find(el=>el.textContent.trim()===${JSON.stringify(nav)}).click()`,
     )
+    if (panel) {
+      await js(
+        `[...document.querySelectorAll('.creation-tab')].find(el=>el.textContent.trim()===${JSON.stringify(panel)}).click()`,
+      )
+    }
+  }
   try {
     if (process.env.NOVELPROMPT_TEST_RENDERER_URL) {
       await win.loadURL(process.env.NOVELPROMPT_TEST_RENDERER_URL)

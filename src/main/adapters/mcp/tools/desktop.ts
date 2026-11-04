@@ -145,7 +145,7 @@ export function desktopTools(
       name: 'navigate_app',
       title: '切换应用页面',
       description:
-        '打开或显示正在运行的 NovelPrompt，并切换到指定页面；workspace_id 可打开已有工作台会话。遇到未完成的编辑时拒绝切换。',
+        '打开或显示正在运行的 NovelPrompt，并切换到指定页面；workspace_id 可打开已有工作台会话。遇到未完成的编辑时拒绝切换。词条检查、智能优化、画面推测、图片预览都在创作实验（creation）里：tab 传 compare / ai / preview / generate 会打开创作实验的对应分页，状态中 tab 为 creation、creationPanel 为对应分页。',
       inputSchema: {
         type: 'object',
         properties: { tab: { type: 'string', enum: [...APP_TABS] }, workspace_id: ID },

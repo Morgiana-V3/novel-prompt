@@ -795,7 +795,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               <button
                 v-if="loaded"
                 class="btn ghost small favorite-go"
-                title="前往生图预览"
+                title="前往生图创作的图片预览"
                 @click="shellState.tab = 'generate'"
               >
                 去生图<Icon
@@ -826,7 +826,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <h2>{{ favorites.items.length ? '没有匹配的收藏' : '把喜欢的效果留在这里' }}</h2>
         <p v-if="favorites.items.length">换个关键词，或清除标签筛选再试试。</p>
         <p v-else>
-          在生图预览、画师试图或工作台的图片上点击星标，即可保存原图和完整生成记录；也可以在生图页「收藏配置」，无需先出图。
+          在图片预览、画师试图或图片精修中的图片上点击星标，即可保存原图和完整生成记录；也可以在生图页「收藏配置」，无需先出图。
         </p>
         <div class="row">
           <button

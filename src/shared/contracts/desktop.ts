@@ -75,6 +75,8 @@ export interface FrontendContext {
 export interface DesktopState {
   token: string
   tab: AppTab
+  /** 创作实验当前分页（词条检查 / 智能优化 / 画面推测 / 图片预览）；旧页签 compare、ai、preview、generate 会导航到这里 */
+  creationPanel?: AppTab
   draft: InpaintDraft
   model: NaiVersion
   image: NaiImage | null

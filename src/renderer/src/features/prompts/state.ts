@@ -88,7 +88,4 @@ export const promptState = reactive({
 
   /** 最近一次画面推测（key = 推测时的提示词与参数） */
   lastPreview: null as { key: string; result: AiPreviewResult } | null,
-
-  /** 画面推测「带着建议去 AI 优化」时带过去的修改要求，AI 页取走后清空 */
-  aiHandoff: null as { text: string; count: number } | null,
 })

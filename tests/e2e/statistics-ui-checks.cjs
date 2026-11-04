@@ -85,7 +85,7 @@ module.exports = async function checkStatisticsUi({ js, click, ui, win, profile,
   ipcMain.handle('statistics:get', () => store.snapshot())
   ipcMain.handle('statistics:clear', () => store.clear())
   try {
-    await click('.nav-item', '设置')
+    await click('.nav-item', '应用设置')
     await js(`document.querySelector('#settings-tab-statistics').click()`)
     await ui(`document.querySelector('.statistics-counters')?.textContent.includes('119,000')`)
     assert.ok(

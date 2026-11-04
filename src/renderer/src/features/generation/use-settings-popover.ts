@@ -1,8 +1,8 @@
-import { onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { shellState } from '../../shared/state/shell'
 
 /** Dismiss the settings surface without discarding the shared generation parameters. */
-export function useSettingsPopover(embedded: Readonly<Ref<boolean>>) {
+export function useSettingsPopover() {
   const open = ref(false)
   const dock = ref<HTMLElement>()
   const trigger = ref<HTMLButtonElement>()
@@ -44,9 +44,6 @@ export function useSettingsPopover(embedded: Readonly<Ref<boolean>>) {
       open.value = false
     },
   )
-  watch(embedded, () => {
-    open.value = false
-  })
   onMounted(() => {
     document.addEventListener('pointerdown', outside, true)
     document.addEventListener('focusin', outside)

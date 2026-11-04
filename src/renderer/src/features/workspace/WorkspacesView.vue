@@ -620,7 +620,7 @@ async function close() {
             <Icon
               name="image"
               :size="14"
-            />{{ selectedImage ? '重新选择' : '前往生图预览选图' }}
+            />{{ selectedImage ? '重新选择' : '前往图片预览选图' }}
           </button>
         </div>
         <button

@@ -267,7 +267,11 @@ app.whenReady().then(async () => {
       )
       await pause(40)
     }
-    const ui = (code) => wait(() => js(code))
+    // 超时时附上等待的条件，定位失败位置
+    const ui = (code) =>
+      wait(() => js(code)).catch((error) => {
+        throw new Error(`${error.message}: ${code}`)
+      })
     const find = (kind) => manager.snapshot().tasks.find((t) => t.kind === kind && taskIsActive(t))
     const apiStart = (name, args = []) =>
       js(
@@ -308,20 +312,26 @@ app.whenReady().then(async () => {
     )
     const sample = '[Prompt]\n1girl, outdoors, soft light\n[Undesired Content]\nblurry'
     await js(
-      `document.title='NovelPrompt · 离线任务预览';const d=new DataTransfer();d.setData('text/plain',${JSON.stringify(sample)});document.querySelector('.compare textarea').dispatchEvent(new ClipboardEvent('paste',{clipboardData:d,bubbles:true,cancelable:true}))`,
+      `document.title='NovelPrompt · 离线任务预览';const d=new DataTransfer();d.setData('text/plain',${JSON.stringify(sample)});(document.querySelector('.compare .section-tab.on')?.textContent.trim().startsWith('负面')?document.querySelector('#creation-editor textarea[aria-label="负面提示词"]'):document.querySelector('#creation-editor textarea[aria-label="主提示词"]')).dispatchEvent(new ClipboardEvent('paste',{clipboardData:d,bubbles:true,cancelable:true}))`,
     )
-    await click('.nav-item', 'AI 优化')
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '智能优化')
     await click(
-      '.ai .run-bar .btn.accent',
-      await js("document.querySelector('.ai .run-bar .btn.accent').textContent.trim()"),
+      '.creation-ai-actions .run-bar .btn.accent',
+      await js(
+        "document.querySelector('.creation-ai-actions .run-bar .btn.accent').textContent.trim()",
+      ),
     )
     await wait(() => pending.optimize.length === 1)
     pending.optimize[0].progress('查询词库 fixture')
     pending.optimize[0].progress('校验修改 fixture')
-    await click('.nav-item', '画面推测')
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '画面推测')
     await click(
-      '.preview .run-bar .btn.accent',
-      await js("document.querySelector('.preview .run-bar .btn.accent').textContent.trim()"),
+      '.creation-preview-actions .run-bar .btn.accent',
+      await js(
+        "document.querySelector('.creation-preview-actions .run-bar .btn.accent').textContent.trim()",
+      ),
     )
     await wait(() => pending.preview.length === 1)
     await apiStart('dbUpdate')
@@ -369,16 +379,7 @@ app.whenReady().then(async () => {
     assert.ok(await js(`document.querySelector('.update-card .accent').disabled`))
     assert.match(await js(`document.querySelector('.update-card .accent').textContent`), /任务结束/)
     console.log('PASS task start keeps brand avatar unchanged and blocks update installation')
-    assert.ok(
-      await js(
-        `document.querySelector('.ai .timeline').textContent.includes('优化专属')&&!document.querySelector('.ai .timeline').textContent.includes('推测专属')`,
-      ),
-    )
-    assert.ok(
-      await js(
-        `document.querySelector('.preview .timeline').textContent.includes('推测专属')&&!document.querySelector('.preview .timeline').textContent.includes('优化专属')`,
-      ),
-    )
+    // 创作实验不再显示页内时间轴：各任务的步骤在任务中心按任务分开查看
     await js(`document.querySelector('.task-trigger').click()`)
     await ui(`document.querySelectorAll('.task-card.running').length===3`)
     await js(
@@ -396,7 +397,7 @@ app.whenReady().then(async () => {
     await ui(
       `document.querySelector('.task-card[data-kind="optimize"]').classList.contains('cancelled')`,
     )
-    assert.equal(await js(`document.querySelectorAll('.ai .result-card').length`), 0)
+    assert.equal(await js(`document.querySelectorAll('.ai .cheer').length`), 0)
     await js(`window.api.cancelTask()`)
     await wait(() => !find('db-update'))
     assert.equal(pending.preview[0].signal.aborted, false)
@@ -406,21 +407,27 @@ app.whenReady().then(async () => {
 
     await click('.task-card[data-kind="preview"] .task-title button', '画面推测')
     assert.ok(
-      await js(`document.querySelector('.nav-item.active').textContent.includes('画面推测')`),
+      await js(
+        `document.querySelector('.nav-item.active').textContent.includes('生图创作')&&document.querySelector('.creation-tab[aria-selected="true"]')?.textContent.includes('画面推测')`,
+      ),
     )
-    await click('.nav-item', 'AI 优化')
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '智能优化')
     await click(
-      '.ai .run-bar .btn.accent',
-      await js("document.querySelector('.ai .run-bar .btn.accent').textContent.trim()"),
+      '.creation-ai-actions .run-bar .btn.accent',
+      await js(
+        "document.querySelector('.creation-ai-actions .run-bar .btn.accent').textContent.trim()",
+      ),
     )
     await wait(() => pending.optimize.length === 2)
     await js(`window.api.tasksCancel(${JSON.stringify(optimizeId)})`)
     assert.equal(pending.optimize[1].signal.aborted, false)
     pending.optimize[1].resolve(optimized)
-    await ui(`document.querySelectorAll('.ai .result-card').length>0`)
+    await ui(`document.querySelectorAll('.ai .cheer').length>0`)
     // The preview can be cancelled from its own page, even when an optimization just finished.
-    await click('.nav-item', '画面推测')
-    await click('.preview .btn', '取消')
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '画面推测')
+    await click('.creation-preview-actions .btn', '取消')
     await wait(() => pending.preview[0].signal.aborted)
     pending.preview[0].reject(new Error('fixture abort'))
     await wait(() => !find('preview'))
@@ -483,15 +490,21 @@ app.whenReady().then(async () => {
     console.log('PASS task control morphs and spins while active, then returns to its idle shape')
     await require('./statistics-ui-checks.cjs')({ js, click, ui, win, profile, manager })
     await require('./gallery-ui-checks.cjs')({ js, click, ui, win, profile })
-    await click('.nav-item', 'AI 优化')
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '智能优化')
     await click(
-      '.ai .run-bar .btn.accent',
-      await js("document.querySelector('.ai .run-bar .btn.accent').textContent.trim()"),
+      '.creation-ai-actions .run-bar .btn.accent',
+      await js(
+        "document.querySelector('.creation-ai-actions .run-bar .btn.accent').textContent.trim()",
+      ),
     )
-    await click('.nav-item', '画面推测')
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '画面推测')
     await click(
-      '.preview .run-bar .btn.accent',
-      await js("document.querySelector('.preview .run-bar .btn.accent').textContent.trim()"),
+      '.creation-preview-actions .run-bar .btn.accent',
+      await js(
+        "document.querySelector('.creation-preview-actions .run-bar .btn.accent').textContent.trim()",
+      ),
     )
     await apiStart('dbUpdate')
     await wait(() => pending.database.length === 2)
@@ -503,7 +516,8 @@ app.whenReady().then(async () => {
       current: 18150,
       total: 33000,
     })
-    await click('.nav-item', 'AI 优化')
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '智能优化')
     await js(`document.querySelector('.task-trigger').click()`)
     await ui(`document.querySelectorAll('.task-card.running').length===3`)
     await pause(300)

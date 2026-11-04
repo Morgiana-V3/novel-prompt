@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import { pagePresentation } from '../../shared/lib/page-presentation'
 import { shellState, type Tab } from '../../shared/state/shell'
 import PromptEditor from '../prompts/components/PromptEditor.vue'
@@ -37,7 +37,6 @@ onMounted(() => {
 onBeforeUnmount(() => tabObserver?.disconnect())
 watch(() => [props.active, props.panel], updateIndicator, { flush: 'post' })
 provide(pagePresentation, {
-  embedded: computed(() => props.active),
   isActive: (tab) => (props.active ? props.panel === tab : shellState.tab === tab),
   navigate: (tab) => emit('navigate', tab),
   editor: () => (props.active ? editor.value : undefined),

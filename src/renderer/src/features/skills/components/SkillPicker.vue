@@ -17,7 +17,7 @@ const SCOPE: Record<string, string> = {
   optimize: 'AI 优化',
   preview: '画面推测',
   inpaint: '局部重绘',
-  workspace: '工作台',
+  workspace: '图片精修',
   all: '全部',
 }
 const MODEL: Record<string, string> = { 'v4.5': 'V4.5', v5: 'V5' }

@@ -33,7 +33,7 @@ const storageLabel = computed(() => {
     return '临时'
   }
   if (props.current.storage === 'workspace') {
-    return '工作台存档'
+    return '精修存档'
   }
   return '已留存'
 })
@@ -204,7 +204,7 @@ const deleteLabel = computed(() => {
       <button
         class="btn ghost small ml-auto"
         :disabled="running || inpaintBusy"
-        title="以这张图片新建工作台项目"
+        title="以这张图片新建图片精修项目"
         aria-label="用于新项目"
         @click="emit('workspace')"
       >

@@ -72,16 +72,17 @@ module.exports = async function checkGallery({ js, click, ui, win, profile }) {
     ipcMain.handle(channel, handler)
   }
   win.webContents.send('gallery:changed', null)
-  await click('.nav-item', '图库')
+  await click('.nav-item', '图集管理')
   assert.ok(
     await js(
-      `(() => { const tabs = [...document.querySelectorAll('.nav-item')].map(el => el.textContent.trim()); return tabs.indexOf('图库') === tabs.indexOf('收藏') - 1 && tabs.indexOf('图库') > tabs.indexOf('工作台') })()`,
+      `(() => { const tabs = [...document.querySelectorAll('.nav-item')].map(el => el.textContent.trim()); return tabs.indexOf('图集管理') === tabs.indexOf('收藏管理') - 1 && tabs.indexOf('图集管理') > tabs.indexOf('图片精修') })()`,
     ),
   )
   await ui(`document.querySelectorAll('.library-thumb').length === 8`)
   await click('.collection-item span', '场景练习')
   await ui(`document.querySelectorAll('.library-thumb').length === 4`)
-  await click('.nav-item', '生图预览')
+  await click('.nav-item', '生图创作')
+  await click('.creation-tab', '图片预览')
   await ui(
     `document.querySelector('[aria-label="图片图集"]').textContent.includes('场景练习') && document.querySelectorAll('.gallery .thumb').length === 4`,
   )
@@ -111,7 +112,7 @@ module.exports = async function checkGallery({ js, click, ui, win, profile }) {
   await js(`document.querySelector('[aria-label="图片图集"]').click()`)
   await click('[role="option"]', '默认图集')
   await ui(`document.querySelectorAll('.gallery .thumb').length === 4`)
-  await click('.nav-item', '图库')
+  await click('.nav-item', '图集管理')
   await ui(
     `document.querySelector('.library-toolbar h2').textContent.includes('默认图集') && document.querySelectorAll('.library-thumb').length === 4`,
   )
@@ -162,15 +163,16 @@ module.exports = async function checkGallery({ js, click, ui, win, profile }) {
   await ui(`document.querySelector('.library-toolbar h2').textContent.includes('角色定稿')`)
   // Picker observes changes through the same production gallery event.
   win.webContents.send('gallery:changed', null)
-  await click('.nav-item', '生图预览')
+  await click('.nav-item', '生图创作')
+  await click('.creation-tab', '图片预览')
   await ui(
     `document.querySelector('[aria-label="图片图集"]').textContent.includes('角色定稿') && document.querySelectorAll('.gallery .thumb').length === 1`,
   )
-  await click('.nav-item', '创作实验')
+  await click('.nav-item', '生图创作')
   await js(`document.querySelector('[aria-label="生图保存图集"]').click()`)
   await click('[role="option"]', '角色定稿')
   assert.equal(await js(`localStorage.getItem('np-generation-collection')`), created.id)
-  await click('.nav-item', '图库')
+  await click('.nav-item', '图集管理')
   await click('.collection-item span', '角色定稿')
   await click('.library-toolbar button', '删除图集')
   await ui(`!!document.querySelector('dialog[open]')`)
@@ -179,7 +181,8 @@ module.exports = async function checkGallery({ js, click, ui, win, profile }) {
   assert.equal(imageCollections.forImage(fixtures[0].name), 'default')
   assert.ok(existsSync(library.libraryImagePath(fixtures[0].name)))
   win.webContents.send('gallery:changed', null)
-  await click('.nav-item', '生图预览')
+  await click('.nav-item', '生图创作')
+  await click('.creation-tab', '图片预览')
   await ui(
     `document.querySelector('[aria-label="图片图集"]').textContent.includes('默认图集') && document.querySelectorAll('.gallery .thumb').length === 5`,
   )

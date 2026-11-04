@@ -9,7 +9,7 @@ module.exports = async function checkPartialUi({
   profile,
   win,
 }) {
-  await click('.nav-item', '创作实验')
+  await click('.nav-item', '生图创作')
   await js(`document.querySelector('#creation-tab-ai').click()`)
   const field = (label) => `#creation-editor textarea[aria-label="${label}"]`
   const edit = (label, value) =>

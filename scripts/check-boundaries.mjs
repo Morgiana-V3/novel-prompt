@@ -109,7 +109,7 @@ for (const filename of sourceFiles(join(root, 'src'))) {
     }
     const resolved = resolveImport(filename, specifier)
     if (!resolved) {
-      if (!/\.(?:css|less|png|svg)$/.test(specifier)) {
+      if (!/\.(?:css|less|png|svg|webp)$/.test(specifier)) {
         failures.push(`${source}: unresolved ${specifier}`)
       }
       continue

@@ -117,7 +117,7 @@ app.whenReady().then(async () => {
     await win.loadFile(join(buildDirectory, 'renderer/index.html'))
     await wait(`document.querySelector('.subscription-status')?.textContent.includes('9,000')`)
     assert.equal(await js(`document.querySelectorAll('.balance-notice').length`), 0)
-    await click('.nav-item', '设置')
+    await click('.nav-item', '应用设置')
     assert.equal(
       await js(`Number(document.querySelector('#settings-tag-completion-limit').value)`),
       20,
@@ -128,7 +128,7 @@ app.whenReady().then(async () => {
     assert.equal(JSON.parse(readFileSync(dataFile('settings.json'), 'utf8')).tagCompletionLimit, 35)
     await win.reload()
     await wait(`!!document.querySelector('.nav-item')`)
-    await click('.nav-item', '设置')
+    await click('.nav-item', '应用设置')
     assert.equal(
       await js(`Number(document.querySelector('#settings-tag-completion-limit').value)`),
       35,
@@ -298,7 +298,7 @@ app.whenReady().then(async () => {
     await wait(
       `document.querySelector('.subscription-status')?.textContent.includes('连接 NovelAI')`,
     )
-    await click('.nav-item', '设置')
+    await click('.nav-item', '应用设置')
     assert.equal(await js(`document.querySelector(${JSON.stringify(tokenInput)}).value`), '')
     console.log(
       'PASS general save excludes hidden fields; balance notices show signed changes and expire; explicit Token removal survives reload',
@@ -368,7 +368,7 @@ app.whenReady().then(async () => {
     assert.equal(getSettings().model, 'deepseek-chat', 'custom model IDs are not rewritten')
     await win.reload()
     await wait(`!!document.querySelector('.nav-item')`)
-    await click('.nav-item', '设置')
+    await click('.nav-item', '应用设置')
     await click('.settings-tabs button', 'AI 服务')
     await click('.settings-services-nav button', '模型接口')
     assert.equal(await js(`document.querySelector('#ai-preset').textContent.trim()`), '自定义')

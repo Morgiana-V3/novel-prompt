@@ -135,7 +135,7 @@ app
     try {
       await win.loadFile(resolve('out/renderer/index.html'))
       await wait(`!!document.querySelector('.nav-item')`)
-      await click('.nav-item', '设置')
+      await click('.nav-item', '应用设置')
       await shot('00-settings-tabs.png')
       for (const width of [1440, 1100]) {
         win.setSize(width, 1000)
@@ -187,7 +187,7 @@ app
         `document.querySelector('.storage-location')?.textContent.includes('np-data-tools')`,
       )
       await shot('01-storage.png')
-      await click('.nav-item', '收藏')
+      await click('.nav-item', '收藏管理')
       await click('.favorites-view .seg button', '提示词片段')
       await wait(`document.querySelectorAll('.snippet-list .snippet-card').length===2`)
       await shot('02-snippets.png')
@@ -196,15 +196,16 @@ app
       await input('.snippet-form textarea', 'soft light')
       await click('.snippet-form button', '保存片段')
       assert.equal(snippets.listSnippets()[0].name, '测试片段')
-      await click('.nav-item', '生图预览')
-      const base = '.generate textarea[aria-label="主提示词"]'
+      await click('.nav-item', '生图创作')
+      await click('.creation-tab', '图片预览')
+      const base = '#creation-editor textarea[aria-label="主提示词"]'
       await input(base, 'forest, night')
       await js(
         `(()=>{const e=document.querySelector('${base}');e.focus();e.setSelectionRange(8,13)})()`,
       )
       await shot('03-snippet-entry.png')
       const hoverAt = await js(
-        `(()=>{const r=document.querySelector('.generate .snippet-trigger').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`,
+        `(()=>{const r=document.querySelector('#creation-editor .snippet-trigger').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`,
       )
       await js(`document.querySelector('${base}').focus()`)
       win.webContents.sendInputEvent({ type: 'mouseMove', ...hoverAt })
@@ -228,7 +229,7 @@ app
       win.webContents.sendInputEvent({ type: 'mouseMove', x: 1300, y: 700 })
       await wait(`!document.querySelector('.snippet-popover:popover-open')`)
       await js(
-        `document.querySelector('.generate .snippet-trigger').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}))`,
+        `document.querySelector('#creation-editor .snippet-trigger').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}))`,
       )
       await wait(`document.activeElement?.getAttribute('aria-label') === '搜索收藏片段'`)
       await js(
@@ -236,7 +237,9 @@ app
       )
       await wait(`!document.querySelector('.snippet-popover:popover-open')`)
       assert(
-        await js(`document.activeElement === document.querySelector('.generate .snippet-trigger')`),
+        await js(
+          `document.activeElement === document.querySelector('#creation-editor .snippet-trigger')`,
+        ),
         'Escape returns keyboard focus',
       )
       // The toolbar lives in space reserved below the text, so it never covers what is being edited.
@@ -254,7 +257,7 @@ app
         `document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`,
       )
       await wait(`!document.querySelector('.snippet-popover:popover-open')`)
-      await js(`document.querySelector('.generate .snippet-trigger').click()`)
+      await js(`document.querySelector('#creation-editor .snippet-trigger').click()`)
       await wait(
         `!!document.querySelector('.snippet-popover:popover-open .snippet-quick-list button')`,
       )
@@ -288,7 +291,7 @@ app
           `document.querySelector('.snippet-popover:popover-open .snippet-quick-list button').click()`,
         )
       }
-      const negative = '.generate textarea[aria-label="负面提示词"]'
+      const negative = '#creation-editor textarea[aria-label="负面提示词"]'
       await input(negative, 'bad quality')
       await useSnippet(negative, 'append')
       assert.equal(
@@ -300,22 +303,23 @@ app
         'forest, night',
         'negative insertion does not touch the main prompt',
       )
-      await click('.generate button', '添加角色')
-      await useSnippet('.generate .char-block textarea', 'replace')
+      await click('#creation-editor button', '添加角色')
+      await useSnippet('#creation-editor .char-block textarea', 'replace')
       assert.equal(
-        await js(`document.querySelector('.generate .char-block textarea').value`),
+        await js(`document.querySelector('#creation-editor .char-block textarea').value`),
         'soft light',
       )
-      await click('.nav-item', '提示词比对')
-      await input('.compare .composer textarea', 'forest')
-      await useSnippet('.compare .composer textarea', 'cursor')
+      await click('.nav-item', '生图创作')
+      await click('.creation-tab', '词条检查')
+      const compareField = '#creation-editor textarea[aria-label="主提示词"]'
+      await input(compareField, 'forest')
+      await useSnippet(compareField, 'cursor')
       assert.equal(
-        await js(`document.querySelector('.compare .composer textarea').value`),
+        await js(`document.querySelector(${JSON.stringify(compareField)}).value`),
         'soft light, forest',
       )
       await shot('03-compare-entry.png')
       // Saving from the popover stores the whole field and shows up in the already-open library.
-      const compareField = '.compare .composer textarea'
       await js(
         `(()=>{const e=document.querySelector(${JSON.stringify(compareField)});e.focus();e.setSelectionRange(12,18);e.previousElementSibling.querySelector('.snippet-trigger').click()})()`,
       )
@@ -363,14 +367,14 @@ app
           ),
         'popover save persists the whole field',
       )
-      await click('.nav-item', '收藏')
+      await click('.nav-item', '收藏管理')
       await wait(`document.querySelector('.snippet-list')?.textContent.includes('森林')`)
       // Empty-library quick save in the embedded creation editor uses real focus/pointer events.
       const savedSnippets = snippets.listSnippets()
       for (const item of savedSnippets) {
         snippets.deleteSnippet(item.id)
       }
-      await click('.nav-item', '创作实验')
+      await click('.nav-item', '生图创作')
       win.setSize(1100, 700)
       const creationField = '#creation-editor textarea[aria-label="主提示词"]'
       await input(creationField, Array(16).fill('dark skin, genshin impact, soft light').join('\n'))
@@ -442,8 +446,9 @@ app
         snippets.saveSnippet({ name: item.name, text: item.text, category: item.category })
       }
       win.setSize(1440, 1000)
-      await click('.nav-item', '提示词比对')
-      await click('.nav-item', '工作台')
+      await click('.nav-item', '生图创作')
+      await click('.creation-tab', '词条检查')
+      await click('.nav-item', '图片精修')
       await wait(`!!document.querySelector('.session-card')`)
       await js(`document.querySelector('.session-open').click()`)
       await wait(`!!document.querySelector('.pw-shell')`)
@@ -474,7 +479,7 @@ app
       await shot('05-workspace-ai.png')
       await win.reload()
       await wait(`!!document.querySelector('.nav-item')`)
-      await click('.nav-item', '收藏')
+      await click('.nav-item', '收藏管理')
       await click('.favorites-view .seg button', '提示词片段')
       await wait(`document.querySelector('.snippet-list')?.textContent.includes('测试片段')`)
       console.log(

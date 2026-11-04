@@ -73,7 +73,7 @@ module.exports = async function checkCreation({
   })
   ipcMain.handle('nai:recipe', () => ({ request }))
 
-  await click('.nav-item', '创作实验')
+  await click('.nav-item', '生图创作')
   await waitUI(`document.querySelector('.creation-active .compare .stats')`)
   assert.equal(await js(`document.querySelectorAll('.compare').length`), 1)
   assert.equal(await js(`document.querySelectorAll('.ai').length`), 1)
@@ -144,12 +144,12 @@ module.exports = async function checkCreation({
   assert.equal(await value(), 'masterpiece, many 20')
   const setCandidateLimit = async (limit) => {
     await key('Escape')
-    await click('.nav-item', '设置')
+    await click('.nav-item', '应用设置')
     await click('.settings-tabs button', 'Tag 词库')
     await edit('#settings-tag-completion-limit', String(limit))
     await click('.tags-save', '保存词库设置')
     await waitUI(`!document.querySelector('.tags-save')`)
-    await click('.nav-item', '创作实验')
+    await click('.nav-item', '生图创作')
   }
   await setCandidateLimit(8)
   await edit(base, 'many')
@@ -258,6 +258,8 @@ module.exports = async function checkCreation({
   console.log(
     'PASS slash search, spaces, Chinese, exact match, native undo, IME, exit and stale candidate protection',
   )
+  // 词条高亮只在「词条检查」分页显示，不依赖前面测试停留在哪个分页
+  await panel('compare')
   await edit(base, '0.8::masterpiece::, {{twintails}}, bogus')
   await waitUI(`document.querySelectorAll('.compare .valid-wrap').length === 2`)
   await js(`document.querySelector('.compare .valid-wrap .tag-card').click()`)
@@ -602,7 +604,7 @@ module.exports = async function checkCreation({
   )
   assert.equal(
     await js(`document.querySelector('.nav-item.active').textContent.trim()`),
-    '创作实验',
+    '生图创作',
   )
 
   await panel('compare')
@@ -626,14 +628,16 @@ module.exports = async function checkCreation({
   assert.equal(calls, 1, 'shortcut sends one generation request')
   assert.equal(request.base, 'sunlight, garden')
   await edit(base, 'sunlight, garden, window')
-  await click('.nav-item', '生图预览')
-  assert.ok(await js(`document.querySelector('.generate .run-bar .btn.accent').disabled`))
+  // 生成进行中：创作实验底栏只保留「停止」，不能重复提交
+  assert.equal(
+    await js(`!!document.querySelector('.creation-generation .run-bar .btn.accent')`),
+    false,
+  )
   release()
   await waitUI(
-    `!!document.querySelector('.generate .viewer') && !document.querySelector('.generate .run-bar .btn.accent').disabled`,
+    `!!document.querySelector('.generate .viewer') && !!document.querySelector('.creation-generation .run-bar .btn.accent')`,
   )
   assert.equal(calls, 1)
-  await click('.nav-item', '创作实验')
   await waitUI(
     `document.querySelector('.generate .evidence-note.warn')?.textContent.includes('上一次配置')`,
   )
@@ -648,24 +652,20 @@ module.exports = async function checkCreation({
     `document.querySelector('.generate .viewer button[title="加载这张图的提示词和生成参数"]').click()`,
   )
   await waitUI(`document.querySelector(${JSON.stringify(base)}).value === 'sunlight, garden'`)
-  await panel('compare')
-  await click('.nav-item', '提示词比对')
-  await waitUI(`document.querySelector('.compare textarea')?.value === 'sunlight, garden'`)
-  assert.ok(await js(`document.querySelector('.compare .left').offsetWidth > 0`))
-  await click('.nav-item', 'AI 优化')
-  assert.ok(await js(`document.querySelector('.ai .prompt-group textarea').offsetWidth > 0`))
-  await click('.nav-item', '画面推测')
-  assert.ok(await js(`document.querySelector('.preview textarea[data-src]').offsetWidth > 0`))
-  assert.ok(
-    await js(
-      `document.querySelector('.preview').textContent.includes('想要的效果（可选）') && document.querySelector('.preview').textContent.includes('带着建议去 AI 优化')`,
-    ),
-  )
-  await click('.nav-item', '生图预览')
-  assert.ok(await js(`document.querySelector('.generate textarea[data-src]').offsetWidth > 0`))
+  // 词条检查、智能优化、画面推测、图片预览只在创作实验里提供，侧栏不再有独立入口
   assert.equal(
-    await js(`document.querySelectorAll('#creation-generation-controls .pane').length`),
+    await js(
+      `[...document.querySelectorAll('.nav-item')].filter(e=>/提示词比对|AI 优化|画面推测|生图预览/.test(e.textContent)).length`,
+    ),
     0,
+  )
+  await panel('preview')
+  assert.equal(
+    await js(
+      `document.querySelector('.preview').textContent.includes('想要的效果') || document.querySelector('.preview').textContent.includes('带着建议去 AI 优化')`,
+    ),
+    false,
+    'forecast no longer hands suggestions to AI optimize',
   )
   console.log(
     'PASS creation shares controllers and undo, keeps forecasting separate from edits, preserves old review, generation lock, image restoration and layout',

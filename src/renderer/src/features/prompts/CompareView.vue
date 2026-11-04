@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import SnippetButton from './components/SnippetButton.vue'
 import { promptState } from './state'
 import { settingsState } from '../settings/state'
 import { tagState } from '../tags/state'
@@ -7,55 +6,36 @@ import { shellState } from '../../shared/state/shell'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { AnalysisResult, AnalyzedToken } from '@shared/prompts/types'
 import type { TagInfo } from '@shared/tags/types'
-import { copy, toast } from '../../shared/lib/notifications'
+import { toast } from '../../shared/lib/notifications'
 import { cleanErr } from '../../shared/lib/format'
-import {
-  readField,
-  writeField,
-  fieldLabel,
-  fieldList,
-  sameField,
-  validField,
-  importPrompt,
-} from './actions'
+import { readField, writeField, fieldLabel, fieldList, sameField, validField } from './actions'
 import { type FieldRef } from './state'
-import { parsePromptText } from '@shared/prompts/import'
 import { findTextBlock } from '@shared/generation/presets'
 import { promptSelectionRanges, removePromptTokens } from '@shared/prompts/remove-tokens'
-import { deleteSelectedToken } from './prompt-keyboard'
 import { revealTextareaRange } from '../../shared/lib/reveal-textarea-range'
 import { highlightTextareaRanges } from '../../shared/lib/textarea-highlights'
 import TagCard from '../tags/components/TagCard.vue'
 import Icon from '../../shared/ui/Icon.vue'
 import Mascot from '../../shared/ui/Mascot.vue'
-import WorkspaceBar from './components/WorkspaceBar.vue'
 import { usePagePresentation } from '../../shared/lib/page-presentation'
-import SplitHandle from '../../shared/ui/SplitHandle.vue'
-const { embedded, navigate, editor, isActive } = usePagePresentation()
+const { navigate, editor, isActive } = usePagePresentation()
 
 const analyzed = ref<{ key: string; result: AnalysisResult } | null>(null)
-const textarea = ref<HTMLTextAreaElement>()
 let timer: ReturnType<typeof setTimeout> | undefined
 let analysisEpoch = 0
-
-const BASE_PLACEHOLDER =
-  '把 NovelAI 提示词贴到这里～整套分节文本会自动拆到主提示词、角色和负面\n\n例如：1girl, artist:wlop, {silver hair}, 1.3::red eyes::, school uniform, looking at viewer, very aesthetic, masterpiece, no text'
 
 /** 当前检查的是哪一段：主提示词 / 角色 N / 角色 N 负面 / 负面 */
 const target = ref<FieldRef>({ kind: 'base' })
 watch(
-  () => [embedded.value, promptState.focus] as const,
+  () => promptState.focus,
   () => {
-    if (embedded.value && validField(promptState.focus)) {
+    if (validField(promptState.focus)) {
       target.value = { ...promptState.focus }
     }
   },
-  { deep: true },
+  { deep: true, immediate: true },
 )
 function activeTextarea() {
-  if (!embedded.value) {
-    return textarea.value
-  }
   const field = target.value
   if (field.kind === 'char') {
     return editor()
@@ -110,7 +90,7 @@ function clearSelection() {
   selectedTokens.value = []
 }
 watch(
-  () => [selectedTokens.value, ctrlSelection.value, isActive('compare'), embedded.value],
+  () => [selectedTokens.value, ctrlSelection.value, isActive('compare')],
   () => {
     clearHighlights?.()
     clearHighlights = undefined
@@ -127,9 +107,6 @@ watch(
 )
 onBeforeUnmount(() => clearHighlights?.())
 watch(analysisKey, clearSelection, { flush: 'sync' })
-const isNeg = computed(
-  () => target.value.kind === 'negative' || (target.value.kind === 'char' && !!target.value.neg),
-)
 const count = (field: FieldRef) =>
   readField(field)
     .split(/[,\n]/)
@@ -138,19 +115,6 @@ const count = (field: FieldRef) =>
 function select(field: FieldRef) {
   target.value = field
   promptState.focus = field
-}
-
-/** 在主提示词里粘贴整套分节文本时，自动拆到各段 */
-function onPaste(event2: ClipboardEvent) {
-  if (target.value.kind !== 'base') {
-    return
-  }
-  const importedPrompt = parsePromptText(event2.clipboardData?.getData('text/plain') ?? '')
-  if (!importedPrompt.structured) {
-    return
-  }
-  event2.preventDefault()
-  importPrompt(importedPrompt, '已自动拆分')
 }
 
 async function analyze() {
@@ -230,14 +194,6 @@ function jump(kind: string) {
     ?.querySelector(`[data-group="${kind}"]`)
     ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
-
-const allGood = computed(
-  () =>
-    !!result.value &&
-    result.value.stats.valid > 0 &&
-    !result.value.stats.unknown &&
-    !result.value.stats.alias,
-)
 
 function locate(analyzedToken: AnalyzedToken, event?: MouseEvent | KeyboardEvent) {
   if (!currentTokens([analyzedToken])) {
@@ -379,14 +335,6 @@ function removeAllUnknown() {
   toast('已移除不存在的 tag，可 Ctrl+Z 撤销')
 }
 
-function clearPrompt() {
-  if (!text.value) {
-    return
-  }
-  setPrompt('')
-  toast('已清空，可 Ctrl+Z 撤销')
-}
-
 /**
  * 整理格式：逗号/换行统一为「, 」分隔，压缩多余空白。
  * 与解析器保持一致：换行也是分隔符（避免把两个 tag 合并成一个），
@@ -430,180 +378,77 @@ function formatPrompt() {
 
 <template>
   <div
-    :id="embedded ? 'creation-panel-compare' : undefined"
-    :role="embedded ? 'tabpanel' : undefined"
-    :aria-labelledby="embedded ? 'creation-tab-compare' : undefined"
+    id="creation-panel-compare"
+    role="tabpanel"
+    aria-labelledby="creation-tab-compare"
     class="view compare"
   >
-    <section
-      v-if="!embedded"
-      class="pane left"
-    >
-      <WorkspaceBar />
-      <div class="section-tabs">
-        <button
-          v-for="sectionItem in sections"
-          :key="fieldLabel(sectionItem)"
-          :class="[
-            'section-tab',
-            {
-              on: sameField(sectionItem, target),
-              neg:
-                sectionItem.kind === 'negative' || (sectionItem.kind === 'char' && sectionItem.neg),
-            },
-          ]"
-          @click="select(sectionItem)"
-        >
-          {{ fieldLabel(sectionItem) }}<span class="section-count">{{ count(sectionItem) }}</span>
-        </button>
-      </div>
-      <div :class="['composer', { neg: isNeg }]">
-        <SnippetButton />
-        <textarea
-          ref="textarea"
-          v-model="text"
-          spellcheck="false"
-          :placeholder="target.kind === 'base' ? BASE_PLACEHOLDER : `${fieldLabel(target)}（可空）`"
-          @focus="promptState.focus = target"
-          @paste="onPaste"
-          @keydown="deleteSelectedToken"
-        ></textarea>
-        <div class="composer-bar">
-          <div
-            v-if="result && result.stats.total"
-            class="stats"
-          >
-            <span class="pill"><i></i>共 {{ result.stats.total }}</span>
-            <span class="pill ok"><i></i>有效 {{ result.stats.valid }}</span>
-            <span
-              v-if="result.stats.alias"
-              class="pill alias"
-              ><i></i>别名 {{ result.stats.alias }}</span
-            >
-            <span
-              v-if="result.stats.unknown"
-              class="pill bad"
-              ><i></i>不存在 {{ result.stats.unknown }}</span
-            >
-            <span
-              v-if="result.stats.natural + result.stats.text"
-              class="pill nl"
-              ><i></i>句子 {{ result.stats.natural + result.stats.text }}</span
-            >
-          </div>
-          <div class="actions">
-            <button
-              class="icon-btn"
-              title="整理格式"
-              @click="formatPrompt"
-            >
-              <Icon name="align" />
-            </button>
-            <button
-              class="icon-btn"
-              title="复制"
-              @click="copy(text)"
-            >
-              <Icon name="copy" />
-            </button>
-            <button
-              class="icon-btn"
-              title="清空"
-              @click="clearPrompt"
-            >
-              <Icon name="trash" />
-            </button>
-            <button
-              class="btn accent"
-              @click="navigate('ai')"
-            >
-              <Icon
-                name="sparkle"
-                :size="16"
-              />AI 优化
-            </button>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <SplitHandle
-      v-if="!embedded"
-      storage-key="prompt-views-left"
-      variable="--pane-left-width"
-      :min="320"
-      :max="1000"
-      :reserve="380"
-      label="左侧编辑区宽度"
-    />
     <section
       ref="rightPane"
       class="pane right scroll"
       @keydown="selectionKey"
     >
-      <template v-if="embedded">
-        <div class="section-tabs">
+      <div class="section-tabs">
+        <button
+          v-for="field in sections"
+          :key="fieldLabel(field)"
+          :class="['section-tab', { on: sameField(field, target) }]"
+          @click="select(field)"
+        >
+          {{ fieldLabel(field) }} <span class="section-count">{{ count(field) }}</span>
+        </button>
+      </div>
+      <div
+        v-if="result"
+        class="check-toolbar"
+      >
+        <div
+          class="stats check-summary"
+          aria-label="检查结果"
+        >
           <button
-            v-for="field in sections"
-            :key="fieldLabel(field)"
-            :class="['section-tab', { on: sameField(field, target) }]"
-            @click="select(field)"
+            v-for="item in summary"
+            :key="item.kind"
+            class="summary-item"
+            :class="item.kind"
+            :title="item.title"
+            @click="jump(item.kind)"
           >
-            {{ fieldLabel(field) }} <span class="section-count">{{ count(field) }}</span>
+            <i></i>{{ item.label }}<b>{{ item.count }}</b>
+          </button>
+          <span
+            v-if="!summary.length"
+            class="muted small"
+            >这一段还没有内容</span
+          >
+        </div>
+        <div class="check-actions">
+          <button
+            v-if="selectedTokens.length > 1"
+            class="btn ghost small"
+            @click="removeSelected"
+          >
+            <Icon
+              name="trash"
+              :size="13"
+            />删除所选
+          </button>
+          <button
+            class="btn ghost small"
+            @click="formatPrompt"
+          >
+            整理格式</button
+          ><button
+            class="btn ghost small"
+            @click="navigate('ai')"
+          >
+            <Icon
+              name="sparkle"
+              :size="13"
+            />交给 AI 调整
           </button>
         </div>
-        <div
-          v-if="result"
-          class="check-toolbar"
-        >
-          <div
-            class="stats check-summary"
-            aria-label="检查结果"
-          >
-            <button
-              v-for="item in summary"
-              :key="item.kind"
-              class="summary-item"
-              :class="item.kind"
-              :title="item.title"
-              @click="jump(item.kind)"
-            >
-              <i></i>{{ item.label }}<b>{{ item.count }}</b>
-            </button>
-            <span
-              v-if="!summary.length"
-              class="muted small"
-              >这一段还没有内容</span
-            >
-          </div>
-          <div class="check-actions">
-            <button
-              v-if="selectedTokens.length > 1"
-              class="btn ghost small"
-              @click="removeSelected"
-            >
-              <Icon
-                name="trash"
-                :size="13"
-              />删除所选
-            </button>
-            <button
-              class="btn ghost small"
-              @click="formatPrompt"
-            >
-              整理格式</button
-            ><button
-              class="btn ghost small"
-              @click="navigate('ai')"
-            >
-              <Icon
-                name="sparkle"
-                :size="13"
-              />交给 AI 调整
-            </button>
-          </div>
-        </div>
-      </template>
+      </div>
       <div
         v-if="!tagState.db?.loaded"
         class="empty"
@@ -633,40 +478,6 @@ function formatPrompt() {
         />
         <p>在左边输入提示词，我会帮你一个个检查～</p>
       </div>
-      <div
-        v-else-if="!embedded && allGood"
-        class="cheer"
-      >
-        <Mascot
-          mood="happy"
-          :size="76"
-        />
-        <div>
-          <b>全部 tag 都存在！</b>
-          <div class="muted small">没有拼写错误和别名，可以直接用啦</div>
-        </div>
-      </div>
-      <div
-        v-else-if="!embedded && result && result.stats.unknown >= 3"
-        class="cheer warn"
-      >
-        <Mascot
-          mood="confused"
-          :size="76"
-        />
-        <div>
-          <b>有 {{ result.stats.unknown }} 个 tag 认不出来</b>
-        </div>
-        <button
-          class="btn accent small ml-auto"
-          @click="navigate('ai')"
-        >
-          <Icon
-            name="sparkle"
-            :size="14"
-          />AI 优化
-        </button>
-      </div>
 
       <div
         v-if="groups.unknown.length"
@@ -680,7 +491,7 @@ function formatPrompt() {
               :size="14"
               :stroke="2.2"
           /></span>
-          <h3>{{ embedded ? '词库未收录' : '不存在的 tag' }}</h3>
+          <h3>词库未收录</h3>
           <span class="group-count">{{ groups.unknown.length }}</span>
           <button
             class="btn ghost small ml-auto"
@@ -822,7 +633,7 @@ function formatPrompt() {
           <span class="group-count">{{ groups.valid.length }}</span>
           <button
             class="btn ghost small ml-auto"
-            title="前往 Tag 搜索管理词库翻译"
+            title="前往词库检索管理翻译"
             @click="shellState.tab = 'search'"
           >
             词库翻译

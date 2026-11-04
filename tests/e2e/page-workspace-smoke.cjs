@@ -970,20 +970,24 @@ app.whenReady().then(async () => {
     assert.ok(await js(`document.body.textContent.includes('测试：上次临时文件清理失败')`))
     await click('.frontend-status button', '重试清理')
     assert.ok(!(await js(`document.body.textContent.includes('测试：上次临时文件清理失败')`)))
-    await click('.nav-item', '生图预览')
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '图片预览')
     assert.equal(await js(`document.querySelectorAll('.page-library').length`), 0)
-    await run(`document.querySelector('.pane-foot input[type=checkbox]').click()`)
+    await run(`document.querySelector('.dock-retention input[type=checkbox]').click()`)
     assert.equal(getSettings().naiAutoSave, true)
-    await run(`document.querySelector('.pane-foot input[type=checkbox]').click()`)
+    await run(`document.querySelector('.dock-retention input[type=checkbox]').click()`)
     assert.equal(getSettings().naiAutoSave, false)
     // Saving the current configuration needs no image; browsing and loading live on the favorites page.
+    // 生成参数在创作实验底栏的设置面板里，先展开面板
+    await run(`document.querySelector('.creation-parameters-toggle').click()`)
+    await wait(`!!document.querySelector('[data-generation-settings-open]')`)
     await click('.gen-params-head button', '收藏配置')
     await wait(`document.querySelector('.toast')?.textContent.includes('已收藏当前配置')`)
     const savedConfig = require('../../src/main/modules/images/recipes.ts').listRecipes()[0]
     assert.equal(savedConfig.sourceImage, '')
     assert.equal(savedConfig.thumbnail, '')
     await click('.toast-action', '查看')
-    await wait(`document.querySelector('.nav-item.active')?.textContent.includes('收藏')`)
+    await wait(`document.querySelector('.nav-item.active')?.textContent.includes('收藏管理')`)
     await wait(`!!document.querySelector('.favorite-details')`)
     assert.equal(
       await js(`document.querySelector('.favorite-details footer input').checked`),
@@ -993,7 +997,9 @@ app.whenReady().then(async () => {
     await click('.favorite-details footer button', '载入配置')
     await wait(`!!document.querySelector('.favorite-go')`)
     await click('.favorite-go', '去生图')
-    await wait(`document.querySelector('.nav-item.active')?.textContent.includes('生图预览')`)
+    await wait(
+      `document.querySelector('.nav-item.active')?.textContent.includes('生图创作')&&document.querySelector('.creation-tab[aria-selected="true"]')?.textContent.includes('图片预览')`,
+    )
     const ordinary = await client.generateImages(
       { ...draft, version: 'v5', params },
       () => {},
@@ -1068,8 +1074,9 @@ app.whenReady().then(async () => {
       params,
     })
     recipeModule.updateRecipe(layoutRecipe.id, { name: '双角色布局配方', note: '', tags: [] })
-    await click('.nav-item', '生图预览')
-    await click('.nav-item', '收藏')
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '图片预览')
+    await click('.nav-item', '收藏管理')
     await click('.favorites-navigation button', '全部收藏')
     await wait(
       `[...document.querySelectorAll('.favorite-card')].some(e=>e.textContent.includes('双角色布局配方'))`,
@@ -1091,7 +1098,8 @@ app.whenReady().then(async () => {
     await shot('29-favorite-layout.png')
     await run(`document.querySelector('.position-compare header .icon-btn').click()`)
     await wait(`!document.querySelector('.position-compare')`)
-    await click('.nav-item', '生图预览')
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '图片预览')
     assert.equal(
       require('../../src/main/modules/images/library.ts').imageInfo(ordinary.images[0].name)
         .storage,
@@ -1189,13 +1197,14 @@ app.whenReady().then(async () => {
       'starting from an image makes no model calls',
     )
     await run(`document.querySelector('[aria-label="返回项目"]').click()`)
-    await click('.nav-item', '生图预览')
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '图片预览')
     await click('.viewer button', '用于新项目')
     await wait(`!!document.querySelector('.session-image img')`)
     await run(`document.querySelector('.session-create [title="取消新建"]').click()`)
     assert.equal(pages.listPages().length, beforeImageStart + 1, 'cancel creates no extra record')
     const n = pages.listPages().length
-    await click('.nav-item', '工作台')
+    await click('.nav-item', '图片精修')
     await shot('00-session-list.png')
     const gridTop = await js(`document.querySelector('.session-grid').getBoundingClientRect().top`)
     await click('.sessions-home header button', '新建项目')
@@ -1621,7 +1630,8 @@ app.whenReady().then(async () => {
     }
     await moveCharacter(0.25, 0.7)
     const countBeforeBlocked = pages.listPages().length
-    await click('.nav-item', '生图预览')
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '图片预览')
     await click('.viewer button', '用于新项目')
     await wait(`!!document.querySelector('.pw-error')`)
     assert.ok(
@@ -1660,8 +1670,8 @@ app.whenReady().then(async () => {
       ),
       'resize recalculates wrapping',
     )
-    await click('.nav-item', 'Tag 搜索')
-    await click('.nav-item', '工作台')
+    await click('.nav-item', '词库检索')
+    await click('.nav-item', '图片精修')
     await pause(100)
     assert.ok(
       await js(
@@ -1991,8 +2001,8 @@ app.whenReady().then(async () => {
     )
     // Further deletions use the adjacent card directly; no recycle UI or recycle read dependency.
     ipcMain.removeHandler('pages:removed')
-    await click('.nav-item', 'Tag 搜索')
-    await click('.nav-item', '工作台')
+    await click('.nav-item', '词库检索')
+    await click('.nav-item', '图片精修')
     assert.ok(
       await js(
         `!document.querySelector('.sessions-home header').textContent.includes('已删除')&&!document.querySelector('.sessions-home .error-box')`,
@@ -2049,7 +2059,8 @@ app.whenReady().then(async () => {
       deleteGallery = deleteGallery.filter((g) => g.name !== name)
       return true
     })
-    await click('.nav-item', '生图预览')
+    await click('.nav-item', '生图创作')
+    await click('.creation-tab', '图片预览')
     win.webContents.send('gallery:changed')
     await wait(`document.querySelectorAll('.gallery .thumb').length===2`)
     await run(`document.querySelector('.gallery .thumb').click()`)

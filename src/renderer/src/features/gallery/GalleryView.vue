@@ -43,7 +43,7 @@ const visible = computed(() => filtered.value.slice((page.value - 1) * 60, page.
 const pages = computed(() => Math.max(1, Math.ceil(filtered.value.length / 60)))
 const index = computed(() => filtered.value.findIndex((image) => image.name === selected.value))
 const storageLabel = (image: NaiImage) =>
-  ({ temporary: '临时', saved: '已留存', workspace: '工作台' })[image.storage || 'saved']
+  ({ temporary: '临时', saved: '已留存', workspace: '精修存档' })[image.storage || 'saved']
 let epoch = 0
 let unsubscribe: (() => void) | undefined
 async function refresh() {
@@ -257,7 +257,7 @@ function step(delta: number) {
               { value: 'all', label: '全部状态' },
               { value: 'saved', label: '已留存' },
               { value: 'temporary', label: '临时' },
-              { value: 'workspace', label: '工作台' },
+              { value: 'workspace', label: '精修存档' },
             ]"
             aria-label="图片保存状态"
           />

@@ -4,36 +4,24 @@ import { promptState } from './state'
 import { settingsState } from '../settings/state'
 import { usePagePresentation } from '../../shared/lib/page-presentation'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type {
-  AiCharacter,
-  AiOptimizeResult,
-  AiPreviousRound,
-  ChangeScope,
-} from '@shared/prompts/types'
+import type { AiCharacter, AiOptimizeResult, AiPreviousRound } from '@shared/prompts/types'
 import { copy, toast } from '../../shared/lib/notifications'
-import { applyWorkspace, revertTo, sectionText, workKey, current } from './actions'
+import { sectionText, workKey, current } from './actions'
 import { cleanErr } from '../../shared/lib/format'
-import { type Tab } from '../../shared/state/shell'
-import { type Snapshot } from './state'
 import { vAutosize, resizeWithin } from '../../shared/lib/autosize'
-import { reviewDrafts, type ReviewGroup, type ReviewField } from './prompt-review'
+import { type ReviewGroup, type ReviewField } from './prompt-review'
 import Icon from '../../shared/ui/Icon.vue'
 import Mascot from '../../shared/ui/Mascot.vue'
-import PromptEditor from './components/PromptEditor.vue'
-import WorkspaceBar from './components/WorkspaceBar.vue'
-import BasisPill from './components/BasisPill.vue'
 import EvidenceNote from './components/EvidenceNote.vue'
-import PromptReview from './components/PromptReview.vue'
 import AiFieldAdoption from './components/AiFieldAdoption.vue'
 import AiScopedReview from './components/AiScopedReview.vue'
 import AiReviewOverview from './components/AiReviewOverview.vue'
 import { usePartialAdoption } from './use-partial-adoption'
 import { imageState } from '../generation/public'
 import { activeTask, cancelTask } from '../../shared/state/tasks'
-import { usePageShortcuts, runKeyLabel, runKeyShort } from '../../shared/lib/shortcuts'
-import SplitHandle from '../../shared/ui/SplitHandle.vue'
+import { usePageShortcuts } from '../../shared/lib/shortcuts'
 
-const { embedded, navigate, isActive } = usePagePresentation()
+const { navigate, isActive } = usePagePresentation()
 
 /**
  * 一个输入框，按当前提示词自动决定做什么：
@@ -71,7 +59,7 @@ const sent = ref<{ base: string; negative: string; characters: AiCharacter[] } |
 /** 结果已经采用到当前提示词 */
 const adopted = ref(false)
 const partial = usePartialAdoption()
-const isAdopted = computed(() => (embedded.value ? partial.all.value : adopted.value))
+const isAdopted = computed(() => partial.all.value)
 const sentKey = ref('')
 /** 上一轮发出的修改要求；与上一轮输出一起交给 AI 判断是否已收敛 */
 const sentInstruction = ref('')
@@ -104,13 +92,7 @@ const presetKey = () =>
   ])
 const sentPresetKey = ref('')
 const presetsChanged = computed(() => !!result.value && sentPresetKey.value !== presetKey())
-const stale = computed(() =>
-  embedded.value
-    ? partial.stale.value
-    : !!result.value && !adopted.value && sentKey.value !== workKey(),
-)
-/** 采用前那一份历史，撤销时精确回到它（期间可能有导入、清空、Agent 修改等其他历史） */
-let beforeAdopt: Snapshot | null = null
+const stale = computed(() => partial.stale.value)
 
 watch(mode, () => {
   if (mode.value === 'semantic') {
@@ -160,62 +142,11 @@ watch(
   () => nextTick(resizeAll),
 )
 
-// 画面推测「带着建议去 AI 优化」：把建议追加到修改要求（保留用户已写的内容，并恢复为保留当前提示词）
-watch(
-  () => promptState.aiHandoff,
-  (handoff) => {
-    if (!handoff) {
-      return
-    }
-    promptState.aiHandoff = null
-    requestExpanded.value = true
-    fresh.value = false
-    const mine = request.value.trim()
-    if (!mine.includes(handoff.text)) {
-      request.value = mine ? `${mine}\n\n${handoff.text}` : handoff.text
-    }
-    toast(
-      handoff.count
-        ? `已带入画面推测的 ${handoff.count} 条建议，可修改后点「${runLabel.value}」`
-        : `已带入想要的效果，可修改后点「${runLabel.value}」`,
-    )
-    nextTick(resizeAll).catch(reportError)
-  },
-  { immediate: true },
-)
-
-const charCount = computed(
-  () => promptState.characters.filter((character) => character.prompt.trim()).length,
-)
-
-const SCOPE_LABEL: Record<ChangeScope, string> = {
-  positive: '正向',
-  character: '角色',
-  negative: '负面',
-  optional: '可选建议（未改动提示词）',
-}
-const changeGroups = computed(() =>
-  (Object.keys(SCOPE_LABEL) as ChangeScope[])
-    .map((scope) => ({
-      scope,
-      label: SCOPE_LABEL[scope],
-      items: result.value?.changes.filter((change) => change.scope === scope) ?? [],
-    }))
-    .filter((changeGroup) => changeGroup.items.length),
-)
-
 const review = computed(() => {
   if (!sent.value || !result.value) {
     return []
   }
-  if (embedded.value) {
-    return partial.review.value
-  }
-  return reviewDrafts(sent.value, {
-    base: result.value.positive,
-    negative: result.value.negative,
-    characters: result.value.characters,
-  })
+  return partial.review.value
 })
 function fieldChanges(group: ReviewGroup, field?: ReviewField) {
   return partial.changes.value.filter((change) => {
@@ -250,9 +181,6 @@ const scopedProps = computed(() => {
         : null,
   }
 })
-const totalChanges = computed(() =>
-  review.value.reduce((count, group) => count + group.fields.length, 0),
-)
 
 async function run() {
   if (running.value) {
@@ -332,50 +260,16 @@ function toggleChanges(ids: string[]) {
   }
 }
 
-function adopt(next?: Tab) {
-  const character = result.value
-  if (!character) {
+function adopt() {
+  if (!result.value || !partial.adoptAll()) {
     return
   }
-  if (embedded.value) {
-    if (!partial.adoptAll()) {
-      return
-    }
-    fresh.value = false
-    if (next) {
-      navigate(next)
-    } else {
-      toast('已采纳全部修改，可逐项取消')
-    }
-    return
-  }
-  if (!adopted.value) {
-    beforeAdopt = applyWorkspace(
-      { base: character.positive, negative: character.negative, characters: character.characters },
-      'AI 优化前',
-    )
-    adopted.value = true
-    // 采用后当前提示词就是这套新内容，之后继续迭代应该在它基础上改
-    fresh.value = false
-    nextTick(resizeAll).catch(reportError)
-  }
-  if (next) {
-    navigate(next)
-  } else {
-    toast('已采用，所有页面都会用这套提示词')
-  }
+  fresh.value = false
+  toast('已采纳全部修改，可逐项取消')
 }
 
 function undoAdopt() {
-  if (embedded.value) {
-    partial.undoAll()
-    return
-  }
-  if (revertTo(beforeAdopt, '撤销采用前')) {
-    adopted.value = false
-    beforeAdopt = null
-  }
-  nextTick(resizeAll).catch(reportError)
+  partial.undoAll()
 }
 
 const cheerTitle = computed(() => {
@@ -389,12 +283,6 @@ const cheerTitle = computed(() => {
     return '大部分搞定了，还有几个 tag 要你看看'
   }
   return '优化好啦！'
-})
-const cheerMood = computed(() => {
-  if (result.value?.invalid.length) {
-    return 'confused' as const
-  }
-  return converged.value ? ('thumbs' as const) : ('wink' as const)
 })
 const fullText = (optimization: AiOptimizeResult) =>
   sectionText({
@@ -412,54 +300,27 @@ usePageShortcuts(() => isActive('ai'), {
 
 <template>
   <div
-    :id="embedded ? 'creation-panel-ai' : undefined"
-    :role="embedded ? 'tabpanel' : undefined"
-    :aria-labelledby="embedded ? 'creation-tab-ai' : undefined"
+    id="creation-panel-ai"
+    role="tabpanel"
+    aria-labelledby="creation-tab-ai"
     class="view ai"
   >
-    <section
-      class="pane left with-foot"
-      :class="{ 'creation-request-pane': embedded }"
-    >
+    <section class="pane left with-foot creation-request-pane">
       <div
         ref="leftPane"
-        class="pane-body scroll"
-        :class="{ 'compact-request': embedded }"
+        class="pane-body scroll compact-request"
       >
-        <component
-          :is="embedded ? 'details' : 'div'"
+        <details
           class="field request-field"
           :open="requestExpanded || mode === 'semantic'"
           @toggle="toggleRequest"
         >
-          <summary
-            v-if="embedded"
-            class="request-summary"
-          >
+          <summary class="request-summary">
             <span>{{ mode === 'optimize' ? '修改要求（可选）' : '画面描述' }}</span>
             <span class="request-summary-text">{{
               fresh ? '重新生成' : request.trim() || '未填写'
             }}</span>
           </summary>
-          <div
-            v-if="!embedded"
-            class="field-head"
-          >
-            <label class="field-label">{{
-              mode === 'optimize' ? '修改要求（可选）' : '画面描述'
-            }}</label>
-            <span
-              v-if="!embedded"
-              class="muted small ml-auto"
-              >{{
-                mode === 'optimize'
-                  ? '留空只做规范化检查：修正错误 tag、冲突、顺序'
-                  : hasPrompt
-                    ? '将不参考下方的当前提示词'
-                    : '下方为空，会按描述生成整套提示词'
-              }}</span
-            >
-          </div>
           <div class="composer short">
             <textarea
               v-model="request"
@@ -481,61 +342,23 @@ usePageShortcuts(() => isActive('ai'), {
             />
             <span>按描述重新生成，不保留当前提示词</span>
           </label>
-        </component>
-
-        <WorkspaceBar v-if="!embedded" />
-
-        <div
-          v-if="!embedded"
-          :class="['prompt-group', { 'is-ignored': mode === 'semantic' && hasPrompt }]"
-        >
-          <PromptEditor char-label="角色提示词（可选）" />
-        </div>
-
-        <div
-          v-if="!embedded && steps.length"
-          class="timeline"
-        >
-          <div
-            v-for="(step, index) in steps"
-            :key="index"
-            :class="['tl-item', { live: running && index === steps.length - 1 }]"
-          >
-            {{ step }}
-          </div>
-        </div>
+        </details>
       </div>
 
       <Teleport
         defer
         to="#creation-panel-actions"
-        :disabled="!embedded"
       >
         <footer
-          v-show="!embedded || isActive('ai')"
-          :class="embedded ? 'creation-ai-actions creation-action-bar' : 'pane-foot'"
+          v-show="isActive('ai')"
+          class="creation-ai-actions creation-action-bar"
         >
-          <div
-            v-if="error && !embedded"
-            class="error-box"
-          >
-            <Icon
-              name="warn"
-              :size="16"
-            />{{ error }}
-          </div>
           <div class="row run-bar">
-            <span
-              v-if="!embedded && charCount && mode === 'optimize'"
-              class="pill nl"
-              ><i></i>{{ charCount }} 个角色</span
-            >
             <div class="run-actions">
               <button
                 v-if="running && task"
                 class="btn ghost"
                 :disabled="task.status === 'cancelling'"
-                :title="embedded ? undefined : '取消（Esc）'"
                 @click="cancelTask(task.id)"
               >
                 {{ task.status === 'cancelling' ? '正在取消…' : '取消' }}
@@ -543,20 +366,14 @@ usePageShortcuts(() => isActive('ai'), {
               <button
                 class="btn accent"
                 :disabled="running"
-                :title="embedded ? undefined : `${runLabel}（${runKeyLabel}）`"
                 @click="run"
               >
                 <Icon
                   name="sparkle"
-                  :size="embedded ? 14 : 17"
+                  :size="14"
                   :class="{ spin: running }"
                 />
-                {{ running ? '正在思考' : runLabel
-                }}<span
-                  v-if="!running && !embedded"
-                  class="kbd"
-                  >{{ runKeyShort }}</span
-                >
+                {{ running ? '正在思考' : runLabel }}
               </button>
             </div>
           </div>
@@ -564,18 +381,9 @@ usePageShortcuts(() => isActive('ai'), {
       </Teleport>
     </section>
 
-    <SplitHandle
-      v-if="!embedded"
-      storage-key="prompt-views-left"
-      variable="--pane-left-width"
-      :min="320"
-      :max="1000"
-      :reserve="380"
-      label="左侧编辑区宽度"
-    />
     <section class="pane right scroll">
       <div
-        v-if="embedded && error"
+        v-if="error"
         class="error-box"
         role="alert"
       >
@@ -605,9 +413,7 @@ usePageShortcuts(() => isActive('ai'), {
           mood="oops"
           :size="230"
         />
-        <p>
-          {{ embedded ? '出了点问题，请查看上方的报错信息' : '出了点问题，看看左边的报错信息吧' }}
-        </p>
+        <p>出了点问题，请查看上方的报错信息</p>
       </div>
       <div
         v-else-if="!result"
@@ -628,39 +434,20 @@ usePageShortcuts(() => isActive('ai'), {
       </div>
       <template v-else>
         <p
-          v-if="embedded && presetsChanged"
+          v-if="presetsChanged"
           class="evidence-note warn preset-change-note"
         >
           模型或内置预设已改变，请重新优化以更新建议。
         </p>
         <p
-          v-if="embedded && stale"
+          v-if="stale"
           class="error-box"
         >
           部分内容已另行编辑；采纳或取消时会保留这些编辑，冲突项需重新优化。
         </p>
-        <div
-          class="cheer"
-          :class="{ 'compact-review-heading': embedded }"
-        >
-          <Mascot
-            v-if="!embedded"
-            :mood="cheerMood"
-            :size="76"
-          />
+        <div class="cheer compact-review-heading">
           <div>
             <b>{{ cheerTitle }}</b>
-            <div
-              v-if="!embedded"
-              class="muted small"
-            >
-              {{
-                result.characters.length
-                  ? `${result.characters.length} 个角色提示词`
-                  : '单角色 / 无角色提示词'
-              }}
-              <template v-if="totalChanges"> · 共 {{ totalChanges }} 处字段改动</template>
-            </div>
           </div>
           <div
             v-if="!(converged && !review.length)"
@@ -684,7 +471,7 @@ usePageShortcuts(() => isActive('ai'), {
               <Icon
                 name="check"
                 :size="13"
-              />{{ embedded ? '全部采纳' : '采用' }}
+              />全部采纳
             </button>
           </div>
         </div>
@@ -717,24 +504,18 @@ usePageShortcuts(() => isActive('ai'), {
             </p>
           </div>
         </div>
-        <AiReviewOverview
-          v-if="embedded"
-          :notes="result.notes"
-        />
-        <component
-          :is="embedded ? AiScopedReview : PromptReview"
-          :id="embedded ? 'ai-review-compare' : undefined"
-          :role="embedded ? 'region' : undefined"
-          :aria-label="embedded ? '提示词修改对比' : undefined"
+        <AiReviewOverview :notes="result.notes" />
+        <AiScopedReview
+          id="ai-review-compare"
+          role="region"
+          aria-label="提示词修改对比"
           :groups="review"
-          :full-context="embedded"
-          v-bind="embedded ? scopedProps : {}"
-          v-on="embedded ? { toggle: toggleChange, toggleMany: toggleChanges } : {}"
+          full-context
+          v-bind="scopedProps"
+          @toggle="toggleChange"
+          @toggle-many="toggleChanges"
         >
-          <template
-            v-if="embedded"
-            #group-adoption="{ group }"
-          >
+          <template #group-adoption="{ group }">
             <AiFieldAdoption
               v-if="fieldChanges(group).length"
               :changes="fieldChanges(group)"
@@ -756,7 +537,7 @@ usePageShortcuts(() => isActive('ai'), {
               />
             </button>
           </template>
-        </component>
+        </AiScopedReview>
         <p
           v-if="!review.length && !converged"
           class="muted"
@@ -813,57 +594,6 @@ usePageShortcuts(() => isActive('ai'), {
             <div class="notes">{{ result.dropped?.join(', ') }}</div>
           </div>
 
-          <div
-            v-if="!embedded && !(converged && !result.notes && !result.changes.length)"
-            class="result-card"
-            style="--d: 240ms"
-          >
-            <div class="result-head">
-              <span class="group-badge ok"
-                ><Icon
-                  name="book"
-                  :size="14"
-              /></span>
-              <h3>修改说明</h3>
-              <span
-                v-if="result.changes.length"
-                class="muted small ml-auto"
-                >悬停依据标签查看含义</span
-              >
-            </div>
-            <div
-              v-if="result.notes"
-              class="notes lead"
-            >
-              {{ result.notes }}
-            </div>
-            <div
-              v-for="groupItem in changeGroups"
-              :key="groupItem.scope"
-              class="change-group"
-            >
-              <div class="change-group-title">{{ groupItem.label }}</div>
-              <div class="effect-list">
-                <div
-                  v-for="(entry, index) in groupItem.items"
-                  :key="index"
-                  class="effect-row"
-                  :style="{ '--i': index }"
-                >
-                  <span class="meta"><BasisPill :basis="entry.basis" /></span>
-                  <div class="grow">
-                    {{ entry.text }}
-                    <span
-                      v-if="entry.evidence"
-                      class="evidence"
-                      >{{ entry.evidence }}</span
-                    >
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <EvidenceNote :info="result.evidence" />
         </div>
 
@@ -879,30 +609,30 @@ usePageShortcuts(() => isActive('ai'), {
           </button>
           <button
             class="btn"
-            @click="embedded ? navigate('compare') : adopt('compare')"
+            @click="navigate('compare')"
           >
             <Icon
               name="compare"
               :size="15"
-            />{{ embedded ? '检查当前提示词' : (adopted ? '' : '采用并') + '逐个比对' }}
+            />检查当前提示词
           </button>
           <button
             class="btn"
-            @click="embedded ? navigate('preview') : adopt('preview')"
+            @click="navigate('preview')"
           >
             <Icon
               name="eye"
               :size="15"
-            />{{ embedded ? '推测当前画面' : (adopted ? '' : '采用并') + '推测画面' }}
+            />推测当前画面
           </button>
           <button
             class="btn accent"
-            @click="embedded ? navigate('generate') : adopt('generate')"
+            @click="navigate('generate')"
           >
             <Icon
               name="image"
               :size="15"
-            />{{ embedded ? '查看图片' : (adopted ? '' : '采用并') + '生图' }}
+            />查看图片
           </button>
         </div>
       </template>
