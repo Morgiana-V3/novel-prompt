@@ -148,6 +148,7 @@ watch(
       >
         <Mascot
           mood="shrug"
+          motion="loop"
           :size="220"
         />
         <p>没找到「{{ query }}」，换个说法试试？</p>
@@ -157,7 +158,8 @@ watch(
         class="empty"
       >
         <Mascot
-          :mood="tagState.db?.loaded ? 'search' : 'point'"
+          :mood="tagState.db?.loaded ? 'lookup' : 'point'"
+          motion="loop"
           :size="220"
         />
         <p>

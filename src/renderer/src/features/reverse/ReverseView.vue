@@ -516,6 +516,13 @@ async function source(url: string) {
       aria-label="参考图与识别结果"
     >
       <section class="reverse-input">
+        <input
+          ref="picker"
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          hidden
+          @change="picked"
+        />
         <div class="reverse-panel-head">
           <span>参考图</span
           ><span
@@ -591,26 +598,9 @@ async function source(url: string) {
         class="reverse-adjustments"
       >
         <div
-          v-show="stage === 'recognition'"
+          v-if="image || running || actionBusy || modelOperation || recognitionMessage"
           class="reverse-toolbar"
         >
-          <input
-            ref="picker"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            hidden
-            @change="picked"
-          />
-          <button
-            class="btn small"
-            :disabled="busy"
-            @click="picker?.click()"
-          >
-            <Icon
-              name="image"
-              :size="15"
-            />{{ image ? '更换图片' : '选择图片' }}
-          </button>
           <button
             v-if="image"
             class="btn small primary reverse-run"
@@ -636,22 +626,6 @@ async function source(url: string) {
             role="status"
             >{{ recognitionMessage }}</span
           >
-          <button
-            class="btn small ghost reverse-model-toggle"
-            :disabled="trialsState.running"
-            aria-label="模型管理"
-            :title="selectedReady ? '本地模型已就绪' : '管理本地模型'"
-            @click="modelsOpen = true"
-          >
-            <span
-              class="model-dot"
-              :class="{ ready: selectedReady }"
-            ></span
-            >模型<Icon
-              name="sliders"
-              :size="14"
-            />
-          </button>
         </div>
 
         <div
@@ -674,6 +648,22 @@ async function source(url: string) {
               :disabled="busy || (selection.length === 1 && selection.includes(option[0]))"
             />{{ option[1] }}
           </label>
+          <button
+            class="btn small ghost reverse-model-toggle"
+            :disabled="trialsState.running"
+            aria-label="模型管理"
+            :title="selectedReady ? '本地模型已就绪' : '管理本地模型'"
+            @click="modelsOpen = true"
+          >
+            <span
+              class="model-dot"
+              :class="{ ready: selectedReady }"
+            ></span
+            >模型<Icon
+              name="sliders"
+              :size="14"
+            />
+          </button>
         </div>
         <div
           v-if="stage === 'recognition' && status && !selectedReady && !modelOperation"
@@ -745,7 +735,7 @@ async function source(url: string) {
         >
           <Mascot
             mood="search"
-            :motion="running ? 'loop' : 'once'"
+            motion="loop"
             :size="running ? 150 : 136"
           />
           <strong>{{ running ? '正在识别参考图…' : '等待识别' }}</strong>

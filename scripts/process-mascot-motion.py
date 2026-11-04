@@ -22,7 +22,7 @@ NAMES = ["ready", "reading", "search", "paint"]
 ALPHA_THRESHOLD = 8
 PADDING_PX = 4
 STILL_HEIGHT_PX = 472
-QUALITY = 90
+QUALITY = 96
 
 
 def union_box(frames):
@@ -52,8 +52,12 @@ def union_box(frames):
 
 def process(source_dir: Path, name: str) -> None:
     animation = Image.open(source_dir / f"{name}-512.webp")
-    frames = [frame.convert("RGBA").copy() for frame in ImageSequence.Iterator(animation)]
-    durations = [frame.info.get("duration", 42) for frame in ImageSequence.Iterator(animation)]
+    frames = []
+    durations = []
+    for frame in ImageSequence.Iterator(animation):
+        frame.load()  # WebP 的帧时长在解码后才更新，不能单独遍历 info。
+        frames.append(frame.convert("RGBA").copy())
+        durations.append(frame.info.get("duration", 42))
     box = union_box(frames)
 
     kept = [frame.crop(box) for frame in frames]

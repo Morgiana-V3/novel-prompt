@@ -12,6 +12,7 @@ import { toast, reportError } from '../../shared/lib/notifications'
 import { cleanErr } from '../../shared/lib/format'
 import { importGenerationRequest } from '../prompts/actions'
 import Icon from '../../shared/ui/Icon.vue'
+import Mascot from '../../shared/ui/Mascot.vue'
 import ImageViewer from '../../shared/ui/ImageViewer.vue'
 import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 import ConfirmDialog from '../../shared/ui/ConfirmDialog.vue'
@@ -280,12 +281,19 @@ function step(delta: number) {
       </p>
       <div class="library-content">
         <div class="library-browser scroll">
-          <p
-            v-if="!filtered.length"
+          <div
+            v-if="!filtered.length && !error"
             class="library-empty"
           >
-            {{ loading ? '正在读取图库…' : '这个图集还没有图片' }}
-          </p>
+            <Mascot
+              v-if="!loading"
+              :mood="retention === 'all' ? 'sleep' : 'shrug'"
+              :size="120"
+            />
+            <p v-if="loading">正在读取图库…</p>
+            <p v-else-if="retention !== 'all'">没有符合筛选条件的图片</p>
+            <p v-else>这个图集还没有图片</p>
+          </div>
           <div class="library-grid">
             <button
               v-for="image in visible"

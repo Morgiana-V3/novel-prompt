@@ -820,7 +820,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         class="favorites-empty"
       >
         <Mascot
-          :mood="favorites.items.length ? 'search' : 'sleep'"
+          :mood="favorites.items.length ? 'shrug' : 'sleep'"
           :size="120"
         />
         <h2>{{ favorites.items.length ? '没有匹配的收藏' : '把喜欢的效果留在这里' }}</h2>

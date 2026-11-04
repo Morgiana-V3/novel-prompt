@@ -127,7 +127,7 @@ def make_icon(head: Image.Image, size: int = 512) -> Image.Image:
 
 
 # 这些场景已改用动图素材，静态图由 scripts/process-mascot-motion.py 按动图裁切生成，批量处理时跳过，避免覆盖
-MOTION_NAMES = {"ready", "reading", "search", "paint"}
+MOTION_NAMES = {"ready", "reading", "search", "paint", "sleep", "shrug", "thumbs", "lookup"}
 names = [f[:-4] for f in os.listdir(SRC) if f.endswith(".png") and f[:-4] not in MOTION_NAMES]
 for name in sys.argv[1:] or names:
     cut = cut_out(Image.open(os.path.join(SRC, name + ".png")))

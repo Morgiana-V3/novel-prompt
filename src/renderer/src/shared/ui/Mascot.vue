@@ -21,10 +21,15 @@ import ok from '../../assets/mascot/ok.png'
 import check from '../../assets/mascot/check.png'
 import crystal from '../../assets/mascot/crystal.png'
 import ready from '../../assets/mascot/ready.png'
+import lookup from '../../assets/mascot/lookup.png'
 import readyMotion from '../../assets/mascot/motion/ready.webp'
 import readingMotion from '../../assets/mascot/motion/reading.webp'
 import searchMotion from '../../assets/mascot/motion/search.webp'
 import paintMotion from '../../assets/mascot/motion/paint.webp'
+import sleepMotion from '../../assets/mascot/motion/sleep.webp'
+import shrugMotion from '../../assets/mascot/motion/shrug.webp'
+import thumbsMotion from '../../assets/mascot/motion/thumbs.webp'
+import lookupMotion from '../../assets/mascot/motion/lookup.webp'
 
 const SRC = {
   idle,
@@ -48,6 +53,7 @@ const SRC = {
   check,
   crystal,
   ready,
+  lookup,
 }
 
 /**
@@ -59,6 +65,10 @@ const MOTION: Partial<Record<keyof typeof SRC, { src: string; durationMs: number
   reading: { src: readingMotion, durationMs: 5082 },
   search: { src: searchMotion, durationMs: 5082 },
   paint: { src: paintMotion, durationMs: 4914 },
+  sleep: { src: sleepMotion, durationMs: 5042 },
+  shrug: { src: shrugMotion, durationMs: 5042 },
+  thumbs: { src: thumbsMotion, durationMs: 5042 },
+  lookup: { src: lookupMotion, durationMs: 5042 },
 }
 
 export type MascotMood = keyof typeof SRC
