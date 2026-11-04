@@ -185,8 +185,27 @@ module.exports = async function checkCreation({
   assert.equal(await value(), 'artist:wlop')
   await edit(base, 'Text: twi')
   await noPopup()
+  // 自然语言句子之后照常补全：句末标点后跟空格、数值权重的 :: 收尾都算 tag 分隔
+  for (const [typed, done] of [
+    ['A girl stands in the rain. twi', 'A girl stands in the rain. twintails'],
+    ['Is she smiling? twi', 'Is she smiling? twintails'],
+    ['女孩站在雨里。twi', '女孩站在雨里。twintails'],
+    ['0.85::outdoors::twi', '0.85::outdoors::twintails'],
+  ]) {
+    await edit(base, typed)
+    await waitUI(
+      `document.querySelector('.tag-complete-item.active b')?.textContent === 'twintails'`,
+    )
+    await key('Enter')
+    assert.equal(await value(), done, `completes after sentence boundary: ${typed}`)
+  }
+  // 小数点不是句末；Text: 之后的句子是画面文字，不补全
+  await edit(base, '1.twi')
+  await noPopup()
+  await edit(base, 'english text, Text: Hello there. twi')
+  await noPopup()
   console.log(
-    'PASS automatic completion coexists with slash search, artist filter, undo and no trailing separator',
+    'PASS automatic completion coexists with slash search, artist filter, undo, sentence boundaries and no trailing separator',
   )
   await search('twi', 'twintails')
   await settle()
@@ -648,10 +667,14 @@ module.exports = async function checkCreation({
   assert.equal(await value(), 'sunlight, garden, window')
   await js(`document.querySelector('.generate .thumb').click()`)
   assert.equal(await value(), 'sunlight, garden, window', 'browsing does not replace draft')
+  const tabsBeforeLoad = await js(`document.querySelectorAll('.session-tab').length`)
   await js(
     `document.querySelector('.generate .viewer button[title="加载这张图的提示词和生成参数"]').click()`,
   )
   await waitUI(`document.querySelector(${JSON.stringify(base)}).value === 'sunlight, garden'`)
+  // 与图集、收藏一致：当前标签有内容时新开标签承接，并在新标签里继续显示这张图
+  assert.equal(await js(`document.querySelectorAll('.session-tab').length`), tabsBeforeLoad + 1)
+  assert.ok(await js(`!!document.querySelector('.generate .viewer img')`))
   // 词条检查、智能优化、画面推测、图片预览只在创作实验里提供，侧栏不再有独立入口
   assert.equal(
     await js(

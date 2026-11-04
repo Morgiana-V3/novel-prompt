@@ -66,6 +66,22 @@ interface Token {
   text: string
 }
 
+/**
+ * tag 之间的分隔：逗号、换行、|；NovelAI 允许标签与自然语言句子混写，
+ * 句末标点后跟空格（. ! ? ; 及中文。！？；）也开始新的 tag；数值权重收尾的 :: 同理。
+ * 句号必须后跟空格，避免把 0.85:: 之类的小数当成句末。
+ */
+const TAG_BOUNDARY = /[,\n|]|[.!?;](?=\s)|[。！？；]|::/g
+
+/** 光标所在 tag 的起点：最后一个分隔符之后 */
+function tagStart(before: string): number {
+  let start = 0
+  for (const match of before.matchAll(TAG_BOUNDARY)) {
+    start = match.index + match[0].length
+  }
+  return start
+}
+
 /** 光标所在的 tag：从上一个分隔符到光标，跳过权重前缀和括号；光标必须在这个 tag 的末尾 */
 function automaticToken(el: HTMLTextAreaElement): Token | null {
   const caret = el.selectionStart
@@ -77,8 +93,11 @@ function automaticToken(el: HTMLTextAreaElement): Token | null {
     return null
   }
   const before = el.value.slice(0, caret)
-  const start =
-    Math.max(before.lastIndexOf(','), before.lastIndexOf('\n'), before.lastIndexOf('|')) + 1
+  // Text: 之后直到结尾都是画面里的文字（NovelAI 要求放在提示词最后），其中的句子不补全
+  if (/(?:^|[\s,.])text:/i.test(before)) {
+    return null
+  }
+  const start = tagStart(before)
   const raw = before.slice(start)
   const lead = /^\s*(?:-?\d*\.?\d+::)?[{[(]*/.exec(raw)?.[0].length ?? 0
   const text = raw.slice(lead)
