@@ -17,6 +17,7 @@ export function agentExecutor(
     generate_image: 'generate',
     inpaint_image: 'inpaint',
     generate_workspace: 'page-generate',
+    run_workspace_image_tool: 'page-generate',
     analyze_prompt: 'agent',
   }
   return async (tool, args, signal, report) => {

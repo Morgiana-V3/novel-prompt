@@ -366,7 +366,7 @@ export function inpaintTools(): McpTool[] {
       name: 'plan_inpaint',
       title: 'AI 分析重绘批注',
       description:
-        '调用当前 AI 模型，始终结合原图、选区裁剪、批注与启用的重绘 Skill，返回每区域独立的修改方案（不会生成或自动采纳）。消耗 AI 额度；模型必须支持图片。',
+        '调用软件内置 AI，结合原图、选区裁剪、批注与启用的重绘 Skill，返回每区域独立的修改方案（不会生成或自动采纳）。消耗 AI 额度。主模型不能识图时改用设置中的识图模型；都不能识图时只按批注和提示词分析，并在每个方案的 warning 中注明没有看到图片。',
       inputSchema: {
         type: 'object',
         properties: {

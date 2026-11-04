@@ -5,7 +5,7 @@ import type { PageSkillSection, PageSkillSnapshot } from '../../../shared/worksp
 import { MODEL_LABEL, type SkillFeature } from './catalog'
 import { oneLine } from './metadata'
 const FEATURE_LABEL: Record<SkillFeature, string> = {
-  optimize: 'AI 优化 / 描述转提示词',
+  optimize: '智能优化 / 描述转提示词',
   preview: '画面推测',
   inpaint: '局部重绘优化',
   workspace: 'AI 工作台（按任务选择适用规则）',

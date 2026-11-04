@@ -271,7 +271,13 @@ function httpError(status: number, detail: string, retryAfter: string | null): A
       after,
     )
   }
-  return new AiServiceError(`AI 服务请求失败（HTTP ${status}）${tail}`, false, undefined, status, detail)
+  return new AiServiceError(
+    `AI 服务请求失败（HTTP ${status}）${tail}`,
+    false,
+    undefined,
+    status,
+    detail,
+  )
 }
 
 async function requestOnce(

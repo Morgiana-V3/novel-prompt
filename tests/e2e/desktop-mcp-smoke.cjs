@@ -343,8 +343,8 @@ app.whenReady().then(async () => {
     assert.equal((await a.request('tools/list')).result.tools.length, 6)
     const grouped = await a.data('configure_tools', { groups: ['tags', 'skills'] })
     const groupedNames = grouped.groups.flatMap((g) => g.tools)
-    assert.equal(new Set(groupedNames).size, 69)
-    assert.equal(groupedNames.length, 69)
+    assert.equal(new Set(groupedNames).size, 70)
+    assert.equal(groupedNames.length, 70)
     assert(!groupedNames.includes('list_skill_templates'))
     assert.ok(grouped.exposedToolCount < 25)
     assert.equal((await b.request('tools/list')).result.tools.length, 6)
@@ -352,7 +352,7 @@ app.whenReady().then(async () => {
       await c.data('configure_tools', { groups: grouped.groups.map((g) => g.id) })
     }
     const schemas = (await a.request('tools/list')).result.tools
-    assert.equal(schemas.length, 69)
+    assert.equal(schemas.length, 70)
     for (const tool of schemas) {
       assert.equal(
         tool.outputSchema.title,
@@ -400,6 +400,38 @@ app.whenReady().then(async () => {
         `JSON.parse(localStorage.getItem('np-workspace-v1')).history.some(h=>h.base==='1girl, glasses')`,
       ),
     )
+    // 多标签：状态列出标签；new_tab 不覆盖用户正在编辑的标签；creation_tab_id 可切回原标签
+    s = await b.data('get_app_state')
+    assert.equal(s.desktop.creationTabs.length, 1)
+    const firstTab = s.desktop.creationTabs[0]
+    assert.equal(firstTab.active, true)
+    assert.equal(firstTab.empty, false)
+    s = await b.data('apply_app_prompt', {
+      expected_token: s.desktop.token,
+      draft: { base: 'agent idea, night city', negative: '', characters: [] },
+      target: 'new_tab',
+      tab_title: 'Agent 方案',
+    })
+    assert.equal(s.creationTabs.length, 2)
+    assert.deepEqual(
+      s.creationTabs.map((tab) => [tab.title, tab.active, tab.empty]),
+      [
+        [firstTab.title, false, false],
+        ['Agent 方案', true, false],
+      ],
+    )
+    assert.equal(s.draft.base, 'agent idea, night city')
+    s = await b.data('navigate_app', { tab: 'compare', creation_tab_id: firstTab.id })
+    assert.equal(s.draft.base, '1girl, outdoors', 'the user tab was not overwritten')
+    await assert.rejects(
+      b.tool('navigate_app', { tab: 'workspace', creation_tab_id: firstTab.id }),
+      /只能与生图创作页面一起使用/,
+    )
+    await assert.rejects(
+      b.tool('navigate_app', { tab: 'compare', creation_tab_id: 'missing-tab' }),
+      /标签不存在/,
+    )
+    console.log('PASS MCP lists creation tabs, writes into a new tab and switches tabs')
     await a.tool('navigate_app', { tab: 'ai' })
     await ui(
       `document.querySelector('.nav-item.active').textContent.includes('生图创作')&&document.querySelector('.creation-tab[aria-selected="true"]')?.textContent.includes('智能优化')`,
@@ -454,7 +486,11 @@ app.whenReady().then(async () => {
     await js(`document.getElementById('capture-private-fixture').remove()`)
     await a.tool('navigate_app', { tab: 'settings' })
     await js(`document.getElementById('settings-tab-services').click()`)
-    for (const service of ['nai', 'ai']) {
+    // 模型接口页有主接口与识图模型两个 API Key，都必须遮挡
+    for (const [service, secrets] of [
+      ['nai', 1],
+      ['ai', 2],
+    ]) {
       await js(`document.getElementById('settings-service-${service}').click()`)
       await wait(() =>
         js(
@@ -464,8 +500,8 @@ app.whenReady().then(async () => {
       const settingsShot = await a.tool('ui_capture_app')
       assert.equal(
         settingsShot.structuredContent.redactedFields,
-        1,
-        `${service} credential is redacted`,
+        secrets,
+        `${service} credentials are redacted`,
       )
     }
     await a.tool('navigate_app', { tab: 'ai' })

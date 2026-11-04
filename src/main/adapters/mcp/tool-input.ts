@@ -132,10 +132,10 @@ export const READ_ONLY = { readOnlyHint: true, openWorldHint: false }
 export function aiGate(): string | null {
   const settings = getSettings()
   if (!settings.mcpAllowAi) {
-    return '需要在 NovelPrompt「设置 → AI 服务 → Agent」中开启「允许调用 DeepSeek」'
+    return '需要在 NovelPrompt「设置 → AI 服务 → Agent」中开启「允许调用 AI 服务」'
   }
   if (!settings.apiKey) {
-    return '需要先在 NovelPrompt 设置里填写 DeepSeek API Key'
+    return '需要先在 NovelPrompt「设置 → AI 服务 → 模型接口」填写 API Key'
   }
   return null
 }

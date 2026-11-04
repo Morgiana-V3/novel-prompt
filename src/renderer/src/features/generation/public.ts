@@ -3,6 +3,7 @@ import {
   imageState as mutableImageState,
   generationParams as mutableGenerationParams,
 } from './state'
+export type { GenOnly } from './state'
 export const imageState = shallowReadonly(mutableImageState)
 export const generationParams = shallowReadonly(mutableGenerationParams)
 export {

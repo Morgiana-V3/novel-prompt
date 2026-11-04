@@ -5,12 +5,13 @@ import { APP_TABS, type DesktopState } from '../../../../shared/contracts/deskto
 import type { NaiGenParams, NaiVersion } from '../../../../shared/generation/types'
 import { NAI_VERSIONS } from '../../../../shared/generation/types'
 import type { InpaintDraft } from '../../../../shared/prompts/types'
-import { type PageAction } from '../../../../shared/workspace/model'
+import { type PageAction, type PageImageTool } from '../../../../shared/workspace/model'
 import { dataDir } from '../../../infrastructure/paths'
 import { imagePath } from '../../../modules/images/access'
 import { getSettings } from '../../../modules/settings/service'
 import type { TaskManager } from '../../../modules/tasks/task-manager'
 import { renderPage } from '../../../modules/workspace/execution'
+import { runImageTool } from '../../../modules/workspace/image-tools'
 import { proposePage } from '../../../modules/workspace/external-collaboration'
 import { listPages, readPageAccess } from '../../../modules/workspace/queries'
 import { readPage } from '../../../modules/workspace/repository'
@@ -35,6 +36,52 @@ const revision = (value: unknown) => {
 const READ = { readOnlyHint: true, openWorldHint: false }
 const WRITE = { readOnlyHint: false, destructiveHint: false, openWorldHint: false }
 const ID = { type: 'string', description: 'list_workspaces 或 get_app_state 返回的会话 id' }
+
+/** 把 MCP 参数整理成修图操作；数值范围由修图模块再做一次权威校验 */
+function imageTool(argumentsRecord: Record<string, unknown>): PageImageTool {
+  const count = (value: unknown) => {
+    const number = Number(value ?? 0)
+    if (!Number.isInteger(number) || number < 0) {
+      throw new Error('扩图边距必须是非负整数像素')
+    }
+    return number
+  }
+  if (argumentsRecord.tool === 'upscale') {
+    return { kind: 'upscale' }
+  }
+  if (argumentsRecord.tool === 'outpaint') {
+    const sides = {
+      left: count(argumentsRecord.left),
+      right: count(argumentsRecord.right),
+      top: count(argumentsRecord.top),
+      bottom: count(argumentsRecord.bottom),
+    }
+    if (!sides.left && !sides.right && !sides.top && !sides.bottom) {
+      throw new Error('扩图至少要指定一边的像素')
+    }
+    return { kind: 'outpaint', ...sides }
+  }
+  if (argumentsRecord.tool === 'enhance') {
+    const scale = Number(argumentsRecord.scale ?? 1)
+    if (scale !== 1 && scale !== 1.5) {
+      throw new Error('精修倍数只能是 1 或 1.5')
+    }
+    const unit = (value: unknown, fallback: number) => {
+      const number = Number(value ?? fallback)
+      if (!Number.isFinite(number) || number < 0 || number > 1) {
+        throw new Error('strength 与 noise 须在 0~1 之间')
+      }
+      return number
+    }
+    return {
+      kind: 'enhance',
+      scale,
+      strength: unit(argumentsRecord.strength, 0.5),
+      noise: unit(argumentsRecord.noise, 0),
+    }
+  }
+  throw new Error('tool 只能是 upscale、outpaint 或 enhance')
+}
 const REV = { type: 'integer', description: '最新 get_workspace 返回的 revision；不匹配时拒绝覆盖' }
 const DRAFT = {
   type: 'object',
@@ -145,10 +192,17 @@ export function desktopTools(
       name: 'navigate_app',
       title: '切换应用页面',
       description:
-        '打开或显示正在运行的 NovelPrompt，并切换到指定页面；workspace_id 可打开已有工作台会话。遇到未完成的编辑时拒绝切换。词条检查、智能优化、画面推测、图片预览都在创作实验（creation）里：tab 传 compare / ai / preview / generate 会打开创作实验的对应分页，状态中 tab 为 creation、creationPanel 为对应分页。',
+        '打开或显示正在运行的 NovelPrompt，并切换到指定页面；workspace_id 可打开已有工作台会话。遇到未完成的编辑时拒绝切换。词条检查、智能优化、画面推测、图片预览都在生图创作（creation）里：tab 传 compare / ai / preview / generate 会打开对应分页，状态中 tab 为 creation、creationPanel 为对应分页。生图创作有多个相互独立的标签（get_app_state.desktop.creationTabs），creation_tab_id 切换到指定标签；生图或 AI 任务进行中不能切换。',
       inputSchema: {
         type: 'object',
-        properties: { tab: { type: 'string', enum: [...APP_TABS] }, workspace_id: ID },
+        properties: {
+          tab: { type: 'string', enum: [...APP_TABS] },
+          workspace_id: ID,
+          creation_tab_id: {
+            type: 'string',
+            description: '生图创作的标签 id（get_app_state.desktop.creationTabs[].id）',
+          },
+        },
         required: ['tab'],
       },
       annotations: WRITE,
@@ -159,6 +213,14 @@ export function desktopTools(
         if (argumentsRecord.workspace_id && argumentsRecord.tab !== 'workspace') {
           throw new Error('workspace_id 只能与 workspace 页面一起使用')
         }
+        if (
+          argumentsRecord.creation_tab_id !== undefined &&
+          !['creation', 'compare', 'ai', 'preview', 'generate'].includes(
+            String(argumentsRecord.tab),
+          )
+        ) {
+          throw new Error('creation_tab_id 只能与生图创作页面一起使用')
+        }
         return json(await desktop.request('navigate', argumentsRecord, true))
       },
     },
@@ -166,15 +228,30 @@ export function desktopTools(
       name: 'apply_app_prompt',
       title: '同步当前提示词',
       description:
-        '把完整提示词写入桌面共享输入框，立即可见，并保存修改前历史。必须传最新 get_app_state.desktop.token；用户已编辑时拒绝覆盖。不调用 AI，不生成图片。',
+        '把完整提示词写入生图创作的标签，立即可见，并保存修改前历史。必须传最新 get_app_state.desktop.token；用户已编辑时拒绝覆盖。target=current（默认）写入当前标签；new_tab 按软件的载入规则承接：当前标签为空则直接用，否则新开标签，不覆盖用户正在编辑的内容；fresh_tab 总是新开标签。新开时可用 tab_title 命名。不调用 AI，不生成图片。',
       inputSchema: {
         type: 'object',
-        properties: { expected_token: { type: 'string' }, draft: DRAFT },
+        properties: {
+          expected_token: { type: 'string' },
+          draft: DRAFT,
+          target: { type: 'string', enum: ['current', 'new_tab', 'fresh_tab'] },
+          tab_title: {
+            type: 'string',
+            maxLength: 40,
+            description: '新开标签的名称，省略为「新标签」',
+          },
+        },
         required: ['expected_token', 'draft'],
       },
       annotations: WRITE,
       run: async (argumentsRecord) => {
         checkDraft(argumentsRecord.draft as InpaintDraft, getSettings().naiVersion)
+        if (
+          argumentsRecord.target !== undefined &&
+          !['current', 'new_tab', 'fresh_tab'].includes(String(argumentsRecord.target))
+        ) {
+          throw new Error('target 只能是 current、new_tab 或 fresh_tab')
+        }
         return json(await desktop.request('apply-prompt', argumentsRecord))
       },
     },
@@ -425,6 +502,69 @@ export function desktopTools(
               regionIds: argumentsRecord.region_ids as string[] | undefined,
               regionId: string(argumentsRecord.region_id) || null,
             },
+            progress ?? (() => {}),
+            () => signal.aborted,
+            {
+              onResult: (result) => {
+                stopped = result.stopped ?? null
+              },
+            },
+          )
+          return json({
+            workspace: workspaceReceipt(workspace),
+            image: workspace.versions.find(
+              (version) => version.id === workspace.latestGeneratedVersionId,
+            )?.image,
+            adoptedVersionId: workspace.currentVersionId,
+            generatedVersionId: workspace.latestGeneratedVersionId,
+            stopped,
+          })
+        })
+      },
+    },
+    {
+      name: 'run_workspace_image_tool',
+      title: '会话画布修图',
+      description:
+        '对图片精修会话的当前蓝本执行修图：upscale 放大 2×；outpaint 四边扩图（left/right/top/bottom 像素）；enhance 精修（scale 1 或 1.5，strength 与 noise 0~1）。结果保存为新候选，不自动替换蓝本。扩图与精修使用会话当前草稿作为提示词。需用户生图授权、confirm:true 和开启允许生图；付费或费用未知时须由用户授权。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: ID,
+          revision: REV,
+          confirm: { type: 'boolean' },
+          tool: { type: 'string', enum: ['upscale', 'outpaint', 'enhance'] },
+          left: { type: 'integer', minimum: 0 },
+          right: { type: 'integer', minimum: 0 },
+          top: { type: 'integer', minimum: 0 },
+          bottom: { type: 'integer', minimum: 0 },
+          scale: { type: 'number', enum: [1, 1.5] },
+          strength: { type: 'number', minimum: 0, maximum: 1 },
+          noise: { type: 'number', minimum: 0, maximum: 1 },
+        },
+        required: ['id', 'revision', 'confirm', 'tool'],
+      },
+      annotations: { ...WRITE, openWorldHint: true },
+      gate: () => {
+        if (!getSettings().mcpAllowGenerate) {
+          return '请先开启允许 Agent 生图' as const
+        }
+        if (!getSettings().naiToken) {
+          return '请先配置 NovelAI Token' as const
+        }
+        return null
+      },
+      run: async (argumentsRecord, signal, progress) => {
+        if (argumentsRecord.confirm !== true) {
+          throw new Error('必须获得用户生图授权并提供 confirm:true')
+        }
+        const tool = imageTool(argumentsRecord)
+        return desktop.withWorkspace(string(argumentsRecord.id), async () => {
+          let stopped: string | null = null
+          const workspace = await runImageTool(
+            string(argumentsRecord.id),
+            revision(argumentsRecord.revision),
+            tool,
             progress ?? (() => {}),
             () => signal.aborted,
             {

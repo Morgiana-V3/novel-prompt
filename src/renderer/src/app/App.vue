@@ -13,7 +13,14 @@ import { refreshDb } from '../features/tags/state'
 import { loadSkills } from '../features/skills/state'
 import { saveSettings, checkUpdate, dismissUpdate, receiveUpdate } from '../features/settings/state'
 import { importImagePrompt, flushWorkspace, applyWorkspace } from '../features/prompts/actions'
-import { openTabForLoad } from '../features/creation/tabs'
+import {
+  creationTabs,
+  createTab,
+  openTabForLoad,
+  switchTab,
+  tabSummaries,
+  tabsBlocker,
+} from '../features/creation/tabs'
 import { cleanErr } from '../shared/lib/format'
 import { toast, runToastAction } from '../shared/lib/notifications'
 import { type Tab } from '../shared/state/shell'
@@ -358,6 +365,7 @@ function desktopSnapshot(): DesktopState {
       negative: promptState.negative,
       characters: promptState.characters.map((character) => ({ ...character })),
     },
+    creationTabs: tabSummaries(),
     model: settingsState.settings?.naiVersion ?? 'v5',
     image: imageState.currentImage ? { ...imageState.currentImage } : null,
     workspace: workspaceView.value?.desktopState() ?? null,
@@ -454,15 +462,44 @@ async function desktopCommand(command: DesktopCommand) {
       if (argumentsRecord.workspace_id) {
         await workspaceView.value?.agentOpen(String(argumentsRecord.workspace_id))
       }
+      const tabId = argumentsRecord.creation_tab_id
+      if (tabId !== undefined) {
+        if (!creationTabs.list.some((tab) => tab.id === tabId)) {
+          throw new Error('标签不存在，请重新读取 get_app_state 的 creationTabs')
+        }
+        const reason = tabsBlocker()
+        if (reason && tabId !== creationTabs.activeId) {
+          throw new Error(`${reason}，暂时不能切换标签`)
+        }
+        switchTab(String(tabId))
+      }
       shellState.tab = argumentsRecord.tab as Tab
     } else if (command.type === 'apply-prompt') {
       generateView.value?.prepareUpdate()
       if (argumentsRecord.expected_token !== desktopSnapshot().token) {
         throw new Error('界面内容已变化，请重新读取 get_app_state 后再提交，未覆盖用户输入')
       }
+      // target=new_tab：按「载入配置」规则承接（当前标签为空则直接用，否则新开）；
+      // target=fresh_tab：总是新开标签。都不覆盖用户正在编辑的标签
+      const target = argumentsRecord.target ?? 'current'
+      const title = typeof argumentsRecord.tab_title === 'string' ? argumentsRecord.tab_title : ''
+      if (target !== 'current') {
+        const reason = tabsBlocker()
+        if (reason) {
+          throw new Error(`${reason}，暂时不能新开标签`)
+        }
+        const opened = target === 'fresh_tab' ? createTab(title) : openTabForLoad(title)
+        if (!opened) {
+          throw new Error('无法新开标签：已达 10 个上限，请先让用户关闭不用的标签')
+        }
+      }
       applyWorkspace(argumentsRecord.draft as DesktopState['draft'], 'Agent 修改前')
       flushWorkspace()
-      toast('Agent 已更新当前提示词，可从历史恢复')
+      toast(
+        target === 'current'
+          ? 'Agent 已更新当前提示词，可从历史恢复'
+          : 'Agent 已在标签中写入提示词，原标签未改动',
+      )
     } else if (command.type === 'workspace-lock') {
       await workspaceView.value?.beginRemote(
         String(argumentsRecord.id),

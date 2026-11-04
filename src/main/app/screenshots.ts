@@ -133,8 +133,8 @@ async function prepareWorkspaceDemo(): Promise<void> {
  * README 截图模式：NovelPrompt --screenshots=<输出目录> [--screenshots-ai]
  *
  * - 使用临时用户目录：不读取你的 NovelAI Token，不改动你的当前提示词和历史
- * - 从真实用户目录只复制 tag 数据（不含 settings.json）；加 --screenshots-ai 时额外复制 DeepSeek 的配置，
- *   真实跑一次 AI 优化和画面推测再截图（会消耗少量额度），否则这两页只截输入状态
+ * - 从真实用户目录只复制 tag 数据（不含 settings.json）；加 --screenshots-ai 时额外复制模型接口配置，
+ *   真实跑一次智能优化和画面推测再截图（会消耗少量额度），否则这两页只截输入状态
  */
 
 const SAMPLE = {
@@ -157,6 +157,24 @@ const SAMPLE = {
   ],
   params: { width: 832, height: 1216, qualityTags: true, ucPreset: 'heavy' },
   history: [],
+}
+
+/** 截图用的创作标签：展示多标签并行（当前标签的内容来自 SAMPLE） */
+const SAMPLE_TABS = {
+  activeId: 'shot-cherry',
+  tabs: [
+    { id: 'shot-cherry', title: '樱花下的两人', content: null },
+    {
+      id: 'shot-night',
+      title: '夜景版本',
+      content: {
+        prompt: '2girls, night, city lights, rain, umbrella, upper body, very aesthetic',
+        negative: '',
+        characters: [],
+      },
+    },
+    { id: 'shot-blank', title: '新标签', content: null },
+  ],
 }
 
 /** 截图用的示例用户 Skill，展示多份 Skill 叠加与优先级 */
@@ -268,47 +286,60 @@ export async function takeScreenshots(win: BrowserWindow): Promise<void> {
     }
     throw new Error(`Failed to capture ${name}`)
   }
-  const openTab = (label: string) =>
-    js(
-      `[...document.querySelectorAll('.nav-item')].find((b) => b.textContent.includes(${JSON.stringify(label)}))?.click()`,
+  // 找不到入口时直接报错：界面改版后截图脚本不能悄悄截到错误的页面
+  const clickText = async (selector: string, label: string) => {
+    const found = await js<boolean>(
+      `(() => { const el = [...document.querySelectorAll(${JSON.stringify(selector)})].find((b) => b.textContent.includes(${JSON.stringify(label)})); el?.click(); return !!el })()`,
     )
-  const runAndWait = async (view: string) => {
-    await js(`document.querySelector('.view.${view} .btn.accent.big')?.click()`)
+    if (!found) {
+      throw new Error(`Screenshot entry not found: ${selector} ${label}`)
+    }
+    await sleep(300)
+  }
+  const openTab = (label: string) => clickText('.nav-item', label)
+  /** 生图创作的分页：词条检查 / 智能优化 / 画面推测 / 图片预览 */
+  const openPanel = async (label: string) => {
+    await openTab('生图创作')
+    await clickText('.creation-tab', label)
+  }
+  /** 点分页底栏的主按钮，等它重新可用（AI 请求结束） */
+  const runAndWait = async (label: string) => {
+    await clickText('#creation-panel-actions .btn.accent', label)
     await sleep(500)
     const done = await waitFor(
-      `!document.querySelector('.view.${view} .btn.accent.big')?.disabled`,
+      `!document.querySelector('#creation-panel-actions .btn.accent')?.disabled`,
       300_000,
     )
     if (!done) {
-      console.log(`[screenshots] ${view} 超时`)
+      console.log(`[screenshots] ${label} 超时`)
     }
   }
 
   await prepareWorkspaceDemo()
   // 写入示例提示词后重新加载
   await js(
-    `localStorage.setItem('np-workspace-v1', ${JSON.stringify(JSON.stringify(SAMPLE))}); setTimeout(() => location.reload(), 50); true`,
+    `localStorage.setItem('np-workspace-v1', ${JSON.stringify(JSON.stringify(SAMPLE))}); localStorage.setItem('np-creation-tabs-v1', ${JSON.stringify(JSON.stringify(SAMPLE_TABS))}); setTimeout(() => location.reload(), 50); true`,
   )
   await sleep(1500)
   await waitFor(`window.api.dbStatus().then((s) => s.loaded)`, 30_000)
   await sleep(1200)
 
-  await openTab('提示词比对')
+  await openPanel('词条检查')
   await shot('compare')
 
-  await openTab('AI 优化')
+  await openPanel('智能优化')
   if (WITH_AI) {
-    await runAndWait('ai')
+    await runAndWait('优化提示词')
   }
   await shot('ai')
 
-  await openTab('画面推测')
+  await openPanel('画面推测')
   if (WITH_AI) {
-    await runAndWait('preview')
+    await runAndWait('开始推测')
   }
   await shot('preview')
 
-  await openTab('生图预览')
+  await openPanel('图片预览')
   await waitFor(`!!document.querySelector('.gallery .thumb')`, 5000)
   await js(`document.querySelector('.gallery .thumb')?.click()`)
   await shot('generate')
@@ -323,13 +354,13 @@ export async function takeScreenshots(win: BrowserWindow): Promise<void> {
   await waitFor(`!document.querySelector('.ip-dialog')`, 5000)
 
   // 角色位置编辑器
-  await js(`document.querySelector('button[title="在画布上拖动各角色的位置"]')?.click()`)
+  await clickText('#creation-editor button', '编辑位置')
   await waitFor(`!!document.querySelector('.pos-dialog')`, 5000)
   await shot('positions')
   await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`)
   await sleep(400)
 
-  await openTab('Tag 搜索')
+  await openTab('词库检索')
   await js(
     `(() => { const i = document.querySelector('.search-input'); i.value = '双马尾'; i.dispatchEvent(new Event('input')) })()`,
   )
@@ -343,13 +374,15 @@ export async function takeScreenshots(win: BrowserWindow): Promise<void> {
   await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`)
   await sleep(400)
 
-  await openTab('设置')
+  await openTab('应用设置')
+  await js(`document.getElementById('settings-tab-services')?.click()`)
+  await js(`document.getElementById('settings-service-ai')?.click()`)
   await shot('settings')
 
-  await js(`document.getElementById('skill-manager')?.scrollIntoView({ block: 'start' })`)
+  await js(`document.getElementById('settings-service-skills')?.click()`)
   await shot('skill-manager')
 
-  await openTab('AI 工作台')
+  await openTab('图片精修')
   if (!(await waitFor(`!!document.querySelector('.session-open')`, 5000))) {
     throw new Error('Demo workspace missing')
   }

@@ -19,7 +19,14 @@ import {
   type Snapshot,
   type WorkParams,
 } from '../prompts/state'
-import { DEFAULT_GEN, generationParams, imageState, type GenOnly } from '../generation/state'
+import {
+  applyGenerationParams,
+  DEFAULT_GEN,
+  generationParams,
+  imageState,
+  setPreviewImage,
+  type GenOnly,
+} from '../generation/public'
 
 /**
  * 生图创作的多标签页：每个标签是一份完全独立的创作（提示词、参数、历史、各分页的结果）。
@@ -163,13 +170,13 @@ function restore(content: TabContent, session: TabSession): void {
   promptState.prompt = content.prompt
   promptState.negative = content.negative
   promptState.characters = toDrafts(content.characters)
-  // 有页面在 setup 时持有 promptState.params / generationParams 的引用，只能原地改
+  // 有页面在 setup 时持有 promptState.params 的引用，只能原地改；生图参数经 generation 的公开接口写入
   Object.assign(promptState.params, { ...DEFAULT_PARAMS, ...content.params })
-  Object.assign(generationParams, { ...DEFAULT_GEN, ...content.gen })
+  applyGenerationParams({ ...DEFAULT_GEN, ...content.gen })
   promptState.history = content.history
   promptState.lastPreview = session.lastPreview
   promptState.focus = session.focus
-  imageState.currentImage = session.currentImage
+  setPreviewImage(session.currentImage)
   for (const key of registry.keys()) {
     if (!session.view.has(key)) {
       makeRef(key, session.view)
@@ -357,3 +364,24 @@ export function tabTitle(entry: TabEntry): string {
 }
 
 export const tabsLocked = computed(() => !!blocker())
+
+/** 当前不能切换或新开标签的原因（任务进行中等），没有时为 false */
+export const tabsBlocker = () => blocker()
+
+/** 给 Agent 的标签概览：只含 id、名称、是否当前、是否为空，不含提示词正文 */
+export function tabSummaries(): { id: string; title: string; active: boolean; empty: boolean }[] {
+  return creationTabs.list.map((tab) => ({
+    id: tab.id,
+    title: tabTitle(tab),
+    active: tab.id === creationTabs.activeId,
+    // 当前标签的内容在全局状态里，直接读取，避免每次快照都复制整份历史
+    empty: !hasContent(
+      tab.content ?? {
+        ...blankContent(),
+        prompt: promptState.prompt,
+        negative: promptState.negative,
+        characters: promptState.characters,
+      },
+    ),
+  }))
+}

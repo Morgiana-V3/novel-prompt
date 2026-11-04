@@ -8,6 +8,7 @@ import type {
 import { FREE_MAX_PIXELS, FREE_MAX_STEPS, freeCheck } from '../../../modules/generation/costs'
 import { generateImages, getSubscription } from '../../../modules/generation/service'
 import { imagePath, listImages } from '../../../modules/images/access'
+import { imageCollections } from '../../../modules/images/collections'
 import { readPngPrompt } from '../../../modules/prompts/png-import'
 import { getSettings } from '../../../modules/settings/service'
 import {
@@ -48,6 +49,18 @@ export function createNaiSubscriptionTool(): McpTool {
   }
 }
 
+/** 校验图集 id：省略时为默认图集，不存在时报错而不是悄悄改存到默认图集 */
+function collection(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined
+  }
+  const id = String(value)
+  if (!imageCollections.list().some((item) => item.id === id)) {
+    throw new Error('图集不存在，请用 list_images 返回的 collections[].id')
+  }
+  return id
+}
+
 export function createGenerateImageTool(): McpTool {
   return {
     name: 'generate_image',
@@ -71,6 +84,10 @@ export function createGenerateImageTool(): McpTool {
         },
         seed: { type: 'integer', description: '种子，不填随机；多张时依次 +1' },
         count: { type: 'integer', description: '张数 1~4，默认 1' },
+        collection_id: {
+          type: 'string',
+          description: '保存到哪个图集（list_images 返回的 collections[].id），省略时为默认图集',
+        },
         confirm: { type: 'boolean', description: '必须为 true 才会真正提交生成' },
       },
       required: ['base', 'confirm'],
@@ -95,6 +112,7 @@ export function createGenerateImageTool(): McpTool {
       if (argumentsRecord.confirm !== true) {
         throw new Error('需要传 confirm: true 才会生成图片')
       }
+      const collectionId = collection(argumentsRecord.collection_id)
       const params: NaiGenParams = {
         width: Math.round(num(argumentsRecord.width, 832, 64, 2048) / 64) * 64,
         height: Math.round(num(argumentsRecord.height, 1216, 64, 2048) / 64) * 64,
@@ -121,6 +139,7 @@ export function createGenerateImageTool(): McpTool {
           characters: characters(argumentsRecord.characters),
           params,
           version: version(argumentsRecord.version),
+          collectionId,
         },
         progress ?? (() => {}),
         () => signal.aborted,
@@ -133,6 +152,7 @@ export function createGenerateImageTool(): McpTool {
         images: generationResult.images.map((img) => ({
           path: imagePath(img.name),
           name: img.name,
+          collectionId: img.collectionId ?? collectionId,
           storage: img.storage,
           seed: img.seed,
           width: img.width,
@@ -150,21 +170,25 @@ export function createListImagesTool(): McpTool {
     name: 'list_images',
     title: '本机图库',
     description:
-      '按时间从新到旧列出图库。支持 storage 分类、query 文件名检索和 before_name 游标翻页。返回 items、hasMore、nextBeforeName。',
+      '按时间从新到旧列出图库。支持 storage 分类、collection_id 图集筛选、query 文件名检索和 before_name 游标翻页。返回 items、collections（全部图集）、hasMore、nextBeforeName。',
     inputSchema: {
       type: 'object',
       properties: {
         limit: { type: 'integer', minimum: 1, maximum: 100, description: '默认 20' },
         storage: { type: 'string', enum: ['temporary', 'saved', 'workspace'] },
+        collection_id: { type: 'string', description: '只看某个图集；省略时为全部' },
         query: { type: 'string', maxLength: 200 },
         before_name: { type: 'string' },
       },
     },
     annotations: READ_ONLY,
     run: async (argumentsRecord) => {
+      const filterCollection =
+        argumentsRecord.collection_id === undefined ? '' : collection(argumentsRecord.collection_id)
       const all = listImages(Number.MAX_SAFE_INTEGER).filter(
         (img) =>
           (!argumentsRecord.storage || img.storage === argumentsRecord.storage) &&
+          (!filterCollection || img.collectionId === filterCollection) &&
           (!argumentsRecord.query ||
             img.name.toLowerCase().includes(String(argumentsRecord.query).toLowerCase())),
       )
@@ -181,12 +205,14 @@ export function createListImagesTool(): McpTool {
         items: page.map((img) => ({
           path: imagePath(img.name),
           name: img.name,
+          collectionId: img.collectionId,
           storage: img.storage,
           seed: img.seed,
           width: img.width,
           height: img.height,
           createdAt: new Date(img.createdAt).toISOString(),
         })),
+        collections: imageCollections.list().map(({ id, name }) => ({ id, name })),
         total: all.length,
         hasMore,
         nextBeforeName: hasMore ? page.at(-1)!.name : null,

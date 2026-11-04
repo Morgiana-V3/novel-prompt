@@ -40,7 +40,7 @@ export interface Settings {
   naiFreeOnly?: boolean
   /** 普通生图按提交时的设置决定整批是否长期留存。 */
   naiAutoSave?: boolean
-  /** 允许外部 agent（MCP）调用会消耗 DeepSeek 额度的工具 */
+  /** 允许外部 agent（MCP）调用会消耗模型接口额度的工具 */
   mcpAllowAi: boolean
   /** 允许外部 agent（MCP）调用 NovelAI 生图（付费操作另行授权） */
   mcpAllowGenerate: boolean

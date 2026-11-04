@@ -123,10 +123,10 @@ npm install; npm run build
 调用流程：
 
 1. `get_app_state` 获取当前页面、共享提示词、图片、工作台选择和任务。返回内容不包含账户配置中的密钥。
-2. `navigate_app` 打开窗口或切换页面；`tab: "workspace"` 配合 `workspace_id` 打开指定会话。
-3. 修改主提示词时，先读取状态，再把 `desktop.token` 作为 `apply_app_prompt.expected_token` 传入。期间用户已编辑则拒绝覆盖，成功写入会保留修改前历史。
+2. `navigate_app` 打开窗口或切换页面；`tab: "workspace"` 配合 `workspace_id` 打开指定会话。生图创作有多个相互独立的标签，`get_app_state.desktop.creationTabs` 列出 id、名称、是否当前与是否为空，`creation_tab_id` 切换到指定标签。
+3. 修改主提示词时，先读取状态，再把 `desktop.token` 作为 `apply_app_prompt.expected_token` 传入。期间用户已编辑则拒绝覆盖，成功写入会保留修改前历史。默认写入当前标签；`target: "new_tab"` 按软件的载入规则承接（当前标签为空则直接用，否则新开标签），`fresh_tab` 总是新开，`tab_title` 可命名新标签。
 4. 在工作台中用 `list_workspaces` / `get_workspace` 读取上下文，用 `propose_workspace_edit` 提交完整建议。建议会显示在界面中，用户可以查看、采纳；也可按用户指示调用 `apply_workspace_action` 采纳、拒绝、撤销或切换历史版本。写入必须使用最新 `revision`，遇到用户正在编辑时先等待。
-5. `generate_workspace` 根据已采纳稿生成新版本，也能使用已有区域重绘。必须开启「允许生图」、取得用户授权并传 `confirm: true`；仍检查免费条件。`read_image` 将图库图片或选区预览作为 MCP 图片返回，客户端需要支持图像内容。
+5. `generate_workspace` 根据已采纳稿生成新版本，也能使用已有区域重绘；`run_workspace_image_tool` 对当前蓝本执行放大（upscale）、扩图（outpaint）或精修（enhance），结果作为新候选。必须开启「允许生图」、取得用户授权并传 `confirm: true`；仍检查免费条件。`read_image` 将图库图片或选区预览作为 MCP 图片返回，客户端需要支持图像内容。
 6. `list_tasks` 和 `cancel_task` 与软件任务中心共用状态。Agent 任务有来源标记；生图取消等待当前图片保存，保留已完成结果。
 
 支持资源 `novelprompt://app/state` 的读取、订阅与变化通知，以及带 `progressToken` 的调用进度。**变化通知是否触发模型行动由外部客户端决定**：服务端支持通知不等于 Agent 会自动醒来。不支持订阅的客户端可在操作前调用 `get_app_state`。不需要为每次状态变化重新发送整套 Skill，`prompt_guide(detail: "summary")` 提供摘要和规则指纹，写提示词前仍应获取完整有效规则。
@@ -218,7 +218,7 @@ npm install; npm run build
 - 候选通过 `version_limit`（默认 10、最多 100）、`before_version_id` 分页；`get_workspace` 返回 `versionsPage`，`get_workspace_context` 返回 `candidatesPage`。游标是 `nextBeforeVersionId`，翻页带 `history_revision`。当前蓝本 id 和任务当前稿始终单独返回，候选页只描述该页；上下文中的 `groups` 也仅列本页 id，用 `partial/totalCandidates` 标记未读部分。
 - 历史页使用 `message_limit`（1～100）、`before_message_id`，翻页必须附上一页的 `history.revision` 作为 `history_revision`；变化时拒绝混合分页。默认摘要省略方案前后稿、历史生成参数和规则正文，原始项目文件保持完整。
 - `since_revision` 比较本连接最近缓存的对应 `detail` 快照。未变返回 `notModified`；变化返回 `delta:true`、新增/变更的消息和候选，以及删除 id 列表。旧消息的采纳/撤销、旧候选配置变化也会被发现。按 id 合并，摘要/全文分别缓存；增量需要翻页时保持原 `since_revision`，携带当前 `history_revision`，读完消息与候选两类增量的所有页后再推进本地版本。单独翻页时另一列表不重复返回，分页信息的 `included:false` 表示未读取，不能理解为空集合。重新连接、首次请求某种 detail 或基线超过最近 32 个快照时，返回 `resetRequired:true` 和当前分页快照，须重建缓存。切勿把分页/局部详情中缺失的条目当成删除。
-- `list_images` 支持 `storage`、`query`、`limit`、`before_name`，返回 `items/hasMore/nextBeforeName`。
+- `list_images` 支持 `storage`、`collection_id`、`query`、`limit`、`before_name`，返回 `items/collections/hasMore/nextBeforeName`；`generate_image` 可用 `collection_id` 指定保存到哪个图集。
 
 `npm run mcp:context-smoke` 使用独立临时数据验证规则目录与任务选篇、按篇变化、禁用/重排、强制补读、冻结快照、缓存隔离、摘要/详情、历史/候选分页、旧消息与候选更新及增量恢复。加 `-- --measure-dev` 可只读测量开发目录的现有项目返回大小；不迁移、不保存真实项目。字符数按单份业务 JSON 统计，不代表特定客户端实际计入模型的 token 数。
 - 工具保留文本内容并返回对象形式的 `structuredContent`。普通文本报告在 `text` 字段，列表在 `items`。参数错误、权限关闭和执行错误提供 `error.code/message/retryable/nextAction`。取消任务的 `cancellation` 明确区分受理、正在停止、已结束与不存在。

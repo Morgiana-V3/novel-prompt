@@ -16,7 +16,7 @@ import SkillImportButton from './SkillImportButton.vue'
 /** 设置页：Skill 的导入、新建、编辑、复制、删除。启用与优先级在侧栏浮层里设置 */
 
 const SCOPE: Record<string, string> = {
-  optimize: 'AI 优化',
+  optimize: '智能优化',
   preview: '画面推测',
   inpaint: '局部重绘',
   all: '全部功能',

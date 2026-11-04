@@ -14,7 +14,7 @@ import HelpTip from '../../../shared/ui/HelpTip.vue'
  */
 
 const SCOPE: Record<string, string> = {
-  optimize: 'AI 优化',
+  optimize: '智能优化',
   preview: '画面推测',
   inpaint: '局部重绘',
   workspace: '图片精修',

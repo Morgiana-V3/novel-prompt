@@ -6,7 +6,7 @@ export const AGENT_ENTRY = `NovelPrompt 不只是提示词查询工具，也提�
 首次使用先读 agent_guide(topic=overview)；开始工作台操作前读 agent_guide(topic=workflows)。完整指南也可通过资源 novelprompt://guide/agent 读取。get_workspace_context 首次只给总则和目录，分析前按 skills_task/skills_ids 补读任务相关正文；可用 rules_only:true 避免重复读取图片和参数。
 首次 tools/list 展示接入配置预选的工具范围。设置页默认生成全量配置，也可选择工作台、后台或标签范围；不支持动态刷新工具的客户端应预选所需范围。仅 core 模式需要 configure_tools(groups) 后刷新 tools/list：查词选 tags/skills，后台工作台选 workspace/images/skills，前台再加 frontend；core 始终保留。写入和付费 AI 调用前生成唯一 operation_id，超时先 get_operation(operation_id)，勿盲目重放。
 按用户意图选择执行方式：查词、检查、只要结果用后台；“在软件里操作、每一步可见、演示给我看”用 ui_* 前台工具。前台流程允许后台只读查询及 report_workspace_progress 状态报告（报告后重新读取 token），不要混入后台数据写入来冒充可见步骤。未指定时，纯资料任务走后台；明确操作当前工作台走前台。
-执行方式（前台/后台）与处理者（你自己/内置 AI）独立。用户让你接管时选择 external，由你读取上下文、分析并写回；不要默认转调 DeepSeek。外部模式提交只保存需求，不会自动唤醒 Agent。
+执行方式（前台/后台）与处理者（你自己/内置 AI）独立。用户让你接管时选择 external，由你读取上下文、分析并写回；不要默认转调内置 AI。外部模式提交只保存需求，不会自动唤醒 Agent。
 涉及当前内容先 get_app_state；runtime.mode、runtime.dataPath 和 runtime.appPath 标识连接的开发版或安装版及实际目录，操作前确认环境符合用户意图。两套环境的数据不会自动同步。get_workspace 默认仅给最近 5 条摘要，完整记录用 detail:full 分页或按消息/候选 id 读取；实际像素用 ui_capture_app/read_image。状态、截图和历史不是同一种信息。所有写入遵守最新 token/revision 和用户授权。`
 
 const sections = {
@@ -43,13 +43,13 @@ ${AGENT_ENTRY}
 | 当前窗口 | ui_capture_app | 真实应用截图；包含可见弹窗，不能读取被滚动隐藏的完整历史 |
 | 图片资料 | list_images、read_image、read_image_prompt | 分别读取图库目录、图像像素、PNG 内提示词；元数据不能证明画面实际符合要求 |
 | 会话与完整记录 | list_workspaces、get_workspace、get_workspace_context、list_workspace_requests、compare_workspace_versions | 会话列表、完整聊天与方案/版本、本轮待处理任务与冻结规则 |
-| 后台工作台 | create_workspace、propose_workspace_edit、apply_workspace_action、generate_workspace | 创建、提交建议、采纳/撤销/切换版本、生成；结果可能同步界面，不展示逐步交互 |
-| 外部处理者 | set_workspace_agent、reply_workspace_request、cancel_workspace_request；对应 ui_* | 接管、回复、取消；分析来自你，不是 DeepSeek |
+| 后台工作台 | create_workspace、propose_workspace_edit、apply_workspace_action、generate_workspace、run_workspace_image_tool | 创建、提交建议、采纳/撤销/切换版本、生成，以及对当前蓝本放大/扩图/精修；结果可能同步界面，不展示逐步交互 |
+| 外部处理者 | set_workspace_agent、reply_workspace_request、cancel_workspace_request；对应 ui_* | 接管、回复、取消；分析来自你，不是内置 AI |
 | 前台工作台 | ui_open_workspace、ui_create_workspace、ui_set_workspace_input、ui_send_workspace_message、ui_view_workspace、ui_review_workspace | 在真实窗口中打开、填写、提交、切 tab、展示方案、审核和查看历史 |
 | 前台局部重绘 | ui_add_workspace_region、ui_update_workspace_region、ui_delete_workspace_region、ui_generate_workspace | 可视化创建、修改或删除选区批注，按当前稿生成整图或已有区域重绘 |
 | 后台独立生图/重绘 | nai_subscription、generate_image、prepare_inpaint、inpaint_image | 直接处理图片，仍调用 NovelAI；准备遮罩不等于生成，独立结果不自动成为工作台版本 |
 | 内置 AI 委托 | optimize_prompt、preview_prompt、plan_inpaint；internal 模式的 ui_send_workspace_message | 调用配置的内置 AI 并消耗其额度；用户要你自己做时不要用它们代替分析 |
-| 同步与任务 | navigate_app、apply_app_prompt、list_tasks、cancel_task | 导航/同步会改前台；任务中心与多个连接共享 |
+| 同步与任务 | navigate_app、apply_app_prompt、list_tasks、cancel_task | 导航/同步会改前台；生图创作有多个独立标签（desktop.creationTabs），navigate_app 可用 creation_tab_id 切换，apply_app_prompt 用 target=new_tab 新开标签承接而不覆盖用户正在编辑的标签；任务中心与多个连接共享 |
 | 项目与图片管理 | update_workspace、update_workspace_region、delete_workspace_image、delete_workspace、delete_image；前台 ui_rename_workspace / ui_delete_workspace_image / ui_delete_workspace | 同界面校验与清理规则；删除需用户授权与 confirm:true，共享图片保留 |
 | Skill 管理 | create_skill、update_skill、delete_skill、set_skill_config | 按用户意图维护规则；内置正文只读，可调整启用/优先级或复制为用户 Skill |
 
@@ -118,13 +118,13 @@ ${AGENT_ENTRY}
 - 写入和内置 AI 调用前生成唯一 operation_id（建议 UUID）；超时/停止/连接中断先 get_operation(operation_id)。未提前指定编号时，可用 get_operation() 查询最近 20 次，再用 get_app_state、list_tasks、get_workspace 核对实际状态。网络断开不证明服务端没有执行。
 - 操作状态 running 表示仍在执行；succeeded 只表示工具返回，须检查业务结果；failed/interrupted 可能已有部分成果，不能推断回滚。同编号同参数只返回历史结果或进度，同编号改参数会拒绝；确认需要新操作后用新编号和最新状态，不盲目重放创建、发送、采纳或生成。
 - 操作记录跨连接/重启保留 7 天，绑定当前数据目录。resultOmitted 表示大结果仅保留摘要，需读取对应项目/图库。查不到记录不等于没执行；核对环境和实际状态。恢复的历史结果不会重新接管项目、恢复编辑器或替代最新 token。
-- 外部 Agent 断线：模式和需求保留，不回退 DeepSeek。重连是新连接，需要再次显式接管；另一个在线 Agent 已接管时不能抢占，只有用户主动解除或连接断开后再接管。
+- 外部 Agent 断线：模式和需求保留，不回退内置 AI。重连是新连接，需要再次显式接管；另一个在线 Agent 已接管时不能抢占，只有用户主动解除或连接断开后再接管。
 - stdio 代理在宿主断开后自动重连并恢复工具范围与状态订阅；只重建协议会话，绝不重放业务调用。OUTCOME_UNKNOWN 表示已发送但结果不确定，携带原 operationId；NOT_SENT 表示恢复期间请求尚未发送。恢复失败后保持 stdio，下个请求触发再次连接，该请求不自动执行。
 - 重连后 get_app_state(workspace_id 可选) 的 connection 返回新 sessionId、接管归属、配置编辑归属和 nextActions。已有操作先 get_operation 核对；需要接管时使用最新 revision。实际执行底图是 connection.workspace.execution.sourceVersionId，不是 viewedVersionId。
 - 原 Agent 断线但窗口仍开着时，配置草稿保持原样。先核对 desktop.workspace.config，canResume:true 时可显式 ui_edit_workspace_config(config_action:resume) 接续，然后再决定保存、修改或取消。该操作不保存、不生成，不能接管用户手动编辑或其他在线 Agent 的表单。应用主进程退出后未保存的表单不保证保留。
 - 已完成/取消请求的重复回复会被拒绝。旧方案完整保留用于查看，已被新方案替代的待采纳方案不可再次采纳。
 - 取消外部待处理请求用 cancel_workspace_request/ui_cancel_workspace_request；运行任务用 cancel_task；前台也有停止入口。生图取消可能等待当前图片保存，已完成图片要如实报告。
-- 内置 AI 权限与 NovelAI 生图权限不同。external 回复不需要 DeepSeek Key，但生成仍需要 NovelAI 配置、允许生图、用户授权和 confirm:true；confirm 不能代替授权，已有明确授权无需重复询问。
+- 内置 AI 权限与 NovelAI 生图权限不同。external 回复不需要模型接口 API Key，但生成仍需要 NovelAI 配置、允许生图、用户授权和 confirm:true；confirm 不能代替授权，已有明确授权无需重复询问。
 - OUTPUT_CONTRACT_VIOLATION 表示返回字段未通过校验，操作可能已经执行；observedResult 保留实际返回，先读状态或 get_operation 核对，不能自动重试。
 - 工具返回 stopped/额度或权限错误时停止对应执行并解释，不改参数规避限制。分析可以继续，但不能声称生成成功。
 - 升级后旧 MCP 会话/宿主可能仍加载旧工具：重连客户端并确认 tools/list；应用运行的是旧构建时需重启宿主。工具缺失时不能假装已调用。

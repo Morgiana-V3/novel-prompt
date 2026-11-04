@@ -84,14 +84,17 @@ const desktop = shape({
   token: str,
   tab: str,
   draft,
+  creationTabs: array(shape({ id: str, title: str, active: bool, empty: bool })),
   model: str,
   image: nullable(image),
   workspace: nullable(desktopWorkspace),
   blockers: strings,
   frontend: nullable(objectSchema),
 })
-// frontend is optional before the first visible action.
-desktop.required = desktop.required.filter((text: string) => text !== 'frontend')
+// frontend is optional before the first visible action; creationTabs is absent on older hosts.
+desktop.required = desktop.required.filter(
+  (text: string) => text !== 'frontend' && text !== 'creationTabs',
+)
 const workspace = shape(
   {
     id: str,
@@ -266,6 +269,16 @@ const namedSchemas: Record<string, Schema> = {
     'adoptedVersionId',
   ]),
   generate_workspace: shape(
+    {
+      workspace,
+      image: nullable(image),
+      adoptedVersionId: str,
+      generatedVersionId: str,
+      stopped: nullable(str),
+    },
+    ['workspace', 'adoptedVersionId'],
+  ),
+  run_workspace_image_tool: shape(
     {
       workspace,
       image: nullable(image),

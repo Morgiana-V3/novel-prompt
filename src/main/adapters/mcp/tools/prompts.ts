@@ -104,9 +104,9 @@ export function createAnalyzePromptTool(): McpTool {
 export function createOptimizePromptTool(): McpTool {
   return {
     name: 'optimize_prompt',
-    title: 'AI 优化（DeepSeek）',
+    title: '智能优化（内置 AI）',
     description:
-      '调用 NovelPrompt 内置的 DeepSeek 流程优化提示词（会自动检索、校验 tag 并本地复查），或把中文画面描述转成整套提示词（mode=semantic，instruction 写描述）。返回 JSON：positive / negative / characters / assessment / changes（每条带依据）/ invalid / dropped / fidelity。消耗用户的 DeepSeek 额度。',
+      '调用 NovelPrompt 内置 AI（用户在设置中配置的模型接口）的流程优化提示词（会自动检索、校验 tag 并本地复查），或把中文画面描述转成整套提示词（mode=semantic，instruction 写描述）。返回 JSON：positive / negative / characters / assessment / changes（每条带依据）/ invalid / dropped / fidelity。消耗用户配置的模型接口额度。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -182,9 +182,9 @@ export function createOptimizePromptTool(): McpTool {
 export function createPreviewPromptTool(): McpTool {
   return {
     name: 'preview_prompt',
-    title: '画面推测（DeepSeek）',
+    title: '画面推测（内置 AI）',
     description:
-      '调用 NovelPrompt 内置的 DeepSeek 推测这套提示词会画出什么，并给出风险和建议（带依据）。expectation 填想要的效果时会对比差距。消耗用户的 DeepSeek 额度。',
+      '调用 NovelPrompt 内置 AI（用户在设置中配置的模型接口）推测这套提示词会画出什么，并给出风险和建议（带依据）。expectation 填想要的效果时会对比差距。消耗用户配置的模型接口额度。',
     inputSchema: {
       type: 'object',
       properties: {

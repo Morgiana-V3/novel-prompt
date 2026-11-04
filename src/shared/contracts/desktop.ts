@@ -77,7 +77,10 @@ export interface DesktopState {
   tab: AppTab
   /** 创作实验当前分页（词条检查 / 智能优化 / 画面推测 / 图片预览）；旧页签 compare、ai、preview、generate 会导航到这里 */
   creationPanel?: AppTab
+  /** 当前创作标签的提示词；其他标签只给概览 */
   draft: InpaintDraft
+  /** 生图创作的全部标签：id、名称、是否当前、是否为空 */
+  creationTabs?: { id: string; title: string; active: boolean; empty: boolean }[]
   model: NaiVersion
   image: NaiImage | null
   workspace: {

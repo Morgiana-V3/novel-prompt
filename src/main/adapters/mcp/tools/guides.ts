@@ -6,7 +6,7 @@ export const AGENT_GUIDE = `# NovelPrompt 提示词工作指南（给外部 agen
 
 本指南只指导提示词任务。软件能力、前后台选择与工作台操作顺序先读 agent_guide；通过工作台回复方案时按工具的 JSON schema 写回，不使用下述分节文本替代接口参数。
 
-本工具返回两部分：先是这份使用说明，然后是「Skill 使用总则」和用户在软件里为 AI 优化功能启用的 Skill（按优先级排列）。Skill 也是软件内置 AI 的系统提示词：其中要求输出 JSON、填写 assessment / changes 字段的部分只针对内置 AI，你交付给用户时按本说明的格式；其余规则（语法、编排、角色提示词、负面、依据）同样适用于你，多份 Skill 冲突时按总则的优先级处理。本说明里的语法与格式要求优先于 Skill。
+本工具返回两部分：先是这份使用说明，然后是「Skill 使用总则」和用户在软件里为智能优化功能启用的 Skill（按优先级排列）。Skill 也是软件内置 AI 的系统提示词：其中要求输出 JSON、填写 assessment / changes 字段的部分只针对内置 AI，你交付给用户时按本说明的格式；其余规则（语法、编排、角色提示词、负面、依据）同样适用于你，多份 Skill 冲突时按总则的优先级处理。本说明里的语法与格式要求优先于 Skill。
 
 ## 工作流
 1. 理解范围：区分用户已确定的内容、允许调整的部分和你想新增的建议。检查现有提示词时只修本次的问题。
@@ -51,7 +51,7 @@ lowres, worst quality, bad quality, ...
 - 按用户的要求增删改 Skill、调整启用与优先级；改完告诉用户改了什么。
 
 ## 内置 AI 结果的复核
-optimize_prompt / preview_prompt 调用内置 DeepSeek，消耗用户额度；用了也要复核结果：
+optimize_prompt / preview_prompt 调用内置 AI（用户配置的模型接口），消耗用户额度；用了也要复核结果：
 - dropped：optimize 模式下被删掉且没有说明的原有内容；semantic 模式没有原提示词可比，为 null，需要你对照描述逐项核对。
 - fidelity：必须逐字保留却被改写的画面文字（Text: 块），不为空时把原文恢复后再交付。
 - verdict：converged 表示已达标、提示词原样返回，不要为了“有产出”再次调用优化；stabilized 列出程序为保持收敛而撤回的细微改写。

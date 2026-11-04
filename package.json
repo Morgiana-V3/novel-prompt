@@ -31,6 +31,7 @@
     "mcp:smoke": "node scripts/check.mjs mcp:host",
     "inpaint:smoke": "electron-vite build && electron tests/e2e/inpaint-smoke.cjs",
     "inpaint:mcp-smoke": "electron tests/integration/inpaint-mcp-smoke.cjs",
+    "live:smoke": "electron-vite build && node tests/live/live-smoke.mjs",
     "creation-tabs:smoke": "electron-vite build && electron tests/e2e/creation-tabs-smoke.cjs",
     "pages:smoke": "electron-vite build && electron tests/e2e/page-workspace-smoke.cjs",
     "retention:smoke": "electron tests/integration/retention-smoke.cjs",

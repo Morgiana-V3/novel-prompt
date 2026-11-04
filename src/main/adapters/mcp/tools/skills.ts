@@ -26,7 +26,7 @@ export const SKILL_FIELDS = {
     type: 'string',
     enum: ['optimize', 'preview', 'inpaint', 'all'],
     description:
-      '作用于哪个功能：optimize = AI 优化 / 描述转提示词（也是 prompt_guide 的内容），preview = 画面推测，inpaint = 局部重绘，all = 全部功能',
+      '作用于哪个功能：optimize = 智能优化 / 描述转提示词（也是 prompt_guide 的内容），preview = 画面推测，inpaint = 局部重绘，all = 全部功能',
   },
   model: {
     type: 'string',

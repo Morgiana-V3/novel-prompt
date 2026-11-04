@@ -57,7 +57,7 @@ export const DEFAULT_CONFIG: SkillEntry[] = BUILTINS.map((builtinSkill) => ({
 }))
 
 export const SCOPE_LABEL: Record<SkillScope, string> = {
-  optimize: 'AI 优化',
+  optimize: '智能优化',
   preview: '画面推测',
   inpaint: '局部重绘',
   all: '全部功能',

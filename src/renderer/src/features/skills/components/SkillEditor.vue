@@ -47,7 +47,7 @@ const error = ref('')
 const confirmation = ref<'discard' | 'links' | null>(null)
 
 const scopes: { v: SkillScope; label: string }[] = [
-  { v: 'optimize', label: 'AI 优化' },
+  { v: 'optimize', label: '智能优化' },
   { v: 'preview', label: '画面推测' },
   { v: 'inpaint', label: '局部重绘' },
   { v: 'all', label: '全部' },

@@ -276,7 +276,7 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
       'ui_set_workspace_agent',
       '设置会话处理方式',
       'agent',
-      '显示并切换内置 AI / 外部 Agent。external 绑定当前 MCP 连接，断开后等待连接，不回退 DeepSeek。',
+      '显示并切换内置 AI / 外部 Agent。external 绑定当前 MCP 连接，断开后等待连接，不回退内置 AI。',
       { mode: { type: 'string', enum: ['internal', 'external'] } },
       ['mode'],
       (argumentsRecord) => {
