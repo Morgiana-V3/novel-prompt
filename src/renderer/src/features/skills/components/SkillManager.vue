@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { detachLeaving } from '../../../shared/lib/list-motion'
 import { skillsState } from '../state'
 import { shellState } from '../../../shared/state/shell'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -298,86 +299,91 @@ const openPicker = () => (skillsState.skillPanel = true)
       >
         还没有自己的 Skill。可以导入单个 .md 或包含 SKILL.md 的文件夹，也可以新建或复制内置 Skill。
       </div>
-      <div
-        v-for="s in mine"
-        :key="s.id"
-        class="sm-item"
+      <TransitionGroup
+        name="list"
+        @before-leave="detachLeaving"
       >
-        <div class="sm-main">
-          <div class="sm-name">
-            <b>{{ s.name }}</b>
-            <span :class="['pill', s.enabled ? 'ok' : '']">{{
-              s.enabled ? `启用 · 第 ${priorityOf(s)} 位` : '未启用'
-            }}</span>
-            <span class="pill">{{ SCOPE[s.scope] }}</span>
-            <span
-              v-if="s.model !== 'all'"
-              class="pill"
-              >{{ MODEL[s.model] }}</span
-            >
-            <span class="muted small"
-              >入口 {{ fmtChars(s.chars)
-              }}<template v-if="s.format === 'directory'">
-                · 目录包 · {{ s.resourceCount }} 个参考文件</template
-              ></span
-            >
+        <div
+          v-for="s in mine"
+          :key="s.id"
+          class="sm-item"
+        >
+          <div class="sm-main">
+            <div class="sm-name">
+              <b>{{ s.name }}</b>
+              <span :class="['pill', s.enabled ? 'ok' : '']">{{
+                s.enabled ? `启用 · 第 ${priorityOf(s)} 位` : '未启用'
+              }}</span>
+              <span class="pill">{{ SCOPE[s.scope] }}</span>
+              <span
+                v-if="s.model !== 'all'"
+                class="pill"
+                >{{ MODEL[s.model] }}</span
+              >
+              <span class="muted small"
+                >入口 {{ fmtChars(s.chars)
+                }}<template v-if="s.format === 'directory'">
+                  · 目录包 · {{ s.resourceCount }} 个参考文件</template
+                ></span
+              >
+            </div>
+            <div class="sm-desc">{{ s.description || '（没有说明）' }}</div>
           </div>
-          <div class="sm-desc">{{ s.description || '（没有说明）' }}</div>
+          <div class="sm-actions">
+            <button
+              class="btn ghost small"
+              @click="open(s, true)"
+            >
+              查看
+            </button>
+            <button
+              class="btn ghost small"
+              @click="open(s)"
+            >
+              <Icon
+                name="edit"
+                :size="14"
+              />编辑
+            </button>
+            <button
+              class="icon-btn sm"
+              title="复制"
+              @click="duplicate(s.id)"
+            >
+              <Icon
+                name="copy"
+                :size="15"
+              />
+            </button>
+            <button
+              class="icon-btn sm"
+              title="在文件夹中显示"
+              @click="reveal(s.id)"
+            >
+              <Icon
+                name="folder"
+                :size="15"
+              />
+            </button>
+            <button
+              class="btn ghost small"
+              @click="exportDirectory(s.id)"
+            >
+              导出
+            </button>
+            <button
+              :class="['btn small', confirmDel === s.id ? 'danger' : 'ghost']"
+              :title="confirmDel === s.id ? '再点一次确认删除' : '删除'"
+              @click="remove(s)"
+            >
+              <Icon
+                name="trash"
+                :size="14"
+              />{{ confirmDel === s.id ? '确认删除' : '' }}
+            </button>
+          </div>
         </div>
-        <div class="sm-actions">
-          <button
-            class="btn ghost small"
-            @click="open(s, true)"
-          >
-            查看
-          </button>
-          <button
-            class="btn ghost small"
-            @click="open(s)"
-          >
-            <Icon
-              name="edit"
-              :size="14"
-            />编辑
-          </button>
-          <button
-            class="icon-btn sm"
-            title="复制"
-            @click="duplicate(s.id)"
-          >
-            <Icon
-              name="copy"
-              :size="15"
-            />
-          </button>
-          <button
-            class="icon-btn sm"
-            title="在文件夹中显示"
-            @click="reveal(s.id)"
-          >
-            <Icon
-              name="folder"
-              :size="15"
-            />
-          </button>
-          <button
-            class="btn ghost small"
-            @click="exportDirectory(s.id)"
-          >
-            导出
-          </button>
-          <button
-            :class="['btn small', confirmDel === s.id ? 'danger' : 'ghost']"
-            :title="confirmDel === s.id ? '再点一次确认删除' : '删除'"
-            @click="remove(s)"
-          >
-            <Icon
-              name="trash"
-              :size="14"
-            />{{ confirmDel === s.id ? '确认删除' : '' }}
-          </button>
-        </div>
-      </div>
+      </TransitionGroup>
     </div>
 
     <Teleport to="body">
@@ -459,6 +465,7 @@ const openPicker = () => (skillsState.skillPanel = true)
 
 <style scoped>
 .sm-group {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;

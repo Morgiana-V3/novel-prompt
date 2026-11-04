@@ -103,6 +103,7 @@ const generationLabel = computed(() => {
 <template>
   <div
     class="pw-execution"
+    data-toast-avoid
     aria-label="下一次生成"
     :title="'基于 ' + current.label + ' 的下一版配置'"
   >

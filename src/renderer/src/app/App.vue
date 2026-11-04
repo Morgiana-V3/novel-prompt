@@ -160,6 +160,27 @@ const reverseView = ref<InstanceType<typeof ReverseView>>()
 const generateView = ref<InstanceType<typeof GenerateView>>()
 const contentEl = ref<HTMLElement>()
 
+/** toast 默认贴底居中；当前页面底部有操作栏（data-toast-avoid）时抬到栏上方，避免盖住生成等按钮 */
+const toastBottom = ref(28)
+watch(
+  () => shellState.toast,
+  (text) => {
+    // 在 toast 渲染前量好底栏位置，避免先出现在底部再跳上去
+    if (!text) {
+      return
+    }
+    let bottom = 28
+    for (const bar of document.querySelectorAll<HTMLElement>('[data-toast-avoid]')) {
+      const rect = bar.getBoundingClientRect()
+      if (rect.height && rect.bottom >= window.innerHeight - 4) {
+        bottom = Math.max(bottom, Math.round(window.innerHeight - rect.top + 12))
+      }
+    }
+    toastBottom.value = bottom
+  },
+  { flush: 'pre' },
+)
+
 /**
  * 视图用 v-show 切换，重新显示时其中所有 CSS 进场动画都会重播（卡片依次弹出等）。
  * 切换页面只保留视图自身的淡入（view-in），其余有限次的进场动画直接结束；
@@ -794,6 +815,7 @@ async function onDrop(event2: DragEvent) {
       <div
         v-if="shellState.toast"
         class="toast"
+        :style="{ bottom: `${toastBottom}px` }"
         role="status"
         aria-live="polite"
       >

@@ -38,7 +38,9 @@ function onMiddle(event: MouseEvent, id: string) {
 </script>
 
 <template>
-  <div
+  <TransitionGroup
+    tag="div"
+    name="session-tab"
     class="creation-session-tabs"
     role="tablist"
     aria-label="创作标签"
@@ -85,6 +87,7 @@ function onMiddle(event: MouseEvent, id: string) {
       </button>
     </div>
     <button
+      key="add"
       class="session-tab-add"
       :title="
         creationTabs.list.length >= MAX_TABS
@@ -99,7 +102,7 @@ function onMiddle(event: MouseEvent, id: string) {
         :size="14"
       />
     </button>
-  </div>
+  </TransitionGroup>
 </template>
 
 <style scoped>
@@ -112,6 +115,7 @@ function onMiddle(event: MouseEvent, id: string) {
 }
 
 .session-tab {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -142,6 +146,51 @@ function onMiddle(event: MouseEvent, id: string) {
   border-color: var(--pink-line);
   background: var(--pink-soft);
   font-weight: 600;
+}
+
+/* 激活标签底部的强调线：切换时从中间展开 */
+.session-tab::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--pink);
+  transform: scaleX(0);
+  transition: transform var(--dur-slow) var(--ease-out);
+  pointer-events: none;
+}
+
+.session-tab.active::after {
+  transform: scaleX(1);
+}
+
+/* 新建 / 关闭：宽度展开、收起，相邻标签随之平滑补位 */
+.session-tab-enter-active,
+.session-tab-leave-active {
+  overflow: hidden;
+  transition:
+    max-width var(--dur-slow) var(--ease-out),
+    padding var(--dur-slow) var(--ease-out),
+    margin var(--dur-slow) var(--ease-out),
+    border-width var(--dur-slow) var(--ease-out),
+    opacity var(--dur-base) ease;
+}
+
+.session-tab-enter-from,
+.session-tab-leave-to {
+  max-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  margin-right: -4px;
+  border-width: 0;
+  opacity: 0;
+}
+
+.session-tab-move {
+  transition: transform var(--dur-slow) var(--ease-out);
 }
 
 .session-tab-title {

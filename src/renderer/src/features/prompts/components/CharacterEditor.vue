@@ -6,7 +6,7 @@ import { settingsState } from '../../settings/state'
 import type { AiCharacter } from '@shared/prompts/types'
 import type { NaiImage } from '@shared/images/types'
 import type { NaiVersion } from '@shared/generation/types'
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { parsePosition } from '@shared/generation/presets'
 import { toast } from '../../../shared/lib/notifications'
 import { removeCharacter } from '../actions'
@@ -14,6 +14,7 @@ import { vAutosize } from '../../../shared/lib/autosize'
 import { vTagComplete } from '../tag-complete'
 import Icon from '../../../shared/ui/Icon.vue'
 import PositionEditor from './PositionEditor.vue'
+import { detachLeaving, identityKey } from '../../../shared/lib/list-motion'
 
 const props = withDefaults(
   defineProps<{
@@ -55,7 +56,17 @@ function add() {
   }
 }
 
+/**
+ * 只在点击删除时播放离场与补位动画；导入、切换标签等整体替换时直接换内容，
+ * 避免一批旧卡片叠在新卡片上淡出。
+ */
+const animateList = ref(false)
+let animateTimer: ReturnType<typeof setTimeout> | undefined
+onBeforeUnmount(() => clearTimeout(animateTimer))
 function remove(i: number) {
+  animateList.value = true
+  clearTimeout(animateTimer)
+  animateTimer = setTimeout(() => (animateList.value = false), 400)
   if (!props.characters) {
     return removeCharacter(i)
   }
@@ -76,7 +87,7 @@ function remove(i: number) {
 </script>
 
 <template>
-  <div class="field">
+  <div class="field char-field">
     <div class="field-head">
       <label
         class="field-label"
@@ -110,80 +121,86 @@ function remove(i: number) {
         />添加角色
       </button>
     </div>
-    <div
-      v-for="(character, indexItem) in chars"
-      :key="indexItem"
-      class="char-block"
+    <TransitionGroup
+      name="list"
+      :css="animateList"
+      @before-leave="detachLeaving"
     >
-      <div class="char-head">
-        <span class="group-badge nl"
-          ><Icon
-            name="user"
-            :size="14"
-        /></span>
-        <h3>角色 {{ indexItem + 1 }}</h3>
-        <input
-          v-model="character.position"
-          :class="['input sm', { 'pos-bad': badPos(character.position) }]"
-          :readonly="disabled"
-          spellcheck="false"
-          :placeholder="isV5 ? '位置，如 0.3,0.5 或 B3（可空）' : '位置，如 B3（可空）'"
-          :title="badPos(character.position) ? '这个写法无法解析，生图时会被忽略' : ''"
-        />
-        <button
-          :disabled="disabled"
-          class="icon-btn sm"
-          title="编辑角色位置"
-          @click="posEditing = indexItem"
-        >
-          <Icon
-            name="frame"
-            :size="15"
+      <div
+        v-for="(character, indexItem) in chars"
+        :key="identityKey(character)"
+        class="char-block"
+      >
+        <div class="char-head">
+          <span class="group-badge nl"
+            ><Icon
+              name="user"
+              :size="14"
+          /></span>
+          <h3>角色 {{ indexItem + 1 }}</h3>
+          <input
+            v-model="character.position"
+            :class="['input sm', { 'pos-bad': badPos(character.position) }]"
+            :readonly="disabled"
+            spellcheck="false"
+            :placeholder="isV5 ? '位置，如 0.3,0.5 或 B3（可空）' : '位置，如 B3（可空）'"
+            :title="badPos(character.position) ? '这个写法无法解析，生图时会被忽略' : ''"
           />
-        </button>
-        <button
-          :disabled="disabled"
-          class="icon-btn sm ml-auto"
-          title="删除角色"
-          @click="remove(indexItem)"
-        >
-          <Icon
-            name="trash"
-            :size="15"
-          />
-        </button>
+          <button
+            :disabled="disabled"
+            class="icon-btn sm"
+            title="编辑角色位置"
+            @click="posEditing = indexItem"
+          >
+            <Icon
+              name="frame"
+              :size="15"
+            />
+          </button>
+          <button
+            :disabled="disabled"
+            class="icon-btn sm ml-auto"
+            title="删除角色"
+            @click="remove(indexItem)"
+          >
+            <Icon
+              name="trash"
+              :size="15"
+            />
+          </button>
+        </div>
+        <div class="composer short mini">
+          <SnippetButton :disabled="disabled" />
+          <textarea
+            v-model="character.prompt"
+            v-autosize
+            v-tag-complete
+            :readonly="disabled"
+            data-src="pos"
+            spellcheck="false"
+            placeholder="输入角色提示词"
+            @keydown="deleteSelectedToken"
+            @focus="!characters && (promptState.focus = { kind: 'char', index: indexItem })"
+          ></textarea>
+        </div>
+        <div class="composer short mini neg">
+          <SnippetButton :disabled="disabled" />
+          <textarea
+            v-model="character.negative"
+            v-autosize
+            v-tag-complete
+            :readonly="disabled"
+            data-src="neg"
+            spellcheck="false"
+            placeholder="输入角色负面提示词（可选）"
+            @keydown="deleteSelectedToken"
+            @focus="
+              !characters && (promptState.focus = { kind: 'char', index: indexItem, neg: true })
+            "
+          ></textarea>
+        </div>
       </div>
-      <div class="composer short mini">
-        <SnippetButton :disabled="disabled" />
-        <textarea
-          v-model="character.prompt"
-          v-autosize
-          v-tag-complete
-          :readonly="disabled"
-          data-src="pos"
-          spellcheck="false"
-          placeholder="输入角色提示词"
-          @keydown="deleteSelectedToken"
-          @focus="!characters && (promptState.focus = { kind: 'char', index: indexItem })"
-        ></textarea>
-      </div>
-      <div class="composer short mini neg">
-        <SnippetButton :disabled="disabled" />
-        <textarea
-          v-model="character.negative"
-          v-autosize
-          v-tag-complete
-          :readonly="disabled"
-          data-src="neg"
-          spellcheck="false"
-          placeholder="输入角色负面提示词（可选）"
-          @keydown="deleteSelectedToken"
-          @focus="
-            !characters && (promptState.focus = { kind: 'char', index: indexItem, neg: true })
-          "
-        ></textarea>
-      </div>
-    </div>
+    </TransitionGroup>
   </div>
   <PositionEditor
     v-if="posEditing !== null"
@@ -195,3 +212,10 @@ function remove(i: number) {
     @close="posEditing = null"
   />
 </template>
+
+<style scoped>
+/* 删除角色时离场卡片按容器定位 */
+.char-field {
+  position: relative;
+}
+</style>

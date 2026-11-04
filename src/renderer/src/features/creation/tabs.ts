@@ -286,7 +286,7 @@ export function createTab(title = ''): boolean {
 export function openTabForLoad(title = ''): boolean {
   const live: TabContent = { ...blankContent(), ...capture().content }
   if (hasContent(live)) {
-    return createTab(title)
+    return createTab(title && uniqueTitle(title))
   }
   const reason = blocker()
   if (reason) {
@@ -294,12 +294,27 @@ export function openTabForLoad(title = ''): boolean {
     return false
   }
   if (title) {
-    activeEntry().title = title.trim().slice(0, 40)
+    activeEntry().title = uniqueTitle(title, creationTabs.activeId)
     saveTabs()
   }
   return true
 }
 
+/** 同名标签自动加序号，例如多次载入同一个收藏：灰衣配方、灰衣配方 (2)… */
+function uniqueTitle(title: string, exceptId?: string): string {
+  const base = title.trim().slice(0, 36)
+  const used = new Set(
+    creationTabs.list.filter((tab) => tab.id !== exceptId).map((tab) => tabTitle(tab)),
+  )
+  if (!used.has(base)) {
+    return base
+  }
+  let n = 2
+  while (used.has(`${base} (${n})`)) {
+    n++
+  }
+  return `${base} (${n})`
+}
 
 export function closeTab(id: string): void {
   if (creationTabs.list.length <= 1) {

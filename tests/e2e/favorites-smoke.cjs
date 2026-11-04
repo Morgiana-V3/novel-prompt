@@ -375,6 +375,14 @@ app.whenReady().then(async () => {
       2,
       'loading over existing content opens a new creation tab',
     )
+    const loadedTitles = await js(
+      `[...document.querySelectorAll('.session-tab-title')].map(e=>e.textContent.trim())`,
+    )
+    assert.equal(
+      loadedTitles[1],
+      `${loadedTitles[0]} (2)`,
+      'same favorite twice gets a numbered tab',
+    )
     await tab('生图预览')
     assert.equal(
       await js(`document.querySelector('input[aria-label="种子"]').value`),
@@ -407,6 +415,22 @@ app.whenReady().then(async () => {
       'false',
     )
     await js(`document.querySelector('.viewer .favorite-button').click()`)
+    // 点击即点亮并播放粒子（乐观更新，不等保存返回）
+    assert.equal(
+      await js(`document.querySelector('.viewer .favorite-button').getAttribute('aria-pressed')`),
+      'true',
+    )
+    assert.equal(await js(`document.querySelectorAll('.viewer .favorite-burst i').length`), 8)
+    for (const ms of [90, 260]) {
+      await delay(ms === 90 ? 90 : 170)
+      const star = await js(
+        `(()=>{const r=document.querySelector('.viewer .favorite-button').getBoundingClientRect();return {x:Math.round(r.x-30),y:Math.round(r.y-30),width:Math.round(r.width+60),height:Math.round(r.height+60)}})()`,
+      )
+      fs.writeFileSync(
+        join(profile, `favorite-burst-${ms}ms.png`),
+        (await win.webContents.capturePage(star)).toPNG(),
+      )
+    }
     await wait(
       `document.querySelector('.viewer .favorite-button').getAttribute('aria-pressed')==='true'`,
     )

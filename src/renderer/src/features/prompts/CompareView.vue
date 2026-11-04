@@ -39,7 +39,7 @@ function activeTextarea() {
   const field = target.value
   if (field.kind === 'char') {
     return editor()
-      ?.querySelectorAll('.char-block')
+      ?.querySelectorAll('.char-block:not(.list-leave-active)')
       [field.index]?.querySelector<HTMLTextAreaElement>(
         `textarea[data-src="${field.neg ? 'neg' : 'pos'}"]`,
       )

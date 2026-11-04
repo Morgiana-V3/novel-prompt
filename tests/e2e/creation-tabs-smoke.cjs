@@ -107,9 +107,13 @@ app.whenReady().then(async () => {
       await pause(60)
     }
     const tabTitles = () =>
-      js(`[...document.querySelectorAll('.session-tab-title')].map(e=>e.textContent.trim())`)
+      js(
+        `[...document.querySelectorAll('.session-tab:not(.session-tab-leave-active) .session-tab-title')].map(e=>e.textContent.trim())`,
+      )
     const clickTab = async (index) => {
-      await js(`document.querySelectorAll('.session-tab')[${index}].click()`)
+      await js(
+        `document.querySelectorAll('.session-tab:not(.session-tab-leave-active)')[${index}].click()`,
+      )
       await pause(80)
     }
     const aiText = () => js(`document.querySelector('#creation-panel-ai').innerText`)
@@ -122,8 +126,13 @@ app.whenReady().then(async () => {
     await setMain('tab one prompt, solo')
     assert.deepEqual(await tabTitles(), ['tab one prompt'])
 
-    // 新标签是全新开始
+    // 新标签是全新开始；标签以展开动画进场
     await js(`document.querySelector('.session-tab-add').click()`)
+    await pause(20)
+    assert.ok(
+      await js(`!!document.querySelector('.session-tab-enter-active')`),
+      'tab enter animates',
+    )
     await pause(80)
     assert.equal((await tabTitles()).length, 2)
     assert.equal(await js(`${main}.value`), '')
@@ -161,8 +170,20 @@ app.whenReady().then(async () => {
 
     // 关闭标签可撤销
     await js(`document.querySelectorAll('.session-tab-close')[0].click()`)
-    await pause(80)
+    await pause(20)
+    assert.ok(
+      await js(`!!document.querySelector('.session-tab-leave-active')`),
+      'tab leave animates',
+    )
+    await pause(60)
     assert.deepEqual(await tabTitles(), ['tab two prompt'])
+    // toast 抬到底部生成栏上方，不盖住「生成」按钮
+    assert.ok(
+      await js(
+        `(()=>{const t=document.querySelector('.toast').getBoundingClientRect();const d=document.querySelector('#creation-generation-controls').getBoundingClientRect();return t.bottom<=d.top})()`,
+      ),
+      'toast sits above the generation dock',
+    )
     assert.equal(await js(`${main}.value`), 'tab two prompt')
     await click('button', '撤销')
     assert.equal((await tabTitles()).length, 2)

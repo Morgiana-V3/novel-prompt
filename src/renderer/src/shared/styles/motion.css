@@ -201,6 +201,35 @@
   }
 }
 
+/* 列表增删：TransitionGroup name="list"，离场元素由 detachLeaving 移出文档流 */
+.list-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.list-enter-active {
+  transition:
+    opacity var(--dur-slow) var(--ease-out),
+    transform var(--dur-slow) var(--ease-out);
+}
+
+.list-leave-active {
+  z-index: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--dur-base) var(--ease-in),
+    transform var(--dur-base) var(--ease-in);
+}
+
+.list-leave-to {
+  opacity: 0;
+  transform: scale(0.94);
+}
+
+.list-move {
+  transition: transform var(--dur-slow) var(--ease-out);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -7,6 +7,7 @@ import WorkspaceBar from '../prompts/components/WorkspaceBar.vue'
 import CreationTabs from './CreationTabs.vue'
 import { resizeWithin } from '../../shared/lib/autosize'
 import { promptState } from '../prompts/state'
+import { creationTabs } from './tabs'
 import SplitHandle from '../../shared/ui/SplitHandle.vue'
 
 const props = defineProps<{ active: boolean; panel: string }>()
@@ -65,6 +66,25 @@ function tabKey(event: KeyboardEvent) {
   emit('navigate', item.key)
   document.getElementById(`creation-tab-${item.key}`)?.focus({ preventScroll: true })
 }
+// 切换创作标签时，编辑区和结果区轻微淡入，提示「换了一份内容」
+const panelHost = ref<HTMLElement>()
+watch(
+  () => creationTabs.activeId,
+  () => {
+    if (!props.active || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return
+    }
+    for (const element of [editor.value, panelHost.value]) {
+      element?.animate(
+        [
+          { opacity: 0.35, transform: 'translateY(4px)' },
+          { opacity: 1, transform: 'none' },
+        ],
+        { duration: 220, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
+      )
+    }
+  },
+)
 watch(
   () => [props.active, promptState.characters.length],
   async () => {
@@ -138,13 +158,19 @@ watch(
           class="creation-panel-actions"
         ></div>
       </div>
-      <div class="creation-panels"><slot /></div>
+      <div
+        ref="panelHost"
+        class="creation-panels"
+      >
+        <slot />
+      </div>
     </section>
     <!-- Target is mounted before the slotted generator Teleport resolves on tab entry. -->
     <div
       v-show="active"
       id="creation-generation-controls"
       class="creation-generation-controls"
+      data-toast-avoid
     ></div>
   </div>
 </template>

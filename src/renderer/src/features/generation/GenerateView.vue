@@ -38,6 +38,7 @@ import { usePageShortcuts, runKeyLabel } from '../../shared/lib/shortcuts'
 import { usePagePresentation } from '../../shared/lib/page-presentation'
 import { useSettingsPopover } from './use-settings-popover'
 import { lockTabs, tabRef } from '../creation/tabs'
+import { detachLeaving } from '../../shared/lib/list-motion'
 const { navigate, isActive } = usePagePresentation()
 const {
   open: parametersOpen,
@@ -717,7 +718,12 @@ function openImageWorkspace() {
           >
             当前筛选下没有图片
           </p>
-          <div class="gallery">
+          <TransitionGroup
+            tag="div"
+            name="gallery"
+            class="gallery"
+            @before-leave="detachLeaving"
+          >
             <div
               v-for="(image, index) in visibleGallery"
               :key="image.name"
@@ -769,7 +775,7 @@ function openImageWorkspace() {
                 </button>
               </div>
             </div>
-          </div>
+          </TransitionGroup>
         </div>
       </template>
     </section>

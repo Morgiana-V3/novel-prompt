@@ -131,93 +131,95 @@ defineExpose({
       >
         <p>描述想生成或修改的内容</p>
       </div>
-      <div
-        v-for="messageItem in work.messages"
-        :key="messageItem.id"
-        :class="['pw-message', messageItem.role, { failed: messageItem.error }]"
-      >
-        <template v-if="messageItem.role === 'event'"
-          ><span>{{ messageItem.text }}</span></template
-        ><template v-else
-          ><div class="pw-message-meta">
-            <b>{{ messageItem.role === 'user' ? '你' : messageItem.author?.name || 'AI' }}</b
-            ><button
-              :disabled="editingPrompt"
-              @click="emit('view', messageItem.versionId)"
-            >
-              {{ label(messageItem.versionId) }}</button
-            ><time>{{ time(messageItem.createdAt) }}</time>
-          </div>
-          <MarkdownText
-            v-if="messageItem.role === 'assistant'"
-            :text="messageItem.text"
-          />
-          <div
-            v-else
-            class="pw-message-text"
-          >
-            {{ messageItem.text }}
-          </div>
-          <div
-            v-if="
-              messageItem.discussion && messageItem.discussion.versionId !== messageItem.versionId
-            "
-            class="pw-citations"
-          >
-            <button
-              :disabled="editingPrompt"
-              @click="emit('view', messageItem.discussion.versionId)"
-            >
-              讨论 {{ displayVersionLabel(messageItem.discussion.label) }}</button
-            ><span>建议修改 {{ label(messageItem.versionId) }}</span>
-          </div>
-          <div
-            v-if="messageItem.referenceIds?.length"
-            class="pw-citations"
-          >
-            <button
-              v-for="id in messageItem.referenceIds"
-              :key="id"
-              :disabled="editingPrompt"
-              @click="emit('view', id)"
-            >
-              引用 {{ label(id) }}
-            </button>
-          </div>
-          <details
-            v-if="messageItem.regions?.length"
-            class="pw-message-regions"
-          >
-            <summary class="disclosure">
-              本轮区域 · {{ messageItem.regions.map((region) => region.label).join('、') }}
-            </summary>
-            <p
-              v-for="region in messageItem.regions"
-              :key="region.id"
-            >
-              <b>{{ region.label }}</b> · {{ region.instruction || '要求见讨论内容' }}
-            </p>
-          </details>
-          <WorkspaceProposalCard
-            v-if="messageItem.proposal"
-            :message="messageItem"
-            :selected-proposal-id="selectedProposalId"
-            :busy="busy"
-            :is-stale="stale(messageItem)"
-            :adopted-version-id="current.id"
-            :execution-label="planLabel(messageItem.proposal.execution, messageItem.versionId)"
-            :status-label="status(messageItem.proposal.status)"
-            @decide="emit('proposal', messageItem, $event)"
-          />
-          <details
-            v-if="messageItem.skills"
-            class="pw-used-skills"
-          >
-            <summary class="disclosure">本轮 Skill · {{ messageItem.skills.length }}</summary>
-            {{ messageItem.skills.join('、') || '未启用 Skill' }}
-          </details></template
+      <TransitionGroup name="list">
+        <div
+          v-for="messageItem in work.messages"
+          :key="messageItem.id"
+          :class="['pw-message', messageItem.role, { failed: messageItem.error }]"
         >
-      </div>
+          <template v-if="messageItem.role === 'event'"
+            ><span>{{ messageItem.text }}</span></template
+          ><template v-else
+            ><div class="pw-message-meta">
+              <b>{{ messageItem.role === 'user' ? '你' : messageItem.author?.name || 'AI' }}</b
+              ><button
+                :disabled="editingPrompt"
+                @click="emit('view', messageItem.versionId)"
+              >
+                {{ label(messageItem.versionId) }}</button
+              ><time>{{ time(messageItem.createdAt) }}</time>
+            </div>
+            <MarkdownText
+              v-if="messageItem.role === 'assistant'"
+              :text="messageItem.text"
+            />
+            <div
+              v-else
+              class="pw-message-text"
+            >
+              {{ messageItem.text }}
+            </div>
+            <div
+              v-if="
+                messageItem.discussion && messageItem.discussion.versionId !== messageItem.versionId
+              "
+              class="pw-citations"
+            >
+              <button
+                :disabled="editingPrompt"
+                @click="emit('view', messageItem.discussion.versionId)"
+              >
+                讨论 {{ displayVersionLabel(messageItem.discussion.label) }}</button
+              ><span>建议修改 {{ label(messageItem.versionId) }}</span>
+            </div>
+            <div
+              v-if="messageItem.referenceIds?.length"
+              class="pw-citations"
+            >
+              <button
+                v-for="id in messageItem.referenceIds"
+                :key="id"
+                :disabled="editingPrompt"
+                @click="emit('view', id)"
+              >
+                引用 {{ label(id) }}
+              </button>
+            </div>
+            <details
+              v-if="messageItem.regions?.length"
+              class="pw-message-regions"
+            >
+              <summary class="disclosure">
+                本轮区域 · {{ messageItem.regions.map((region) => region.label).join('、') }}
+              </summary>
+              <p
+                v-for="region in messageItem.regions"
+                :key="region.id"
+              >
+                <b>{{ region.label }}</b> · {{ region.instruction || '要求见讨论内容' }}
+              </p>
+            </details>
+            <WorkspaceProposalCard
+              v-if="messageItem.proposal"
+              :message="messageItem"
+              :selected-proposal-id="selectedProposalId"
+              :busy="busy"
+              :is-stale="stale(messageItem)"
+              :adopted-version-id="current.id"
+              :execution-label="planLabel(messageItem.proposal.execution, messageItem.versionId)"
+              :status-label="status(messageItem.proposal.status)"
+              @decide="emit('proposal', messageItem, $event)"
+            />
+            <details
+              v-if="messageItem.skills"
+              class="pw-used-skills"
+            >
+              <summary class="disclosure">本轮 Skill · {{ messageItem.skills.length }}</summary>
+              {{ messageItem.skills.join('、') || '未启用 Skill' }}
+            </details></template
+          >
+        </div>
+      </TransitionGroup>
       <div
         v-if="pendingRequest"
         class="pw-external-wait"
