@@ -325,11 +325,7 @@ usePageShortcuts(() => isActive('ai'), {
             <textarea
               v-model="request"
               v-autosize
-              :placeholder="
-                mode === 'optimize'
-                  ? '例如：风格偏厚涂一点；换成夜景；左边的女孩改成在笑'
-                  : '例如：樱花树下的长椅上坐着两个女孩。左边是银发红瞳、穿白色连衣裙的少女，正笑着把头靠在右边女孩的肩上；右边是黑色短发、戴眼镜、穿学生制服的女孩，低头看书。午后阳光，柔和的水彩风。'
-              "
+              :placeholder="mode === 'optimize' ? '输入修改要求（可选）' : '描述你想生成的画面'"
             ></textarea>
           </div>
           <label
@@ -410,7 +406,8 @@ usePageShortcuts(() => isActive('ai'), {
         class="empty"
       >
         <Mascot
-          mood="oops"
+          mood="shrug"
+          motion="loop"
           :size="230"
         />
         <p>出了点问题，请查看上方的报错信息</p>
@@ -420,17 +417,11 @@ usePageShortcuts(() => isActive('ai'), {
         class="empty"
       >
         <Mascot
-          mood="chill"
+          mood="ready"
+          motion="loop"
           :size="230"
         />
-        <p v-if="mode === 'semantic'">
-          用中文把画面讲清楚就好。我会数清画面里有几个人，把共享的画风、构图、背景放进主提示词，每个人的外貌、服装、动作拆成单独的角色提示词并排好位置，再给容易串色的角色加上角色负面，最后配一套负面提示词。已有提示词的话，直接粘贴到左边，我会在它的基础上改。
-        </p>
-        <p v-else>
-          我会在当前提示词的基础上按你的要求修改：去本地 Danbooru 库里找真实存在的
-          tag，按侧栏里启用的 Skill 排好顺序，最后再检查一遍，不存在的 tag
-          会自动换掉，你原有的内容不会被悄悄删掉。结果要点「采用」才会写进当前提示词。
-        </p>
+        <p>等待{{ mode === 'semantic' ? '生成' : '优化' }}提示词</p>
       </div>
       <template v-else>
         <p

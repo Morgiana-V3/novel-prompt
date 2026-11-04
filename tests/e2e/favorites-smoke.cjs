@@ -345,7 +345,7 @@ app.whenReady().then(async () => {
     await wait(`JSON.parse(localStorage.getItem('np-workspace-v1'))?.prompt==='dog, outdoors'`)
     assert.equal(
       await js(`document.querySelector('.topbar-title').textContent.trim()`),
-      '收藏',
+      '收藏管理',
       'loading stays on the same page',
     )
     assert.deepEqual(win.getBounds(), beforeBounds, 'loading preserves window bounds')

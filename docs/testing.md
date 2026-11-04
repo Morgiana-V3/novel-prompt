@@ -1,6 +1,6 @@
 # 验证入口
 
-`npm run check:quick` 先执行全范围格式、ESLint、Stylelint、依赖边界和类型检查，再构建一次，运行测试产物路径、代理启动/重连、工作台索引与图片清理。`npm run check:full` 复用同一次构建运行统一入口登记的全部离线回归场景（当前 33 个）。失败立即退出；日志目录在启动时打印，位于系统临时目录。
+`npm run check:quick` 先执行全范围格式、ESLint、Stylelint、依赖边界和类型检查，再构建一次，运行测试产物路径、代理启动/重连、工作台索引与图片清理。`npm run check:full` 复用同一次构建运行统一入口登记的全部离线回归场景（当前 38 个）。失败立即退出；日志目录在启动时打印，位于系统临时目录。
 
 定向运行：`node scripts/check.mjs pages mcp:index workspace:cleanup`。窗口场景按需构建一次，纯源码服务场景通过测试专用 TypeScript 加载器运行。定向命令执行类型检查；完整风格检查由 quick/full 负责。
 

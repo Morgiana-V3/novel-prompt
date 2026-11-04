@@ -1,5 +1,6 @@
 const { temporaryProfile } = require('../support/fixtures.cjs')
 const { app, BrowserWindow, ipcMain, dialog } = require('electron')
+app.disableHardwareAcceleration()
 const {
   mkdirSync,
   writeFileSync,
@@ -203,6 +204,14 @@ app.whenReady().then(async () => {
     })
     require('../../src/main/adapters/ipc/skills.ts').registerSkillsIpc({ getWindow: () => win })
     const handlers = {
+      'collections:list': () => [{ id: 'default', name: '默认图集', createdAt: 0 }],
+      'storage:info': () => ({
+        path: profile,
+        bytes: 0,
+        pending: null,
+        previous: null,
+        error: null,
+      }),
       'settings:get': () => getSettings(),
       'settings:save': (_event, patch) => saveSettings(patch),
       'agents:list': () => [],
@@ -255,9 +264,13 @@ app.whenReady().then(async () => {
       )
     await win.loadFile(join(__dirname, '../../out/renderer/index.html'))
     await wait(
-      "[...document.querySelectorAll('button')].some(element => element.textContent.trim() === '设置')",
+      "[...document.querySelectorAll('button')].some(element => element.textContent.trim() === '应用设置')",
     )
-    await click('设置')
+    await click('应用设置')
+    await wait("!!document.querySelector('#settings-tab-services')")
+    await js("document.querySelector('#settings-tab-services').click()")
+    await wait("!!document.querySelector('#settings-service-skills')")
+    await js("document.querySelector('#settings-service-skills').click()")
     await wait("!!document.querySelector('#skill-manager')")
     await js("document.querySelector('#skill-manager').scrollIntoView({ block: 'start' })")
     await new Promise((resolve) => setTimeout(resolve, 500))

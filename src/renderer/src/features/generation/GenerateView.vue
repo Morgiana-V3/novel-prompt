@@ -620,14 +620,12 @@ function openImageWorkspace() {
         class="empty"
       >
         <Mascot
-          :mood="hasToken ? 'ready' : 'key'"
+          :mood="hasToken ? 'ready' : 'sleep'"
+          motion="loop"
           :size="230"
         />
-        <p v-if="hasToken">
-          生图用的是「当前提示词」，和 AI
-          优化、画面推测是同一份。点「生成」就能直接看到效果，图片默认临时保存，满意后可留存到图库，或开启自动留存。
-        </p>
-        <p v-else>要先在「设置」里填写 NovelAI 的 Persistent API Token 才能出图哦</p>
+        <p v-if="hasToken">等待生成图片</p>
+        <p v-else>请先配置 NovelAI 服务</p>
         <button
           v-if="!hasToken"
           class="btn primary"
@@ -646,7 +644,8 @@ function openImageWorkspace() {
           :class="['cheer', { warn: last.stopped || (last.anlasDelta ?? 0) < 0 }]"
         >
           <Mascot
-            :mood="last.stopped ? 'oops' : 'thumbs'"
+            :mood="last.stopped ? 'shrug' : 'thumbs'"
+            motion="loop"
             :size="64"
           />
           <div>

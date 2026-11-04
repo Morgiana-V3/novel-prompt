@@ -277,6 +277,22 @@ app.whenReady().then(async () => {
       )
     await win.loadFile(join(buildDirectory, 'renderer/index.html'))
     await waitUI(`document.querySelector('.side-bottom .seg')?.textContent.includes('V5')`)
+    // Hidden creation panes mount together. Visiting them after a full animation
+    // cycle must still show animated assets, rather than the once-only poster.
+    await pause(6000)
+    for (const label of ['词条检查', '智能优化', '画面推测']) {
+      await click('.creation-tab', label)
+      await waitUI(`(() => {
+        const image = document.querySelector('.creation-active .empty .mascot img')
+        return image?.complete && image.naturalWidth > 0 && image.currentSrc.endsWith('.webp')
+      })()`)
+      writeFileSync(
+        join(profile, `creation-empty-${label}.png`),
+        (await win.webContents.capturePage()).toPNG(),
+      )
+    }
+    await click('.creation-tab', '词条检查')
+    console.log('PASS creation empty states remain animated after a full cycle and tab switches')
     await paste('[Prompt]\ntwin tails\n[Undesired Content]\nlowres, blurry')
     await waitUI(`!!document.querySelector('.alias-item button')`)
     // Click the old DOM button in the same event turn as switching the target field.

@@ -1,25 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import idle from '../../assets/mascot/idle.png'
-import happy from '../../assets/mascot/happy.png'
-import busy from '../../assets/mascot/busy.png'
-import confused from '../../assets/mascot/confused.png'
-import chill from '../../assets/mascot/chill.png'
-import wink from '../../assets/mascot/wink.png'
 import avatar from '../../assets/mascot/avatar.png'
 import reading from '../../assets/mascot/reading.png'
-import think from '../../assets/mascot/think.png'
 import paint from '../../assets/mascot/paint.png'
-import oops from '../../assets/mascot/oops.png'
 import sleep from '../../assets/mascot/sleep.png'
 import search from '../../assets/mascot/search.png'
 import shrug from '../../assets/mascot/shrug.png'
 import point from '../../assets/mascot/point.png'
-import key from '../../assets/mascot/key.png'
 import thumbs from '../../assets/mascot/thumbs.png'
-import ok from '../../assets/mascot/ok.png'
-import check from '../../assets/mascot/check.png'
-import crystal from '../../assets/mascot/crystal.png'
 import ready from '../../assets/mascot/ready.png'
 import lookup from '../../assets/mascot/lookup.png'
 import readyMotion from '../../assets/mascot/motion/ready.webp'
@@ -33,25 +22,14 @@ import lookupMotion from '../../assets/mascot/motion/lookup.webp'
 
 const SRC = {
   idle,
-  happy,
-  busy,
-  confused,
-  chill,
-  wink,
   avatar,
   reading,
-  think,
   paint,
-  oops,
   sleep,
   search,
   shrug,
   point,
-  key,
   thumbs,
-  ok,
-  check,
-  crystal,
   ready,
   lookup,
 }
@@ -174,29 +152,6 @@ onBeforeUnmount(() => clearTimeout(stopTimer))
   animation: m-boing 0.6s var(--bounce);
 }
 
-/* 高频情绪动作只播两次，之后回到呼吸，避免长时间停留在页面上时持续抖动 */
-.m-happy img {
-  animation:
-    m-jump 0.9s var(--bounce) 2,
-    m-breathe 3.4s ease-in-out 1.8s infinite;
-}
-
-.m-busy img {
-  animation: m-scribble 0.5s ease-in-out infinite alternate;
-}
-
-.m-confused img {
-  animation: m-tilt 2.4s ease-in-out infinite;
-}
-
-.m-chill img {
-  animation: m-sway 4s ease-in-out infinite;
-}
-
-.m-wink img {
-  animation: m-bob 1.6s ease-in-out infinite;
-}
-
 /* 侧栏常驻头像保持静止，只在悬停时回应 */
 .m-avatar img {
   animation: none;
@@ -217,26 +172,15 @@ onBeforeUnmount(() => clearTimeout(stopTimer))
   animation: m-breathe 4.6s ease-in-out infinite;
 }
 
-.m-think img,
 .m-shrug img {
   animation: m-tilt 3s ease-in-out infinite;
 }
 
-.m-oops img {
-  animation:
-    m-shake 0.5s ease-in-out 2,
-    m-breathe 3.4s ease-in-out 1s infinite;
-}
-
-.m-search img,
-.m-crystal img {
+.m-search img {
   animation: m-sway 3.6s ease-in-out infinite;
 }
 
-.m-point img,
-.m-key img,
-.m-ok img,
-.m-check img {
+.m-point img {
   animation: m-bob 1.8s ease-in-out infinite;
 }
 
@@ -386,21 +330,6 @@ onBeforeUnmount(() => clearTimeout(stopTimer))
 
   75% {
     transform: rotate(5deg);
-  }
-}
-
-@keyframes m-shake {
-  0%,
-  100% {
-    transform: translateX(0) rotate(0);
-  }
-
-  25% {
-    transform: translateX(-2px) rotate(-1.5deg);
-  }
-
-  75% {
-    transform: translateX(2px) rotate(1.5deg);
   }
 }
 

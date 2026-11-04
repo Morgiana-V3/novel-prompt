@@ -162,7 +162,7 @@ function remove(i: number) {
           :readonly="disabled"
           data-src="pos"
           spellcheck="false"
-          placeholder="girl, silver hair, red eyes, ..."
+          placeholder="输入角色提示词"
           @keydown="deleteSelectedToken"
           @focus="!characters && (promptState.focus = { kind: 'char', index: indexItem })"
         ></textarea>
@@ -176,7 +176,7 @@ function remove(i: number) {
           :readonly="disabled"
           data-src="neg"
           spellcheck="false"
-          placeholder="角色负面（可空），如 glasses, animal ears"
+          placeholder="输入角色负面提示词（可选）"
           @keydown="deleteSelectedToken"
           @focus="
             !characters && (promptState.focus = { kind: 'char', index: indexItem, neg: true })

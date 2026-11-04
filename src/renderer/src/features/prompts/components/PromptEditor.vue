@@ -105,9 +105,7 @@ function onPaste(event2: ClipboardEvent) {
         aria-label="主提示词"
         data-src="pos"
         spellcheck="false"
-        :placeholder="
-          disabled ? '未设置主提示词' : '2girls, artist:xxx, outdoors, cherry blossoms, ...'
-        "
+        :placeholder="disabled ? '未设置主提示词' : '输入主提示词'"
         @paste="onPaste"
         @keydown="deleteSelectedToken"
         @focus="!draft && (promptState.focus = { kind: 'base' })"
@@ -139,7 +137,7 @@ function onPaste(event2: ClipboardEvent) {
         aria-label="负面提示词"
         data-src="neg"
         spellcheck="false"
-        :placeholder="disabled ? '未设置负面提示词' : 'lowres, worst quality, bad quality, ...'"
+        :placeholder="disabled ? '未设置负面提示词' : '输入负面提示词（可选）'"
         @keydown="deleteSelectedToken"
         @focus="!draft && (promptState.focus = { kind: 'negative' })"
       ></textarea>

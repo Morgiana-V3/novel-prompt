@@ -9,6 +9,7 @@ import { copy, toast } from '../../shared/lib/notifications'
 import { workKey } from './actions'
 import { cleanErr } from '../../shared/lib/format'
 import Icon from '../../shared/ui/Icon.vue'
+import Mascot from '../../shared/ui/Mascot.vue'
 import BasisPill from './components/BasisPill.vue'
 import EvidenceNote from './components/EvidenceNote.vue'
 import type { IconName } from '../../shared/ui/icons'
@@ -49,7 +50,7 @@ async function run() {
     return
   }
   if (!settingsState.settings?.apiKey) {
-    error.value = '请先在「设置」中填写 DeepSeek API Key'
+    error.value = '请先在「应用设置 → AI 服务 → 模型接口」中填写 API Key'
     return
   }
   if (
@@ -284,6 +285,11 @@ usePageShortcuts(() => isActive('preview'), {
         v-if="running"
         class="empty"
       >
+        <Mascot
+          mood="search"
+          motion="loop"
+          :size="240"
+        />
         <p>
           正在脑内作画<span class="dots"><i></i><i></i><i></i></span>
         </p>
@@ -292,12 +298,22 @@ usePageShortcuts(() => isActive('preview'), {
         v-else-if="error && !result"
         class="empty"
       >
+        <Mascot
+          mood="shrug"
+          motion="loop"
+          :size="230"
+        />
         <p>推测失败，请查看上方错误信息</p>
       </div>
       <div
         v-else-if="!result"
         class="empty"
       >
+        <Mascot
+          mood="search"
+          motion="loop"
+          :size="230"
+        />
         <p>点击「开始推测」查看当前提示词可能生成的画面。</p>
       </div>
       <template v-else>
