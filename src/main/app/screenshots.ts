@@ -303,14 +303,16 @@ export async function takeScreenshots(win: BrowserWindow): Promise<void> {
     await clickText('.creation-tab', label)
   }
   /** 点分页底栏的主按钮，等它重新可用（AI 请求结束） */
+  const waiting = (label: string) =>
+    "[...document.querySelectorAll('#creation-panel-actions .btn.accent')].some((b) => !b.disabled && b.getClientRects().length && b.textContent.includes(" +
+    JSON.stringify(label) +
+    '))'
   const runAndWait = async (label: string) => {
     await clickText('#creation-panel-actions .btn.accent', label)
     await sleep(500)
-    const done = await waitFor(
-      `!document.querySelector('#creation-panel-actions .btn.accent')?.disabled`,
-      300_000,
-    )
-    if (!done) {
+    const done = waitFor(waiting(label), 300_000)
+    const finished = await done
+    if (!finished) {
       console.log(`[screenshots] ${label} 超时`)
     }
   }
@@ -390,6 +392,7 @@ export async function takeScreenshots(win: BrowserWindow): Promise<void> {
   if (!(await waitFor(`!!document.querySelector('.pw-shell')`, 5000))) {
     throw new Error('Workspace did not open')
   }
+  await js(`document.querySelectorAll('.pw-proposal').forEach((p) => (p.open = false))`)
   await shot('workspace')
   await js(
     `(()=>{const proposal=document.querySelector('.pw-thread .pw-proposal');if(!proposal)throw new Error('Demo proposal missing');proposal.open=true;proposal.scrollIntoView({block:'nearest'})})()`,

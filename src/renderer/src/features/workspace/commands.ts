@@ -122,16 +122,45 @@ export function createWorkspaceCommands(host: WorkspaceCommandHost) {
     generate,
     proposal,
   } = host
-  async function frontendAction(request: FrontendRequest, ctx: FrontendContext) {
-    const resumeOwner = configOwner.value
-    if (
+  // 上一步的界面状态可能还没复位：外部 Agent 按指南连续调用时先等它结束再判断，
+  // 而不是立刻拒绝，避免「采纳方案后马上生成」这类顺序操作互相挡住。
+  async function settle(signal: AbortSignal, timeout = 5000) {
+    const deadline = Date.now() + timeout
+    while (
       operation.value ||
       remoteBusy.value ||
       editing.value ||
       renaming.value ||
-      host.frontendContext ||
-      (editingPrompt.value && request.action !== 'config')
+      host.frontendContext
     ) {
+      if (signal.aborted) {
+        throw new Error('已停止，已保存的内容保留')
+      }
+      if (Date.now() >= deadline) {
+        return false
+      }
+      await new Promise((resolve) => setTimeout(resolve, 40))
+    }
+    return true
+  }
+  async function frontendAction(request: FrontendRequest, ctx: FrontendContext) {
+    const resumeOwner = configOwner.value
+    const idle = await settle(ctx.signal)
+    // 采纳方案后会打开「下一版配置」。界面上的生成按钮本身会先保存草稿再生成，
+    // 所以生成不算冲突；其他 Agent 的草稿一律不覆盖，其余操作仍需先保存或取消。
+    const draftConflict =
+      request.action !== 'config' &&
+      editingPrompt.value &&
+      !!configOwner.value &&
+      configOwner.value !== ctx.agentSession
+    const unsaved = editingPrompt.value && !['config', 'generate'].includes(request.action)
+    if (draftConflict) {
+      throw new Error('下一版配置由其他 Agent 编辑，请先完成或取消，未覆盖修改')
+    }
+    if (unsaved) {
+      throw new Error('下一版配置仍未保存，请先保存或取消再继续其他操作')
+    }
+    if (!idle) {
       throw new Error('工作台正在编辑或执行任务，请先完成当前操作')
     }
     if (
@@ -380,6 +409,12 @@ export function createWorkspaceCommands(host: WorkspaceCommandHost) {
             : []
         if (request.kind === 'inpaint' && !regions.length) {
           throw new Error('请选择重绘区域')
+        }
+        if (editingPrompt.value) {
+          // 先落盘下一版配置，再写执行方式，避免后保存的草稿覆盖刚选的生成方式
+          await finishConfig()
+          check()
+          await ctx.step('已保存下一版配置，即将生成')
         }
         await setExecution({
           kind: request.kind!,

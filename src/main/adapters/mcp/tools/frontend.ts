@@ -476,7 +476,7 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
       'ui_generate_workspace',
       '执行生成或重绘',
       'generate',
-      '在前台选择整图生成或已有区域重绘，显示遮罩、执行方式和生成进度，结果进入工作台历史。只使用已采纳稿。必须取得用户生成授权，免费资格检查与付费授权。',
+      '在前台选择整图生成或已有区域重绘，显示遮罩、执行方式和生成进度，结果进入工作台历史。只使用已采纳稿。采纳方案后打开的下一版配置会先保存再生成，不必额外保存。必须取得用户生成授权，免费资格检查与付费授权。',
       {
         kind: { type: 'string', enum: ['generate', 'inpaint'] },
         region_id: { type: 'string' },

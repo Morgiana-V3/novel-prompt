@@ -923,6 +923,8 @@ app.whenReady().then(async () => {
       message_id: front.workspace.latestProposal.id,
       decision: 'accept',
     })
+    // 采纳后停在下一版配置：其他前台写入要求先保存
+    await assert.rejects(act('ui_set_workspace_input', { text: '草稿未保存' }), /下一版配置/)
     await act('ui_edit_workspace_config', { config_action: 'save' })
     await act('ui_view_workspace', { pane: 'prompt' })
     await ui(`document.querySelector('.pw-shell').textContent.includes('blue sky')`)
@@ -943,6 +945,8 @@ app.whenReady().then(async () => {
     )
     freeTier = true
     settings.saveSettings({ naiFreeOnly: true })
+    // 采纳方案后直接生成：下一版配置先落盘再执行，不需要额外保存
+    await act('ui_edit_workspace_config', { config_action: 'begin' })
     const generationIntent = {
       id: frontId,
       expected_token: (await a.data('get_app_state')).desktop.token,
@@ -961,6 +965,7 @@ app.whenReady().then(async () => {
     )
     assert.notEqual(front.workspace.versionId, firstVersion)
     assert.equal(front.workspace.historyOpen, true)
+    assert.equal(front.workspace.config.open, false, 'generation saves and closes the draft')
     const generatedVersion = front.workspace.versionId
     const beforeRegion = pages.readPage(frontId).versions.find((v) => v.id === generatedVersion)
     const originalPng = PNG.sync.read(readFileSync(imageAccess.imagePath(beforeRegion.image.name)))

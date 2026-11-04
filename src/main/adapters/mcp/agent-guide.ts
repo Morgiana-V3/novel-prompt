@@ -70,7 +70,7 @@ ${AGENT_ENTRY}
 4. 需要新需求时 ui_set_workspace_input(text,region_id,reference_ids) 只填写；ui_send_workspace_message 才提交并保存请求。使用用户要求的文本，不替换用户未发送的其他草稿。
 5. get_workspace_context 获取 request.id、stale、discussion、editTarget、draft、params、图片、选区预览和 Skill 正文。discussion 是发送时所指的画面，editTarget 是建议修改的已采用稿；不同则须读取两张图，不把候选图当成当前底图。发送前可用 ui_view_workspace 查看要讨论的候选；发送后切换画布不改变该请求。读 Skill、原图和 preview_path，必要时 get_workspace 补齐历史。stale=true 时走恢复流程。
 6. 开始处理时用 report_workspace_progress(id,revision,request_id,phase:processing) 报告状态；每 120 秒内续报，phase:waiting 结束状态，断线立即清除。然后自行分析、查词、校验；ui_reply_workspace_request 的 response 至少包含 requestId 和 reply。纯讨论不传 proposal；修改方案传 title、warning、完整 draft（base/negative/characters）和 execution（kind:generate|inpaint，regionId:null 或首个区域 id，regionIds:选中区域 id 数组）。这里是 JSON 接口，不能用提示词指南的分节交付文本代替 schema。
-7. 写回只产生回复/建议，不等于采纳。按用户已授权范围 ui_review_workspace(decision:accept|reject|undo,message_id)；仅要求“给建议”则停在方案展示。前台采纳后进入下一版配置编辑页，可继续微调，使用 ui_edit_workspace_config(config_action:save) 返回查看后再执行其他操作。
+7. 写回只产生回复/建议，不等于采纳。按用户已授权范围 ui_review_workspace(decision:accept|reject|undo,message_id)；仅要求“给建议”则停在方案展示。前台采纳后进入下一版配置编辑页，可继续微调：接着 ui_generate_workspace 会先保存草稿再生成（与界面上的生成按钮一致），要回到查看面板则用 ui_edit_workspace_config(config_action:save)；保存或取消之前，其他前台操作会被拒绝。
 8. 已获生图授权后 ui_generate_workspace(kind,region_id?,confirm:true)。完成后 ui_view_workspace(pane:canvas|changes) 并 read_image/ui_capture_app 核验。报告方案、执行、视觉结果三个层次。
 
 ## B. 后台处理
