@@ -1,3 +1,5 @@
+import { requestConfirmation } from '../adapters/desktop/confirmations'
+import { installOperationAuthorization } from './operation-authorization'
 import { migrateStorageOnStartup } from '../modules/settings/storage'
 import { readStorageLocation, storageRoot } from '../infrastructure/storage-root'
 import { app, BrowserWindow, protocol, dialog } from 'electron'
@@ -32,6 +34,11 @@ import { createWindowManager } from './window'
 export function startApplication(): void {
   const windowManager = createWindowManager(() => desktop?.disconnected())
   const createWindow = windowManager.createWindow
+  installOperationAuthorization((options, signal) => {
+    createWindow()
+    const owner = windowManager.current?.webContents
+    return owner ? requestConfirmation(owner, options, signal) : Promise.resolve(false)
+  })
   let desktop: DesktopBridge
   let tasks: TaskManager
   let bridge: Awaited<ReturnType<typeof startMcpBridge>> | undefined

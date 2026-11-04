@@ -126,7 +126,7 @@ export function createWorkspaceActions(context: TaskContext) {
                 send('nai:step', { id: taskId, kind: 'page-generate', step })
               },
               () => signal.aborted,
-              front ? { freeOnly: true } : {},
+              {},
             )
             send('gallery:changed', null)
             return result

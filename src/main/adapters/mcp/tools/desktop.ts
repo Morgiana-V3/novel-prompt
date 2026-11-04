@@ -377,7 +377,7 @@ export function desktopTools(
       name: 'generate_workspace',
       title: '生成会话候选',
       description:
-        '使用当前草稿生成候选或按已有区域重绘；同配置归入同方案。latestGeneratedVersionId 是新结果，currentVersionId 是已采用结果，除首张外不会自动采用。需用户生图授权、confirm:true 和开启允许生图；强制检查免费条件。',
+        '使用当前草稿生成候选或按已有区域重绘；同配置归入同方案。latestGeneratedVersionId 是新结果，currentVersionId 是已采用结果，除首张外不会自动采用。需用户生图授权、confirm:true 和开启允许生图；检查免费资格，付费或费用未知时须由用户授权。',
       inputSchema: {
         type: 'object',
         properties: {
@@ -428,7 +428,6 @@ export function desktopTools(
             progress ?? (() => {}),
             () => signal.aborted,
             {
-              freeOnly: true,
               onResult: (result) => {
                 stopped = result.stopped ?? null
               },

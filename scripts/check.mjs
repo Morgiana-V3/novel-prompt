@@ -11,6 +11,9 @@ const electron = require('electron')
 const mode = process.argv[2] ?? 'quick'
 const output = temporaryProfile('novel-prompt-check-')
 const cases = {
+  pricing: ['node', 'tests/unit/novelai-pricing.cjs', false],
+  confirmations: ['electron', 'tests/integration/confirmation-smoke.cjs', false],
+  'operations:policy': ['electron', 'tests/integration/operation-policy-smoke.cjs', false],
   'images:clipboard': ['electron', 'tests/integration/image-clipboard-smoke.cjs', false],
   collections: ['electron', 'tests/integration/collections-smoke.cjs', false],
   statistics: ['electron', 'tests/integration/statistics-smoke.cjs', false],

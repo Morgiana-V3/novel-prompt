@@ -13,9 +13,9 @@ const scopeOptions = [
 ]
 const { mcp, isPackaged, loadMcp, mcpScope, codexConfig, jsonConfig, agentPrompt, fmtLogTime } =
   useMcpSettings()
-defineProps<{ allowAi: boolean; allowGenerate: boolean }>()
+defineProps<{ allowAi: boolean; allowGenerate: boolean; freeOnly: boolean }>()
 const emit = defineEmits<{
-  permission: [key: 'mcpAllowAi' | 'mcpAllowGenerate', value: boolean]
+  permission: [key: 'mcpAllowAi' | 'mcpAllowGenerate' | 'agentFreeOnly', value: boolean]
   manageSkills: []
 }>()
 </script>
@@ -39,6 +39,27 @@ const emit = defineEmits<{
         <label>当前环境：{{ mcp.runtime.mode === 'development' ? '开发版' : '安装版' }} </label>
       </div>
 
+      <div class="form-field full">
+        <label>Agent 仅允许免费操作</label>
+        <div class="seg">
+          <button
+            :class="{ on: freeOnly }"
+            @click="emit('permission', 'agentFreeOnly', true)"
+          >
+            开启（推荐）
+          </button>
+          <button
+            :class="{ on: !freeOnly }"
+            @click="emit('permission', 'agentFreeOnly', false)"
+          >
+            允许付费操作
+          </button>
+        </div>
+        <span class="muted small"
+          >开启后，Agent 的付费或费用未知操作须由你逐次授权，包括 AI
+          调用与图片处理。手动操作不受此限制，可能扣费时会提示。</span
+        >
+      </div>
       <div class="form-field">
         <label>允许调用 AI 服务</label>
         <div class="seg">
@@ -58,7 +79,7 @@ const emit = defineEmits<{
         <span
           v-if="allowAi"
           class="muted small"
-          >已允许消耗 AI 服务额度</span
+          >已允许调用；付费行为仍遵循下方授权设置</span
         >
       </div>
       <div class="form-field">

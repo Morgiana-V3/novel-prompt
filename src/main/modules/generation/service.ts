@@ -1,3 +1,5 @@
+import { estimateGeneration, anlasOutcomeText } from '../../../shared/generation/pricing'
+import { authorizePaidOperation } from '../../infrastructure/operation-policy'
 import { recordAnlas, recordGeneratedImage } from '../statistics/service'
 import { isNaiVersion } from '../../../shared/generation/types'
 import { readFileSync, statSync } from 'node:fs'
@@ -127,7 +129,7 @@ export async function generateImages(
     source = { kind: 'img2img', imageBase64: img2imgSource }
     actionLabel = '精修'
   }
-  const freeOnly = opts.freeOnly ?? getSettings().naiFreeOnly
+  const freeOnly = opts.freeOnly ?? false
   const count = Math.max(1, Math.min(8, Math.floor(req.params.count || 1)))
   const images: NaiImage[] = []
   let delta: number | undefined = 0
@@ -143,6 +145,8 @@ export async function generateImages(
     }
   }
 
+  const initialSub = sub
+  let usageKnown = true
   for (let i = 0; i < count; i++) {
     if (isCancelled()) {
       stopped = images.length ? `已取消，完成了 ${images.length} 张` : '已取消'
@@ -152,6 +156,30 @@ export async function generateImages(
       const check = freeCheck(req.params, req.version, sub)
       if (!check.ok) {
         stopped = `不满足免费条件，已停止：${check.reasons.join('；')}`
+        break
+      }
+    }
+    const eligibility = freeCheck(req.params, req.version, sub)
+    const estimate = estimateGeneration(req, sub)
+    if (!freeOnly && !eligibility.ok) {
+      try {
+        await authorizePaidOperation({
+          kind: source?.kind ?? 'image.generate',
+          provider: 'NovelAI',
+          description: `${actionLabel}${count > 1 ? ` · 第 ${i + 1}/${count} 张` : ' 1 张'}`,
+          quantity: 1,
+          unit: 'Anlas',
+          estimatedCost: estimate?.perImage,
+        })
+      } catch (error) {
+        if (!images.length) {
+          throw error
+        }
+        stopped = error instanceof Error ? error.message : String(error)
+        break
+      }
+      if (isCancelled()) {
+        stopped = '已取消'
         break
       }
     }
@@ -223,6 +251,9 @@ export async function generateImages(
         stopped = '生成后查询余额失败，无法确认是否扣费，已停止后续生成'
       }
     }
+    if (sub?.usagePercent === undefined || after?.usagePercent === undefined) {
+      usageKnown = false
+    }
     const change = anlasChange(sub, after)
     recordAnlas(req.version, change)
     if (change && delta !== undefined) {
@@ -230,7 +261,7 @@ export async function generateImages(
     } else if (!change) {
       delta = undefined
     }
-    if (freeOnly && (!change || change.fixed < 0 || change.purchased < 0)) {
+    if ((freeOnly || eligibility.ok) && (!change || change.fixed < 0 || change.purchased < 0)) {
       stopped = change
         ? `检测到扣除了 Anlas（订阅 ${change.fixed}、购买 ${change.purchased}），已停止后续生成`
         : '无法读取 Anlas 余额，无法确认是否扣费，已停止后续生成'
@@ -240,6 +271,14 @@ export async function generateImages(
     sub = after
   }
 
-  onStep(stopped ?? '完成')
-  return { images, anlasDelta: delta, stopped, subscription: sub }
+  const usageDelta =
+    req.version === 'v5' &&
+    usageKnown &&
+    initialSub?.usagePercent !== undefined &&
+    sub?.usagePercent !== undefined
+      ? sub.usagePercent - initialSub.usagePercent
+      : undefined
+  const result = { images, anlasDelta: delta, usageDelta, stopped, subscription: sub }
+  onStep(`${stopped ?? '完成'} · ${anlasOutcomeText(result)}`)
+  return result
 }

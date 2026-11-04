@@ -449,7 +449,7 @@ export function inpaintTools(): McpTool[] {
       name: 'inpaint_image',
       title: 'NovelAI 局部重绘',
       description:
-        '对图库原图的指定区域重绘一张并另存。与界面同一生成/合成链路，选区外像素不变。必须 confirm:true；强制免费检查并核对 Anlas，返回 stopped 时停止。',
+        '对图库原图的指定区域重绘一张并另存。与界面同一生成/合成链路，选区外像素不变。必须 confirm:true；免费资格检查与付费授权并核对 Anlas，返回 stopped 时停止。',
       inputSchema: {
         type: 'object',
         properties: {
@@ -524,7 +524,7 @@ export function inpaintTools(): McpTool[] {
           },
           progress ?? (() => {}),
           () => signal.aborted,
-          { freeOnly: true },
+          {},
         )
         if (signal.aborted) {
           result.stopped ??= '已停止，已完成的图片已保留'

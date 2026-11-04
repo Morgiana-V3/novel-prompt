@@ -1,3 +1,4 @@
+import { withOperationContext } from '../../infrastructure/operation-policy'
 import { randomUUID } from 'node:crypto'
 import { connectAgent, disconnectAgent, runAsAgent } from '../../modules/workspace/agent-sessions'
 import { AGENT_GUIDE_URI, agentGuide } from './agent-guide'
@@ -219,10 +220,12 @@ export function createMcpSession(
           })
         }
       }
-      const output = await runAsAgent(agent, () =>
-        options.execute && !controlTools.includes(tool)
-          ? options.execute(tool, args, ctrl.signal, progress)
-          : tool.run(args, ctrl.signal, progress),
+      const output = await withOperationContext({ origin: 'agent', signal: ctrl.signal }, () =>
+        runAsAgent(agent, () =>
+          options.execute && !controlTools.includes(tool)
+            ? options.execute(tool, args, ctrl.signal, progress)
+            : tool.run(args, ctrl.signal, progress),
+        ),
       )
       const result: McpResult =
         typeof output === 'string' ? { content: [{ type: 'text', text: output }] } : output

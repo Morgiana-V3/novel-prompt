@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { reportError } from '../../../shared/lib/notifications'
+import type { NaiVersion } from '@shared/generation/types'
+import { subscriptionState, refreshSubscription } from '../../generation/subscription'
 /**
  * 扩图：需要预览新画布并逐边调整，单独使用对话框。
  * 放大、精修参数较少，改用工具栏按钮下方的轻量面板（WorkspaceToolPopover）。
@@ -9,6 +12,8 @@ import { pageImageToolSize } from '@shared/workspace/model'
 import Icon from '../../../shared/ui/Icon.vue'
 import { toolBlockedReason, toolCostNote } from '../image-tool-rules'
 
+refreshSubscription().catch(reportError)
+
 const EXPAND_STEP_PX = 64
 
 const props = defineProps<{
@@ -17,6 +22,7 @@ const props = defineProps<{
   imageUrl: string
   count: number
   steps: number
+  model: NaiVersion
   disabled: boolean
 }>()
 const emit = defineEmits<{ run: [tool: PageImageTool]; close: [] }>()
@@ -44,11 +50,18 @@ const source = computed(() => ({
   height: props.height,
   count: props.count,
   steps: props.steps,
+  version: props.model,
 }))
 const resultSize = computed(() => pageImageToolSize(tool.value, props.width, props.height))
 const hasExpansion = computed(() => Object.values(expansion.value).some((size) => size > 0))
 const blockedReason = computed(() => toolBlockedReason(tool.value, source.value))
-const costNote = computed(() => toolCostNote(tool.value, source.value))
+const costNote = computed(() =>
+  toolCostNote(
+    tool.value,
+    source.value,
+    subscriptionState.error ? undefined : subscriptionState.subscription,
+  ),
+)
 
 /** 预览框：原图在扩展后画布里的位置 */
 const previewBox = computed(() => {

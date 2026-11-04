@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { reportError } from '../../../shared/lib/notifications'
+import type { NaiVersion } from '@shared/generation/types'
+import { subscriptionState, refreshSubscription } from '../../generation/subscription'
 /**
  * 放大、精修的轻量确认面板：锚定在工具栏按钮下方，参数少的操作不打开整页对话框。
  * 放大只确认尺寸与花费；精修多出倍数、强度、噪声三个设置。
@@ -8,6 +11,8 @@ import type { PageImageTool } from '@shared/workspace/model'
 import { pageImageToolSize } from '@shared/workspace/model'
 import Icon from '../../../shared/ui/Icon.vue'
 import { toolBlockedReason, toolCostNote } from '../image-tool-rules'
+
+refreshSubscription().catch(reportError)
 
 const POPOVER_WIDTH_PX = 300
 const EDGE_GAP_PX = 8
@@ -20,6 +25,7 @@ const props = defineProps<{
   height: number
   count: number
   steps: number
+  model: NaiVersion
   disabled: boolean
 }>()
 const emit = defineEmits<{ run: [tool: PageImageTool]; close: [] }>()
@@ -39,10 +45,17 @@ const source = computed(() => ({
   height: props.height,
   count: props.kind === 'upscale' ? 1 : props.count,
   steps: props.steps,
+  version: props.model,
 }))
 const resultSize = computed(() => pageImageToolSize(tool.value, props.width, props.height))
 const blockedReason = computed(() => toolBlockedReason(tool.value, source.value))
-const costNote = computed(() => toolCostNote(tool.value, source.value))
+const costNote = computed(() =>
+  toolCostNote(
+    tool.value,
+    source.value,
+    subscriptionState.error ? undefined : subscriptionState.subscription,
+  ),
+)
 const title = computed(() => (props.kind === 'enhance' ? '精修' : '放大 2×'))
 const hint = computed(() =>
   props.kind === 'enhance'

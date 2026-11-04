@@ -1,6 +1,6 @@
 # 验证入口
 
-`npm run check:quick` 先执行全范围格式、ESLint、Stylelint、依赖边界和类型检查，再构建一次，运行测试产物路径、代理启动/重连、工作台索引与图片清理。`npm run check:full` 复用同一次构建运行统一入口登记的全部离线回归场景（当前 38 个）。失败立即退出；日志目录在启动时打印，位于系统临时目录。
+`npm run check:quick` 先执行全范围格式、ESLint、Stylelint、依赖边界和类型检查，再构建一次，运行测试产物路径、代理启动/重连、工作台索引与图片清理。`npm run check:full` 复用同一次构建运行统一入口登记的全部离线回归场景（当前 41 个）。失败立即退出；日志目录在启动时打印，位于系统临时目录。
 
 定向运行：`node scripts/check.mjs pages mcp:index workspace:cleanup`。窗口场景按需构建一次，纯源码服务场景通过测试专用 TypeScript 加载器运行。定向命令执行类型检查；完整风格检查由 quick/full 负责。
 
@@ -105,3 +105,7 @@ Skill 目录包：构建后运行 `npm run skills:smoke`，或 `node scripts/che
 局部采纳还回归了行尾 Tag 后插入互动词的案例：`standing` 保留，只把 `target#pointing at another` 标为新增；反向操作只标删除该新增词。覆盖末尾追加、换行与逗号变化、重复词次数、真实前缀替换、Text 块标点及采纳 / 取消后的逐字恢复。
 
 `node scripts/check.mjs statistics tasks prompt` 验证统计和界面：statistics 使用隔离目录和模拟供应商，覆盖缓存不重复累计、并行任务归属、缺失 usage、已收费但结果无效、重试、取消、部分图片批次、跨天存储、重读与清空、持久化内容不含密钥。tasks 额外验证任务用量、设置统计入口、累计摘要、图表切换和每日选择、宽窄布局、取消清空与实际清空。prompt 验证采纳状态仍可切换，按钮不再铺设「采纳 / 已采纳」和「（删除）」文字。截图与数据留在临时隔离目录，所有供应商请求都由夹具响应。
+
+`operations:policy` 使用模拟授权窗口和供应商，覆盖旧设置迁移、手动付费确认、Agent 免费通过、付费与未知费用拦截、单次授权、不降级来源和取消后不提交。不会请求真实计费服务。
+
+`pricing` 验证官方计费样例、强度与舍入、V5 多张额度区间、未知账户状态和放大分档边界；`operations:policy` 也验证弹窗预估数字与执行后余额、免费额度反馈，查询失败保持未知。计价依据见 [NovelAI 费用预估](novelai-pricing.md)。

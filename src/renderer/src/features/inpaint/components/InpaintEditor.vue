@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { estimateGeneration, estimateLabel } from '@shared/generation/pricing'
+import { subscriptionState } from '../../generation/subscription'
 import { useEditorPersistence } from '../use-editor-persistence'
 import SnippetButton from '../../prompts/components/SnippetButton.vue'
 import { useInpaintAnalysis } from '../use-analysis'
@@ -70,7 +72,18 @@ const draft = reactive({
   characters: toDrafts(promptState.characters),
 })
 const settings = reactive({ ...props.params, count: 1, seed: null as number | null, strength: 1 })
-const freeOnly = computed(() => settingsState.settings?.naiFreeOnly !== false)
+const cost = computed(() =>
+  estimateLabel(
+    estimateGeneration(
+      {
+        params: { ...settings, width: width.value, height: height.value },
+        version: version.value,
+        inpaint: { strength: settings.strength },
+      },
+      subscriptionState.error ? undefined : subscriptionState.subscription,
+    ),
+  ),
+)
 const tool = ref<'brush' | 'erase' | 'rect'>('brush')
 const brush = ref(48)
 const opacity = ref(45)
@@ -1450,8 +1463,8 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                 </fieldset>
                 <span
                   class="pill"
-                  :title="freeOnly ? '提交前检查尺寸、步数和会员额度' : '生成后核对余额'"
-                  >{{ freeOnly ? '仅免费额度' : '允许消耗 Anlas' }}</span
+                  title="提交前检查免费资格，可能扣费时需要确认"
+                  >{{ cost }} / 区域</span
                 >
               </div>
               <div

@@ -17,6 +17,14 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'np-img', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ])
 require('../support/register-typescript.cjs')
+let paidConfirmations = 0
+require('../../src/main/infrastructure/operation-policy.ts').setOperationAuthorizer(
+  async (_operation, origin) => {
+    assert.equal(origin, 'manual')
+    paidConfirmations++
+    return false
+  },
+)
 const novelaiPayload = require('../../src/main/providers/novelai/payload.ts')
 const imageAccess = require('../../src/main/modules/images/access.ts')
 const client = require('../../src/main/modules/generation/index.ts')
@@ -629,10 +637,13 @@ app.whenReady().then(async () => {
     percent = 0
     await run(`document.querySelector('.ip-foot button').click()`)
     await wait(
-      `document.querySelector('.ip-settings .error-box')?.textContent.includes('不满足免费条件')`,
+      `document.querySelector('.ip-settings .error-box')?.textContent.includes('已取消付费操作')`,
     )
     assert.equal(generatedCalls, beforeCalls)
-    console.log('PASS exhausted quota blocks network generation')
+    assert.equal(paidConfirmations, 1)
+    console.log(
+      'PASS exhausted quota requests manual paid confirmation; declining blocks network generation',
+    )
     percent = 80
     failGeneration = true
     await run(`document.querySelector('.ip-foot button').click()`)

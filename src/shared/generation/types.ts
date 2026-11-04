@@ -95,6 +95,8 @@ export interface NaiGenResult {
   images: NaiImage[]
   /** 本次生成前后的 Anlas 变化（负数 = 扣除），查询失败时为 undefined */
   anlasDelta?: number
+  /** V5 免费额度百分比的观测变化，负数表示减少 */
+  usageDelta?: number
   /** 中途停止的原因（扣费、额度不足、请求失败等） */
   stopped?: string
   subscription?: NaiSubscription

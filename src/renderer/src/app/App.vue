@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import ConfirmDialog from '../shared/ui/ConfirmDialog.vue'
+import type { ConfirmationRequest } from '@shared/contracts/confirmation'
+
 import { reportError } from '../shared/lib/notifications'
 import { promptState } from '../features/prompts/state'
 import { imageState, setPreviewImage } from '../features/generation/public'
@@ -43,6 +46,18 @@ import UpdateAction from '../features/settings/components/UpdateAction.vue'
 import { prepareUpdateKey, updateLabel } from '../features/settings/updates'
 import { connectTasks, taskState, cancelTask } from '../shared/state/tasks'
 import { taskIsActive } from '@shared/tasks/model'
+
+const confirmations = ref<ConfirmationRequest[]>([])
+const confirmation = computed(() => confirmations.value[0])
+const offConfirmations = window.api.onConfirmations((requests) => {
+  confirmations.value = requests
+})
+onBeforeUnmount(offConfirmations)
+function replyConfirmation(approved: boolean) {
+  if (confirmation.value) {
+    void window.api.replyConfirmation(confirmation.value.id, approved).catch(reportError)
+  }
+}
 
 /**
  * 侧栏统一用四字「对象 + 动作」名称：先查词，再写提示词并试图，从图片反推，围绕一张图精修；
@@ -271,6 +286,9 @@ let desktopRevision = 0
 let desktopKey = ''
 function desktopSnapshot(): DesktopState {
   const blockers: string[] = []
+  if (confirmation.value) {
+    blockers.push('等待用户确认付费授权')
+  }
   try {
     generateView.value?.prepareUpdate()
   } catch (error) {
@@ -309,6 +327,12 @@ async function desktopCommand(command: DesktopCommand) {
     const argumentsRecord = command.args
     if (command.type !== 'snapshot') {
       await desktopReady
+    }
+    if (
+      confirmation.value &&
+      !['snapshot', 'capture-prepare', 'capture-end', 'workspace-release'].includes(command.type)
+    ) {
+      throw new Error('等待用户确认付费授权，Agent 不能代替用户操作')
     }
     if (command.type === 'capture-prepare') {
       const result = await prepareCapture(String(argumentsRecord.lease))
@@ -544,6 +568,15 @@ async function onDrop(event2: DragEvent) {
 </script>
 
 <template>
+  <ConfirmDialog
+    v-if="confirmation"
+    :key="confirmation.id"
+    :title="confirmation.title"
+    :message="[confirmation.message, confirmation.detail].filter(Boolean).join('\n\n')"
+    :confirm-label="confirmation.confirmLabel"
+    @confirm="replyConfirmation(true)"
+    @cancel="replyConfirmation(false)"
+  />
   <div
     class="layout"
     @dragenter="onDragEnter"

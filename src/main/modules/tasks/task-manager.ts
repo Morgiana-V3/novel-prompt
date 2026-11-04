@@ -1,3 +1,4 @@
+import { withOperationContext, operationOrigin } from '../../infrastructure/operation-policy'
 import { randomUUID } from 'node:crypto'
 import { emptyUsage, addUsage } from '../../../shared/statistics/model'
 import { withUsageContext } from '../../infrastructure/usage-context'
@@ -143,7 +144,11 @@ export class TaskManager {
             this.changed()
           },
         },
-        () => work({ id: task.id, signal: ctrl.signal, progress }),
+        () =>
+          withOperationContext(
+            { origin: options.origin ?? operationOrigin(), signal: ctrl.signal },
+            () => work({ id: task.id, signal: ctrl.signal, progress }),
+          ),
       )
       // An API may resolve despite aborting; never expose such a late AI result as successful.
       if (ctrl.signal.aborted && task.cancelMode === 'abort') {

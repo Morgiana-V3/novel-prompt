@@ -1,3 +1,4 @@
+import { authorizePaidOperation, operationSignal } from '../../infrastructure/operation-policy'
 import { net } from 'electron'
 import { reportUsage } from '../../infrastructure/usage-context'
 import { readTokenUsage } from '../../../shared/statistics/model'
@@ -98,10 +99,22 @@ export async function requestChat(
   } catch {
     /* Network layer provides the actionable URL error. */
   }
+  const requestSignal = opts.signal ?? operationSignal()
   for (let attempt = 0; ; attempt++) {
+    await authorizePaidOperation(
+      {
+        kind: 'ai.chat',
+        provider,
+        description: `调用 AI 模型 ${model}`,
+        quantity: 1,
+        unit: 'tokens',
+        confirmManual: false,
+      },
+      requestSignal,
+    )
     let recorded = false
     try {
-      return await requestOnce(url, apiKey, payload, limitMs, opts.signal, (usage) => {
+      return await requestOnce(url, apiKey, payload, limitMs, requestSignal, (usage) => {
         recorded = true
         reportUsage(provider, model, readTokenUsage(usage))
       })
@@ -111,11 +124,11 @@ export async function requestChat(
         !(error instanceof AiServiceError) ||
         !error.retryable ||
         attempt >= RETRIES ||
-        opts.signal?.aborted
+        requestSignal?.aborted
       ) {
         throw error
       }
-      await wait(error.retryAfterMs ?? 1500 * 2 ** attempt, opts.signal)
+      await wait(error.retryAfterMs ?? 1500 * 2 ** attempt, requestSignal)
     } finally {
       if (!recorded) {
         reportUsage(provider, model, readTokenUsage(undefined))
@@ -218,6 +231,9 @@ async function requestOnce(
   signal: AbortSignal | undefined,
   onUsage: (usage: unknown) => void,
 ): Promise<ChatMessage> {
+  if (signal?.aborted) {
+    throw new Error('已取消')
+  }
   const timeout = AbortSignal.timeout(limitMs)
   let res: Response
   try {

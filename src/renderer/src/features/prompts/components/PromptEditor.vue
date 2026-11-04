@@ -3,7 +3,7 @@ import SnippetButton from './SnippetButton.vue'
 import { promptState } from '../state'
 import { computed } from 'vue'
 import type { InpaintDraft } from '@shared/prompts/types'
-import type { NaiVersion } from '@shared/generation/types'
+import type { NaiGenParams, NaiVersion } from '@shared/generation/types'
 import type { NaiImage } from '@shared/images/types'
 import { importPrompt } from '../actions'
 import { vAutosize } from '../../../shared/lib/autosize'
@@ -22,6 +22,7 @@ const props = withDefaults(
     image?: NaiImage | null
     disabled?: boolean
     showPresets?: boolean
+    presetParams?: Pick<NaiGenParams, 'qualityTags' | 'qualityMode' | 'ucPreset'>
     baseLabel?: string
     baseHint?: string
     charLabel?: string
@@ -32,6 +33,7 @@ const props = withDefaults(
     draft: undefined,
     model: undefined,
     params: undefined,
+    presetParams: undefined,
     // 未指定时沿用生图预览；显式 null 表示独立草稿没有参考图。
     image: undefined,
     baseLabel: '主提示词',
@@ -42,7 +44,11 @@ const props = withDefaults(
   },
 )
 
-const emit = defineEmits<{ changeDraft: [patch: Partial<InpaintDraft>] }>()
+const emit = defineEmits<{
+  changeDraft: [patch: Partial<InpaintDraft>]
+  changeParams: [patch: Partial<Pick<NaiGenParams, 'qualityTags' | 'qualityMode' | 'ucPreset'>>]
+}>()
+const presetsVisible = computed(() => props.showPresets && (!props.draft || !!props.presetParams))
 const base = computed({
   get: () => props.draft?.base ?? promptState.prompt,
   set: (text) => {
@@ -94,7 +100,7 @@ function onPaste(event2: ClipboardEvent) {
     >
     <div
       class="composer short"
-      :class="{ 'with-presets': showPresets && !draft }"
+      :class="{ 'with-presets': presetsVisible }"
     >
       <SnippetButton :disabled="disabled" />
       <textarea
@@ -111,9 +117,12 @@ function onPaste(event2: ClipboardEvent) {
         @focus="!draft && (promptState.focus = { kind: 'base' })"
       ></textarea>
       <PromptPresetControl
-        v-if="showPresets && !draft"
+        v-if="presetsVisible"
         kind="quality"
+        :params="presetParams"
+        :model="model"
         :disabled="disabled"
+        @change-params="emit('changeParams', $event)"
       />
     </div>
   </div>
@@ -126,7 +135,7 @@ function onPaste(event2: ClipboardEvent) {
     >
     <div
       class="composer short neg"
-      :class="{ 'with-presets': showPresets && !draft }"
+      :class="{ 'with-presets': presetsVisible }"
     >
       <SnippetButton :disabled="disabled" />
       <textarea
@@ -142,9 +151,12 @@ function onPaste(event2: ClipboardEvent) {
         @focus="!draft && (promptState.focus = { kind: 'negative' })"
       ></textarea>
       <PromptPresetControl
-        v-if="showPresets && !draft"
+        v-if="presetsVisible"
         kind="uc"
+        :params="presetParams"
+        :model="model"
         :disabled="disabled"
+        @change-params="emit('changeParams', $event)"
       />
     </div>
   </div>

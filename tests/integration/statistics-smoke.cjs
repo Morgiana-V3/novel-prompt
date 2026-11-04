@@ -6,6 +6,10 @@ const { temporaryProfile } = require('../support/fixtures.cjs')
 const profile = temporaryProfile('np-statistics-')
 app.setPath('userData', profile)
 require('../support/register-typescript.cjs')
+// These accounting fixtures explicitly approve simulated paid requests.
+require('../../src/main/infrastructure/operation-policy.ts').setOperationAuthorizer(
+  async () => true,
+)
 app.whenReady().then(async () => {
   try {
     const { readTokenUsage } = require('../../src/shared/statistics/model.ts')
@@ -131,16 +135,20 @@ app.whenReady().then(async () => {
     assert.equal(tasks.snapshot().tasks[0].usage.requests, 2)
     assert.equal(tasks.snapshot().tasks[0].usage.reported, 1)
     assert.equal(tasks.snapshot().tasks[0].usage.total, 150)
+    let started
+    const requestStarted = new Promise((resolve) => {
+      started = resolve
+    })
     net.fetch = async (_url, options) =>
-      new Promise((_, reject) =>
-        options.signal.addEventListener('abort', () => reject(new Error('aborted')), {
-          once: true,
-        }),
-      )
+      new Promise((_, reject) => {
+        options.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+        started()
+      })
     const cancelled = tasks.run('preview', ({ signal }) =>
       requestChat([{ role: 'user', content: 'cancel' }], settings, { signal }),
     )
     const rejected = assert.rejects(cancelled, /已取消/)
+    await requestStarted
     tasks.cancel(tasks.snapshot().tasks[0].id)
     await rejected
     assert.equal(tasks.snapshot().tasks[0].usage.requests, 1)

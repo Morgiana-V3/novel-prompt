@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { NaiVersion, UcPreset } from '@shared/generation/types'
+import type { NaiGenParams, NaiVersion, UcPreset } from '@shared/generation/types'
 import {
   qualityTagsFor,
   effectiveQualityMode,
@@ -10,16 +10,36 @@ import {
 import { promptState } from '../state'
 import { settingsState } from '../../settings/state'
 import ThemeSelect from '../../../shared/ui/ThemeSelect.vue'
-const props = defineProps<{ kind: 'quality' | 'uc'; disabled?: boolean }>()
-const version = computed<NaiVersion>(() => settingsState.settings?.naiVersion ?? 'v4.5')
+type PresetParams = Pick<NaiGenParams, 'qualityTags' | 'qualityMode' | 'ucPreset'>
+const props = defineProps<{
+  kind: 'quality' | 'uc'
+  disabled?: boolean
+  params?: PresetParams
+  model?: NaiVersion
+}>()
+const emit = defineEmits<{ changeParams: [patch: Partial<PresetParams>] }>()
+const parameters = computed(() => props.params ?? promptState.params)
+function updateParams(patch: Partial<PresetParams>) {
+  if (props.disabled) {
+    return
+  }
+  if (props.params) {
+    emit('changeParams', patch)
+  } else {
+    Object.assign(promptState.params, patch)
+  }
+}
+const version = computed<NaiVersion>(
+  () => props.model ?? settingsState.settings?.naiVersion ?? 'v4.5',
+)
 const options = Object.entries(UC_LABEL).map(([value, label]) => ({
   value,
   label: `UC · ${label}`,
 }))
 const uc = computed({
-  get: () => promptState.params.ucPreset,
+  get: () => parameters.value.ucPreset,
   set: (value: string) => {
-    promptState.params.ucPreset = value as UcPreset
+    updateParams({ ucPreset: value as UcPreset })
   },
 })
 const qualityOptions = computed(() => [
@@ -28,16 +48,18 @@ const qualityOptions = computed(() => [
   { value: 'none', label: '质量词 · None' },
 ])
 const quality = computed({
-  get: () => effectiveQualityMode(version.value, promptState.params),
+  get: () => effectiveQualityMode(version.value, parameters.value),
   set: (value: string) => {
-    promptState.params.qualityTags = value !== 'none'
-    promptState.params.qualityMode = value === 'light' ? 'light' : 'standard'
+    updateParams({
+      qualityTags: value !== 'none',
+      qualityMode: value === 'light' ? 'light' : 'standard',
+    })
   },
 })
 const hint = computed(() =>
   props.kind === 'quality'
     ? qualityTagsFor(version.value, quality.value) || '仅使用你填写的主提示词'
-    : UC_PRESETS[version.value][promptState.params.ucPreset] || '仅使用你填写的负面提示词',
+    : UC_PRESETS[version.value][parameters.value.ucPreset] || '仅使用你填写的负面提示词',
 )
 </script>
 <template>

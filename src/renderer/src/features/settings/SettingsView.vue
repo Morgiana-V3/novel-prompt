@@ -122,7 +122,7 @@ const form = reactive({
   tagCompletionLimit: DEFAULT_TAG_COMPLETION_LIMIT,
   translateMinCount: 50,
   naiToken: '',
-  naiFreeOnly: true,
+  agentFreeOnly: true,
   mcpAllowAi: false,
   mcpAllowGenerate: false,
 })
@@ -246,28 +246,20 @@ watch(
   },
 )
 
-async function setMcp(key: 'mcpAllowAi' | 'mcpAllowGenerate', enabled: boolean) {
-  form[key] = enabled
+async function setMcp(key: 'mcpAllowAi' | 'mcpAllowGenerate' | 'agentFreeOnly', enabled: boolean) {
   await saveSettings({ [key]: enabled })
-  toast(enabled ? '已开启，agent 下一次调用时生效' : '已关闭')
-}
-
-/* 开关类设置点了立即生效，和 MCP 开关保持一致；输入框类设置仍需点「保存」 */
-async function setFreeOnly(enabled: boolean) {
-  if (form.naiFreeOnly === enabled && settingsState.settings?.naiFreeOnly === enabled) {
+  form[key] = settingsState.settings?.[key] ?? enabled
+  if (form[key] !== enabled) {
+    toast('已取消，保留原设置')
     return
   }
-  form.naiFreeOnly = enabled
-  await saveSettings({ naiFreeOnly: enabled })
-  if (enabled) {
-    toast('已开启「只用免费额度」，不满足免费条件时不会提交')
+  if (key === 'agentFreeOnly') {
+    toast(enabled ? 'Agent 付费操作需要逐次授权' : '已授权 Agent 付费操作')
   } else {
-    toast('已允许消耗 Anlas，生成前请留意花费', {
-      label: '撤销',
-      run: () => void setFreeOnly(true).catch(reportError),
-    })
+    toast(enabled ? '已开启，Agent 下一次调用时生效' : '已关闭')
   }
 }
+
 async function setEffort(effort: ReasoningEffort) {
   form.reasoningEffort = effort
   await saveSettings({ reasoningEffort: effort })
@@ -754,23 +746,6 @@ async function translate() {
                   autocomplete="off"
                 />
               </div>
-              <div class="form-field full">
-                <label>只用免费额度</label>
-                <div class="seg">
-                  <button
-                    :class="{ on: form.naiFreeOnly }"
-                    @click="setFreeOnly(true)"
-                  >
-                    开启（推荐）
-                  </button>
-                  <button
-                    :class="{ on: !form.naiFreeOnly }"
-                    @click="setFreeOnly(false)"
-                  >
-                    允许消耗 Anlas
-                  </button>
-                </div>
-              </div>
             </div>
             <div class="row">
               <button
@@ -938,6 +913,7 @@ async function translate() {
           class="settings-panel"
         >
           <AgentSettings
+            :free-only="form.agentFreeOnly !== false"
             :allow-ai="form.mcpAllowAi"
             :allow-generate="form.mcpAllowGenerate"
             @permission="setMcp"

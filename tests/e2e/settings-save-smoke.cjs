@@ -30,6 +30,14 @@ saveSettings({
   skills: fixtureSkills,
   initializedUserSkills: ['fixture-skill'],
 })
+const nativeSettingsHandlers = new Map()
+const originalHandle = ipcMain.handle
+ipcMain.handle = (name, handler) => nativeSettingsHandlers.set(name, handler)
+try {
+  require('../../src/main/adapters/ipc/settings.ts').registerSettingsIpc({})
+} finally {
+  ipcMain.handle = originalHandle
+}
 const patches = []
 let rejectAccount = false
 let balance = 9000
@@ -37,12 +45,13 @@ net.fetch = async () => {
   throw new Error('Unexpected network request')
 }
 const handlers = {
+  'confirmations:reply': (...args) => nativeSettingsHandlers.get('confirmations:reply')(...args),
   'collections:list': () => [{ id: 'default', name: '默认图集', createdAt: 0 }],
   'storage:info': () => ({ path: profile, bytes: 0, pending: null, previous: null, error: null }),
   'settings:get': () => getSettings(),
   'settings:save': (_, patch) => {
     patches.push(patch)
-    return saveSettings(patch)
+    return nativeSettingsHandlers.get('settings:save')(_, patch)
   },
   'agents:list': () => [],
   'tasks:list': () => ({ revision: 0, tasks: [] }),
@@ -134,6 +143,82 @@ app.whenReady().then(async () => {
       35,
     )
     console.log('PASS tag completion default, settings save and reload persistence')
+    await click('.settings-tabs button', 'AI 服务')
+    await click('.settings-services-nav button', 'Agent')
+    assert(
+      await js(
+        `document.querySelector('.settings-agent').textContent.includes('Agent 仅允许免费操作')`,
+      ),
+    )
+    await click('.settings-agent button', '允许付费操作')
+    await wait(`!!document.querySelector('.confirm-dialog[open]')`)
+    assert.equal(await js(`document.activeElement.textContent.trim()`), '取消')
+    assert.equal(
+      getSettings().agentFreeOnly,
+      true,
+      'opening themed dialog does not grant permission',
+    )
+    await delay(250)
+    const dialogRect = await js(`(() => {
+      const r = document.querySelector('.confirm-dialog').getBoundingClientRect()
+      return { x: Math.floor(r.x) - 24, y: Math.floor(r.y) - 24, width: Math.ceil(r.width) + 48, height: Math.ceil(r.height) + 48 }
+    })()`)
+    writeFileSync(
+      join(profile, 'agent-paid-confirmation-detail.png'),
+      (await win.webContents.capturePage(dialogRect)).toPNG(),
+    )
+    let blockedReply
+    const receiveReply = (_event, reply) => {
+      if (reply.id === 'paid-confirmation-guard') {
+        blockedReply = reply
+      }
+    }
+    ipcMain.on('desktop:reply', receiveReply)
+    try {
+      win.webContents.send('desktop:command', {
+        id: 'paid-confirmation-guard',
+        type: 'navigate',
+        args: { tab: 'search' },
+      })
+      for (let attempt = 0; attempt < 100 && !blockedReply; attempt++) {
+        await delay(20)
+      }
+      assert.match(blockedReply?.error ?? '', /等待用户确认付费授权/)
+      assert(await js(`!!document.querySelector('.confirm-dialog[open]')`))
+    } finally {
+      ipcMain.removeListener('desktop:reply', receiveReply)
+    }
+    writeFileSync(
+      join(profile, 'agent-paid-confirmation.png'),
+      (await win.webContents.capturePage()).toPNG(),
+    )
+    await click('.confirm-dialog button', '取消')
+    await wait(`!document.querySelector('.confirm-dialog[open]')`)
+    assert.equal(getSettings().agentFreeOnly, true)
+    await click('.settings-agent button', '允许付费操作')
+    await wait(`!!document.querySelector('.confirm-dialog[open]')`)
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
+    win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' })
+    await wait(`!document.querySelector('.confirm-dialog[open]')`)
+    assert.equal(getSettings().agentFreeOnly, true)
+    await click('.settings-agent button', '允许付费操作')
+    await wait(`!!document.querySelector('.confirm-dialog[open]')`)
+    await click('.confirm-dialog button', '允许付费操作')
+    await wait(
+      `document.querySelector('.settings-agent button.on')?.textContent.includes('允许付费操作')`,
+    )
+    assert.equal(getSettings().agentFreeOnly, false)
+    await click('.settings-agent button', '开启（推荐）')
+    await wait(`document.querySelector('.settings-agent button.on')?.textContent.includes('开启')`)
+    assert.equal(getSettings().agentFreeOnly, true)
+    writeFileSync(
+      join(profile, 'agent-operation-policy.png'),
+      (await win.webContents.capturePage()).toPNG(),
+    )
+    console.log(
+      'PASS Agent setting label, themed spending authorization cancellation/Escape/acceptance and re-enable',
+    )
+
     await click('.settings-tabs button', '操作说明')
     await wait(
       `document.querySelector('#settings-panel-guide')?.textContent.includes('/ 快捷搜索')`,

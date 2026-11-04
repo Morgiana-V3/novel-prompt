@@ -1,3 +1,4 @@
+import { anlasOutcomeText, type AnlasOutcome } from '../../../shared/generation/pricing'
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import type { NaiImage } from '../../../shared/images/types'
@@ -21,7 +22,7 @@ import { checkPageParams } from './validation'
 
 export interface ImageToolOptions {
   freeOnly?: boolean
-  onResult?: (result: { stopped?: string; anlasDelta?: number }) => void
+  onResult?: (result: AnlasOutcome & { stopped?: string }) => void
 }
 
 function checkTool(tool: PageImageTool): PageImageTool {
@@ -94,6 +95,7 @@ export async function runImageTool(
       options,
     )
     appendToolVersions(workspace, version, tool, images.images)
+    pageEvent(workspace, anlasOutcomeText(images), workspace.latestGeneratedVersionId)
     if (images.stopped) {
       pageEvent(workspace, images.stopped, workspace.latestGeneratedVersionId)
     }
@@ -118,15 +120,15 @@ async function executeTool(
   progress: (text: string) => void,
   cancelled: () => boolean,
   options: ImageToolOptions,
-): Promise<{ images: NaiImage[]; stopped?: string }> {
+): Promise<{ images: NaiImage[]; stopped?: string } & AnlasOutcome> {
   if (tool.kind === 'upscale') {
     const result = await upscaleImage(sourceBytes, readImageRecipe(version.image!.name), progress, {
       freeOnly: options.freeOnly,
       workspaceId: workspace.id,
       collectionId: workspace.collectionId,
     })
-    options.onResult?.({ anlasDelta: result.anlasDelta })
-    return { images: [result.image] }
+    options.onResult?.(result)
+    return { ...result, images: [result.image] }
   }
   const draft = structuredClone(version.editor.draft)
   if (!draft.base.trim() && !draft.characters.some((character) => character.prompt.trim())) {

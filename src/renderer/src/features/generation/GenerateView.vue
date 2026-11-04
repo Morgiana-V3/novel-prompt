@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { estimateGeneration, estimateLabel, anlasOutcomeText } from '@shared/generation/pricing'
 import GenerationResult from './GenerationResult.vue'
 import CollectionPicker from '../gallery/CollectionPicker.vue'
 import { generationCollection } from '../gallery/collections-state'
@@ -65,7 +66,6 @@ function resetDefaults() {
 
 /** 高级设置（默认收起）：不常改的参数，收起时在标题上显示当前值 */
 const hasToken = computed(() => !!settingsState.settings?.naiToken?.trim())
-const freeOnly = computed(() => settingsState.settings?.naiFreeOnly !== false)
 const version = computed(() => settingsState.settings?.naiVersion ?? 'v4.5')
 
 const sub = computed(() => subscriptionState.subscription)
@@ -82,11 +82,14 @@ const feeStatus = computed(() => {
       hint: checkError.value || '正在检查当前配置的免费资格',
     }
   }
-  const paid = freeOnly.value ? '需调整' : '可能扣费'
+  const estimate = estimateGeneration(
+    { params: { ...gen, width: params.width, height: params.height }, version: version.value },
+    subscriptionState.error ? undefined : sub.value,
+  )
   return {
-    text: check.value.ok ? '预计免费' : paid,
+    text: estimateLabel(estimate),
     tone: check.value.ok ? 'ok' : 'bad',
-    hint: feeHint(check.value),
+    hint: `${feeHint(check.value)}\n按当前账户状态估算，逐张复核；V5 免费额度可能在批次内耗尽。`,
   }
 })
 
@@ -106,9 +109,7 @@ function feeHint(freeCheck: NaiFreeCheck): string {
       ...freeCheck.notes,
     ].join('\n')
   }
-  const handling = freeOnly.value
-    ? '已开启「只用免费额度」：这次不会提交，调整后再生成'
-    : '未开启「只用免费额度」：会照常生成并扣除 Anlas'
+  const handling = '手动操作可继续，提交前会提示确认费用'
   return [
     '可能扣费的原因：',
     ...freeCheck.reasons.map((reason) => `· ${reason}`),
@@ -223,7 +224,7 @@ const resizeAll = () => resizeWithin(leftPane.value)
 let checkTimer: ReturnType<typeof setTimeout> | undefined
 let checkEpoch = 0
 watch(
-  () => [params.width, params.height, gen.steps, version.value, sub.value, freeOnly.value],
+  () => [params.width, params.height, gen.steps, version.value, sub.value],
   () => {
     clearTimeout(checkTimer)
     const epoch = ++checkEpoch
@@ -296,10 +297,6 @@ async function run() {
     !promptState.characters.some((character) => character.prompt.trim())
   ) {
     error.value = '请先输入主提示词或角色提示词'
-    return
-  }
-  if (freeOnly.value && check.value && !check.value.ok) {
-    error.value = `当前设置不满足免费条件：\n${check.value.reasons.join('\n')}\n\n可以调整尺寸/步数，或在设置中允许消耗 Anlas`
     return
   }
   navigate('generate')
@@ -640,7 +637,7 @@ function openImageWorkspace() {
 
       <template v-else>
         <div
-          v-if="last && (last.stopped || last.anlasDelta)"
+          v-if="last"
           :class="['cheer', { warn: last.stopped || (last.anlasDelta ?? 0) < 0 }]"
         >
           <Mascot
@@ -652,13 +649,7 @@ function openImageWorkspace() {
             <b>{{ last.stopped ?? '生成完成' }}</b>
             <div class="muted small">
               本次完成 {{ last.images.length }} 张 ·
-              {{
-                last.anlasDelta === undefined
-                  ? 'Anlas 变化未知'
-                  : last.anlasDelta < 0
-                    ? `消耗了 ${-last.anlasDelta} Anlas`
-                    : '没有消耗 Anlas'
-              }}
+              {{ anlasOutcomeText(last) }}
             </div>
           </div>
         </div>
@@ -820,7 +811,7 @@ function openImageWorkspace() {
 .pane.left.creation-generation {
   position: relative;
   display: grid;
-  grid-template-columns: 30px minmax(64px, 120px) auto minmax(0, 1fr) auto;
+  grid-template-columns: 30px minmax(64px, 1fr) auto max-content auto;
   align-items: center;
   gap: 6px;
   padding: 6px 10px;

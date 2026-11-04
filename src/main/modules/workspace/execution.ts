@@ -1,3 +1,4 @@
+import { anlasOutcomeText } from '../../../shared/generation/pricing'
 import { readFileSync } from 'node:fs'
 import { regionIds, regionNotes, selectRegions } from '../../../shared/workspace/regions'
 import { imagePath } from '../images/access'
@@ -178,6 +179,7 @@ export async function renderPage(
         next.id,
       )
     }
+    pageEvent(workspace, anlasOutcomeText(result), workspace.latestGeneratedVersionId)
     if (result.stopped) {
       pageEvent(workspace, result.stopped, workspace.latestGeneratedVersionId)
     }

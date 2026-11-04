@@ -1,3 +1,9 @@
+import { authorizePaidOperation, operationSignal } from '../../infrastructure/operation-policy'
+import {
+  estimateUpscale,
+  anlasOutcomeText,
+  type AnlasOutcome,
+} from '../../../shared/generation/pricing'
 import sharp from 'sharp'
 import { PNG } from 'pngjs'
 import type { ImageRecipe, NaiImage } from '../../../shared/images/types'
@@ -104,7 +110,7 @@ export async function upscaleImage(
   recipe: ImageRecipe | null,
   onStep: (text: string) => void,
   options: { freeOnly?: boolean; workspaceId?: string; collectionId?: string },
-): Promise<{ image: NaiImage; anlasDelta?: number }> {
+): Promise<{ image: NaiImage } & AnlasOutcome> {
   if (options.freeOnly) {
     throw new Error('放大始终消耗 Anlas，「仅免费生成」开启时不能放大')
   }
@@ -115,10 +121,22 @@ export async function upscaleImage(
   if (size.width * size.height > UPSCALE_MAX_PIXELS) {
     throw new Error(`原图 ${size.width}×${size.height} 超过放大接口的输入上限`)
   }
+  await authorizePaidOperation({
+    kind: 'image.upscale',
+    provider: 'NovelAI',
+    description: '放大图片 2×',
+    quantity: 1,
+    unit: 'Anlas',
+    estimatedCost: estimateUpscale(size.width, size.height),
+  })
   onStep('查询会员与额度…')
   const before = await getSubscription().catch(() => undefined)
   onStep(`正在放大 ${size.width}×${size.height} → ${size.width * 2}×${size.height * 2}…`)
-  const bytes = await upscaleOne(source.toString('base64'), token())
+  const signal = operationSignal()
+  if (signal?.aborted) {
+    throw new Error('已取消')
+  }
+  const bytes = await upscaleOne(source.toString('base64'), token(), signal)
   const after = await getSubscription().catch(() => undefined)
   const change = anlasChange(before, after)
   const version = recipe?.request.version ?? 'v5'
@@ -163,6 +181,11 @@ export async function upscaleImage(
     options.workspaceId,
     options.collectionId,
   )
-  onStep('完成')
-  return { image, anlasDelta: change ? change.fixed + change.purchased : undefined }
+  const result = {
+    image,
+    anlasDelta: change ? change.fixed + change.purchased : undefined,
+    subscription: after,
+  }
+  onStep(`完成 · ${anlasOutcomeText(result)}`)
+  return result
 }

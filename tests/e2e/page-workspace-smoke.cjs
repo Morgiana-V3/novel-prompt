@@ -1394,7 +1394,50 @@ app.whenReady().then(async () => {
         `document.querySelector('.workspace-prompt .gen-advanced').textContent.includes('采样器')&&document.querySelector('.workspace-prompt .gen-params').textContent.includes('步数')`,
       ),
     )
+    const beforePresets = pageCurrent(pages.readPage(ui.id)).editor.params
+    const sharedPresets = () =>
+      js(
+        `[...document.querySelectorAll('#creation-editor .prompt-preset-control')].map(e=>e.textContent)`,
+      )
+    const initialSharedPresets = await sharedPresets()
+    assert.equal(initialSharedPresets.length, 2)
+    const choosePreset = async (label, text) => {
+      await run(`document.querySelector('.workspace-prompt [aria-label="${label}"]').click()`)
+      await click('.theme-select-menu [role="option"]', text)
+    }
+    await choosePreset('内置质量词', '质量词 · Light')
+    await choosePreset('内置负面预设', 'UC · Human Focus')
+    assert.deepEqual(
+      await sharedPresets(),
+      initialSharedPresets,
+      'workspace presets never mutate creation presets',
+    )
+    assert.equal(
+      await js(
+        `document.querySelector('.workspace-prompt .gen-advanced').textContent.includes('UC 预设')`,
+      ),
+      false,
+    )
+    await click('.pw-execution button', '完成')
+    const savedPresets = pageCurrent(pages.readPage(ui.id)).editor.params
+    assert.deepEqual(
+      [savedPresets.qualityTags, savedPresets.qualityMode, savedPresets.ucPreset],
+      [true, 'light', 'human'],
+    )
+    await click('.pw-execution button', '编辑下一版')
+    assert.ok(
+      await js(
+        `document.querySelector('.workspace-prompt [aria-label="内置质量词"]').textContent.includes('Light')`,
+      ),
+    )
     await shot('20-generation-config.png')
+    const { effectiveQualityMode, UC_LABEL } = require('../../src/shared/generation/presets.ts')
+    const qualityNames = { none: 'None', light: 'Light', standard: 'Standard' }
+    await choosePreset(
+      '内置质量词',
+      '质量词 · ' + qualityNames[effectiveQualityMode('v5', beforePresets)],
+    )
+    await choosePreset('内置负面预设', 'UC · ' + UC_LABEL[beforePresets.ucPreset])
     assert.ok(
       await js(
         `document.querySelector('.workspace-prompt textarea').value.includes('grey object')`,
@@ -1496,7 +1539,7 @@ app.whenReady().then(async () => {
     // 修图拆分：放大、精修在按钮下方的小面板确认，扩图单独对话框，不再有三合一分页
     await click('.pw-image-toolbar button', '放大')
     await wait(
-      `document.querySelector('.pw-tool-popover')?.textContent.includes('约 1 Anlas')&&!document.querySelector('.pit-dialog')`,
+      `document.querySelector('.pw-tool-popover')?.textContent.includes('预计 1 Anlas')&&!document.querySelector('.pit-dialog')`,
     )
     assert.ok(
       await js(

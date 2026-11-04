@@ -22,13 +22,15 @@ export interface Settings {
   translateMinCount: number
   /** NovelAI Persistent API Token（pst-...） */
   naiToken: string
-  /** 只允许不消耗 Anlas 的生成：生成前检查免费条件，生成后核对余额 */
-  naiFreeOnly: boolean
+  /** Agent 的非免费或费用未知操作需要用户逐次授权。默认开启。 */
+  agentFreeOnly?: boolean
+  /** 旧版手动生图设置，仅保留用于读取旧数据，不再决定权限。 */
+  naiFreeOnly?: boolean
   /** 普通生图按提交时的设置决定整批是否长期留存。 */
   naiAutoSave?: boolean
   /** 允许外部 agent（MCP）调用会消耗 DeepSeek 额度的工具 */
   mcpAllowAi: boolean
-  /** 允许外部 agent（MCP）调用 NovelAI 生图（强制只用免费额度） */
+  /** 允许外部 agent（MCP）调用 NovelAI 生图（付费操作另行授权） */
   mcpAllowGenerate: boolean
   /** 启用的 Skill 与优先级（数组顺序 = 优先级，靠前的优先）；未设置时用默认组合 */
   skills?: SkillEntry[]

@@ -37,6 +37,10 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'np-img', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ])
 require('../support/register-typescript.cjs')
+// Explicit offline user approval for AI calls; deny paid images in the permission scenario.
+require('../../src/main/infrastructure/operation-policy.ts').setOperationAuthorizer(
+  async (operation) => operation.kind === 'ai.chat',
+)
 const settings = require('../../src/main/modules/settings/service.ts')
 const pages = require('../../src/main/modules/workspace/index.ts')
 const imageAccess = require('../../src/main/modules/images/access.ts')
@@ -895,11 +899,11 @@ app.whenReady().then(async () => {
     const countBeforeDenied = generationInputs.length
     freeTier = false
     settings.saveSettings({ naiFreeOnly: false })
-    await assert.rejects(act('ui_generate_workspace', { kind: 'generate', confirm: true }), /免费/)
+    await assert.rejects(act('ui_generate_workspace', { kind: 'generate', confirm: true }), /授权/)
     assert.equal(
       generationInputs.length,
       countBeforeDenied,
-      'foreground forces free check even with manual paid setting',
+      'foreground requires paid authorization even with legacy manual paid setting',
     )
     freeTier = true
     settings.saveSettings({ naiFreeOnly: true })

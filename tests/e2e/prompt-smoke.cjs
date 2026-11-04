@@ -95,6 +95,7 @@ const handlers = {
     anlasFixed: 10000,
     anlasPurchased: 0,
     usagePercent: 100,
+    usageNegative: false,
   }),
   'nai:freeCheck': () => ({ ok: false, reasons: [], notes: [] }),
   'clipboard:write': (_, text) => {

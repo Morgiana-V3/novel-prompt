@@ -1,3 +1,4 @@
+import type { ConfirmationRequest } from '../../shared/contracts/confirmation'
 import type { McpInfo } from '../../shared/contracts/mcp'
 import type { Settings } from '../../shared/settings/types'
 import type { UpdateProgress } from '../../shared/tags/types'
@@ -9,6 +10,9 @@ import { invoke, on } from './bridge'
 import type { SnippetInput } from '../../shared/prompts/snippets'
 
 export const applicationApi = {
+  replyConfirmation: (id: string, approved: boolean) => invoke('confirmations:reply', id, approved),
+  onConfirmations: (cb: (requests: ConfirmationRequest[]) => void) =>
+    on('confirmations:changed', cb),
   statisticsGet: () => invoke('statistics:get'),
   statisticsClear: () => invoke('statistics:clear'),
   storageInfo: () => invoke('storage:info'),

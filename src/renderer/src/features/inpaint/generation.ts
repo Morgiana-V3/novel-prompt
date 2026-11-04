@@ -1,3 +1,4 @@
+import { anlasOutcomeText } from '@shared/generation/pricing'
 import type { NaiGenParams, NaiGenResult, NaiVersion } from '@shared/generation/types'
 import type { InpaintDraft } from '@shared/prompts/types'
 
@@ -36,8 +37,7 @@ export async function executeInpaintQueue(options: InpaintQueue): Promise<void> 
     }
     imageName = response.images[response.images.length - 1].name
     options.report(
-      response.stopped ??
-        `已完成 ${index + 1}/${options.queue.length} 个区域，重绘结果已另存到图库。`,
+      `${response.stopped ?? `已完成 ${index + 1}/${options.queue.length} 个区域，重绘结果已另存到图库。`} · 本区域：${anlasOutcomeText(response)}`,
     )
     if (response.stopped) {
       break

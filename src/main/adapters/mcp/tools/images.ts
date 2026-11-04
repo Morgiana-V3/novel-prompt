@@ -52,7 +52,7 @@ export function createGenerateImageTool(): McpTool {
   return {
     name: 'generate_image',
     title: 'NovelAI 生图',
-    description: `用 NovelAI 文生图并保存到本机图库，返回图片文件路径。强制只用免费额度：生成前检查 Opus 会员、免费额度、总像素 ≤ ${FREE_MAX_PIXELS}、步数 ≤ ${FREE_MAX_STEPS}，不满足就不提交；每张生成后核对 Anlas，发现扣除立即停止。必须传 confirm: true。每次最多 4 张，逐张生成。`,
+    description: `用 NovelAI 文生图并保存到本机图库，返回图片文件路径。默认只允许免费操作；付费或费用未知时需要用户授权：生成前检查 Opus 会员、免费额度、总像素 ≤ ${FREE_MAX_PIXELS}、步数 ≤ ${FREE_MAX_STEPS}，不满足时须由用户授权后提交；每张生成后核对 Anlas，原预计免费但发现扣除时立即停止。confirm 仅表示执行意图，不代表付费授权。必须传 confirm: true。每次最多 4 张，逐张生成。`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -124,7 +124,7 @@ export function createGenerateImageTool(): McpTool {
         },
         progress ?? (() => {}),
         () => signal.aborted,
-        { freeOnly: true },
+        {},
       )
       if (signal.aborted) {
         generationResult.stopped ??= '已停止，已完成的图片已保留'

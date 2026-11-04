@@ -22,7 +22,7 @@ const DEFAULTS: Settings = {
   naiVersion: 'v4.5',
   translateMinCount: 50,
   naiToken: '',
-  naiFreeOnly: true,
+  agentFreeOnly: true,
   naiAutoSave: false,
   mcpAllowAi: false,
   mcpAllowGenerate: false,
@@ -80,6 +80,8 @@ export function getSettings(): Settings {
   cache = {
     ...DEFAULTS,
     ...saved,
+    // Old manual spending preferences must never grant Agent spending permission.
+    agentFreeOnly: saved.agentFreeOnly === false ? false : true,
     tagCompletionLimit: tagCompletionLimit(saved.tagCompletionLimit),
   }
   cache.aiPreset = saved.aiPreset ?? inferAiPreset(cache.baseUrl)

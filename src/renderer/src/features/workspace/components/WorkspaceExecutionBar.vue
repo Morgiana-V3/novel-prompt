@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { estimateGeneration, estimateLabel } from '@shared/generation/pricing'
+import type { NaiVersion } from '@shared/generation/types'
+import { subscriptionState } from '../../generation/subscription'
 import { computed } from 'vue'
 import { regionIds } from '@shared/workspace/regions'
 import type { PageExecution, PageVersion, PageEditorState } from '@shared/workspace/model'
@@ -8,6 +11,7 @@ import CollectionPicker from '../../gallery/CollectionPicker.vue'
 import { DEFAULT_COLLECTION } from '@shared/images/collections'
 import Icon from '../../../shared/ui/Icon.vue'
 const props = defineProps<{
+  model: NaiVersion
   current: PageVersion
   selectedRegionIds: string[]
   execution: PageExecution
@@ -30,6 +34,20 @@ const emit = defineEmits<{
   cancel: [id: string]
   collection: [id: string]
 }>()
+const cost = computed(() =>
+  estimateLabel(
+    estimateGeneration(
+      {
+        params: props.nextEditor.params,
+        version: props.model,
+        ...(props.execution.kind === 'inpaint'
+          ? { inpaint: { strength: props.nextEditor.strength } }
+          : {}),
+      },
+      subscriptionState.error ? undefined : subscriptionState.subscription,
+    ),
+  ),
+)
 const executionIds = computed(() => regionIds(props.execution))
 const executionChoice = computed(() => {
   if (props.execution.kind === 'generate') {
@@ -112,7 +130,7 @@ const generationLabel = computed(() => {
     />
     <span class="muted small pw-execution-summary"
       >{{ nextEditor.params.width }}×{{ nextEditor.params.height }} ·
-      {{ nextEditor.params.steps }} 步</span
+      {{ nextEditor.params.steps }} 步 · {{ cost }}</span
     >
     <div class="pw-generation-actions">
       <button
@@ -153,8 +171,9 @@ const generationLabel = computed(() => {
         <Icon
           name="wand"
           :size="16"
-        />{{ generationLabel
-        }}<span
+        /><span
+          >{{ generationLabel }}<small class="pw-compact-cost">{{ cost }}</small></span
+        ><span
           v-if="operation !== 'generate' && nextEditor.params.count > 1"
           class="pw-generation-count"
           >{{ nextEditor.params.count }}</span
@@ -245,7 +264,18 @@ const generationLabel = computed(() => {
   margin: 0 !important;
 }
 
+.pw-compact-cost {
+  display: none;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.2;
+}
+
 @media (width <= 1250px) {
+  .pw-compact-cost {
+    display: block;
+  }
+
   .pw-execution-summary {
     display: none;
   }

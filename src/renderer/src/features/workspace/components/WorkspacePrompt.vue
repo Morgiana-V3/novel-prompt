@@ -69,12 +69,15 @@ defineExpose({ copyPrompt: () => copy(sectionText(active.value.draft)) })
     <div class="workspace-config-body">
       <PromptEditor
         :draft="active.draft"
+        show-presets
+        :preset-params="active.params"
         :model="model"
         :params="active.params"
         :image="image"
         :disabled="readOnly"
         :base-hint="editable ? '下一次生成使用的提示词' : '图片生成时保存的提示词'"
         @change-draft="updateDraft"
+        @change-params="updateParams"
       />
       <div class="field-head gen-params-head">
         <label class="field-label">生成参数</label
@@ -95,6 +98,8 @@ defineExpose({ copyPrompt: () => copy(sectionText(active.value.draft)) })
       <GenerationParameters
         :gen="active.params"
         :params="active.params"
+        expanded-sizes
+        prompt-presets-in-editor
         :disabled="readOnly"
         :size-locked="sizeLocked"
         @change-gen="updateParams"

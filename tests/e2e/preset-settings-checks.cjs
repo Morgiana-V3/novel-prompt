@@ -85,7 +85,7 @@ module.exports = async function checkPresetSettings({
   await waitUI(
     `document.querySelector('${popup} .param .side-label').textContent.includes('1024×1536')`,
   )
-  await waitUI(`document.querySelector('.fee-status').textContent === '需调整'`)
+  await waitUI(`document.querySelector('.fee-status').textContent === '预计 180 Anlas'`)
   await select(size, '壁纸 · Wallpaper')
   await orient('横图')
   await waitUI(
@@ -113,7 +113,7 @@ module.exports = async function checkPresetSettings({
   await waitUI(
     `document.querySelector('${popup} .param .side-label').textContent.includes('1216×832')`,
   )
-  await waitUI(`document.querySelector('.fee-status').textContent === '预计免费'`)
+  await waitUI(`document.querySelector('.fee-status').textContent === '预计 0～90 Anlas'`)
   await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`)
   // Keep a compact, readable fixture for reviewing the actual rendered controls.
   await js(`document.querySelector('#creation-editor').scrollTop = 0`)

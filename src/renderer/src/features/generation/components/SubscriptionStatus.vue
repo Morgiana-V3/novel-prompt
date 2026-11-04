@@ -11,7 +11,6 @@ import { refreshSubscription, resetSubscription, subscriptionState } from '../su
 
 const hasToken = computed(() => !!settingsState.settings?.naiToken?.trim())
 const subscription = computed(() => subscriptionState.subscription)
-const freeOnly = computed(() => settingsState.settings?.naiFreeOnly !== false)
 const isV5 = computed(() => settingsState.settings?.naiVersion === 'v5')
 const label = computed(() => {
   if (!hasToken.value) {
@@ -195,7 +194,7 @@ onBeforeUnmount(() => {
         title="在设置中修改额度使用方式"
         @click="openSettings"
       >
-        {{ freeOnly ? '只用免费额度' : '允许消耗 Anlas' }}
+        可能扣费时确认
       </button>
     </template>
   </section>

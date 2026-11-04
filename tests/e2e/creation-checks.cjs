@@ -614,7 +614,7 @@ module.exports = async function checkCreation({
   )
   await js(`document.querySelector('.side-bottom .seg button').click()`)
   await waitUI(
-    `document.querySelector('#creation-generation-controls .fee-status')?.textContent.includes('预计免费')`,
+    `document.querySelector('#creation-generation-controls .fee-status')?.textContent.includes('预计 0 Anlas')`,
   )
   await js(
     `document.querySelector('#creation-generation-controls .creation-parameters-toggle').click()`,

@@ -1,3 +1,4 @@
+import type { ConfirmationRequest } from './confirmation'
 import type { StatisticsData } from '../statistics/model'
 import type { ImageCollection } from '../images/collections'
 import type {
@@ -48,6 +49,8 @@ import type { StorageInfo } from '../settings/storage'
 import type { PromptSnippet, SnippetInput } from '../prompts/snippets'
 
 export interface Api {
+  replyConfirmation: (id: string, approved: boolean) => Promise<void>
+  onConfirmations: (cb: (requests: ConfirmationRequest[]) => void) => () => void
   collectionsList: () => Promise<ImageCollection[]>
   collectionsCreate: (name: string) => Promise<ImageCollection>
   collectionsRename: (id: string, name: string) => Promise<void>
@@ -212,6 +215,7 @@ export interface Api {
 }
 
 export interface IpcContract {
+  'confirmations:reply': { args: Parameters<Api['replyConfirmation']>; result: void }
   'collections:list': {
     args: Parameters<Api['collectionsList']>
     result: Awaited<ReturnType<Api['collectionsList']>>
@@ -543,6 +547,7 @@ export interface RendererMessages {
 }
 
 export interface AppEvents {
+  'confirmations:changed': ConfirmationRequest[]
   'desktop:command': DesktopCommand
   'desktop:frontend-cancel': string
   'gallery:changed': null
