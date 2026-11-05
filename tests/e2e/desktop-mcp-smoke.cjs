@@ -758,6 +758,19 @@ app.whenReady().then(async () => {
       /用户或其他 Agent/,
     )
     assert.equal((await a.data('get_app_state')).connection.workspace.editor.ownership, 'user')
+    // 用户改过的草稿：Agent 生成不得替用户保存并出图
+    const beforeUserDraftGenerate = generationInputs.length
+    await assert.rejects(
+      act('ui_generate_workspace', { kind: 'generate', confirm: true }),
+      /下一版配置仍未保存/,
+    )
+    assert.equal(generationInputs.length, beforeUserDraftGenerate)
+    assert.equal(
+      pages.readPage(frontId).versions[0].editor.draft.base,
+      'manual configuration',
+      'agent generation does not save a user draft',
+    )
+    assert.equal((await a.data('get_app_state')).desktop.workspace.config.open, true)
     await click('.pw-execution button', '完成')
     const orphan = connectAgent()
     await orphan.request('initialize', { clientInfo: { name: 'orphan-draft-fixture' } })

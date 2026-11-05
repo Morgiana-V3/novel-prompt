@@ -146,14 +146,18 @@ export function createWorkspaceCommands(host: WorkspaceCommandHost) {
   async function frontendAction(request: FrontendRequest, ctx: FrontendContext) {
     const resumeOwner = configOwner.value
     const idle = await settle(ctx.signal)
-    // 采纳方案后会打开「下一版配置」。界面上的生成按钮本身会先保存草稿再生成，
-    // 所以生成不算冲突；其他 Agent 的草稿一律不覆盖，其余操作仍需先保存或取消。
+    // 采纳方案后会打开「下一版配置」。只有本 Agent 自己打开的草稿可以由生成直接保存并执行；
+    // 用户改过的草稿（归属清空）和其他 Agent 的草稿都不替人保存，其余操作仍需先保存或取消。
     const draftConflict =
       request.action !== 'config' &&
       editingPrompt.value &&
       !!configOwner.value &&
       configOwner.value !== ctx.agentSession
-    const unsaved = editingPrompt.value && !['config', 'generate'].includes(request.action)
+    const ownDraft = !!ctx.agentSession && configOwner.value === ctx.agentSession
+    const unsaved =
+      editingPrompt.value &&
+      request.action !== 'config' &&
+      !(request.action === 'generate' && ownDraft)
     if (draftConflict) {
       throw new Error('下一版配置由其他 Agent 编辑，请先完成或取消，未覆盖修改')
     }
