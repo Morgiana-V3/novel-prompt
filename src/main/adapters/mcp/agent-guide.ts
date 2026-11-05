@@ -42,6 +42,8 @@ ${AGENT_ENTRY}
 | 当前状态 | get_app_state | 当前页面、共享稿、工作台摘要、任务；不是完整聊天或像素 |
 | 当前窗口 | ui_capture_app | 真实应用截图；包含可见弹窗，不能读取被滚动隐藏的完整历史 |
 | 图片资料 | list_images、read_image、read_image_prompt | 分别读取图库目录、图像像素、PNG 内提示词；元数据不能证明画面实际符合要求 |
+| 图片反推 | reverse_image | 本机模型识别标签、角色与画师风格候选，不消耗额度；与界面共用识别进程，模型须先在「图片反推」页下载；画师候选仅供选画风参考 |
+| 收藏与片段 | list_favorites、get_favorite、save_favorite、update_favorite、delete_favorite；list_snippets、save_snippet、delete_snippet | 读取和维护用户的收藏配方与提示词片段，与界面共用数据并即时刷新；get_favorite 的 request 可直接交给 generate_image；删除不可撤销，须先征得同意 |
 | 会话与完整记录 | list_workspaces、get_workspace、get_workspace_context、list_workspace_requests、compare_workspace_versions | 会话列表、完整聊天与方案/版本、本轮待处理任务与冻结规则 |
 | 后台工作台 | create_workspace、propose_workspace_edit、apply_workspace_action、generate_workspace、run_workspace_image_tool | 创建、提交建议、采纳/撤销/切换版本、生成，以及对当前蓝本放大/扩图/精修；结果可能同步界面，不展示逐步交互 |
 | 外部处理者 | set_workspace_agent、reply_workspace_request、cancel_workspace_request；对应 ui_* | 接管、回复、取消；分析来自你，不是内置 AI |

@@ -2,10 +2,10 @@ import type { McpTool } from './types'
 
 export const TOOL_GROUPS = {
   core: '指南、状态、任务与恢复（始终保留）',
-  tags: '标签检索与提示词检查',
+  tags: '标签检索、提示词检查与提示词片段',
   workspace: '后台工作台、需求、版本与区域管理',
   frontend: '窗口操作与前台工作台',
-  images: '图库、生图与局部重绘',
+  images: '图库、生图、局部重绘、收藏与图片反推',
   ai: '委托软件内置 AI',
   skills: '读取和管理提示词规则',
 } as const
@@ -48,7 +48,7 @@ export function toolGroup(name: string): ToolGroup {
   if (name.includes('workspace')) {
     return 'workspace'
   }
-  if (TAGS.has(name)) {
+  if (TAGS.has(name) || name.includes('snippet')) {
     return 'tags'
   }
   if (AI.has(name)) {

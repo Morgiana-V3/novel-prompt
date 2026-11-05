@@ -19,6 +19,7 @@ const cases = {
   statistics: ['electron', 'tests/integration/statistics-smoke.cjs', false],
   'chat:presets': ['electron', 'tests/integration/chat-presets-smoke.cjs', false],
   'vision:routing': ['electron', 'tests/integration/vision-routing-smoke.cjs', false],
+  'mcp:library': ['electron', 'tests/integration/mcp-library-smoke.cjs', false],
   'creation:tabs': ['electron', 'tests/e2e/creation-tabs-smoke.cjs', true],
   'storage:snippets': ['electron', 'tests/integration/storage-snippets-smoke.cjs', false],
   'tags:complete': ['electron', 'tests/integration/tag-complete-smoke.cjs', false],

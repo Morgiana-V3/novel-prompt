@@ -13,6 +13,8 @@ import { refreshDb } from '../features/tags/state'
 import { loadSkills } from '../features/skills/state'
 import { saveSettings, checkUpdate, dismissUpdate, receiveUpdate } from '../features/settings/state'
 import { importImagePrompt, flushWorkspace, applyWorkspace } from '../features/prompts/actions'
+import { refreshFavorites } from '../features/favorites/public'
+import { refreshSnippets } from '../features/prompts/snippets-state'
 import {
   creationTabs,
   createTab,
@@ -161,6 +163,7 @@ let offTasks: (() => void) | undefined
 let offUpdate: (() => void) | undefined
 let offDesktop: (() => void) | undefined
 let offSkills: (() => void) | undefined
+let offLibrary: (() => void)[] = []
 let updateTimer: ReturnType<typeof setTimeout> | undefined
 const workspaceView = ref<InstanceType<typeof WorkspacesView>>()
 const settingsView = ref<InstanceType<typeof SettingsView>>()
@@ -535,6 +538,7 @@ onBeforeUnmount(() => {
   offUpdate?.()
   offDesktop?.()
   offSkills?.()
+  offLibrary.forEach((off) => off())
   offFrontend?.()
   frontendController?.abort()
   clearTimeout(updateTimer)
@@ -558,6 +562,15 @@ onMounted(async () => {
   offSkills = window.api.onSkillsChanged(() => {
     void loadSkills().catch((candidate) => toast(cleanErr(candidate)))
   })
+  // Agent 改了收藏或提示词片段时刷新，星标与片段库保持一致
+  offLibrary = [
+    window.api.onFavoritesChanged(() => {
+      void refreshFavorites().catch((candidate) => toast(cleanErr(candidate)))
+    }),
+    window.api.onSnippetsChanged(() => {
+      void refreshSnippets().catch((candidate) => toast(cleanErr(candidate)))
+    }),
+  ]
   let commands = Promise.resolve()
   offFrontend = window.api.onFrontendCancel((id) => {
     cancelledFrontendId = id

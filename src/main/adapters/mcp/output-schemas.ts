@@ -211,6 +211,22 @@ const generation = shape({
   stopped: nullable(str),
   anlasChange: { type: ['number', 'string'] },
 })
+const favoriteFields = {
+  id: str,
+  name: str,
+  note: str,
+  tags: strings,
+  createdAt: str,
+  version: str,
+  size: str,
+  seed: nullable(int),
+  base: str,
+  characters: int,
+  hasImage: bool,
+}
+const favoriteSummary = shape(favoriteFields, ['id', 'name'])
+const snippet = shape({ id: str, name: str, text: str, category: str, updatedAt: int })
+const scoredTag = shape({ name: str, score: num })
 const namedSchemas: Record<string, Schema> = {
   get_workspace: workspace,
   get_workspace_context: context,
@@ -309,6 +325,34 @@ const namedSchemas: Record<string, Schema> = {
   ),
   read_image: shape({ original: dimensions, displayed: dimensions }),
   read_image_prompt: draft,
+  list_favorites: shape({ items: array(favoriteSummary), total: int, tags: strings }),
+  get_favorite: shape(
+    {
+      ...favoriteFields,
+      sourceKind: str,
+      request: objectSchema,
+      imagePath: nullable(str),
+      sourceImage: nullable(str),
+    },
+    ['id', 'name', 'request'],
+  ),
+  save_favorite: shape({ outcome: { enum: ['saved'] }, favorite: favoriteSummary }),
+  update_favorite: shape({ outcome: { enum: ['updated'] }, favorite: favoriteSummary }),
+  delete_favorite: shape({ outcome: { enum: ['deleted'] }, id: str, name: str }),
+  list_snippets: shape({ items: array(snippet), categories: strings }),
+  save_snippet: shape({ outcome: { enum: ['created', 'updated'] }, snippet }),
+  delete_snippet: shape({ outcome: { enum: ['deleted'] }, id: str, name: str }),
+  reverse_image: shape(
+    {
+      tags: array(scoredTag),
+      characters: array(scoredTag),
+      characterModel: nullable(str),
+      artists: array(shape({ model: str, tags: array(scoredTag) })),
+      seconds: num,
+      warnings: strings,
+    },
+    ['tags', 'characters', 'artists'],
+  ),
   list_images: shape({
     items: array(image),
     total: int,

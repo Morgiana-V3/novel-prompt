@@ -19,6 +19,7 @@ export function agentExecutor(
     generate_workspace: 'page-generate',
     run_workspace_image_tool: 'page-generate',
     analyze_prompt: 'agent',
+    reverse_image: 'reverse-analyze',
   }
   return async (tool, args, signal, report) => {
     if (signal.aborted) {
@@ -39,6 +40,13 @@ export function agentExecutor(
     }
     const kind = kinds[tool.name] ?? 'agent'
     const generation = ['generate', 'inpaint', 'page-generate'].includes(kind)
+    // 生图共用生成锁；图片反推与界面共用本地识图锁
+    let resource: 'generation' | 'reverse' | undefined
+    if (generation) {
+      resource = 'generation'
+    } else if (kind === 'reverse-analyze') {
+      resource = 'reverse'
+    }
     return tasks.run(
       kind,
       async (ctx) => {
@@ -79,6 +87,12 @@ export function agentExecutor(
           if (tool.name.includes('skill')) {
             send('skills:changed', null)
           }
+          if (tool.name.includes('favorite')) {
+            send('favorites:changed', null)
+          }
+          if (tool.name.includes('snippet')) {
+            send('snippets:changed', null)
+          }
           return result
         } finally {
           signal.removeEventListener('abort', cancel)
@@ -89,7 +103,7 @@ export function agentExecutor(
       },
       {
         key: kind === 'agent' ? randomUUID() : kind,
-        resource: generation ? 'generation' : undefined,
+        resource,
         cancelMode: generation ? 'after-current' : 'abort',
         origin: 'agent',
         label: tool.title ?? tool.name,

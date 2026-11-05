@@ -81,6 +81,9 @@ export interface Api {
   onFrontendCancel: (cb: (id: string) => void) => () => void
   onGalleryChanged: (cb: () => void) => () => void
   onSkillsChanged: (cb: () => void) => () => void
+  /** Agent 改动收藏或提示词片段后通知界面刷新 */
+  onFavoritesChanged: (cb: () => void) => () => void
+  onSnippetsChanged: (cb: () => void) => () => void
   tasksList: () => Promise<TaskSnapshot>
   tasksCancel: (id: string) => Promise<void>
   tasksClear: () => Promise<void>
@@ -559,6 +562,8 @@ export interface AppEvents {
   'desktop:frontend-cancel': string
   'gallery:changed': null
   'skills:changed': null
+  'favorites:changed': null
+  'snippets:changed': null
   'tasks:changed': TaskSnapshot
   'agents:changed': PageAgentIdentity[]
   'nai:step': NaiStep

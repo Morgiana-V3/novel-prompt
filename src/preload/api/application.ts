@@ -26,6 +26,8 @@ export const applicationApi = {
   snippetsDelete: (id: string) => invoke('snippets:delete', id),
   onGalleryChanged: (cb: () => void) => on('gallery:changed', cb),
   onSkillsChanged: (cb: () => void) => on('skills:changed', cb),
+  onFavoritesChanged: (cb: () => void) => on('favorites:changed', cb),
+  onSnippetsChanged: (cb: () => void) => on('snippets:changed', cb),
   onTasks: (cb: (snapshot: TaskSnapshot) => void) => on('tasks:changed', cb),
   onAgentConnections: (cb: (agents: PageAgentIdentity[]) => void) => on('agents:changed', cb),
   setImagePreviewActive: (active: boolean): Promise<void> => invoke('window:image-preview', active),

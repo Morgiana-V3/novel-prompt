@@ -6,6 +6,7 @@ import { reverseModels } from '../../../shared/reverse/types'
 import { styleSimilarity } from '../../../shared/reverse/candidates'
 import { libraryImagePath } from '../../modules/images/library'
 import { ReverseService } from '../../modules/reverse/service'
+import { setReverseRuntime } from '../../modules/reverse/runtime'
 import type { IpcContext } from './context'
 import { handle } from './handle'
 
@@ -19,6 +20,12 @@ export function registerReverseIpc(
     net.fetch.bind(net),
   )
   app.on('before-quit', () => service.cancel())
+  // Agent（MCP）与界面共用这一个识别实例
+  setReverseRuntime({
+    analyze: (bytes, models, report) =>
+      service.analyze(bytes, workerPath, reverseModels(models), report),
+    cancel: () => service.cancel(),
+  })
   const trackRecognition = <T>(
     kind: 'reverse-analyze' | 'reverse-score',
     work: (signal: AbortSignal, report: (message: string) => void) => Promise<T>,

@@ -219,11 +219,15 @@ npm install; npm run build
 - 历史页使用 `message_limit`（1～100）、`before_message_id`，翻页必须附上一页的 `history.revision` 作为 `history_revision`；变化时拒绝混合分页。默认摘要省略方案前后稿、历史生成参数和规则正文，原始项目文件保持完整。
 - `since_revision` 比较本连接最近缓存的对应 `detail` 快照。未变返回 `notModified`；变化返回 `delta:true`、新增/变更的消息和候选，以及删除 id 列表。旧消息的采纳/撤销、旧候选配置变化也会被发现。按 id 合并，摘要/全文分别缓存；增量需要翻页时保持原 `since_revision`，携带当前 `history_revision`，读完消息与候选两类增量的所有页后再推进本地版本。单独翻页时另一列表不重复返回，分页信息的 `included:false` 表示未读取，不能理解为空集合。重新连接、首次请求某种 detail 或基线超过最近 32 个快照时，返回 `resetRequired:true` 和当前分页快照，须重建缓存。切勿把分页/局部详情中缺失的条目当成删除。
 - `list_images` 支持 `storage`、`collection_id`、`query`、`limit`、`before_name`，返回 `items/collections/hasMore/nextBeforeName`；`generate_image` 可用 `collection_id` 指定保存到哪个图集。
+- 收藏：`list_favorites`（`query`/`tag`/`limit`）返回摘要，`get_favorite` 返回完整 `request` 与收藏原图路径，可直接交给 `generate_image` 复用；`save_favorite` 从图库图片收藏（可同时命名、加标签），`update_favorite` 修改名称/备注/标签，`delete_favorite` 删除收藏副本，来源图片保留。
+- 提示词片段：`list_snippets`（`query`/`category`）、`save_snippet`（带 `id` 为修改，省略为新建）、`delete_snippet`。
+- 图片反推：`reverse_image` 接受图库 `image_name` 或本机图片绝对路径 `path`，用本地模型返回标签、角色与 Kaloscope 画师候选，不消耗额度；模型需先在「图片反推」页下载。与界面共用识别进程，界面正在识别时排队；在任务中心取消会停止识别。
+- 收藏与片段的改动会通知界面即时刷新星标和片段库。
 
 `npm run mcp:context-smoke` 使用独立临时数据验证规则目录与任务选篇、按篇变化、禁用/重排、强制补读、冻结快照、缓存隔离、摘要/详情、历史/候选分页、旧消息与候选更新及增量恢复。加 `-- --measure-dev` 可只读测量开发目录的现有项目返回大小；不迁移、不保存真实项目。字符数按单份业务 JSON 统计，不代表特定客户端实际计入模型的 token 数。
 - 工具保留文本内容并返回对象形式的 `structuredContent`。普通文本报告在 `text` 字段，列表在 `items`。参数错误、权限关闭和执行错误提供 `error.code/message/retryable/nextAction`。取消任务的 `cancellation` 明确区分受理、正在停止、已结束与不存在。
 
-这些接口不涉及收藏或配置收藏的设计变更。旧宿主须重新启动、MCP 客户端须重新连接才能读取更新后的工具清单。
+旧宿主须重新启动、MCP 客户端须重新连接才能读取更新后的工具清单。
 
 ## 按任务精简工具列表
 

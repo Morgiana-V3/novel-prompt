@@ -29,6 +29,8 @@ export const MCP_INSTRUCTIONS = `${AGENT_ENTRY}
 tag 使用 search_tags / validate_tags 的依据；保留用户明确的语义，完成后 analyze_prompt 复查。生成须有用户明确授权并传 confirm:true，返回 stopped 则停止。optimize_prompt / preview_prompt / plan_inpaint 调用内置 AI 并消耗额度；外部 Agent 通常自行推理。
 工具参数以 tools/list 为准，能力选择、操作顺序与恢复方式以 agent_guide 为准。`
 
+import { libraryTools } from './tools/library'
+
 export function buildTools(): McpTool[] {
   return [
     createAgentGuideTool(),
@@ -43,5 +45,6 @@ export function buildTools(): McpTool[] {
     createGenerateImageTool(),
     createListImagesTool(),
     createReadImagePromptTool(),
+    ...libraryTools(),
   ]
 }
