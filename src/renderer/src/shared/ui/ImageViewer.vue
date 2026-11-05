@@ -571,15 +571,15 @@ onBeforeUnmount(() => {
 
 .iv-image-enter-active {
   transition:
-    opacity 280ms ease,
-    transform 340ms cubic-bezier(0.2, 0.7, 0.2, 1);
+    opacity var(--dur-slow) ease,
+    transform var(--dur-emph) cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 .iv-image-leave-active {
   pointer-events: none;
   transition:
-    opacity 180ms ease,
-    transform 280ms cubic-bezier(0.2, 0.7, 0.2, 1);
+    opacity var(--dur-base) ease,
+    transform var(--dur-slow) cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 .iv-image-enter-from {
@@ -606,7 +606,7 @@ onBeforeUnmount(() => {
   color: #fff;
   background: transparent;
   opacity: 0.9;
-  transition: opacity 180ms ease;
+  transition: opacity var(--dur-base) ease;
 }
 
 .iv-step-face {
@@ -616,7 +616,7 @@ onBeforeUnmount(() => {
   height: 44px;
   border-radius: 50%;
   background: rgb(20 20 24 / 36%);
-  transition: transform 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition: transform var(--dur-base) cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 .iv-previous .icon {
@@ -685,12 +685,12 @@ onBeforeUnmount(() => {
   opacity: 0.52;
   background: rgb(255 255 255 / 6%);
   transition:
-    width 280ms ease,
-    height 280ms ease,
-    flex-basis 280ms ease,
-    opacity 220ms ease,
-    border-color 220ms ease,
-    background 220ms ease;
+    width var(--dur-slow) ease,
+    height var(--dur-slow) ease,
+    flex-basis var(--dur-slow) ease,
+    opacity var(--dur-base) ease,
+    border-color var(--dur-base) ease,
+    background var(--dur-base) ease;
 }
 
 .iv-thumb-image {
@@ -701,8 +701,8 @@ onBeforeUnmount(() => {
   border-radius: 7px;
   background: #242428;
   transition:
-    transform 260ms cubic-bezier(0.2, 0.7, 0.2, 1),
-    box-shadow 220ms ease;
+    transform var(--dur-slow) cubic-bezier(0.2, 0.7, 0.2, 1),
+    box-shadow var(--dur-base) ease;
 }
 
 .iv-thumbnail:hover {
@@ -735,18 +735,18 @@ onBeforeUnmount(() => {
 
 .iv-thumb-move {
   transition:
-    transform 300ms cubic-bezier(0.2, 0.7, 0.2, 1),
-    width 280ms ease,
-    height 280ms ease,
-    flex-basis 280ms ease,
-    opacity 220ms ease;
+    transform var(--dur-slow) cubic-bezier(0.2, 0.7, 0.2, 1),
+    width var(--dur-slow) ease,
+    height var(--dur-slow) ease,
+    flex-basis var(--dur-slow) ease,
+    opacity var(--dur-base) ease;
 }
 
 .iv-thumb-enter-active,
 .iv-thumb-leave-active {
   transition:
-    opacity 220ms ease,
-    transform 280ms ease;
+    opacity var(--dur-base) ease,
+    transform var(--dur-slow) ease;
 }
 
 .iv-thumb-enter-from,

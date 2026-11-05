@@ -78,7 +78,7 @@
     border-color var(--dur-base),
     background-color var(--dur-base);
   animation: pop var(--dur-base) var(--ease-out) backwards;
-  animation-delay: calc(min(var(--i, 0), 24) * 12ms);
+  animation-delay: calc(min(var(--i, 0), 24) * var(--dur-stagger));
 }
 
 .tag-card:hover {

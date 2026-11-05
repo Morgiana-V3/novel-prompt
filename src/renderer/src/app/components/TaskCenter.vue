@@ -386,8 +386,8 @@ function closePanel() {
   opacity: 0;
   transform: translateX(6px);
   transition:
-    opacity 180ms ease,
-    transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity var(--dur-base) ease,
+    transform var(--dur-emph) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .task-chevron {
@@ -397,8 +397,8 @@ function closePanel() {
   transform: rotate(90deg);
   opacity: 0;
   transition:
-    opacity 180ms ease,
-    transform 280ms ease;
+    opacity var(--dur-base) ease,
+    transform var(--dur-slow) ease;
 }
 
 .working .task-count {
@@ -452,10 +452,10 @@ function closePanel() {
   border-radius: 10px;
   background: var(--panel);
   transition:
-    width 420ms cubic-bezier(0.22, 1, 0.36, 1),
-    border-radius 420ms cubic-bezier(0.22, 1, 0.36, 1),
-    background-color 200ms ease,
-    transform 200ms ease;
+    width var(--dur-emph) cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius var(--dur-emph) cubic-bezier(0.22, 1, 0.36, 1),
+    background-color var(--dur-base) ease,
+    transform var(--dur-base) ease;
 }
 
 .task-trigger:hover .task-surface,
@@ -485,8 +485,8 @@ function closePanel() {
   position: absolute;
   inset: 0;
   transition:
-    opacity 220ms ease,
-    transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity var(--dur-base) ease,
+    transform var(--dur-emph) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .task-loading {

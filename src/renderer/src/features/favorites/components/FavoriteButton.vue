@@ -178,8 +178,8 @@ async function confirm() {
   height: 26px;
   border-radius: 8px;
   transition:
-    background-color 150ms ease,
-    color 150ms ease;
+    background-color var(--dur-fast) ease,
+    color var(--dur-fast) ease;
 }
 
 .favorite-button.icon-btn:active {
@@ -203,11 +203,11 @@ async function confirm() {
 
 /* ---------- 收藏反馈：星星先缩后弹 + 光环扩散 + 粒子四散（参考 B 站点赞） ---------- */
 .favorite-button.just-saved :deep(svg) {
-  animation: favorite-pop 0.6s var(--bounce);
+  animation: favorite-pop var(--dur-feedback) var(--bounce);
 }
 
 .favorite-button.just-removed :deep(svg) {
-  animation: favorite-drop 0.32s var(--ease-out);
+  animation: favorite-drop var(--dur-slow) var(--ease-out);
 }
 
 .favorite-burst {
@@ -227,7 +227,7 @@ async function confirm() {
   border: 2px solid var(--pink);
   border-radius: 50%;
   opacity: 0;
-  animation: favorite-ring 0.5s var(--ease-out) forwards;
+  animation: favorite-ring calc(var(--dur-feedback) * 0.85) var(--ease-out) forwards;
 }
 
 .favorite-burst i {
@@ -240,7 +240,8 @@ async function confirm() {
   border-radius: 50%;
   background: var(--pink);
   opacity: 0;
-  animation: favorite-spark 0.62s cubic-bezier(0.2, 0.8, 0.2, 1) 0.06s forwards;
+  animation: favorite-spark var(--dur-feedback) var(--ease-out) calc(var(--dur-feedback) * 0.1)
+    forwards;
 }
 
 .favorite-burst i:nth-child(even) {
@@ -248,7 +249,7 @@ async function confirm() {
   height: 3px;
   margin: -1.5px 0 0 -1.5px;
   background: #ffc14d;
-  animation-duration: 0.54s;
+  animation-duration: calc(var(--dur-feedback) * 0.9);
 }
 
 @keyframes favorite-pop {

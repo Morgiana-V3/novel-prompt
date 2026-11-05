@@ -995,7 +995,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   text-align: left;
   border-radius: 14px;
   animation: fade-up var(--dur-slow) var(--ease-out) backwards;
-  animation-delay: calc(var(--i, 0) * 22ms);
+  animation-delay: calc(var(--i, 0) * var(--dur-stagger));
 }
 
 .favorite-cover {

@@ -365,7 +365,7 @@ function copyText(item: PromptSnippet) {
   border-radius: 12px;
   background: var(--bg);
   animation: fade-up var(--dur-slow) var(--ease-out) backwards;
-  animation-delay: calc(var(--i, 0) * 20ms);
+  animation-delay: calc(var(--i, 0) * var(--dur-stagger));
   transition:
     border-color var(--dur-base) var(--ease-out),
     box-shadow var(--dur-base) var(--ease-out);

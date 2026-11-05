@@ -338,7 +338,7 @@ select.input:hover:not(:disabled) {
     border-color var(--dur-base),
     box-shadow var(--dur-base);
   animation: pop var(--dur-base) var(--ease-out) backwards;
-  animation-delay: calc(min(var(--i, 0), 16) * 16ms);
+  animation-delay: calc(min(var(--i, 0), 16) * var(--dur-stagger));
 }
 
 .thumb img {

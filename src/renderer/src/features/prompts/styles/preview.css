@@ -195,7 +195,7 @@
   line-height: 1.7;
   color: var(--text2);
   animation: fade-up var(--dur-slow) var(--ease-out) backwards;
-  animation-delay: calc(min(var(--i, 0), 12) * 24ms);
+  animation-delay: calc(min(var(--i, 0), 12) * var(--dur-stagger));
 }
 
 .effect-row + .effect-row {

@@ -149,7 +149,7 @@ onBeforeUnmount(() => clearTimeout(stopTimer))
 }
 
 .mascot:hover img {
-  animation: m-boing 0.6s var(--bounce);
+  animation: m-boing var(--dur-feedback) var(--bounce);
 }
 
 /* 侧栏常驻头像保持静止，只在悬停时回应 */

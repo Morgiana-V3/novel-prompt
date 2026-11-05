@@ -87,7 +87,7 @@
 }
 
 .btn.accent:hover:not(:disabled) .icon {
-  animation: twinkle 0.6s var(--bounce);
+  animation: twinkle var(--dur-feedback) var(--bounce);
 }
 
 .btn.ghost {

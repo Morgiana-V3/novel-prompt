@@ -261,8 +261,8 @@ watch(
   font-size: 12.5px;
   white-space: nowrap;
   transition:
-    color 160ms ease,
-    background-color 160ms ease;
+    color var(--dur-fast) ease,
+    background-color var(--dur-fast) ease;
 }
 
 .creation-tab:hover {
@@ -285,8 +285,8 @@ watch(
   background: var(--pink);
   pointer-events: none;
   transition:
-    transform 280ms cubic-bezier(0.22, 1, 0.36, 1),
-    width 280ms cubic-bezier(0.22, 1, 0.36, 1);
+    transform var(--dur-slow) cubic-bezier(0.22, 1, 0.36, 1),
+    width var(--dur-slow) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {

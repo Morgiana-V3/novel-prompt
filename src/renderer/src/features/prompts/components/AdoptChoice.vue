@@ -69,7 +69,7 @@ function onKey(event: KeyboardEvent) {
   animation: fade-up var(--dur-slow) var(--ease-out) backwards;
 
   /* 列表里由父级设置 --i，依次出现 */
-  animation-delay: calc(var(--i, 0) * 30ms);
+  animation-delay: calc(var(--i, 0) * var(--dur-stagger));
   transition:
     border-color var(--dur-base) var(--ease-out),
     background-color var(--dur-base) var(--ease-out),

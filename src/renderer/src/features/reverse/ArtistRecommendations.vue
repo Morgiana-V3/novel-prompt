@@ -208,8 +208,8 @@ header span,
   text-align: left;
   color: var(--text2);
   transition:
-    background-color 160ms ease,
-    border-color 160ms ease;
+    background-color var(--dur-fast) ease,
+    border-color var(--dur-fast) ease;
 }
 
 .recommendation:hover {

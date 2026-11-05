@@ -2,7 +2,7 @@
 
 .toast .icon {
   color: #ff9fc0;
-  animation: wiggle 0.6s var(--ease-out) 0.1s;
+  animation: wiggle var(--dur-feedback) var(--ease-out) var(--dur-fast);
   flex: none;
 }
 
