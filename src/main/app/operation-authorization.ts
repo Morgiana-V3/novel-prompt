@@ -20,6 +20,7 @@ export function installOperationAuthorization(
         message: operation.description,
         detail: price,
         confirmLabel: origin === 'agent' ? '允许本次' : '确认付费',
+        cost: { amount: operation.estimatedCost, unit: operation.unit },
       },
       signal,
     )

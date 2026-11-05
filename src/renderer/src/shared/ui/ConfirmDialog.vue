@@ -9,6 +9,8 @@ defineProps<{
   cancelLabel?: string
   alternateLabel?: string
   danger?: boolean
+  /** 付费确认：显示紧凑居中的样式，费用单独突出；amount 缺省表示暂无法估算 */
+  cost?: { amount?: number; unit: string }
 }>()
 const emit = defineEmits<{ confirm: []; cancel: []; alternate: [] }>()
 const dialog = ref<HTMLDialogElement>()
@@ -21,7 +23,7 @@ onBeforeUnmount(() => dialog.value?.close())
   <Teleport to="body">
     <dialog
       ref="dialog"
-      class="confirm-dialog"
+      :class="['confirm-dialog', { payment: cost }]"
       role="alertdialog"
       :aria-labelledby="`${id}-title`"
       :aria-describedby="`${id}-message`"
@@ -29,7 +31,9 @@ onBeforeUnmount(() => dialog.value?.close())
       @keydown.stop
     >
       <div class="confirm-head">
-        <span class="group-badge pink"
+        <span
+          v-if="!cost"
+          class="group-badge pink"
           ><Icon
             name="warn"
             :size="16"
@@ -42,9 +46,25 @@ onBeforeUnmount(() => dialog.value?.close())
       >
         {{ message }}
       </p>
+      <div
+        v-if="cost"
+        class="confirm-cost"
+      >
+        <template v-if="cost.amount !== undefined">
+          <span class="confirm-cost-label">预计消耗</span>
+          <span class="confirm-cost-value"
+            ><b>{{ cost.amount }}</b> {{ cost.unit }}</span
+          >
+        </template>
+        <span
+          v-else
+          class="confirm-cost-unknown"
+          >可能产生费用，金额暂无法估算</span
+        >
+      </div>
       <div class="confirm-actions">
         <button
-          class="btn ghost small"
+          :class="['btn', cost ? '' : 'ghost small']"
           autofocus
           @click="emit('cancel')"
         >
@@ -52,13 +72,13 @@ onBeforeUnmount(() => dialog.value?.close())
         </button>
         <button
           v-if="alternateLabel"
-          class="btn small"
+          :class="['btn', cost ? '' : 'small']"
           @click="emit('alternate')"
         >
           {{ alternateLabel }}
         </button>
         <button
-          :class="['btn small', danger ? 'danger' : 'primary']"
+          :class="['btn', cost ? '' : 'small', danger ? 'danger' : 'primary']"
           @click="emit('confirm')"
         >
           {{ confirmLabel }}
@@ -111,5 +131,68 @@ onBeforeUnmount(() => dialog.value?.close())
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* ---------- 付费确认：紧凑居中，费用单独突出 ---------- */
+.confirm-dialog.payment {
+  width: min(320px, calc(100vw - 40px));
+  padding: 22px 22px 20px;
+  text-align: center;
+}
+
+.payment .confirm-head {
+  justify-content: center;
+}
+
+.payment .confirm-head h3 {
+  font-size: 16px;
+}
+
+.payment .confirm-message {
+  margin: 6px 0 16px;
+  line-height: 1.6;
+}
+
+.confirm-cost {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 20px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--pink-soft);
+  color: var(--pink-deep);
+}
+
+.confirm-cost-label {
+  font-size: 11.5px;
+  color: var(--text2);
+}
+
+.confirm-cost-value {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.confirm-cost-value b {
+  font-size: 26px;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.confirm-cost-unknown {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.payment .confirm-actions {
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+}
+
+.payment .confirm-actions .btn {
+  justify-content: center;
 }
 </style>

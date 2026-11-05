@@ -679,7 +679,12 @@ async function onDrop(event2: DragEvent) {
     v-if="confirmation"
     :key="confirmation.id"
     :title="confirmation.title"
-    :message="[confirmation.message, confirmation.detail].filter(Boolean).join('\n\n')"
+    :message="
+      confirmation.cost
+        ? confirmation.message
+        : [confirmation.message, confirmation.detail].filter(Boolean).join('\n\n')
+    "
+    :cost="confirmation.cost"
     :confirm-label="confirmation.confirmLabel"
     @confirm="replyConfirmation(true)"
     @cancel="replyConfirmation(false)"
