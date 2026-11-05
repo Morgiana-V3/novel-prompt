@@ -11,6 +11,7 @@ import StatisticsSettings from './StatisticsSettings.vue'
 import { AI_PRESETS, type AiPreset } from '@shared/settings/ai-presets'
 import { modelVision, VISION_SUGGESTIONS, visionProvider } from '@shared/settings/vision'
 import UpdateSettings from './UpdateSettings.vue'
+import NotifySettings from './NotifySettings.vue'
 
 import AgentSettings from './AgentSettings.vue'
 
@@ -1127,6 +1128,7 @@ async function translate() {
       >
         <StorageSettings id="storage" />
         <UpdateSettings id="updates" />
+        <NotifySettings id="notifications" />
       </section>
     </div>
   </div>

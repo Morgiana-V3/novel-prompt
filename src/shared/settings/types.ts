@@ -38,6 +38,8 @@ export interface Settings {
   agentFreeOnly?: boolean
   /** 旧版手动生图设置，仅保留用于读取旧数据，不再决定权限。 */
   naiFreeOnly?: boolean
+  /** 窗口不在前台时，生图、AI 等需要等待的任务完成后发系统通知并闪烁任务栏；默认开启 */
+  notifyOnComplete?: boolean
   /** 普通生图按提交时的设置决定整批是否长期留存。 */
   naiAutoSave?: boolean
   /** 允许外部 agent（MCP）调用会消耗模型接口额度的工具 */

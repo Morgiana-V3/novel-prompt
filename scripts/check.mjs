@@ -12,6 +12,7 @@ const mode = process.argv[2] ?? 'quick'
 const output = temporaryProfile('novel-prompt-check-')
 const cases = {
   pricing: ['node', 'tests/unit/novelai-pricing.cjs', false],
+  'task:notifications': ['node', 'tests/unit/task-notifications.cjs', false],
   confirmations: ['electron', 'tests/integration/confirmation-smoke.cjs', false],
   'operations:policy': ['electron', 'tests/integration/operation-policy-smoke.cjs', false],
   'images:clipboard': ['electron', 'tests/integration/image-clipboard-smoke.cjs', false],
@@ -66,6 +67,7 @@ if (mode === 'quick') {
     'artifacts',
     'mcp:launch',
     'optimize:convergence',
+    'task:notifications',
     'mcp:relay',
     'mcp:index',
     'workspace:cleanup',

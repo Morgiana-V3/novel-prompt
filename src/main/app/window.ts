@@ -18,19 +18,19 @@ export function restoreWindowBounds(
   }
 }
 
+/** 软件图标文件；安装版在 resources 目录，开发版在 build 目录 */
+export function appIconPath(names = ['icon.png']): string | undefined {
+  const base = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'build')
+  return names.map((name) => join(base, name)).find((path) => existsSync(path))
+}
+
 export function createWindowManager(onClosed: () => void) {
   let win: BrowserWindow | null = null
   const WINDOW_TITLE = app.isPackaged ? 'NovelPrompt' : 'NovelPrompt · 开发版'
 
   function appIcon(): Electron.NativeImage | undefined {
-    const base = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'build')
-    for (const name of process.platform === 'win32' ? ['icon.ico', 'icon.png'] : ['icon.png']) {
-      const path = join(base, name)
-      if (existsSync(path)) {
-        return nativeImage.createFromPath(path)
-      }
-    }
-    return undefined
+    const path = appIconPath(process.platform === 'win32' ? ['icon.ico', 'icon.png'] : ['icon.png'])
+    return path ? nativeImage.createFromPath(path) : undefined
   }
 
   function createWindow(): void {

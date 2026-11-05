@@ -2,7 +2,10 @@ import { requestConfirmation } from '../adapters/desktop/confirmations'
 import { installOperationAuthorization } from './operation-authorization'
 import { migrateStorageOnStartup } from '../modules/settings/storage'
 import { readStorageLocation, storageRoot } from '../infrastructure/storage-root'
-import { app, BrowserWindow, protocol, dialog } from 'electron'
+import { app, BrowserWindow, Notification, protocol, dialog } from 'electron'
+import { createTaskNotifier } from './task-notifications'
+import { getSettings } from '../modules/settings/service'
+import type { TaskSnapshot } from '../../shared/tasks/model'
 import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -30,7 +33,7 @@ import { tagStore } from '../modules/tags/store'
 import { TaskManager } from '../modules/tasks/task-manager'
 import { registerImageProtocol } from './image-protocol'
 import { prepareScreenshotProfile, SHOT_DIR, takeScreenshots } from './screenshots'
-import { createWindowManager } from './window'
+import { appIconPath, createWindowManager } from './window'
 export function startApplication(): void {
   const windowManager = createWindowManager(() => desktop?.disconnected())
   const createWindow = windowManager.createWindow
@@ -75,12 +78,30 @@ export function startApplication(): void {
   })
   const APP_ID = app.isPackaged ? 'com.holyxie.novelprompt' : 'com.holyxie.novelprompt.dev'
 
+  const notifyTasks = createTaskNotifier({
+    window: () =>
+      windowManager.current && !windowManager.current.isDestroyed() ? windowManager.current : null,
+    enabled: () => getSettings().notifyOnComplete !== false && Notification.isSupported(),
+    notify: ({ title, body, onClick }) => {
+      // 通知正文旁显示软件图标；左上角的应用名与图标由 Windows 按已登记的应用身份显示
+      const icon = appIconPath()
+      const notification = new Notification({
+        title,
+        body,
+        silent: false,
+        ...(icon ? { icon } : {}),
+      })
+      notification.on('click', onClick)
+      notification.show()
+    },
+  })
   const send = (channel: string, payload: unknown) => {
     if (windowManager.current && !windowManager.current.isDestroyed()) {
       windowManager.current.webContents.send(channel, payload)
     }
     if (channel === 'tasks:changed') {
       notifyAppChanged()
+      notifyTasks(payload as TaskSnapshot)
     }
   }
 
