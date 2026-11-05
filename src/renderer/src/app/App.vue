@@ -84,7 +84,7 @@ const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: bool
     key: 'creation',
     label: '生图创作',
     icon: 'sparkle',
-    desc: '在同一页编辑提示词，检查词条、AI 优化、推测画面并生成图片',
+    desc: '在同一页编辑提示词，检查词条、智能优化、推测画面并生成图片',
   },
   {
     key: 'reverse',
@@ -124,8 +124,8 @@ const current = computed(() => tabs.find((tab) => tab.key === shellState.tab)!)
 const creationPanel = ref<Tab>('compare')
 const creationActive = computed(() => shellState.tab === 'creation')
 /**
- * 词条检查、智能优化、画面推测、图片预览只在创作实验里提供。
- * 其他页面、任务中心或 MCP 仍可能跳到这些旧页签名称：统一转为创作实验的对应分页。
+ * 词条检查、智能优化、画面推测、图片预览只在生图创作里提供。
+ * 其他页面、任务中心或 MCP 仍可能跳到这些旧页签名称：统一转为生图创作的对应分页。
  */
 const CREATION_PANELS: Tab[] = ['compare', 'ai', 'preview', 'generate']
 watch(

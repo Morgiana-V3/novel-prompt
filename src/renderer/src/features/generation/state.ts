@@ -20,7 +20,7 @@ export const DEFAULT_GEN: Readonly<GenOnly> = {
   count: 1,
 }
 
-/** 生图页保存的参数（种子不保存）；新建工作台会话也沿用它们 */
+/** 图片预览保存的生图参数（种子不保存）；新建图片精修会话也沿用它们 */
 export function loadGenParams(): GenOnly {
   try {
     const saved = JSON.parse(localStorage.getItem(GEN_PARAMS_KEY) ?? '{}') as Partial<GenOnly>
@@ -51,12 +51,12 @@ export const imageState = reactive({
   /** 生成的图片 → 生成时的提示词 key，用于和推测结果对照 */
   imageKeys: {} as Record<string, string>,
 
-  /** 生图预览当前选中的图片，也是各页面角色位置编辑器的参考底图；仅保留在本次会话 */
+  /** 图片预览当前选中的图片，也是各页面角色位置编辑器的参考底图；仅保留在本次会话 */
   currentImage: null as NaiImage | null,
 
   positionReference: { visible: true, opacity: 40 },
 
-  /** 生图预览送入新建会话的图片，只暂存，不自动创建记录。 */
+  /** 图片预览送入新建会话的图片，只暂存，不自动创建记录。 */
   workspaceImage: null as NaiImage | null,
 })
 

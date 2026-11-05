@@ -75,7 +75,7 @@ export interface FrontendContext {
 export interface DesktopState {
   token: string
   tab: AppTab
-  /** 创作实验当前分页（词条检查 / 智能优化 / 画面推测 / 图片预览）；旧页签 compare、ai、preview、generate 会导航到这里 */
+  /** 生图创作当前分页（词条检查 / 智能优化 / 画面推测 / 图片预览）；旧页签 compare、ai、preview、generate 会导航到这里 */
   creationPanel?: AppTab
   /** 当前创作标签的提示词；其他标签只给概览 */
   draft: InpaintDraft

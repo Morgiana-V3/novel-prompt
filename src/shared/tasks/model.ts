@@ -4,7 +4,7 @@ export const TASK_LABELS = {
   'db-update': '更新标签库',
   'db-translate': 'AI 翻译标签',
   'db-implications': '下载包含关系',
-  optimize: 'AI 优化',
+  optimize: '智能优化',
   preview: '画面推测',
   'inpaint-plan': '分析重绘区域',
   'page-chat': '工作台讨论',

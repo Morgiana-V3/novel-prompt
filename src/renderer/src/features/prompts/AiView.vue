@@ -167,7 +167,7 @@ function fieldChanges(group: ReviewGroup, field?: ReviewField) {
       : change.pairKey === group.key && change.field === field.key
   })
 }
-/** 创作实验里的修改对比：逐段采纳，并带上前后所有角色位置用于位置对比图 */
+/** 生图创作里的修改对比：逐段采纳，并带上前后所有角色位置用于位置对比图 */
 const scopedProps = computed(() => {
   const roles = (characters: { position?: string }[] = []) =>
     characters.map((character, index) => ({
@@ -202,7 +202,7 @@ async function run() {
       : '请先描述想要的画面，或在下方粘贴已有的提示词'
     return
   }
-  const adoptionBase = current('AI 优化前')
+  const adoptionBase = current('智能优化前')
   partial.reset()
   running.value = true
   error.value = ''

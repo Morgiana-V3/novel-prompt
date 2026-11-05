@@ -1,6 +1,6 @@
 /* ---------- Skill ---------- */
 
-/** 作用范围：optimize = AI 优化 / 描述转提示词，preview = 画面推测，inpaint = 局部重绘批注优化 */
+/** 作用范围：optimize = 智能优化 / 描述转提示词，preview = 画面推测，inpaint = 局部重绘批注优化 */
 export type SkillScope = 'optimize' | 'preview' | 'inpaint' | 'all'
 
 /** 适用模型 */

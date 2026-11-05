@@ -10,7 +10,7 @@ import { reportError } from '../../shared/lib/notifications'
 import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 
 /**
- * 不传 modelValue 时选择的是生图页的全局图集；
+ * 不传 modelValue 时选择的是图片预览的全局图集；
  * 工作台等有独立归属的地方传入自己的值并处理 update 事件。
  */
 const props = withDefaults(

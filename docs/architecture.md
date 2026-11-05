@@ -18,7 +18,7 @@ Electron 主进程是唯一应用宿主，窗口和 MCP 客户端共享服务、
 | 规则 | main/modules/skills/service.ts | 安装包 skills 只读；userData/skills/user 保存单文件规则或含 SKILL.md 的目录包；设置保存选择，讨论记录冻结 snapshot。 |
 | 任务 | main/modules/tasks/task-manager.ts；main/adapters/ipc/tasks.ts | 内存状态；资源互斥、进度、取消模式、目标和 Agent 归属。IPC/MCP 不能各自另建生图队列。 |
 | 设置 | main/modules/settings/service.ts | userData/data/settings.json；原子写入、损坏隔离与备份恢复。 |
-| 收藏 | main/modules/images/recipes.ts | 保持当前保存格式和语义，本轮仅作必要引用调整。 |
+| 收藏 | main/modules/images/recipes.ts | userData/data/recipes/<UUID>.json 与 recipes/images/<UUID>.png；收藏保存独立原图副本，删除收藏不影响来源图片。 |
 
 ## 核心调用链
 

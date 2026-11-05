@@ -561,7 +561,7 @@ function formatPrompt() {
             v-else
             class="muted small"
           >
-            没有相近的 tag，可以试试 AI 优化
+            没有相近的 tag，可以试试智能优化
           </div>
         </div>
       </div>

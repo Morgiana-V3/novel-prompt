@@ -34,7 +34,7 @@ const props = withDefaults(
     model: undefined,
     params: undefined,
     presetParams: undefined,
-    // 未指定时沿用生图预览；显式 null 表示独立草稿没有参考图。
+    // 未指定时沿用图片预览；显式 null 表示独立草稿没有参考图。
     image: undefined,
     baseLabel: '主提示词',
     baseHint: '',

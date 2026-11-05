@@ -567,7 +567,7 @@ function measureMask() {
   selected.value.hasPixels = count > 0
   historyCount.value = strokes.value.length + (selected.value.baseMask ? 1 : 0)
 }
-/** 生图页的完整模式不会自动保存，关闭即丢失；有内容时需要再确认一次 */
+/** 图片预览中的完整重绘模式不会自动保存，关闭即丢失；有内容时需要再确认一次 */
 const hasUnsavedWork = computed(
   () =>
     !props.saveEditor &&

@@ -55,6 +55,8 @@ ESLint 检查花括号、单行语句、独立变量、嵌套三元、未使用�
 
 ## 独立安装与环境隔离
 
+图片留存改造的改动对照与人工验收清单（A01–A15）见 [图片留存验收记录](image-retention-acceptance.md)。
+
 ```powershell
 # 基线源码从改造前提交导出到项目外，并提供 node_modules。
 $acceptance = Join-Path $env:TEMP 'novel-prompt-acceptance'

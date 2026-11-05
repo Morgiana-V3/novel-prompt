@@ -1,4 +1,4 @@
-/** tag 级差异：用于展示 AI 优化前后改了什么 */
+/** tag 级差异：用于展示智能优化前后改了什么 */
 
 export interface DiffTag {
   key: string

@@ -80,7 +80,7 @@ class NotFound extends Error {}
 
 /**
  * 连不上 Danbooru（离线、被墙、超时）时短期熔断：之后 5 分钟内直接走缓存 / 降级，
- * 不再让每次 AI 优化、画面推测都先白等 10 秒以上的超时。
+ * 不再让每次智能优化、画面推测都先白等 10 秒以上的超时。
  */
 const OFFLINE_MS = 5 * 60 * 1000
 let offlineUntil = 0

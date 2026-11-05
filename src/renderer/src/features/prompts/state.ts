@@ -83,7 +83,7 @@ export const promptState = reactive({
 
   history: (saved.history ?? []) as Snapshot[],
 
-  /** 最近编辑的输入框，Tag 搜索会把 tag 加到这里 */
+  /** 最近编辑的输入框，词库检索会把 tag 加到这里 */
   focus: { kind: 'base' } as FieldRef,
 
   /** 最近一次画面推测（key = 推测时的提示词与参数） */

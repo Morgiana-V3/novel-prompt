@@ -225,7 +225,7 @@ async function create() {
   busy.value = true
   error.value = ''
   try {
-    // 沿用生图预览里的步数、Guidance、采样器等设置（种子随机、每次一张），不再悄悄换成默认值
+    // 沿用图片预览里的步数、Guidance、采样器等设置（种子随机、每次一张），不再悄悄换成默认值
     const params: NaiGenParams = {
       ...promptState.params,
       ...generationParams,

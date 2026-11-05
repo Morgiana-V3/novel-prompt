@@ -23,7 +23,7 @@ const namesIn = (workspace: PageWorkspace) =>
 /** Shared by the gallery and MCP; never remove a referenced image or leave its recipe behind. */
 export async function deleteUnreferencedImage(name: string): Promise<boolean> {
   if (workspaceImageNames({ strict: true }).has(name)) {
-    throw new Error('这张图片被 AI 工作台引用，请在对应项目中删除指定图片')
+    throw new Error('这张图片被图片精修的项目引用，请在对应项目中删除指定图片')
   }
   return trashLibraryImage(name)
 }

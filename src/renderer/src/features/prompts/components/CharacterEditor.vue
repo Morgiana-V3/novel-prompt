@@ -32,7 +32,7 @@ const props = withDefaults(
     characters: undefined,
     model: undefined,
     params: undefined,
-    // 保留 undefined，让位置编辑器读取当前生图预览。
+    // 保留 undefined，让位置编辑器读取当前图片预览。
     image: undefined,
   },
 )

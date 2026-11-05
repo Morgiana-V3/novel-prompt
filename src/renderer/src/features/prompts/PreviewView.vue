@@ -24,7 +24,7 @@ const steps = tabRef<string[]>('preview.steps', () => [])
 const error = tabRef('preview.error', () => '')
 const task = computed(() => activeTask('preview'))
 let offStep: (() => void) | undefined
-/** 推测结果存在全局，生图页可以拿它和实际出图对照 */
+/** 推测结果存在全局，图片预览可以拿它和实际出图对照 */
 const result = computed(() => promptState.lastPreview?.result ?? null)
 const stale = computed(
   () => !!promptState.lastPreview && !running.value && promptState.lastPreview.key !== workKey(),
