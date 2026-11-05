@@ -76,13 +76,19 @@ export function startApplication(): void {
     dataPath: storageRoot(),
     appPath: app.getAppPath(),
   })
-  const APP_ID = app.isPackaged ? 'com.holyxie.novelprompt' : 'com.holyxie.novelprompt.dev'
+  // 开发版改用新身份：旧的 .dev 身份在发过系统通知后被 Windows 关联到 electron.exe，任务栏会显示 Electron 图标
+  const APP_ID = app.isPackaged ? 'com.holyxie.novelprompt' : 'com.holyxie.novelprompt.development'
 
   const notifyTasks = createTaskNotifier({
     window: () =>
       windowManager.current && !windowManager.current.isDestroyed() ? windowManager.current : null,
     enabled: () => getSettings().notifyOnComplete !== false && Notification.isSupported(),
     notify: ({ title, body, onClick }) => {
+      // 开发版实际运行的是 electron.exe：系统通知会让 Windows 把应用身份关联到它，
+      // 任务栏随之变成 Electron 图标。开发版只闪烁任务栏，安装版与便携版正常发通知。
+      if (!app.isPackaged) {
+        return
+      }
       // 通知正文旁显示软件图标；左上角的应用名与图标由 Windows 按已登记的应用身份显示
       const icon = appIconPath()
       const notification = new Notification({
