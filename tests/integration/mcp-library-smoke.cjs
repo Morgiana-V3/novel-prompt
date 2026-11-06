@@ -10,6 +10,8 @@ const profile = temporaryProfile('np-mcp-library-')
 app.setPath('userData', profile)
 require('../support/register-typescript.cjs')
 const { libraryTools } = require('../../src/main/adapters/mcp/tools/library.ts')
+const { createReadImagePromptTool } = require('../../src/main/adapters/mcp/tools/images.ts')
+const { createMcpSession } = require('../../src/main/adapters/mcp/server.ts')
 const { toolOutputSchema } = require('../../src/main/adapters/mcp/output-schemas.ts')
 const { toolGroup } = require('../../src/main/adapters/mcp/tool-groups.ts')
 const { setReverseRuntime } = require('../../src/main/modules/reverse/runtime.ts')
@@ -91,6 +93,32 @@ app.whenReady().then(async () => {
     png.data.fill(200)
     const imageName = `${randomUUID()}.png`
     writeFileSync(join(imageDir(), imageName), embedRecipe(PNG.sync.write(png), recipe))
+    // Exercise the real protocol output contract, not just the tool's implementation.
+    let resolvePrompt
+    const promptSession = createMcpSession(
+      [createReadImagePromptTool()],
+      { name: 'image-metadata-test', version: '1', instructions: '' },
+      (line) => resolvePrompt(JSON.parse(line)),
+    )
+    for (const argumentsRecord of [{ name: imageName }, { path: join(imageDir(), imageName) }]) {
+      const response = new Promise((resolve) => (resolvePrompt = resolve))
+      promptSession.receive(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name: 'read_image_prompt', arguments: argumentsRecord },
+        }),
+      )
+      const { result } = await response
+      assert.equal(result.isError, undefined)
+      assert.equal(result.structuredContent.base, recipe.request.base)
+      assert.equal(result.structuredContent.negative, recipe.request.negative)
+      assert.equal(result.structuredContent.width, recipe.request.params.width)
+      assert.equal(result.structuredContent.height, recipe.request.params.height)
+    }
+    promptSession.close()
+    console.log('PASS read_image_prompt restores stored PNG metadata through MCP by name and path')
     await assert.rejects(call('save_favorite', { image_name: 'missing.png' }), /图库中没有/)
     const saved = await call('save_favorite', {
       image_name: imageName,

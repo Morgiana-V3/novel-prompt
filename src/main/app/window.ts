@@ -1,8 +1,9 @@
 import { storageRoot } from '../infrastructure/storage-root'
-import { app, BrowserWindow, nativeImage, screen } from 'electron'
-import { existsSync, readFileSync } from 'node:fs'
+import { app, BrowserWindow, screen } from 'electron'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { writeFileAtomic } from '../infrastructure/atomic-file'
+import { appWindowIcon, configureWindowIdentity } from './identity'
 
 export function restoreWindowBounds(
   bounds: Electron.Rectangle,
@@ -18,20 +19,9 @@ export function restoreWindowBounds(
   }
 }
 
-/** 软件图标文件；安装版在 resources 目录，开发版在 build 目录 */
-export function appIconPath(names = ['icon.png']): string | undefined {
-  const base = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'build')
-  return names.map((name) => join(base, name)).find((path) => existsSync(path))
-}
-
 export function createWindowManager(onClosed: () => void) {
   let win: BrowserWindow | null = null
   const WINDOW_TITLE = app.isPackaged ? 'NovelPrompt' : 'NovelPrompt · 开发版'
-
-  function appIcon(): Electron.NativeImage | undefined {
-    const path = appIconPath(process.platform === 'win32' ? ['icon.ico', 'icon.png'] : ['icon.png'])
-    return path ? nativeImage.createFromPath(path) : undefined
-  }
 
   function createWindow(): void {
     if (win && !win.isDestroyed()) {
@@ -60,6 +50,7 @@ export function createWindowManager(onClosed: () => void) {
       /* First launch or an unreadable preference uses the default size. */
     }
     win = new BrowserWindow({
+      show: false,
       width: 1440,
       height: 900,
       ...restored,
@@ -67,7 +58,7 @@ export function createWindowManager(onClosed: () => void) {
       minHeight: 700,
       backgroundColor: '#ffffff',
       title: WINDOW_TITLE,
-      icon: appIcon(),
+      icon: appWindowIcon(),
       autoHideMenuBar: true,
       titleBarStyle: 'hidden',
       titleBarOverlay: { color: '#00000000', symbolColor: '#6b6c75', height: 40 },
@@ -77,6 +68,8 @@ export function createWindowManager(onClosed: () => void) {
         spellcheck: false,
       },
     })
+    configureWindowIdentity(win)
+    win.show()
     if (maximized) {
       win.maximize()
     }

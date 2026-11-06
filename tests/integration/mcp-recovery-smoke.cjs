@@ -12,6 +12,7 @@ require('../support/register-typescript.cjs')
 const { createMcpSession } = require('../../src/main/adapters/mcp/server.ts')
 const { OperationStore, tracksOperation } = require('../../src/main/adapters/mcp/operations.ts')
 const { toolGroup } = require('../../src/main/adapters/mcp/tool-groups.ts')
+const { validateArguments } = require('../../src/main/adapters/mcp/contract.ts')
 let effects = 0
 let release
 let cancelled
@@ -141,6 +142,20 @@ app.whenReady().then(async () => {
     for (const c of [a, b]) {
       await c.tool('configure_tools', { groups: ['workspace', 'images'] })
     }
+    for (const field of ['constructor', 'toString', '__proto__']) {
+      const input = JSON.parse(`{"title":"invalid","${field}":{}}`)
+      const rejected = await a.tool('create_workspace', input)
+      assert.equal(rejected.structuredContent.error.code, 'INVALID_ARGUMENTS')
+    }
+    assert.equal(effects, 0, 'inherited schema properties cannot bypass validation')
+    assert.throws(
+      () =>
+        validateArguments(Object.create({ title: 'inherited' }), {
+          type: 'object',
+          required: ['title'],
+        }),
+      /缺少必填参数/,
+    )
     assert.equal(toolGroup('ui_delete_workspace_image'), 'frontend')
     assert.equal(
       tracksOperation({ name: 'optimize_prompt', annotations: { readOnlyHint: true } }),

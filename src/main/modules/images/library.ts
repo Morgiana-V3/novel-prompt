@@ -179,7 +179,13 @@ export function storeGeneratedImage(
   }
   const png = embedRecipe(bytes, recipe)
   writeFileAtomic(dest, png)
-  imageCollections.assign([name], imageCollections.resolve(collectionId))
+  try {
+    imageCollections.assign([name], imageCollections.resolve(collectionId))
+  } catch (error) {
+    // The PNG and its recipe are already durable, possibly after a paid request.
+    // Grouping is secondary: return the saved image even if its index cannot be updated.
+    console.warn('[images] 图片已保存，但无法写入图集，已归入默认图集', error)
+  }
   return { ...imageInfo(name)!, contentHash: createHash('sha256').update(png).digest('hex') }
 }
 export function retainImage(name: string): NaiImage {

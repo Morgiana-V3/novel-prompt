@@ -84,12 +84,12 @@ export function validateArguments(value: unknown, schema: Schema, path = 'argume
       throw new Error(`${path} 字段数量超过限制`)
     }
     for (const key of schema.required ?? []) {
-      if (!(key in value)) {
+      if (!Object.hasOwn(value, key)) {
         throw new Error(`${path} 缺少必填参数 ${key}`)
       }
     }
     for (const [key, item] of Object.entries(value)) {
-      if (schema.properties?.[key]) {
+      if (schema.properties && Object.hasOwn(schema.properties, key)) {
         validateArguments(item, schema.properties[key], `${path}.${key}`)
       } else if (schema.additionalProperties === false) {
         throw new Error(`${path} 不支持参数 ${key}`)

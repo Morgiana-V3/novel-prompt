@@ -59,17 +59,18 @@ export function getSettings(): Settings {
   }
   let saved: Partial<Settings> = {}
   let restored = false
-  if (mtime) {
-    const parsed = parseFile(file)
-    if (parsed) {
-      saved = parsed
-    } else {
+  const parsed = mtime ? parseFile(file) : undefined
+  if (parsed) {
+    saved = parsed
+  } else {
+    if (mtime) {
       quarantine(file)
-      const backup = parseFile(`${file}.bak`)
-      if (backup) {
-        saved = backup
-        restored = true
-      }
+    }
+    // A previous repair may have quarantined the main file but failed to write it back.
+    const backup = parseFile(`${file}.bak`)
+    if (backup) {
+      saved = backup
+      restored = true
     }
   }
   if (
@@ -92,7 +93,7 @@ export function getSettings(): Settings {
     try {
       writeFileAtomic(file, JSON.stringify(cache, null, 2))
     } catch {
-      /* 写回失败时下次仍会从备份恢复 */
+      /* 本次保留内存配置；重启后即使主文件缺失，仍可从备份恢复。 */
     }
   }
   cacheMtime = mtimeOf(file)

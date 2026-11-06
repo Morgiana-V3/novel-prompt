@@ -2,6 +2,7 @@ const assert = require('node:assert/strict')
 const { join } = require('node:path')
 const { readFileSync, writeFileSync } = require('node:fs')
 const { app, net } = require('electron')
+const { PNG } = require('pngjs')
 const { temporaryProfile } = require('../support/fixtures.cjs')
 const profile = temporaryProfile('np-statistics-')
 app.setPath('userData', profile)
@@ -259,6 +260,21 @@ app.whenReady().then(async () => {
     ]) {
       assert.ok(!persisted.includes(sensitive))
     }
+    const sourcePng = PNG.sync.write(new PNG({ width: 64, height: 64 }))
+    provider.upscaleOne = async () => sourcePng
+    const { upscaleImage } = require('../../src/main/modules/generation/image-tools.ts')
+    await tasks.run('page-generate', () => upscaleImage(sourcePng, null, () => {}, {}))
+    assert.equal(statistics.snapshot().days[0].totals.images, 3)
+    assert.equal(statistics.snapshot().days[0].features['page-generate'].images, 1)
+    provider.upscaleOne = async () => {
+      throw new Error('upscale provider failed')
+    }
+    await assert.rejects(
+      tasks.run('page-generate', () => upscaleImage(sourcePng, null, () => {}, {})),
+      /upscale provider failed/,
+    )
+    assert.equal(statistics.snapshot().days[0].totals.images, 3, 'failed upscale is not an image')
+    console.log('PASS successful upscale counts its stored image, failed upscale does not')
     const api = createTasksActions({ tasks })
     api['tasks:clear']()
     assert.equal(api['statistics:get']().days[0].totals.total, 925)

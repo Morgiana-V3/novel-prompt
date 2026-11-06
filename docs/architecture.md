@@ -37,8 +37,11 @@ Electron 主进程是唯一应用宿主，窗口和 MCP 客户端共享服务、
 | `ai:inpaint-plan` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/prompts/task-actions.ts` |
 | `ai:optimize` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/prompts/task-actions.ts` |
 | `ai:preview` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/prompts/task-actions.ts` |
+| `ai:vision-test` | `src/main/adapters/ipc/settings.ts` |
 | `clipboard:read` | `src/main/adapters/ipc/application.ts` |
 | `clipboard:write` | `src/main/adapters/ipc/application.ts` |
+| `collections:list`、`collections:create`、`collections:rename`、`collections:delete`、`collections:assign` | `src/main/adapters/ipc/images.ts` |
+| `confirmations:reply` | `src/main/adapters/ipc/settings.ts` → `src/main/adapters/desktop/confirmations.ts` |
 | `db:aiTranslate` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tags/task-actions.ts` |
 | `db:implications` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tags/task-actions.ts` |
 | `db:status` | `src/main/adapters/ipc/tags.ts` |
@@ -85,9 +88,11 @@ Electron 主进程是唯一应用宿主，窗口和 MCP 客户端共享服务、
 | `recipes:config` | `src/main/adapters/ipc/images.ts` |
 | `recipes:create` | `src/main/adapters/ipc/images.ts` |
 | `recipes:delete` | `src/main/adapters/ipc/images.ts` |
+| `recipes:export` | `src/main/adapters/ipc/images.ts` |
 | `recipes:list` | `src/main/adapters/ipc/images.ts` |
 | `recipes:update` | `src/main/adapters/ipc/images.ts` |
 | `recipes:workspace` | `src/main/adapters/ipc/images.ts` |
+| `reverse:status`、`reverse:install`、`reverse:import`、`reverse:cancel`、`reverse:remove`、`reverse:analyze`、`reverse:score` | `src/main/adapters/ipc/reverse.ts` |
 | `settings:get` | `src/main/adapters/ipc/settings.ts` |
 | `settings:save` | `src/main/adapters/ipc/settings.ts` |
 | `skills:core` | `src/main/adapters/ipc/skills.ts` |
@@ -96,10 +101,15 @@ Electron 主进程是唯一应用宿主，窗口和 MCP 客户端共享服务、
 | `skills:duplicate` | `src/main/adapters/ipc/skills.ts` |
 | `skills:get` | `src/main/adapters/ipc/skills.ts` |
 | `skills:import` | `src/main/adapters/ipc/skills.ts` |
+| `skills:import-directory`、`skills:export` | `src/main/adapters/ipc/skills.ts` |
 | `skills:list` | `src/main/adapters/ipc/skills.ts` |
 | `skills:reveal` | `src/main/adapters/ipc/skills.ts` |
 | `skills:setConfig` | `src/main/adapters/ipc/skills.ts` |
 | `skills:update` | `src/main/adapters/ipc/skills.ts` |
+| `snippets:list`、`snippets:save`、`snippets:delete` | `src/main/adapters/ipc/settings.ts` |
+| `statistics:get`、`statistics:clear` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tasks/task-actions.ts` |
+| `storage:info`、`storage:choose`、`storage:schedule`、`storage:cancel`、`storage:open` | `src/main/adapters/ipc/settings.ts` |
+| `tag:complete` | `src/main/adapters/ipc/tags.ts` |
 | `tag:search` | `src/main/adapters/ipc/tags.ts` |
 | `tag:setZh` | `src/main/adapters/ipc/tags.ts` |
 | `task:cancel` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tags/task-actions.ts` |
@@ -112,7 +122,7 @@ Electron 主进程是唯一应用宿主，窗口和 MCP 客户端共享服务、
 | `update:open` | `src/main/adapters/ipc/updates.ts` |
 | `update:state` | `src/main/adapters/ipc/updates.ts` |
 | `web:open` | `src/main/adapters/ipc/application.ts` |
-| `window:dark-titlebar` | `src/main/adapters/ipc/application.ts` |
+| `window:image-preview` | `src/main/adapters/ipc/application.ts` |
 
 ## 事件与窗口契约
 
@@ -124,6 +134,7 @@ DesktopCommand.type 包含 snapshot、capture-prepare、capture-end、navigate�
 | `skills:changed` | `src/preload/api/application.ts` |
 | `tasks:changed` | `src/preload/api/application.ts` |
 | `agents:changed` | `src/preload/api/application.ts` |
+| `confirmations:changed`、`favorites:changed`、`snippets:changed` | `src/preload/api/application.ts` |
 | `nai:step` | `src/preload/api/application.ts` |
 | `update:state` | `src/preload/api/application.ts` |
 | `progress` | `src/preload/api/application.ts` |
@@ -152,12 +163,15 @@ DesktopCommand.type 包含 snapshot、capture-prepare、capture-end、navigate�
 | `create_skill` | `src/main/adapters/mcp/tools/skills.ts` |
 | `create_workspace` | `src/main/adapters/mcp/tools/desktop.ts` |
 | `delete_image` | `src/main/adapters/mcp/tools/management.ts` |
+| `delete_favorite` | `src/main/adapters/mcp/tools/library.ts` |
+| `delete_snippet` | `src/main/adapters/mcp/tools/library.ts` |
 | `delete_skill` | `src/main/adapters/mcp/tools/skills.ts` |
 | `delete_workspace` | `src/main/adapters/mcp/tools/management.ts` |
 | `delete_workspace_image` | `src/main/adapters/mcp/tools/management.ts` |
 | `generate_image` | `src/main/adapters/mcp/tools/images.ts` |
 | `generate_workspace` | `src/main/adapters/mcp/tools/desktop.ts` |
 | `get_app_state` | `src/main/adapters/mcp/tools/desktop.ts` |
+| `get_favorite` | `src/main/adapters/mcp/tools/library.ts` |
 | `get_operation` | `src/main/adapters/mcp/server.ts` |
 | `get_skill` | `src/main/adapters/mcp/tools/skills.ts` |
 | `get_workspace` | `src/main/adapters/mcp/tools/desktop.ts` |
@@ -165,6 +179,7 @@ DesktopCommand.type 包含 snapshot、capture-prepare、capture-end、navigate�
 | `inpaint_guide` | `src/main/adapters/mcp/tools/inpaint.ts` |
 | `inpaint_image` | `src/main/adapters/mcp/tools/inpaint.ts` |
 | `list_images` | `src/main/adapters/mcp/tools/images.ts` |
+| `list_favorites`、`list_snippets` | `src/main/adapters/mcp/tools/library.ts` |
 | `list_skills` | `src/main/adapters/mcp/tools/skills.ts` |
 | `list_tasks` | `src/main/adapters/mcp/tools/desktop.ts` |
 | `list_workspace_requests` | `src/main/adapters/mcp/tools/external-workspace.ts` |
@@ -182,6 +197,9 @@ DesktopCommand.type 包含 snapshot、capture-prepare、capture-end、navigate�
 | `related_tags` | `src/main/adapters/mcp/tools/tags.ts` |
 | `reply_workspace_request` | `src/main/adapters/mcp/tools/external-workspace.ts` |
 | `report_workspace_progress` | `src/main/adapters/mcp/tools/external-workspace.ts` |
+| `reverse_image` | `src/main/adapters/mcp/tools/library.ts` |
+| `run_workspace_image_tool` | `src/main/adapters/mcp/tools/desktop.ts` |
+| `save_favorite`、`save_snippet` | `src/main/adapters/mcp/tools/library.ts` |
 | `search_tags` | `src/main/adapters/mcp/tools/tags.ts` |
 | `set_skill_config` | `src/main/adapters/mcp/tools/skills.ts` |
 | `set_workspace_agent` | `src/main/adapters/mcp/tools/external-workspace.ts` |
@@ -190,6 +208,7 @@ DesktopCommand.type 包含 snapshot、capture-prepare、capture-end、navigate�
 | `ui_add_workspace_region` | `src/main/adapters/mcp/tools/frontend.ts` |
 | `ui_cancel_workspace_request` | `src/main/adapters/mcp/tools/frontend.ts` |
 | `ui_capture_app` | `src/main/adapters/mcp/tools/desktop.ts` |
+| `ui_configure_creation_ai`、`ui_propose_creation_edit`、`ui_review_creation_ai` | `src/main/adapters/mcp/tools/frontend.ts` |
 | `ui_create_workspace` | `src/main/adapters/mcp/tools/frontend.ts` |
 | `ui_delete_workspace` | `src/main/adapters/mcp/tools/frontend.ts` |
 | `ui_delete_workspace_image` | `src/main/adapters/mcp/tools/frontend.ts` |
@@ -206,6 +225,7 @@ DesktopCommand.type 包含 snapshot、capture-prepare、capture-end、navigate�
 | `ui_update_workspace_region` | `src/main/adapters/mcp/tools/frontend.ts` |
 | `ui_view_workspace` | `src/main/adapters/mcp/tools/frontend.ts` |
 | `update_skill` | `src/main/adapters/mcp/tools/skills.ts` |
+| `update_favorite` | `src/main/adapters/mcp/tools/library.ts` |
 | `update_workspace` | `src/main/adapters/mcp/tools/management.ts` |
 | `update_workspace_region` | `src/main/adapters/mcp/tools/management.ts` |
 | `validate_tags` | `src/main/adapters/mcp/tools/tags.ts` |
@@ -213,6 +233,7 @@ DesktopCommand.type 包含 snapshot、capture-prepare、capture-end、navigate�
 ## 代码职责定位
 
 - 主进程入口只调用 app/bootstrap；app 装配窗口、协议、任务服务和领域 IPC。任务执行用例位于对应 modules/*/task-actions.ts。
+- `app/identity.ts` 统一开发版与打包版图标路径、AppUserModelID 和 Windows 重启属性；开发窗口显示前绑定软件图标及重启命令，避免任务栏回落为 Electron 图标。
 - 工作台 repository 负责读写与已有 schema 迁移；index-cache/queries 负责有容量上限的轻量查询及外部文件变化检测。service 统一 revision、锁和保存；editor-actions、proposals、versions 处理相应状态变更；validation 校验平台输入，共享 model/config 提供纯规则。
 - discussion 编排内部 AI，external-collaboration 处理外部需求，execution 执行生成。snapshot 记录冻结上下文。图片模块提供导入暂存、保存、恢复和删除操作，工作台决定所有权与时机；共享引用扫描不修改项目。
 - generation/service 编排费用保护、取消与保存；providers/novelai 负责 HTTP、供应商参数和响应解包。聊天 provider 接收配置，避免反向读取应用设置。
@@ -268,3 +289,19 @@ Skill 目录包由 modules/skills/package-files.ts 校验和整体写入；入�
 - 老图和无选择的生成结果归入不可删除的默认图集。删除自建图集只撤销分类归属，图片回到默认图集。工作台的归属与引用保护独立于图集分类；临时图片不会因为选择图集而自动留存。
 - 生图栏选择保存在本地界面偏好，请求开始时冻结 `collectionId`，这个字段不发送给 NovelAI。若图集在生成期间被删除，结果回到默认图集。
 - 图库位于侧边栏收藏上方。设置图标、图集、自动留存和生成按钮处于同一紧凑底栏行，不再在底栏展示模型、尺寸或步数，参数从设置图标展开。滚动条按需出现，不预留空槽。
+- 生成图片和配方写盘成功后，图集索引写入失败仅记录警告，返回图片并归默认图集；不能让已完成的付费生成因辅助分类失败而丢失返回结果。手动图集修改仍报告写入错误。
+
+## 画师调试与图鉴
+
+- `features/artists/studio.ts` 管理按模型隔离的草稿、画师串、蓝本和候选比较；`blueprints.ts` 从创作标签、图库配置构造独立快照。生成复用反推试图控制器和已有生成任务，不建立第二套供应商调用或费用策略。
+- `ArtistStudio.vue` 组合方案和结果，`ArtistBlueprintPicker.vue` 处理蓝本选择，`ArtistCatalog.vue` 处理图鉴浏览；图鉴通过 `modules/artists/catalog.ts` 校验、筛选、分页和缓存，`providers/quicktagcloud.ts` 负责公开资源下载及哈希校验。
+
+## 2026-11-06 架构审查
+
+- 主进程的 app / adapters / modules / providers / infrastructure、跨进程 shared、preload 与 renderer 分层仍成立；目录名与实际职责基本一致。运行时循环和既定入口由 `boundaries:check` 检查，不能据此推断所有模块已经完成职责拆分。
+- 文档清单此前落后于实现，漏记图集、数据迁移、反推、片段、统计及部分 MCP 工具；本次按实际注册与共享契约补齐。后续新增接口应同时维护本表和对应测试登记。
+- 前端仍有集中职责：`PageWorkspace.vue` 同时保留多类异步操作和布局；`InpaintEditor.vue` 保留图片处理、区域交互和视图装配；`App.vue` 还包含桌面状态及命令装配。优先按操作编排和生命周期继续提取，保留人工操作与前台 MCP 共用动作；不以行数为硬性门槛，也不把整页迁入一个大 composable。
+- 跨 feature 依赖目前仅对 generation 的可变状态和 favorites 公共入口做强约束，其他领域仍可直连内部模块。后续围绕 creation/prompts/artists 的真实复用边界逐步定义入口；不能将当前检查通过表述为所有 feature 已隔离。
+- 仓库根目录的 `skills/`、`skill-templates/` 是空的旧目录，实际资源源头为 `resources/skills/`；本次未迁移或删除本地非源码目录。`out/`、`release/` 为忽略的构建产物，不应作为源码职责的依据。
+- MCP 性能基准发现两项后续优化点：约 35 MB 的合成工作台只取一条消息，仍整读、投影和计算指纹，中位耗时约 218 ms；200 个项目的列表命中缓存后仍需同步验证元数据与历史图片，中位耗时约 148 ms。可优先做按文件签名失效且有容量上限的查询投影、按需筛选，以及分离纯路径解析与目录初始化。保留外部修改和遮罩变化检测，不能以缓存加速牺牲正确性。
+- 上述数据来自 `mcp:performance` 输出的 `performance-results.json`，是源码加载器下的合成基准，本次与其他回归并行运行，不含浏览器和 stdio 端到端耗时，未清 OS 缓存或强制 GC；不能视为生产性能或内存峰值。本次未实施这两项较大重构。

@@ -33,7 +33,8 @@ import { tagStore } from '../modules/tags/store'
 import { TaskManager } from '../modules/tasks/task-manager'
 import { registerImageProtocol } from './image-protocol'
 import { prepareScreenshotProfile, SHOT_DIR, takeScreenshots } from './screenshots'
-import { appIconPath, createWindowManager } from './window'
+import { createWindowManager } from './window'
+import { appIconPath, appUserModelId, appWindowIcon, configureWindowIdentity } from './identity'
 export function startApplication(): void {
   const windowManager = createWindowManager(() => desktop?.disconnected())
   const createWindow = windowManager.createWindow
@@ -76,8 +77,10 @@ export function startApplication(): void {
     dataPath: storageRoot(),
     appPath: app.getAppPath(),
   })
-  // 开发版改用新身份：旧的 .dev 身份在发过系统通知后被 Windows 关联到 electron.exe，任务栏会显示 Electron 图标
-  const APP_ID = app.isPackaged ? 'com.holyxie.novelprompt' : 'com.holyxie.novelprompt.development'
+  // Register before any window (including the storage migration window) is created.
+  if (process.platform === 'win32') {
+    app.setAppUserModelId(appUserModelId())
+  }
 
   const notifyTasks = createTaskNotifier({
     window: () =>
@@ -206,13 +209,17 @@ export function startApplication(): void {
           if (readStorageLocation().pending) {
             migratingStorage = true
             const migrationWindow = new BrowserWindow({
+              show: false,
               width: 520,
               height: 220,
               resizable: false,
               closable: false,
               autoHideMenuBar: true,
+              icon: appWindowIcon(),
               webPreferences: { sandbox: true },
             })
+            configureWindowIdentity(migrationWindow)
+            migrationWindow.show()
             await migrationWindow.loadURL(
               'data:text/html;charset=utf-8,' +
                 encodeURIComponent(
@@ -237,10 +244,6 @@ export function startApplication(): void {
             storageRoot()
           }
           clearTemporaryImages(false)
-          // 让 Windows 任务栏 / Alt+Tab 使用窗口图标，而不是 electron.exe 的默认图标
-          if (process.platform === 'win32') {
-            app.setAppUserModelId(APP_ID)
-          }
           tagStore.load()
           desktop = new DesktopBridge(() => windowManager.current, createWindow)
           desktop.onChange = notifyAppChanged

@@ -1,12 +1,13 @@
 import { existsSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { rename, unlink, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 
 /** Windows 上杀毒软件 / 索引服务短暂占用目标文件时 rename 会失败，稍等重试即可 */
 const RETRYABLE = new Set(['EPERM', 'EBUSY', 'EACCES'])
 const RETRIES = 5
 const code = (error: unknown) => (error as NodeJS.ErrnoException)?.code ?? ''
 const sleepSync = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
-const tmpOf = (file: string) => `${file}.${process.pid}-${Date.now()}.tmp`
+const tmpOf = (file: string) => `${file}.${process.pid}-${randomUUID()}.tmp`
 
 /** 先写临时文件再改名：中途崩溃或断电只会留下 .tmp，原文件保持完整 */
 export function writeFileAtomic(

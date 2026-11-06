@@ -482,7 +482,7 @@ app.whenReady().then(async () => {
       'PASS one request box: optimizes the current prompt, or regenerates from scratch without sending it',
     )
 
-    // 收敛：AI 判定已达标时显示明确状态、不提供无意义的采纳；再次优化会带上上一轮输出
+    // 收敛：显示本轮无需修改的状态、不提供无意义的采纳；再次优化会带上上一轮输出
     reviewResult = (req) => ({
       positive: req.prompt,
       negative: req.negative,
@@ -499,11 +499,26 @@ app.whenReady().then(async () => {
     lastOptimize = null
     await js(`document.querySelector('.creation-ai-actions .run-bar .btn.accent').click()`)
     await waitUI(`!!document.querySelector('.ai .verdict-card.converged')`)
-    assert.ok(
-      await js(
-        `document.querySelector('.ai .verdict-card').textContent.includes('已达标，无需继续优化')&&document.querySelector('.ai .verdict-card').textContent.includes('没有发现需要修正的问题')&&document.querySelector('.ai .cheer').textContent.includes('已达标')&&!document.querySelector('.ai .cheer .actions')`,
-      ),
-      'converged result shows a clear verdict without an adopt action',
+    const convergenceStatus = await js(`(() => {
+      const verdict = document.querySelector('.ai .verdict-card.converged');
+      return {
+        role: verdict.getAttribute('role'),
+        title: verdict.querySelector('b').textContent.trim(),
+        reason: verdict.querySelector('p').textContent.trim(),
+        heading: document.querySelector('.ai .cheer b').textContent.trim(),
+        hasAdoptActions: !!document.querySelector('.ai .cheer .actions'),
+      };
+    })()`)
+    assert.deepEqual(
+      convergenceStatus,
+      {
+        role: 'status',
+        title: '本轮未发现必要修改',
+        reason: '没有发现需要修正的问题',
+        heading: '本轮无需修改',
+        hasAdoptActions: false,
+      },
+      'converged result explains this round and does not offer a meaningless adopt action',
     )
     await new Promise((resolve) => setTimeout(resolve, 700))
     writeFileSync(join(profile, 'ai-converged.png'), (await win.webContents.capturePage()).toPNG())

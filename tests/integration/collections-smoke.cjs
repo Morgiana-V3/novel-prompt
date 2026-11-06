@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict')
 const { app } = require('electron')
 const { join } = require('node:path')
-const { readFileSync, existsSync } = require('node:fs')
+const { readFileSync, existsSync, renameSync, mkdirSync, rmdirSync } = require('node:fs')
 const { PNG } = require('pngjs')
 const { temporaryProfile } = require('../support/fixtures.cjs')
 const profile = temporaryProfile('np-collections-')
@@ -79,8 +79,30 @@ app.whenReady().then(() => {
       'default',
       'deleted selection falls back without losing generated image',
     )
+    const lockedCollection = imageCollections.create('写入失败保护')
+    const backup = path + '.test-backup'
+    renameSync(path, backup)
+    mkdirSync(path)
+    let recovered
+    try {
+      recovered = library.storeGeneratedImage(
+        PNG.sync.write(png),
+        recipe,
+        'saved',
+        undefined,
+        lockedCollection.id,
+      )
+    } finally {
+      rmdirSync(path)
+      renameSync(backup, path)
+    }
+    assert.equal(recovered.collectionId, 'default', 'failed grouping falls back to default')
+    assert.ok(existsSync(library.libraryImagePath(recovered.name)), 'generated PNG is returned')
+    assert.equal(library.readImageRecipe(recovered.name).request.base, 'cat')
+    assert.equal(PNG.sync.read(readFileSync(library.libraryImagePath(recovered.name))).width, 64)
+    assert.equal(new CollectionStore(() => path).forImage(recovered.name), 'default')
     console.log(
-      'PASS collection CRUD/persistence, default and stale fallback, retention preserves grouping, grouping never mutates PNG or embedded recipe',
+      'PASS collection CRUD/persistence, default/stale/write-failure fallback, retention preserves grouping, grouping never mutates PNG or embedded recipe',
     )
     app.exit(0)
   } catch (error) {

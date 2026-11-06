@@ -1,6 +1,6 @@
 # 验证入口
 
-`npm run check:quick` 先执行全范围格式、ESLint、Stylelint、依赖边界和类型检查，再构建一次，运行测试产物路径、代理启动/重连、工作台索引与图片清理。`npm run check:full` 复用同一次构建运行统一入口登记的全部离线回归场景（当前 41 个）。失败立即退出；日志目录在启动时打印，位于系统临时目录。
+`npm run check:quick` 先执行全范围格式、ESLint、Stylelint、依赖边界和类型检查，再构建一次，运行测试产物路径、代理启动/重连、工作台索引与图片清理。`npm run check:full` 复用同一次构建运行统一入口登记的全部离线回归场景，包含画师调试与公开图鉴；场景清单以 `scripts/check.mjs` 为准，执行结束打印实际数量。失败立即退出；日志目录在启动时打印，位于系统临时目录。
 
 定向运行：`node scripts/check.mjs pages mcp:index workspace:cleanup`。窗口场景按需构建一次，纯源码服务场景通过测试专用 TypeScript 加载器运行。定向命令执行类型检查；完整风格检查由 quick/full 负责。
 
@@ -8,9 +8,9 @@
 
 | 场景                                                                                                                                                                                                 | 运行方式                            | 前提                                        |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------- |
-| artifacts、electron:errors、reverse:models、mcp:launch、mcp:relay                                                                                                                                    | Node；异常验证额外启动隔离 Electron | 不需要构建                                  |
+| artifacts、electron:errors、reverse:models、mcp:launch、mcp:relay、artists:catalog                                                                                                                   | Node；异常验证额外启动隔离 Electron | 不需要构建                                  |
 | mcp:recovery、mcp:context、mcp:index、mcp:preview-cache、desktop:lifecycle、inpaint:mcp、retention、workspace:cleanup、tasks:background、skills:builtins、skills:templates、discussion:tools、update | Electron + TS 源码                  | 不需要构建                                  |
-| prompt、tasks、pages、inpaint、desktop、favorites、settings、reverse:recommendations、skills                                                                                                         | Electron + TS 服务与真实渲染页      | 先构建一次                                  |
+| prompt、tasks、pages、inpaint、desktop、favorites、settings、reverse:recommendations、skills、artists                                                                                                | Electron + TS 服务与真实渲染页      | 先构建一次                                  |
 | favorites:dev                                                                                                                                                                                        | 临时 Vite 服务 + Electron           | 开发模式真实渲染页                          |
 | mcp:host、startup                                                                                                                                                                                    | Node 启动真实应用与代理             | 先构建一次                                  |
 | isolation                                                                                                                                                                                            | 开发程序与打包程序同时运行          | 设置 NP_PACKAGED_EXECUTABLE；统一入口会构建 |
@@ -20,6 +20,22 @@
 环境隔离场景必须在构建完成后启动；不要与改写 out/ 的 dev/build 并行，否则开发窗口可能在重载时丢失正在等待的 CDP 请求。
 
 完整离线回归不请求真实供应商。安装/升级与性能单独执行，避免普通开发重复打包或跑大规模夹具。未知结果的写入不自动重试。
+
+`storage:recovery` 验证同一毫秒内并发原子写入仍保留完整内容，以及设置主文件缺失、损坏隔离后恢复写入失败再重启时，仍从完好备份恢复配置。只使用临时目录和虚构凭据。
+
+## 真实生图灰度
+
+`npm run live:smoke` 先构建，再启动隔离应用，通过真实 MCP 代理调用已配置的 AI 与 NovelAI 服务。运行会消耗模型接口额度，也可能扣除 Anlas；离线 full 通过不能代替本项。脚本不自动重试结果不明的付费调用。
+
+- 默认只读开发 profile 的接口配置，支持其 `storage-location.json` 指向的迁移目录；也可通过 `NP_LIVE_SETTINGS` 指定设置文件。需要有效 NovelAI Token 和模型 API Key，以及能处理图片的模型配置。
+- 凭据复制到本次临时 profile，付费权限仅在该 profile 开启；不会修改原设置、图库或工作台。退出时删除本次复制的设置及备份；清理失败仍保存报告并以失败退出，报告不包含凭据。
+- 覆盖中文优化、画面推测、V4.5 / V5 文生图、识图重绘方案、局部重绘、后台工作台生成/精修/扩图/放大，以及前台新标签、讨论、采纳和生成。检查实际 PNG 解码、尺寸与哈希、新增版本及局部重绘选区外像素保持；同操作编号重放须返回原图且不再次生成。
+- 启动时打印 `live-artifacts` 路径，保存逐步执行记录、图片证据、前后额度和截图；失败也保留已完成步骤及可获得的余额。余额差是本次观测值，服务端并行使用或充值会影响它，不能代替供应商账单。
+- 不与改写 `out/` 的开发/构建命令并行。收到超时或断连后，先查报告中的操作编号、图库与额度，不能直接重跑整个脚本假定上次未执行。
+
+2026-11-06 验证记录：完整离线回归 48 项通过，另执行 MCP 性能场景。最终真实灰度核对 82 个工具目录，53 次工具调用成功，8 张 PNG 验证通过；收费放大实际扣除 1 Anlas，重绘选区外像素不变。含调试过程的三轮共生成 19 张图片，余额 8996 → 8993，共扣 3 Anlas，另有真实 AI 接口用量。三轮临时凭据均已清理。中间一轮因测试在前台草稿编辑态插入后台读取而失败，保留失败报告，调整读取顺序后通过，没有重放结果不明的付费操作。报告和图片保留在各次系统临时目录；本轮不含安装器安装/升级验收。
+
+真实结果复核还发现放大图片漏计数量，以及灰度脚本未向优化传递质量词/负面预设上下文，导致模型已输出的预设又被生图追加。前者已修复并验证成功/失败统计，后者改为优化、推测、生图共用显式预设；导入配置原本已正确关闭重复注入，不改用户提示词去重策略。这两项收尾修正使用定向离线回归，未再付费重复整轮灰度。
 
 ## 回归维护约定
 

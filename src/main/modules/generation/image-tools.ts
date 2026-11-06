@@ -9,7 +9,7 @@ import { PNG } from 'pngjs'
 import type { ImageRecipe, NaiImage } from '../../../shared/images/types'
 import { upscaleOne } from '../../providers/novelai/client'
 import { pngSize } from '../../providers/novelai/png-response'
-import { recordAnlas } from '../statistics/service'
+import { recordAnlas, recordGeneratedImage } from '../statistics/service'
 import { storeGeneratedImage } from '../images/library'
 import { anlasChange } from './costs'
 import { getSubscription, token } from './service'
@@ -181,6 +181,7 @@ export async function upscaleImage(
     options.workspaceId,
     options.collectionId,
   )
+  recordGeneratedImage(version)
   const result = {
     image,
     anlasDelta: change ? change.fixed + change.purchased : undefined,
