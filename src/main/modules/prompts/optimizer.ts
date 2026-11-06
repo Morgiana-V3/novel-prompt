@@ -16,12 +16,19 @@ import type {
 } from '../../../shared/prompts/types'
 import { extractJson, type ChatMessage } from '../../providers/chat/client'
 import { composeSkills } from '../skills/service'
+import { getSettings } from '../settings/service'
 import { analyzePrompt } from './analyzer'
 import { chat } from './chat'
 import { gatherEvidence, type EvSection } from './evidence'
 import { TAG_TOOL_DEFS as TOOLS, runTool, type ToolLog } from './tag-tools'
 import { presetContext } from './preset-context'
-import { adoptedPreviousRound, parseVerdict, stabilizeResult } from './convergence'
+import {
+  adoptedPreviousRound,
+  canReuseReview,
+  parseVerdict,
+  reviewKey,
+  stabilizeResult,
+} from './convergence'
 
 const MAX_TOOL_ROUNDS = 10
 const MAX_FIX_ROUNDS = 2
@@ -101,7 +108,9 @@ function precheck(req: AiOptimizeRequest, sections: EvSection[]): string[] {
   const negTokens = sections.find((section2) => section2.label === '负面')!.tokens
   const both = [...new Set(negTokens.map(name).filter((text) => text && posNames.has(text)))]
   if (both.length) {
-    lines.push(`- 正向（含角色）与负面同时出现：${both.join(', ')}（概念互相抵消）`)
+    lines.push(
+      `- 正向（含角色）与负面同时出现：${both.join(', ')}（可能相互压制，需核对目标与作用范围）`,
+    )
   }
   const chars = (req.characters ?? []).filter((character) => character.prompt?.trim())
   const limit = MAX_CHARACTERS[req.version]
@@ -418,6 +427,44 @@ export async function optimizePrompt(
   const dataIssues = ev.issues.map((issue) => `- [${issue.where}] ${issue.text}`)
 
   const skills = composeSkills('optimize', req.version)
+  const settings = getSettings()
+  const reviewContext = JSON.stringify([
+    skills.text,
+    ev.block,
+    ev.info,
+    settings.model,
+    settings.baseUrl,
+    settings.reasoningEffort,
+  ])
+  if (
+    !rules.length &&
+    !dataIssues.length &&
+    !ev.info.failed.length &&
+    canReuseReview(req, reviewContext)
+  ) {
+    signal?.throwIfAborted()
+    onStep('已采纳稿与需求、模型配置、Skill 和证据一致，本地复查无新问题，未再次请求 AI')
+    return {
+      positive: req.prompt,
+      negative: req.negative,
+      characters: req.characters.map((character) => ({ ...character })),
+      notes:
+        '沿用已采纳的方案；本轮未再次调用模型。有新的画面要求或实图问题时，请补充具体修改要求。',
+      changes: [],
+      invalid: [],
+      dropped: [],
+      fidelity: [],
+      evidence: ev.info,
+      verdict: 'converged',
+      verdictReason: '输入与检查上下文未变，本地复查未发现新问题。此结论不代表实际画面已达标。',
+      reviewKey: reviewKey(
+        req,
+        { positive: req.prompt, negative: req.negative, characters: req.characters },
+        reviewContext,
+      ),
+      reused: true,
+    }
+  }
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt(req.version, skills.text) },
     { role: 'user', content: userPrompt(req, rules, dataIssues, ev.block) },
@@ -541,6 +588,14 @@ export async function optimizePrompt(
   }
   result = stable
   result.evidence = evidence()
+  if (
+    !result.invalid.length &&
+    !result.fidelity.length &&
+    !result.dropped?.length &&
+    !structureIssues(req, result).length
+  ) {
+    result.reviewKey = reviewKey(req, result, reviewContext)
+  }
   onStep('完成')
   return result
 }

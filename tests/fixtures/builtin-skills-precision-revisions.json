@@ -47,6 +47,36 @@
       "reason": "明确按交付触发的必读条件、原稿保真与字段复核；消除全量搜索和局部范围的冲突。",
       "before": ["2ab08f5259cf69ed31ab574bf5073112d5cde8e2c72ae2ac5519d6a145986044"],
       "after": ["a44b8b388369dc5ff5c0998da35e42d8f4cc357ba53587ea4a61548a8d4a92a9"]
+    },
+    {
+      "reason": "2026-11-06：外部 Agent 经前台 MCP 完成雨夜物体替换、双人持物、招牌与植物联合重绘、八物品区域/全Base同seed对照后，明确无人物区域分配与停止条件。按NovelAI官方多角色/文字文档纠正角色块必然定位文字、全Base必然混淆的绝对表述；不把少样本推成通用成功率。保留用户优先、字段保真、区域限制和既有局部修改边界。",
+      "before": [
+        "e14197a1315c928f40d572b26fd0b33ebee655c7f73d3a04c56c0c09412dd71f",
+        "ca9c5e2c18d3b06ebb1efed9acf3a963c21bf4a17e775b7da2059f62079b1da1",
+        "cd919dbaa57ed9795d2a0020b887873bfe63b8e497edab7b5cf7a26a311cea0e"
+      ],
+      "after": [
+        "1820b8d28ac746602c141cf1df860c0cd10b1cab51bc51af06fc13057cb9e30b",
+        "cb03fc5de79c6a522e6f49c65931657697a7f557d45c189aa7c055d699b79307",
+        "a2799c25e4232bcc9b2ba5170939cdb497c08e212b7c0edd3974aca9a9d1cf17",
+        "611f997d5385d260c8f4d2e9bf5f50303e4384085450875a22452f7e4961bba1",
+        "c1899671c6ede29935656a4c2f60059645bd5fca4995cfdbeef90bc6174226a4",
+        "b68c201bda2edaba04b99ba45b17137c7b66892f21ecfac9085d34c6e199af3f",
+        "0ff92291d43011581662125ca838b80448c7424eaad8fde63dbf7fe4b224cf88"
+      ]
+    },
+    {
+      "reason": "2026-11-06：消除旧条款与新增按需拆分/收敛规则之间的矛盾；将必然串色、看到互动即重拆修正为有具体归属问题才调整。保留新编排的字段分工、空间排序与互动语法。依据八物件全Base/区域同seed对照和官方概率性位置机制。",
+      "before": [
+        "61bdbb6eeddb6ca9bcf6302ac828d9c6ea5224f4c4b5121a340ab4c358feb547",
+        "5194a50a300b9c555e1251b4fabbcf2667bb5151fdbf60f49b733e90bdf4852c",
+        "7d2f71cfb59198bfc9412d4655f00dfbb5eacd23522bc309c6c9ed81220e91c0"
+      ],
+      "after": [
+        "4a06b8c348ef2ea0d82eef2a469f3905b7f4ee5ccb7e397f54073123255c270b",
+        "96eb38290da76d9894090480b6d69c21efeee62587d5e58be19ab24c5c41c21d",
+        "fc3cc4d6bc19b2f698bfce8867ac777062f7e4b372c00b270da8488d13f62d7c"
+      ]
     }
   ],
   "nai-preview": [
@@ -75,5 +105,19 @@
       "after": ["b46fed876bf82c608d1e3edc414dcec21a0ae8c3a07655347a55465907e85e92"]
     }
   ],
-  "nai-inpaint": []
+  "nai-inpaint": [
+    {
+      "reason": "2026-11-06 实际外部 Agent 联合重绘验收：区分完整稿可追加独立对象与独立区域接口字段限制；保留旧索引及遮罩权限，避免规则禁止一切必要结构变化；明确逐一读取多选区而非仅首个 preview。依据本应用 context 契约及 NovelAI 官方 masking/multiple-character 文档。",
+      "before": [
+        "653c45a6f72a296f245236b754466dead4859462ba26cb9320d87cee740126eb",
+        "e2c91a45fe2f635d9882e93a2bd6a688c06ff11effb3931c44f940afc083ac9c",
+        "0f4e28372c30f44bc471f4110ba904a7ffca2b1d969bcfceb0fd5ae8e8f66e6a"
+      ],
+      "after": [
+        "a0971d0c31e77053e7b5a02fa7fe57f39ee6d7fdc4a1aecc341c1ecf5e5cefa2",
+        "35594849cb745fe7177808340b6a56ce38f26005cfebcf54b59604bf5fb03a49",
+        "39dd3bc9b1c22b866610daebe32f08fdf2f289d0babb5fc7680f0004837a38a7"
+      ]
+    }
+  ]
 }

@@ -1,5 +1,6 @@
 import { isUcPreset, isNaiSampler, isNaiNoiseSchedule, UC_PRESET_NAMES } from '../generation/types'
-import type { NaiGenParams } from '../generation/types'
+import type { NaiGenParams, NaiVersion } from '../generation/types'
+import { MAX_CHARACTERS } from '../generation/presets'
 import type { InpaintDraft } from '../prompts/types'
 import type { PageEditorState } from './model'
 
@@ -15,6 +16,7 @@ export function patchWorkspaceConfig(
   editor: PageEditorState,
   patch: WorkspaceConfigPatch,
   sizeLocked: boolean,
+  model: NaiVersion = editor.model ?? 'v5',
 ): PageEditorState {
   if (
     !object(patch) ||
@@ -41,7 +43,7 @@ export function patchWorkspaceConfig(
     if (patch.draft.characters !== undefined) {
       if (
         !Array.isArray(patch.draft.characters) ||
-        patch.draft.characters.length > 6 ||
+        patch.draft.characters.length > MAX_CHARACTERS[model] ||
         patch.draft.characters.some(
           (character) =>
             !object(character) ||
@@ -158,7 +160,7 @@ export const WORKSPACE_CONFIG_SCHEMA = {
         negative: { type: 'string' },
         characters: {
           type: 'array',
-          maxItems: 6,
+          maxItems: MAX_CHARACTERS.v5,
           items: {
             type: 'object',
             properties: {

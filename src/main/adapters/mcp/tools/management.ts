@@ -81,6 +81,7 @@ export function managementTools(desktop: DesktopBridge): McpTool[] {
               version.editor,
               argumentsRecord.patch as WorkspaceConfigPatch,
               workspace.execution.kind === 'inpaint' || !!version.editor.regions.length,
+              version.editor.model ?? workspace.model,
             )
             workspace = editPage(workspace.id, workspace.revision, {
               type: 'editor',

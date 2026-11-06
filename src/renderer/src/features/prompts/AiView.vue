@@ -21,6 +21,7 @@ import { imageState } from '../generation/public'
 import { activeTask, cancelTask } from '../../shared/state/tasks'
 import { usePageShortcuts } from '../../shared/lib/shortcuts'
 import { lockTabs, tabRef } from '../creation/tabs'
+import type { DesktopState, FrontendContext, FrontendRequest } from '@shared/contracts/desktop'
 
 const { navigate, isActive } = usePagePresentation()
 
@@ -52,6 +53,7 @@ const runLabel = computed(() => (mode.value === 'optimize' ? '优化提示词' :
 const running = ref(false)
 const steps = tabRef<string[]>('ai.steps', () => [])
 const result = tabRef<AiOptimizeResult | null>('ai.result', () => null)
+const resultSource = tabRef<'internal' | 'external'>('ai.resultSource', () => 'internal')
 const error = tabRef('ai.error', () => '')
 const task = computed(() => activeTask('optimize'))
 let offStep: (() => void) | undefined
@@ -84,6 +86,7 @@ function previousRound(): AiPreviousRound | undefined {
       instruction: sentInstruction.value,
       changes: result.value.changes.map(({ scope, text, basis }) => ({ scope, text, basis })),
       verdict: result.value.verdict,
+      reviewKey: result.value.reviewKey,
     }),
   )
 }
@@ -209,6 +212,7 @@ async function run() {
   steps.value = []
   const previous = scratchless() ? previousRound() : undefined
   result.value = null
+  resultSource.value = 'internal'
   adopted.value = false
   // 「按描述重新生成」时不带当前提示词，避免 AI 把旧内容当作要保留的部分
   const scratch = fresh.value && hasPrompt.value
@@ -283,12 +287,12 @@ const cheerTitle = computed(() => {
     return '已采用到当前提示词'
   }
   if (converged.value && !review.value.length) {
-    return '已达标，无需修改'
+    return '本轮无需修改'
   }
   if (result.value?.invalid.length) {
     return '大部分搞定了，还有几个 tag 要你看看'
   }
-  return '优化好啦！'
+  return resultSource.value === 'external' ? '外部 Agent 的建议' : '优化好啦！'
 })
 const fullText = (optimization: AiOptimizeResult) =>
   sectionText({
@@ -302,6 +306,112 @@ usePageShortcuts(() => isActive('ai'), {
   cancel: () => task.value && cancelTask(task.value.id),
   canCancel: () => running.value && !!task.value,
 })
+
+function desktopState(): NonNullable<DesktopState['creationAi']> {
+  return JSON.parse(
+    JSON.stringify({
+      source: resultSource.value,
+      instruction: request.value,
+      fresh: fresh.value,
+      running: running.value,
+      error: error.value,
+      result: result.value,
+      sent: sent.value,
+      adopted: isAdopted.value,
+      stale: stale.value,
+      presetsChanged: presetsChanged.value,
+      changes: partial.changes.value.map((change) => ({
+        id: change.id,
+        selected: partial.selected.value.has(change.id),
+      })),
+    }),
+  )
+}
+async function frontendAction(input: FrontendRequest, context: FrontendContext) {
+  if (running.value) {
+    throw new Error('智能优化仍在运行，请等待完成或取消任务')
+  }
+  if (input.action === 'creation-ai-config') {
+    if (input.instruction !== undefined) {
+      request.value = input.instruction
+    }
+    if (input.fresh !== undefined) {
+      fresh.value = input.fresh
+    }
+    requestExpanded.value = true
+    await context.step('已填写智能优化要求，尚未调用 AI')
+  } else if (input.action === 'creation-ai-propose') {
+    const proposal = input.creation_proposal
+    if (!proposal) {
+      throw new Error('缺少外部 Agent 建议')
+    }
+    await context.step('正在展示外部 Agent 建议，尚未采纳')
+    const before = current('外部 Agent 建议前')
+    const snapshot = {
+      base: before.base,
+      negative: before.negative,
+      characters: before.characters.map(({ prompt, negative, position }) => ({
+        prompt,
+        negative,
+        position,
+      })),
+    }
+    const same = (['base', 'negative', 'characters'] as const).every(
+      (key) => JSON.stringify(snapshot[key]) === JSON.stringify(proposal.draft[key]),
+    )
+    sent.value = snapshot
+    sentKey.value = workKey()
+    sentInstruction.value = request.value
+    sentPresetKey.value = presetKey()
+    resultSource.value = 'external'
+    error.value = ''
+    steps.value = []
+    adopted.value = false
+    result.value = {
+      positive: proposal.draft.base,
+      negative: proposal.draft.negative,
+      characters: proposal.draft.characters,
+      notes: proposal.summary,
+      changes: proposal.changes,
+      invalid: [],
+      dropped: null,
+      fidelity: [],
+      evidence: { related: [], wiki: [], failed: [], implications: false },
+      verdict: same ? 'converged' : 'changes',
+      verdictReason: same ? '外部 Agent 本轮未提出提示词修改。' : undefined,
+    }
+    partial.reset(before, proposal.draft)
+  } else if (input.action === 'creation-ai-review') {
+    if (!result.value) {
+      throw new Error('当前标签没有智能优化结果')
+    }
+    if (presetsChanged.value) {
+      throw new Error('模型或预设已变化，请重新优化')
+    }
+    const ids = input.change_ids
+    if (ids?.some((id) => !partial.changes.value.some((change) => change.id === id))) {
+      throw new Error('修改项已变化，请重新读取当前结果')
+    }
+    await context.step(
+      input.decision === 'undo' ? '正在撤销已采用的 AI 修改' : '正在展示并采用 AI 修改',
+    )
+    let ok: boolean
+    if (ids) {
+      ok = partial.toggleMany(
+        ids.filter((id) => partial.selected.value.has(id) === (input.decision === 'undo')),
+      )
+    } else {
+      ok = input.decision === 'undo' ? partial.undoAll() : partial.adoptAll()
+    }
+    if (!ok) {
+      throw new Error('当前内容与建议冲突，未覆盖手动修改，请重新优化')
+    }
+    if (input.decision !== 'undo') {
+      fresh.value = false
+    }
+  }
+}
+defineExpose({ desktopState, frontendAction })
 </script>
 
 <template>
@@ -472,6 +582,12 @@ usePageShortcuts(() => isActive('ai'), {
             </button>
           </div>
         </div>
+        <p
+          v-if="resultSource === 'external'"
+          class="muted"
+        >
+          来源：外部 Agent。依据见建议说明；本次未调用内置 AI，未执行其自动校验流程。
+        </p>
 
         <div
           v-if="converged || result.stabilized?.length"
@@ -484,7 +600,7 @@ usePageShortcuts(() => isActive('ai'), {
             :size="15"
           />
           <div>
-            <b>{{ converged ? '已达标，无需继续优化' : '部分改写未应用' }}</b>
+            <b>{{ converged ? '本轮未发现必要修改' : '部分改写未应用' }}</b>
             <p v-if="result.verdictReason">{{ result.verdictReason }}</p>
             <p
               v-for="note in result.stabilized ?? []"
@@ -497,7 +613,7 @@ usePageShortcuts(() => isActive('ai'), {
               v-if="converged"
               class="muted"
             >
-              提示词不变时再次优化会得到同样的结论；要继续调整，请写下新的修改要求。
+              有新的画面目标或实际图片问题时再调整；无需为了继续优化而改写。
             </p>
           </div>
         </div>
@@ -591,7 +707,10 @@ usePageShortcuts(() => isActive('ai'), {
             <div class="notes">{{ result.dropped?.join(', ') }}</div>
           </div>
 
-          <EvidenceNote :info="result.evidence" />
+          <EvidenceNote
+            v-if="resultSource === 'internal'"
+            :info="result.evidence"
+          />
         </div>
 
         <div class="row">

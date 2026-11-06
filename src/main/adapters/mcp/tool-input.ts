@@ -76,14 +76,14 @@ export function sizeNotes(argumentsRecord: Record<string, unknown>): string[] {
 export const CHARACTERS_SCHEMA = {
   type: 'array',
   description:
-    '角色提示词（带位置的区域提示词）。每个人物、同一人物的每次出现（漫画多格）、漫画每一格里的每个人物各一条；单人单画面且不需要定位时留空、全部写进 base',
+    '角色/区域提示词，可描述人物、物件、招牌或局部背景。只拆分需要独立属性或定位的视觉单元；共享风格、环境和关系放 base。无独立定位需求时可留空。V5 最多 22 条，V4.5 最多 6 条；位置是引导而非硬分区。',
   items: {
     type: 'object',
     properties: {
       prompt: {
         type: 'string',
         description:
-          '角色提示词：girl/boy/other（不加数字）→ 角色名 → 外貌 → 服装 → 表情 → 动作；人物互动用 source#动作 / target#动作 / mutual#动作 成对写在双方；该人物 / 该格的对白写在末尾 Text: 块',
+          'girl/boy/other（不加数字）及该视觉单元的属性、动作；人物互动可配合 source#/target#/mutual#。Text: 放字段末尾，Base 和区域均支持；按文字归属选择，实际落点需看图确认。',
       },
       negative: { type: 'string', description: '角色负面，只放与其他角色相区分的特征，防止串色' },
       position: {

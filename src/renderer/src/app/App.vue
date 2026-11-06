@@ -169,6 +169,7 @@ const workspaceView = ref<InstanceType<typeof WorkspacesView>>()
 const settingsView = ref<InstanceType<typeof SettingsView>>()
 const reverseView = ref<InstanceType<typeof ReverseView>>()
 const generateView = ref<InstanceType<typeof GenerateView>>()
+const aiView = ref<InstanceType<typeof AiView>>()
 const contentEl = ref<HTMLElement>()
 
 /** 侧栏选中项的白色高亮块：切换页面时滑到新位置，而不是瞬间跳过去 */
@@ -363,6 +364,7 @@ function desktopSnapshot(): DesktopState {
   const value = {
     tab: shellState.tab,
     creationPanel: creationPanel.value,
+    creationAi: aiView.value?.desktopState(),
     draft: {
       base: promptState.prompt,
       negative: promptState.negative,
@@ -443,8 +445,20 @@ async function desktopCommand(command: DesktopCommand) {
         },
       }
       try {
-        shellState.tab = 'workspace'
-        await workspaceView.value.frontendAction(request, context)
+        if (request.action.startsWith('creation-ai-')) {
+          if (workspaceView.value.desktopState()?.editing) {
+            throw new Error('请先保存或完成图片精修中的编辑')
+          }
+          shellState.tab = 'ai'
+          await nextTick()
+          if (!aiView.value) {
+            throw new Error('智能优化页面尚未就绪')
+          }
+          await aiView.value.frontendAction(request, context)
+        } else {
+          shellState.tab = 'workspace'
+          await workspaceView.value.frontendAction(request, context)
+        }
         frontend.value = {
           label: request.label,
           stage: ctrl.signal.aborted ? '已停止，已完成的结果保留' : '已完成',
@@ -874,7 +888,10 @@ async function onDrop(event2: DragEvent) {
           @navigate="navigateCreation"
         >
           <CompareView v-show="pageVisible('compare')" />
-          <AiView v-show="pageVisible('ai')" />
+          <AiView
+            v-show="pageVisible('ai')"
+            ref="aiView"
+          />
           <PreviewView v-show="pageVisible('preview')" />
           <GenerateView
             v-show="pageVisible('generate')"

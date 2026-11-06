@@ -348,6 +348,54 @@ app.whenReady().then(async () => {
       }),
       /角色 1 负面里的 text 会压制/,
     )
+    const signRequest = {
+      ...textRequest,
+      base: 'no humans, sign, Text: OPEN',
+      characters: [],
+      negative: 'speech bubble',
+    }
+    assert.doesNotMatch(
+      await reviewPrompt(signRequest),
+      /speech bubble 会压制画面文字|speech bubble.*Text: 块冲突/,
+      'a sign with lettering does not require a speech bubble',
+    )
+    assert.match(
+      await reviewPrompt({ ...signRequest, base: 'speech bubble, Text: Hello' }),
+      /speech bubble 同时出现在主提示词和负面/,
+      'an explicit bubble still conflicts with its own exclusion',
+    )
+    assert.match(
+      await reviewPrompt({ ...signRequest, negative: 'text' }),
+      /text 会压制画面文字/,
+      'excluding text still conflicts with a sign Text block',
+    )
+    const objectRegions = Array.from({ length: 8 }, () => ({
+      prompt: 'other, apple',
+      negative: '',
+    }))
+    assert.doesNotMatch(
+      await reviewPrompt({ ...signRequest, base: 'no humans', characters: objectRegions }),
+      /没有人数 tag|主体数量 tag/,
+      'eight object regions do not require a human count',
+    )
+    assert.doesNotMatch(
+      await reviewPrompt({
+        ...signRequest,
+        base: '1girl',
+        characters: [{ prompt: 'girl' }, ...objectRegions],
+      }),
+      /主体数量 tag/,
+      'object regions do not inflate the single human count',
+    )
+    assert.match(
+      await reviewPrompt({
+        ...signRequest,
+        base: '',
+        characters: [{ prompt: 'girl' }, { prompt: 'boy' }],
+      }),
+      /没有人数 tag/,
+      'two explicitly human regions still need a count',
+    )
     const md = renderMarkdown(markdownSample)
     const payload = { reply: markdownSample, proposal: null }
     assert.deepEqual(extractJson(JSON.stringify(payload)), payload)

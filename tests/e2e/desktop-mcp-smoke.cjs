@@ -64,6 +64,7 @@ let pendingGeneration = []
 let autoGenerate = false
 let holdAi = false
 let aiStarted = 0
+let creationAiRequests = []
 let freeTier = true
 const generationInputs = []
 net.fetch = async (url, init) => {
@@ -76,6 +77,32 @@ net.fetch = async (url, init) => {
     })
   }
   if (url.endsWith('/chat/completions')) {
+    const body = JSON.parse(init.body)
+    if (
+      typeof body.messages[1].content === 'string' &&
+      body.messages[0].content.includes('verdictReason')
+    ) {
+      creationAiRequests.push(body)
+      return Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                verdict: 'changes',
+                verdictReason: 'Add the explicitly requested smile',
+                positive: '1girl, smile',
+                negative: '',
+                characters: [],
+                assessment: 'fixture',
+                changes: [
+                  { scope: 'positive', basis: 'doc', text: '+ smile', evidence: 'User request' },
+                ],
+              }),
+            },
+          },
+        ],
+      })
+    }
     aiStarted++
     if (holdAi) {
       await new Promise((resolve, reject) =>
@@ -343,8 +370,8 @@ app.whenReady().then(async () => {
     assert.equal((await a.request('tools/list')).result.tools.length, 6)
     const grouped = await a.data('configure_tools', { groups: ['tags', 'skills'] })
     const groupedNames = grouped.groups.flatMap((g) => g.tools)
-    assert.equal(new Set(groupedNames).size, 79)
-    assert.equal(groupedNames.length, 79)
+    assert.equal(new Set(groupedNames).size, 82)
+    assert.equal(groupedNames.length, 82)
     assert(!groupedNames.includes('list_skill_templates'))
     assert.ok(grouped.exposedToolCount < 25)
     assert.equal((await b.request('tools/list')).result.tools.length, 6)
@@ -352,7 +379,7 @@ app.whenReady().then(async () => {
       await c.data('configure_tools', { groups: grouped.groups.map((g) => g.id) })
     }
     const schemas = (await a.request('tools/list')).result.tools
-    assert.equal(schemas.length, 79)
+    assert.equal(schemas.length, 82)
     for (const tool of schemas) {
       assert.equal(
         tool.outputSchema.title,
@@ -2068,6 +2095,226 @@ app.whenReady().then(async () => {
     assert.equal(await js(`document.querySelector('details.manual').open`), false)
     console.log(
       'PASS settings scope mouse/keyboard selection updates automatic, TOML and JSON configurations; native disclosures open and close',
+    )
+
+    // V5 supports more than six regional conditions, including non-human props.
+    const regional = await b.data('ui_create_workspace', {
+      title: 'Eight object regions',
+      source: 'blank',
+      step_delay_ms: 0,
+    })
+    const regionalAct = async (config_action, patch) =>
+      b.data('ui_edit_workspace_config', {
+        id: regional.workspace.id,
+        expected_token: (await b.data('get_app_state')).desktop.token,
+        config_action,
+        ...(patch ? { patch } : {}),
+        step_delay_ms: 0,
+      })
+    const objectRegions = Array.from({ length: 8 }, (_, index) => ({
+      prompt: 'other, apple',
+      negative: '',
+      position: `${((index % 4) + 0.5) / 4},${index < 4 ? 0.25 : 0.75}`,
+    }))
+    await regionalAct('begin')
+    const eight = await regionalAct('update', {
+      draft: { base: 'no humans', characters: objectRegions },
+    })
+    assert.equal(eight.workspace.config.draft.characters.length, 8)
+    await regionalAct('save')
+    const { patchWorkspaceConfig } = require('../../src/shared/workspace/config.ts')
+    const editor = pages.readPage(regional.workspace.id).versions[0].editor
+    const atLimit = { draft: { characters: Array.from({ length: 22 }, () => objectRegions[0]) } }
+    assert.equal(patchWorkspaceConfig(editor, atLimit, false, 'v5').draft.characters.length, 22)
+    assert.throws(
+      () => patchWorkspaceConfig(editor, { draft: { characters: objectRegions } }, false, 'v4.5'),
+      /角色提示词/,
+    )
+    assert.throws(
+      () =>
+        patchWorkspaceConfig(
+          editor,
+          { draft: { characters: [...atLimit.draft.characters, objectRegions[0]] } },
+          false,
+          'v5',
+        ),
+      /角色提示词/,
+    )
+    console.log('PASS foreground V5 object regions and model-specific 6/22 limits')
+
+    // External proposals must work with the built-in provider disabled and must
+    // use the same partial-adoption and conflict protection as user review.
+    {
+      settings.saveSettings({ apiKey: '', mcpAllowAi: false })
+      const externalToken = async () => (await b.data('get_app_state')).desktop.token
+      await b.data('apply_app_prompt', {
+        expected_token: await externalToken(),
+        target: 'fresh_tab',
+        tab_title: 'External creation',
+        draft: { base: 'no humans, landscape', negative: '', characters: [] },
+      })
+      const externalRequestCount = creationAiRequests.length
+      const externalDraft = {
+        base: 'no humans, landscape, sunset',
+        negative: 'watermark',
+        characters: [],
+      }
+      const externalProposal = await b.data('ui_propose_creation_edit', {
+        expected_token: await externalToken(),
+        step_delay_ms: 0,
+        creation_proposal: {
+          draft: externalDraft,
+          summary: 'Change lighting according to the requested sunset.',
+          changes: [
+            {
+              scope: 'positive',
+              basis: 'rule',
+              text: 'Add sunset',
+              evidence: 'Requested evening lighting',
+            },
+          ],
+        },
+      })
+      assert.equal(externalProposal.creationAi.source, 'external')
+      assert.equal(externalProposal.creationAi.result.positive, externalDraft.base)
+      assert.equal(externalProposal.draft.base, 'no humans, landscape')
+      assert.ok(externalProposal.creationAi.changes.length >= 2)
+      const oneChange = externalProposal.creationAi.changes[0].id
+      const partialExternal = await b.data('ui_review_creation_ai', {
+        expected_token: await externalToken(),
+        decision: 'accept',
+        change_ids: [oneChange],
+        step_delay_ms: 0,
+      })
+      assert.equal(partialExternal.creationAi.changes.filter((change) => change.selected).length, 1)
+      await b.data('ui_review_creation_ai', {
+        expected_token: await externalToken(),
+        decision: 'accept',
+        step_delay_ms: 0,
+      })
+      const externalUndo = await b.data('ui_review_creation_ai', {
+        expected_token: await externalToken(),
+        decision: 'undo',
+        step_delay_ms: 0,
+      })
+      assert.equal(externalUndo.draft.base, 'no humans, landscape')
+      assert.equal(externalUndo.draft.negative, '')
+      await b.data('apply_app_prompt', {
+        expected_token: await externalToken(),
+        target: 'current',
+        draft: { base: 'a manual replacement', negative: '', characters: [] },
+      })
+      await assert.rejects(
+        b.data('ui_review_creation_ai', {
+          expected_token: await externalToken(),
+          decision: 'accept',
+          step_delay_ms: 0,
+        }),
+        /冲突/,
+      )
+      assert.equal((await b.data('get_app_state')).desktop.draft.base, 'a manual replacement')
+      const noChange = await b.data('ui_propose_creation_edit', {
+        expected_token: await externalToken(),
+        step_delay_ms: 0,
+        creation_proposal: {
+          draft: { base: 'a manual replacement', negative: '', characters: [] },
+          summary: 'No evidenced issue; leave the draft unchanged.',
+          changes: [],
+        },
+      })
+      assert.equal(noChange.creationAi.result.verdict, 'converged')
+      assert.equal(noChange.creationAi.changes.length, 0)
+      assert.equal(creationAiRequests.length, externalRequestCount)
+      console.log(
+        'PASS external creation suggestions: no provider, review, partial adoption, undo and conflicts',
+      )
+    }
+
+    // Exercise the existing creation UI with an offline provider fixture, including
+    // adoption, convergence context, and stale-token protection.
+    writeFileSync(
+      require('../../src/main/infrastructure/paths.ts').dataFile('tags.json'),
+      JSON.stringify({
+        fetchedAt: '2099-01-01',
+        tags: [
+          ['1girl', 0, 1000],
+          ['smile', 0, 900],
+        ],
+      }),
+    )
+    tagStore.load()
+    settings.saveSettings({ apiKey: 'offline-fixture', mcpAllowAi: true })
+    let creationState = await b.data('get_app_state')
+    await b.data('apply_app_prompt', {
+      expected_token: creationState.desktop.token,
+      target: 'fresh_tab',
+      tab_title: 'Creation AI MCP',
+      draft: { base: '1girl', negative: '', characters: [] },
+    })
+    const creationToken = async () => (await b.data('get_app_state')).desktop.token
+    const runCreationFromUi = async () => {
+      await win.webContents.executeJavaScript(
+        "document.querySelector('.creation-ai-actions .btn.accent').click()",
+      )
+      await wait(async () => {
+        const state = (await b.data('get_app_state')).desktop.creationAi
+        return !state.running && (state.result || state.error)
+      })
+      const desktop = (await b.data('get_app_state')).desktop
+      assert.equal(desktop.creationAi.error, '')
+      assert.ok(desktop.creationAi.result)
+      return desktop
+    }
+    await b.data('ui_configure_creation_ai', {
+      expected_token: await creationToken(),
+      instruction: 'Add a smile',
+      fresh: false,
+      step_delay_ms: 0,
+    })
+    const first = await runCreationFromUi()
+    assert.equal(first.creationAi.result.positive, '1girl, smile')
+    assert.ok(first.creationAi.result.reviewKey, JSON.stringify(first.creationAi.result))
+    assert.equal(first.creationPanel, 'ai')
+    const staleCreationToken = await creationToken()
+    const accepted = await b.data('ui_review_creation_ai', {
+      expected_token: staleCreationToken,
+      decision: 'accept',
+      step_delay_ms: 0,
+    })
+    assert.equal(accepted.draft.base, '1girl, smile')
+    assert.equal(accepted.creationAi.adopted, true)
+    await assert.rejects(
+      b.data('ui_review_creation_ai', {
+        expected_token: staleCreationToken,
+        decision: 'undo',
+        step_delay_ms: 0,
+      }),
+      /界面内容已变化/,
+    )
+    const callsBeforeRepeat = creationAiRequests.length
+    const second = await runCreationFromUi()
+    assert.equal(second.creationAi.result.verdict, 'converged')
+    assert.equal(second.creationAi.result.reused, true)
+    assert.equal(creationAiRequests.length, callsBeforeRepeat)
+    await b.data('ui_configure_creation_ai', {
+      expected_token: await creationToken(),
+      instruction: '',
+      step_delay_ms: 0,
+    })
+    for (let repeat = 0; repeat < 2; repeat++) {
+      const unchanged = await runCreationFromUi()
+      assert.equal(unchanged.creationAi.result.reused, true)
+      assert.equal(creationAiRequests.length, callsBeforeRepeat)
+    }
+    await b.data('ui_configure_creation_ai', {
+      expected_token: await creationToken(),
+      instruction: 'Check a new visual issue',
+      step_delay_ms: 0,
+    })
+    await runCreationFromUi()
+    assert.ok(creationAiRequests.length > callsBeforeRepeat)
+    console.log(
+      'PASS creation UI preserves adoption, prior-round convergence and stale-token guards',
     )
 
     console.log('Artifacts:', profile)

@@ -26,7 +26,7 @@ function tokenLine(analyzedToken: AnalyzedToken, i: number): string {
     const info = [CATEGORY_LABEL[tag.category], nai ? 'NAI 专用' : String(tag.count), tag.zh]
       .filter(Boolean)
       .join('|')
-    const weak = !nai && tag.count < WEAK_COUNT ? '，样本少效果弱' : ''
+    const weak = !nai && tag.count < WEAK_COUNT ? '，词库样本较少，不代表生图效果' : ''
     return `${i}. ${pre}${tag.display}${text} [${info}${weak}]${analyzedToken.warning ? ` ⚠${analyzedToken.warning}` : ''}`
   }
   if (analyzedToken.status === 'alias') {
@@ -90,7 +90,7 @@ function collectIssues(sections: Section[], presetTokens: AnalyzedToken[]): Prev
         add(
           'weak',
           section2.label,
-          `${analyzedToken.tag!.display} 只有 ${analyzedToken.tag!.count} 张图，效果可能很弱`,
+          `${analyzedToken.tag!.display} 在词库中仅有 ${analyzedToken.tag!.count} 张图；此统计不证明 NovelAI 的识别能力或生成效果，不据此删除明确语义`,
           'data',
         )
       }
@@ -177,14 +177,11 @@ function collectIssues(sections: Section[], presetTokens: AnalyzedToken[]): Prev
   return issues
 }
 
-const TEXT_SUPPRESS = new Set([
-  'text',
-  'english_text',
-  'chinese_text',
-  'japanese_text',
-  'speech_bubble',
-  'no_text',
-])
+const TEXT_SUPPRESS = new Set(['text', 'english_text', 'chinese_text', 'japanese_text', 'no_text'])
+
+// Text: can label signs, books or posters without a speech bubble. Only an
+// explicit positive speech_bubble conflicts with its negative; collectIssues
+// already handles that scoped tag conflict.
 
 /** 画面文字相关：Text: 块（主提示词或角色提示词末尾）与质量词 / 负面的冲突、版本与长度 */
 function textIssues(
@@ -309,29 +306,42 @@ function structureIssues(req: AiPreviewRequest, sections: Section[]): PreviewIss
   const main = sections[0]
   let heads = 0
   let plus = false
+  let countsOthers = false
   for (const analyzedToken of main?.tokens ?? []) {
     const match = COUNT_RE.exec(nameOf(analyzedToken) ?? '')
     if (!match || analyzedToken.weight <= 0) {
       continue
     }
     heads += Number(match[1])
+    countsOthers ||= match[3] === 'other'
     if (match[2]) {
       plus = true
     }
   }
-  if (chars.length && heads && (plus ? chars.length < heads : chars.length !== heads)) {
+  // Regional prompts can describe signs, props or scenery. Do not count those
+  // as people, or suggest adding people to a no-humans composition.
+  const subjectBlocks = sections.filter(
+    (entry) =>
+      /^角色 \d+$/.test(entry.label) &&
+      entry.tokens.some(
+        (token) =>
+          token.weight > 0 &&
+          ['girl', 'boy', ...(countsOthers ? ['other'] : [])].includes(nameOf(token) ?? ''),
+      ),
+  ).length
+  if (subjectBlocks && heads && (plus ? subjectBlocks < heads : subjectBlocks !== heads)) {
     out.push({
       kind: 'warn',
       where: '主提示词',
       basis: 'doc',
-      text: `人数 tag 合计 ${heads}${plus ? '+' : ''} 人，角色提示词有 ${chars.length} 个：通常每个需要区分外貌的人物对应一个角色提示词，请确认人数与各角色用途（同一人物多次出现、多格漫画等情况可忽略）`,
+      text: `主体数量 tag 合计 ${heads}${plus ? '+' : ''} 个，对应主体提示词有 ${subjectBlocks} 个：请确认不同身份数与区域用途（物体区域不计入人数，同一人物多次出现、多格漫画等情况可忽略）`,
     })
-  } else if (chars.length >= 2 && !heads) {
+  } else if (subjectBlocks >= 2 && !heads) {
     out.push({
       kind: 'warn',
       where: '主提示词',
       basis: 'doc',
-      text: `有 ${chars.length} 个角色提示词，但主提示词没有人数 tag（如 2girls / 1girl, 1boy）`,
+      text: `有 ${subjectBlocks} 个人物区域提示词，但主提示词没有人数 tag（如 2girls / 1girl, 1boy）`,
     })
   }
 

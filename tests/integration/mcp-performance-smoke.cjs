@@ -298,7 +298,7 @@ app.whenReady().then(async () => {
         const r = await a.request('tools/list')
         return { data: r.msg.result, wireBytes: r.wireBytes }
       },
-      (d) => assert.equal(d.tools.length, 79),
+      (d) => assert.equal(d.tools.length, 82),
       1,
     )
     const catalog = (await a.request('tools/list')).msg.result.tools

@@ -1,6 +1,6 @@
 import type { NaiGenParams, NaiVersion } from '../generation/types'
 import type { NaiImage } from '../images/types'
-import type { InpaintDraft } from '../prompts/types'
+import type { AiChange, AiOptimizeResult, InpaintDraft } from '../prompts/types'
 import type { WorkspaceConfigPatch } from '../workspace/config'
 import type { PageAgentActivity, PageExternalReply } from '../workspace/model'
 
@@ -19,6 +19,9 @@ export const APP_TABS = [
 ] as const
 export type AppTab = (typeof APP_TABS)[number]
 export type FrontendAction =
+  | 'creation-ai-config'
+  | 'creation-ai-propose'
+  | 'creation-ai-review'
   | 'open'
   | 'create'
   | 'view'
@@ -65,6 +68,9 @@ export interface FrontendRequest {
   config_action?: 'begin' | 'resume' | 'update' | 'save' | 'cancel'
   patch?: WorkspaceConfigPatch
   agent_session?: string
+  fresh?: boolean
+  change_ids?: string[]
+  creation_proposal?: { draft: InpaintDraft; summary: string; changes: AiChange[] }
 }
 export interface FrontendContext {
   actionId: string
@@ -77,6 +83,19 @@ export interface DesktopState {
   tab: AppTab
   /** 生图创作当前分页（词条检查 / 智能优化 / 画面推测 / 图片预览）；旧页签 compare、ai、preview、generate 会导航到这里 */
   creationPanel?: AppTab
+  creationAi?: {
+    source: 'internal' | 'external'
+    instruction: string
+    fresh: boolean
+    running: boolean
+    error: string
+    result: AiOptimizeResult | null
+    sent: InpaintDraft | null
+    adopted: boolean
+    stale: boolean
+    presetsChanged: boolean
+    changes: { id: string; selected: boolean }[]
+  }
   /** 当前创作标签的提示词；其他标签只给概览 */
   draft: InpaintDraft
   /** 生图创作的全部标签：id、名称、是否当前、是否为空 */

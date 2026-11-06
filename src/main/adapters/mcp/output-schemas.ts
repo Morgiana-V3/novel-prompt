@@ -85,6 +85,7 @@ const desktop = shape({
   tab: str,
   draft,
   creationTabs: array(shape({ id: str, title: str, active: bool, empty: bool })),
+  creationAi: objectSchema,
   model: str,
   image: nullable(image),
   workspace: nullable(desktopWorkspace),
@@ -93,7 +94,7 @@ const desktop = shape({
 })
 // frontend is optional before the first visible action; creationTabs is absent on older hosts.
 desktop.required = desktop.required.filter(
-  (text: string) => text !== 'frontend' && text !== 'creationTabs',
+  (text: string) => !['frontend', 'creationTabs', 'creationAi'].includes(text),
 )
 const workspace = shape(
   {

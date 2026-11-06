@@ -253,6 +253,7 @@ export function createWorkspaceCommands(host: WorkspaceCommandHost) {
               configDraft.value,
               request.patch!,
               configSizeLocked.value,
+              configDraft.value.model ?? work.value.model,
             )
             await ctx.step('表单已更新，尚未保存或生成')
           } else if (request.config_action === 'save') {

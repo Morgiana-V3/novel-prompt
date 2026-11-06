@@ -1,4 +1,6 @@
 import type { NaiVersion } from '../../../shared/generation/types'
+import { createHash } from 'node:crypto'
+import { findTextBlock } from '../../../shared/generation/presets'
 import type {
   AiChange,
   AiCharacter,
@@ -22,11 +24,17 @@ interface PromptTexts {
   characters: AiCharacter[]
 }
 
-const normText = (text: string | undefined) =>
-  (text ?? '')
-    .replace(/\s*,\s*/g, ', ')
-    .replace(/\s+/g, ' ')
-    .trim()
+const normText = (text: string | undefined) => {
+  const value = text ?? ''
+  const at = findTextBlock(value)
+  const normal = (part: string) =>
+    part
+      .replace(/\s*,\s*/g, ', ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  // 画面文字中的大小写、空行、空格与标点不是提示词格式。
+  return at < 0 ? normal(value) : JSON.stringify([normal(value.slice(0, at)), value.slice(at)])
+}
 
 function sameTexts(left: PromptTexts, right: PromptTexts): boolean {
   const characters = (texts: PromptTexts) =>
@@ -49,6 +57,9 @@ function conceptKey(texts: PromptTexts, version: NaiVersion): string {
   const keys = (text: string | undefined) =>
     analyzePrompt(text ?? '', version)
       .tokens.map((token) => {
+        if (token.kind === 'text') {
+          return `text:${token.raw}`
+        }
         const tag = token.tag ?? token.aliasOf
         const core = tag ? tag.name : token.core.toLowerCase().replace(/_/g, ' ').trim()
         return `${token.prefix ?? ''}${core}@${token.weight}`
@@ -72,6 +83,42 @@ const inputTexts = (req: AiOptimizeRequest): PromptTexts => ({
   negative: req.negative ?? '',
   characters: (req.characters ?? []).filter((character) => character.prompt?.trim()),
 })
+
+/** Exact text matters here: the receipt must not authorize edits to lettering. */
+export function reviewKey(req: AiOptimizeRequest, texts: PromptTexts, context: string): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify([
+        'prompt-review-v1',
+        context,
+        req.version,
+        req.promptPresets ?? null,
+        req.instruction.trim(),
+        texts.positive,
+        texts.negative,
+        texts.characters.map((character) => [
+          character.prompt,
+          character.negative ?? '',
+          character.position ?? '',
+        ]),
+      ]),
+    )
+    .digest('hex')
+}
+
+export function canReuseReview(req: AiOptimizeRequest, context: string): boolean {
+  if (!req.previous?.reviewKey || !adoptedPreviousRound(req)) {
+    return false
+  }
+  return (
+    req.previous.reviewKey ===
+    reviewKey(
+      { ...req, instruction: req.instruction.trim() || req.previous.instruction },
+      inputTexts(req),
+      context,
+    )
+  )
+}
 
 /** 当前提示词就是上一轮的输出，且用户没有提出新的要求 */
 export function adoptedPreviousRound(req: AiOptimizeRequest): boolean {

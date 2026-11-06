@@ -68,6 +68,8 @@ export interface AiOptimizeRequest {
 export type AiVerdict = 'converged' | 'changes'
 
 export interface AiPreviousRound {
+  /** 程序签发的已检查稿指纹；模型生成的内容不可信任为此字段。 */
+  reviewKey?: string
   positive: string
   negative: string
   characters: AiCharacter[]
@@ -119,6 +121,10 @@ export interface EvidenceInfo {
 }
 
 export interface AiOptimizeResult {
+  /** 绑定最终稿、需求、模型/预设、Skill 和证据的复查指纹。 */
+  reviewKey?: string
+  /** 本轮沿用已采纳稿，仅本地复查，未再次请求模型。 */
+  reused?: boolean
   positive: string
   negative: string
   characters: AiCharacter[]

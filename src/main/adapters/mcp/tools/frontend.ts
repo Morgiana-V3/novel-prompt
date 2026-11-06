@@ -1,13 +1,16 @@
 import type { FrontendAction, FrontendRequest } from '../../../../shared/contracts/desktop'
+import type { InpaintDraft } from '../../../../shared/prompts/types'
 import { WORKSPACE_CONFIG_SCHEMA } from '../../../../shared/workspace/config'
 import { listImages } from '../../../modules/images/access'
 import { getSettings } from '../../../modules/settings/service'
 import { requireAgent } from '../../../modules/workspace/agent-sessions'
 import { readPage } from '../../../modules/workspace/repository'
+import { checkDraft } from '../../../modules/workspace/validation'
 import type { DesktopBridge } from '../../desktop/bridge'
 import { runFrontend } from '../../desktop/frontend-operations'
 import { EXTERNAL_RESPONSE_SCHEMA } from './external-workspace'
 import type { McpTool } from '../types'
+import { CHARACTERS_SCHEMA } from '../tool-input'
 
 const ID = { type: 'string', description: '当前已打开工作台的 id；先用 ui_open_workspace 打开' }
 const TOKEN = {
@@ -53,6 +56,7 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
     gate?: () => string | null,
   ): McpTool {
     const guarded = !['open', 'create'].includes(action)
+    const creation = action.startsWith('creation-ai-')
     return {
       name,
       title: `前台 · ${label}`,
@@ -60,7 +64,7 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
       inputSchema: {
         type: 'object',
         properties: {
-          ...(guarded ? { id: ID, expected_token: TOKEN } : {}),
+          ...(guarded ? { ...(creation ? {} : { id: ID }), expected_token: TOKEN } : {}),
           step_delay_ms: {
             type: 'integer',
             minimum: 0,
@@ -69,7 +73,10 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
           },
           ...properties,
         },
-        required: [...(guarded ? ['id', 'expected_token'] : []), ...required],
+        required: [
+          ...(guarded ? [...(creation ? [] : ['id']), 'expected_token'] : []),
+          ...required,
+        ],
       },
       annotations: {
         ...WRITE,
@@ -79,7 +86,9 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
       gate,
       run: async (argumentsRecord, signal, report = () => {}) => {
         if (guarded) {
-          nonempty(argumentsRecord.id, '会话 id')
+          if (!creation) {
+            nonempty(argumentsRecord.id, '会话 id')
+          }
           nonempty(argumentsRecord.expected_token, '界面 token')
         }
         if (
@@ -148,6 +157,86 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
     }
   }
   return [
+    tool(
+      'ui_propose_creation_edit',
+      '展示外部 Agent 创作建议',
+      'creation-ai-propose',
+      '将外部 Agent 的完整建议稿放入当前生图创作标签的差异审阅界面，不自动采纳、不调用内置 AI、不生图。先读取当前稿、适用 Skill 与检查结果；summary 说明目标、依据和未验证之处，changes 按具体改动列明依据。无必要修改时提交原稿并解释停止理由。之后使用 ui_review_creation_ai 逐项采纳或撤销。',
+      {
+        creation_proposal: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            draft: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                base: { type: 'string', maxLength: 30000 },
+                negative: { type: 'string', maxLength: 30000 },
+                characters: { ...CHARACTERS_SCHEMA, maxItems: 22 },
+              },
+              required: ['base', 'negative', 'characters'],
+            },
+            summary: { type: 'string', minLength: 1, maxLength: 16000 },
+            changes: {
+              type: 'array',
+              maxItems: 100,
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  scope: {
+                    type: 'string',
+                    enum: ['positive', 'character', 'negative', 'optional'],
+                  },
+                  basis: { type: 'string', enum: ['rule', 'data', 'doc', 'taste'] },
+                  text: { type: 'string', minLength: 1, maxLength: 6000 },
+                  evidence: { type: 'string', minLength: 1, maxLength: 6000 },
+                  characterIndex: { type: 'integer', minimum: 0, maximum: 21 },
+                  characterSide: { type: 'string', enum: ['before', 'after'] },
+                  characterField: { type: 'string', enum: ['prompt', 'negative', 'position'] },
+                },
+                required: ['scope', 'basis', 'text', 'evidence'],
+              },
+            },
+          },
+          required: ['draft', 'summary', 'changes'],
+        },
+      },
+      ['creation_proposal'],
+      (args) => {
+        const proposal = args.creation_proposal as NonNullable<FrontendRequest['creation_proposal']>
+        nonempty(proposal?.summary, '建议说明')
+        checkDraft(proposal?.draft as InpaintDraft, getSettings().naiVersion)
+        if (!Array.isArray(proposal.changes)) {
+          throw new Error('建议须包含修改依据列表')
+        }
+      },
+    ),
+    tool(
+      'ui_configure_creation_ai',
+      '填写智能优化要求',
+      'creation-ai-config',
+      '在生图创作的当前标签填写智能优化要求。instruction 可为空；fresh=true 表示按描述重新生成。只填写，不调用 AI。',
+      { instruction: { type: 'string', maxLength: 6000 }, fresh: { type: 'boolean' } },
+      [],
+      (args) => {
+        if (args.instruction === undefined && args.fresh === undefined) {
+          throw new Error('请提供 instruction 或 fresh')
+        }
+      },
+    ),
+    tool(
+      'ui_review_creation_ai',
+      '采用智能优化建议',
+      'creation-ai-review',
+      '展示并采用或撤销当前标签的智能优化建议。decision=accept|undo；省略 change_ids 处理全部修改，提供时仅处理列出的修改项。完整结果和修改项 id 来自 get_app_state.desktop.creationAi。保留冲突的手动编辑，不调用 AI、不生图。',
+      {
+        decision: { type: 'string', enum: ['accept', 'undo'] },
+        change_ids: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'string' } },
+      },
+      ['decision'],
+    ),
     tool(
       'ui_update_workspace_region',
       '修改已有区域',

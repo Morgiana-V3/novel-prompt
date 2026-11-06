@@ -3,6 +3,8 @@ require('../support/register-typescript.cjs')
 const {
   adoptedPreviousRound,
   stabilizeResult,
+  reviewKey,
+  canReuseReview,
 } = require('../../src/main/modules/prompts/convergence.ts')
 
 const base = {
@@ -85,5 +87,44 @@ assert.equal(stabilizeResult(converging, hardFix).positive, hardFix.positive)
 // 5. 部分采纳（当前提示词与上一轮输出不同）不触发收敛收紧
 const partial = { ...base, prompt: 'silver hair, green eyes, smile', previous }
 assert.equal(adoptedPreviousRound(partial), false)
+
+// 6. A repeat review requires the exact adopted text AND the same Skill/model/evidence context.
+const context = 'enabled skills and provider settings A'
+const reviewed = { ...previous, reviewKey: reviewKey(base, previous, context) }
+const repeat = { ...base, previous: reviewed }
+assert.equal(canReuseReview(repeat, context), true)
+assert.equal(canReuseReview(repeat, context + ' changed'), false)
+assert.equal(canReuseReview({ ...repeat, version: 'v5' }, context), false)
+assert.equal(
+  canReuseReview({ ...repeat, promptPresets: { qualityTags: true, ucPreset: 'heavy' } }, context),
+  false,
+)
+assert.equal(canReuseReview({ ...repeat, instruction: 'Change the pose' }, context), false)
+assert.equal(canReuseReview({ ...repeat, prompt: base.prompt + ', sitting' }, context), false)
+assert.equal(canReuseReview({ ...base, previous }, context), false)
+
+// 7. Lettering whitespace and case are content, not normalization-only changes.
+const lettered = { ...base, prompt: 'text, Text: GOOD  DAY\n\nMAP', characters: [] }
+const letteringPrevious = { ...previous, positive: lettered.prompt, characters: [] }
+assert.equal(adoptedPreviousRound({ ...lettered, previous: letteringPrevious }), true)
+assert.equal(
+  adoptedPreviousRound({
+    ...lettered,
+    prompt: 'text, Text: GOOD DAY MAP',
+    previous: letteringPrevious,
+  }),
+  false,
+)
+const changedLettering = stabilizeResult(
+  { ...lettered, previous: letteringPrevious },
+  output({
+    positive: 'text, Text: good  day\n\nMAP',
+    characters: [],
+    verdict: 'changes',
+    changes: [{ scope: 'positive', basis: 'rule', text: 'case change', evidence: 'fixture' }],
+  }),
+)
+assert.equal(changedLettering.verdict, 'changes')
+assert.equal(changedLettering.stabilized, undefined)
 
 console.log('PASS optimize convergence: converged verdicts, reorder-only, adopted-round tightening')
