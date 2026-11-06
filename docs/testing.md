@@ -107,3 +107,5 @@ Skill 目录包：构建后运行 `npm run skills:smoke`，或 `node scripts/che
 `operations:policy` 使用模拟授权窗口和供应商，覆盖旧设置迁移、手动付费确认、Agent 免费通过、付费与未知费用拦截、单次授权、不降级来源和取消后不提交。不会请求真实计费服务。
 
 `pricing` 验证官方计费样例、强度与舍入、V5 多张额度区间、未知账户状态和放大分档边界；`operations:policy` 也验证弹窗预估数字与执行后余额、免费额度反馈，查询失败保持未知。计价依据见 [NovelAI 费用预估](novelai-pricing.md)。
+
+画师调试：`electron tests/e2e/artists-smoke.cjs` 使用隔离 profile 与假生图供应商，覆盖删除、原图/新图选择、画师串回退、蓝本原图与画师串基准、基准复用、V4.5/V5 草稿隔离、图鉴滚动加载/搜索/收藏/失败重试和宽窄布局。弹窗验证内层滚动、固定关闭按钮与底栏、真实遮罩点击关闭。蓝本选择验证非活动创作标签的明确选择、内容快照、返回来源标签和撤销，以及图库原图直接映射为基准、更换蓝本同步替换画师串、仅生成调整后的候选图、原图映射重启保留、原图与新图取舍、图片参数读取、缺失参数提示、切换图片时旧请求隔离、结果在新创作标签打开。`node tests/integration/artists-catalog-smoke.cjs` 验证公开图鉴的数据兼容、单画师筛选、缓存、资源路径和完整性。设置 `NP_TEST_RENDERER_URL` 可验证开发 renderer；`NP_TEST_ARTIST_PREVIEWS=1` 只读取真实公开图鉴并截图，不执行生图。

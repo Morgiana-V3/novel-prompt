@@ -55,6 +55,7 @@ Electron 主进程是唯一应用宿主，窗口和 MCP 客户端共享服务、
 | `nai:freeCheck` | `src/main/adapters/ipc/images.ts` |
 | `nai:generate` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/generation/task-actions.ts` |
 | `nai:inpaint` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/generation/task-actions.ts` |
+| `artists:catalog` | `src/main/adapters/ipc/images.ts` → `modules/artists/catalog.ts` → `providers/quicktagcloud.ts`（公开图鉴，只读、分页、按模型缓存） |
 | `nai:list` | `src/main/adapters/ipc/images.ts` |
 | `nai:readImage` | `src/main/adapters/ipc/images.ts` |
 | `nai:recipe` | `src/main/adapters/ipc/images.ts` |

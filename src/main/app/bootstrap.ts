@@ -82,7 +82,9 @@ export function startApplication(): void {
   const notifyTasks = createTaskNotifier({
     window: () =>
       windowManager.current && !windowManager.current.isDestroyed() ? windowManager.current : null,
-    enabled: () => getSettings().notifyOnComplete !== false && Notification.isSupported(),
+    // Windows 上 isSupported() 也会初始化通知并创建 Electron.lnk，覆盖开发版任务栏图标。
+    enabled: () =>
+      getSettings().notifyOnComplete !== false && (!app.isPackaged || Notification.isSupported()),
     notify: ({ title, body, onClick }) => {
       // 开发版实际运行的是 electron.exe：系统通知会让 Windows 把应用身份关联到它，
       // 任务栏随之变成 Electron 图标。开发版只闪烁任务栏，安装版与便携版正常发通知。

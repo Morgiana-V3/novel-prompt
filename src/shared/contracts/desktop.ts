@@ -10,6 +10,7 @@ export const APP_TABS = [
   'ai',
   'preview',
   'reverse',
+  'artists',
   'generate',
   'gallery',
   'workspace',

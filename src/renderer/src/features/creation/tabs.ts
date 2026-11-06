@@ -368,6 +368,33 @@ export const tabsLocked = computed(() => !!blocker())
 /** 当前不能切换或新开标签的原因（任务进行中等），没有时为 false */
 export const tabsBlocker = () => blocker()
 
+/** Read a named creation without switching the user's active editor. */
+export function creationSnapshots() {
+  return creationTabs.list.map((tab, index) => {
+    const content =
+      tab.id === creationTabs.activeId
+        ? {
+            prompt: promptState.prompt,
+            negative: promptState.negative,
+            characters: promptState.characters,
+            params: promptState.params,
+            gen: generationParams,
+          }
+        : (tab.content ?? blankContent())
+    return {
+      id: tab.id,
+      title: `${index + 1} · ${tabTitle(tab)}`,
+      content: clone({
+        prompt: content.prompt,
+        negative: content.negative,
+        characters: content.characters,
+        params: content.params,
+        gen: content.gen,
+      }),
+    }
+  })
+}
+
 /** 给 Agent 的标签概览：只含 id、名称、是否当前、是否为空，不含提示词正文 */
 export function tabSummaries(): { id: string; title: string; active: boolean; empty: boolean }[] {
   return creationTabs.list.map((tab) => ({

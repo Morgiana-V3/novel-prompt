@@ -8,6 +8,7 @@ export type Tab =
   | 'generate'
   | 'gallery'
   | 'reverse'
+  | 'artists'
   | 'workspace'
   | 'search'
   | 'settings'

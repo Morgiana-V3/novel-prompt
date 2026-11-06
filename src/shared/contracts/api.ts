@@ -1,3 +1,4 @@
+import type { ArtistCatalogPage, ArtistCatalogQuery } from '../artists/catalog'
 import type { ConfirmationRequest } from './confirmation'
 import type { StatisticsData } from '../statistics/model'
 import type { ImageCollection } from '../images/collections'
@@ -50,6 +51,7 @@ import type { StorageInfo } from '../settings/storage'
 import type { PromptSnippet, SnippetInput } from '../prompts/snippets'
 
 export interface Api {
+  artistCatalog: (query: ArtistCatalogQuery) => Promise<ArtistCatalogPage>
   replyConfirmation: (id: string, approved: boolean) => Promise<void>
   onConfirmations: (cb: (requests: ConfirmationRequest[]) => void) => () => void
   collectionsList: () => Promise<ImageCollection[]>
@@ -221,6 +223,10 @@ export interface Api {
 }
 
 export interface IpcContract {
+  'artists:catalog': {
+    args: Parameters<Api['artistCatalog']>
+    result: Awaited<ReturnType<Api['artistCatalog']>>
+  }
   'confirmations:reply': { args: Parameters<Api['replyConfirmation']>; result: void }
   'collections:list': {
     args: Parameters<Api['collectionsList']>

@@ -1,0 +1,263 @@
+.artist-catalog-dialog {
+  width: min(920px, 94vw);
+  height: min(820px, 90dvh);
+  max-height: 90dvh;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line2);
+  border-radius: 18px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow-modal);
+}
+
+.artist-catalog-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.catalog-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0 20px 16px;
+}
+
+.catalog-load-state {
+  padding: 16px 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.catalog-sentinel {
+  height: 1px;
+}
+
+.artist-catalog-dialog::backdrop {
+  background: var(--scrim);
+}
+
+.catalog-header,
+.catalog-toolbar,
+.catalog-card-title,
+.catalog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.catalog-header {
+  align-items: center;
+  flex-shrink: 0;
+  padding: 18px 20px 12px;
+}
+
+.catalog-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.catalog-empty p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text2);
+}
+
+.catalog-toolbar {
+  flex-shrink: 0;
+  margin: 0 20px 12px;
+}
+
+.catalog-scope {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.catalog-starred :deep(svg) {
+  fill: currentcolor;
+}
+
+.catalog-search {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.catalog-search input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  outline: none;
+}
+
+.catalog-link {
+  color: var(--text2);
+  font-size: 11px;
+}
+
+.catalog-link:hover {
+  color: var(--pink-deep);
+}
+
+.catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.catalog-card {
+  overflow: hidden;
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.catalog-preview,
+.catalog-image-error {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 180px;
+  background: var(--hover);
+}
+
+.catalog-preview {
+  cursor: zoom-in;
+}
+
+.catalog-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.catalog-image-error,
+.catalog-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.catalog-empty {
+  min-height: 280px;
+}
+
+.catalog-card-content {
+  padding: 10px 12px 12px;
+}
+
+.catalog-card-title {
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.catalog-add {
+  width: 100%;
+  justify-content: center;
+  font-size: 11px;
+}
+
+.catalog-starred,
+.catalog-favorites-active {
+  color: var(--pink-deep);
+  background: var(--pink-soft);
+}
+
+.catalog-footer {
+  flex-shrink: 0;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line2);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.catalog-footer .primary {
+  margin-left: auto;
+}
+
+.catalog-model-note {
+  margin: 0;
+  padding: 0 20px 12px;
+  color: var(--text2);
+  font-size: 11px;
+}
+
+.catalog-lightbox {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: var(--bg);
+}
+
+.catalog-lightbox > button {
+  align-self: flex-end;
+}
+
+.catalog-lightbox img {
+  min-height: 0;
+  flex: 1;
+  max-height: 65dvh;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.catalog-lightbox > span {
+  color: var(--text2);
+  font-size: 12px;
+}
+
+.catalog-card-title strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog-card-source {
+  margin: 0 0 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.catalog-lightbox code {
+  max-width: 100%;
+  max-height: 60px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+
+@media (width <= 650px) {
+  .catalog-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .catalog-toolbar {
+    flex-wrap: wrap;
+  }
+}

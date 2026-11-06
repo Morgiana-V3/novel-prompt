@@ -28,9 +28,15 @@ export function useReverseTrials() {
   })
   let requesting = false
   watchEffect(() => {
-    trialActivity.running = state.running
-    trialActivity.message = state.running ? state.progress : ''
-    trialActivity.stop = state.running ? stop : null
+    if (state.running) {
+      trialActivity.running = true
+      trialActivity.message = state.progress
+      trialActivity.stop = stop
+    } else if (trialActivity.stop === stop) {
+      trialActivity.running = false
+      trialActivity.message = ''
+      trialActivity.stop = null
+    }
   })
 
   function clear() {
@@ -179,9 +185,11 @@ export function useReverseTrials() {
   }
   onBeforeUnmount(() => {
     state.stopRequested = true
-    trialActivity.running = false
-    trialActivity.message = ''
-    trialActivity.stop = null
+    if (trialActivity.stop === stop) {
+      trialActivity.running = false
+      trialActivity.message = ''
+      trialActivity.stop = null
+    }
   })
   return { state, run, stop, clear }
 }

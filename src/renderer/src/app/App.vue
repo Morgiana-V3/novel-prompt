@@ -43,6 +43,7 @@ import GenerateView from '../features/generation/GenerateView.vue'
 import GalleryView from '../features/gallery/GalleryView.vue'
 import FavoritesView from '../features/favorites/FavoritesView.vue'
 import ReverseView from '../features/reverse/ReverseView.vue'
+import ArtistStudio from '../features/artists/ArtistStudio.vue'
 import SubscriptionStatus from '../features/generation/components/SubscriptionStatus.vue'
 import WorkspacesView from '../features/workspace/WorkspacesView.vue'
 import SettingsView from '../features/settings/SettingsView.vue'
@@ -85,6 +86,12 @@ const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: bool
     label: '生图创作',
     icon: 'sparkle',
     desc: '在同一页编辑提示词，检查词条、智能优化、推测画面并生成图片',
+  },
+  {
+    key: 'artists',
+    label: '画师调试',
+    icon: 'sliders',
+    desc: '编辑画师串，固定内容和种子，对比每次调整的实际效果',
   },
   {
     key: 'reverse',
@@ -786,14 +793,14 @@ async function onDrop(event2: DragEvent) {
           <div class="seg block">
             <button
               :class="{ on: settingsState.settings.naiVersion === 'v4.5' }"
-              :disabled="switchingVersion"
+              :disabled="switchingVersion || imageState.generating"
               @click="setVersion('v4.5')"
             >
               V4.5
             </button>
             <button
               :class="{ on: settingsState.settings.naiVersion === 'v5' }"
-              :disabled="switchingVersion"
+              :disabled="switchingVersion || imageState.generating"
               @click="setVersion('v5')"
             >
               V5
@@ -902,6 +909,7 @@ async function onDrop(event2: DragEvent) {
           v-show="shellState.tab === 'reverse'"
           ref="reverseView"
         />
+        <ArtistStudio v-show="shellState.tab === 'artists'" />
         <SearchView v-show="shellState.tab === 'search'" />
         <WorkspacesView
           v-show="shellState.tab === 'workspace'"

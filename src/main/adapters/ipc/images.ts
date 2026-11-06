@@ -1,3 +1,4 @@
+import { queryArtistCatalog } from '../../modules/artists/catalog'
 import { app, clipboard, ClipboardItem, dialog, shell } from 'electron'
 import { copyFileSync, mkdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -32,6 +33,7 @@ import { imageCollections } from '../../modules/images/collections'
 
 export function registerImagesIpc(context: IpcContext): void {
   const { send, notifyAppChanged } = context
+  handle('artists:catalog', (_event, query) => queryArtistCatalog(query))
   const collectionsChanged = () => {
     send('gallery:changed', null)
     notifyAppChanged()
