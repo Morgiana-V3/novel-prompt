@@ -2,9 +2,11 @@ import { createHash } from 'node:crypto'
 import type { PageWorkspace } from '../../../shared/workspace/model'
 import { currentAgent } from '../../modules/workspace/agent-sessions'
 import { pageReadStamp } from '../../modules/workspace/index-cache'
-import { readPage } from '../../modules/workspace/repository'
+import { readPageSnapshot } from '../../modules/workspace/repository'
+import { isPageSnapshot } from '../../modules/workspace/read-cache'
 import { candidatePage } from './candidate-page'
 import { workspaceResult } from './workspace-result'
+import { selectWorkspaceResult, summarizeMessage, summarizeVersion } from './workspace-selection'
 
 type Snapshot = {
   metadata: string
@@ -15,6 +17,17 @@ type Snapshot = {
 // Fingerprints only, scoped to the connection. No second copy of prompts/history.
 const snapshots = new WeakMap<object, Map<string, Snapshot>>()
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+// Only deeply frozen repository snapshots qualify. Mutable write receipts are always recomputed.
+const projections = new WeakMap<PageWorkspace, ReturnType<typeof projectWorkspace>>()
+function projectWorkspace(workspace: PageWorkspace) {
+  const { versions, messages, ...metadata } = workspaceResult(workspace)
+  const snapshot: Snapshot = {
+    metadata: digest(metadata),
+    versions: new Map(workspace.versions.map((version) => [version.id, digest(version)])),
+    messages: new Map(messages.map((message) => [message.id, digest(message)])),
+  }
+  return { versions, messages, metadata, snapshot }
+}
 /** Writes acknowledge current state without echoing every historical prompt. */
 export function workspaceReceipt(workspace: PageWorkspace) {
   return readWorkspaceResult(workspace, {})
@@ -39,7 +52,7 @@ export function readStoredWorkspaceResult(id: string, args: Record<string, unkno
   ) {
     return { id, revision: args.since_revision, detail, notModified: true }
   }
-  const workspace = readPage(id)
+  const workspace = readPageSnapshot(id)
   const result = readWorkspaceResult(workspace, args)
   const saved = agent ? snapshots.get(agent)?.get(key(workspace.revision)) : undefined
   if (saved && args.message_ids === undefined && args.version_ids === undefined) {
@@ -64,16 +77,17 @@ export function readWorkspaceResult(workspace: PageWorkspace, args: Record<strin
   ) {
     throw Error('指定 id 读取不能与增量或分页游标同时使用')
   }
-  const { versions, messages, ...metadata } = workspaceResult(workspace)
-  // Hash original candidates so a changed mask is observable even though its
-  // pixels are deliberately omitted from the returned record.
-  const snapshot: Snapshot = {
-    metadata: digest(metadata),
-    versions: new Map(workspace.versions.map((version) => [version.id, digest(version)])),
-    messages: new Map(
-      messages.map((messageSnapshot) => [messageSnapshot.id, digest(messageSnapshot)]),
-    ),
+  if (args.message_ids !== undefined || args.version_ids !== undefined) {
+    return selectWorkspaceResult(workspace, args)
   }
+  let projection = isPageSnapshot(workspace) ? projections.get(workspace) : undefined
+  if (!projection) {
+    projection = projectWorkspace(workspace)
+    if (isPageSnapshot(workspace)) {
+      projections.set(workspace, projection)
+    }
+  }
+  const { versions, messages, metadata, snapshot } = projection
   const agent = currentAgent()
   let cache = agent ? snapshots.get(agent) : undefined
   if (agent && !cache) {
@@ -166,7 +180,7 @@ export function readWorkspaceResult(workspace: PageWorkspace, args: Record<strin
       cache.delete(cache.keys().next().value!)
     }
   }
-  return {
+  return structuredClone({
     ...(!requestedMessages &&
     !requestedVersions &&
     (!delta || baseline!.metadata !== snapshot.metadata)
@@ -194,60 +208,14 @@ export function readWorkspaceResult(workspace: PageWorkspace, args: Record<strin
     versions: versionPage.items.map((versionSnapshot) =>
       detail === 'full'
         ? versionSnapshot
-        : {
-            id: versionSnapshot.id,
-            parentId: versionSnapshot.parentId,
-            label: versionSnapshot.label,
-            image: versionSnapshot.image,
-            imageCleared: versionSnapshot.imageCleared,
-            createdAt: versionSnapshot.createdAt,
-            groupId: versionSnapshot.groupId,
-            groupNumber: versionSnapshot.groupNumber,
-            candidateNumber: versionSnapshot.candidateNumber,
-            regionCount: versionSnapshot.editor.regions.length,
-            detailDigest: snapshot.versions.get(versionSnapshot.id),
-          },
+        : summarizeVersion(versionSnapshot, snapshot.versions.get(versionSnapshot.id)),
     ),
     versionsPage: versionPage.page,
     messages: (includeMessages ? selectedMessages.slice(start, end) : []).map((messageSnapshot) => {
       if (detail === 'full') {
         return messageSnapshot
       }
-      return {
-        id: messageSnapshot.id,
-        role: messageSnapshot.role,
-        text: messageSnapshot.text.slice(0, 400),
-        textTruncated: messageSnapshot.text.length > 400,
-        textLength: messageSnapshot.text.length,
-        createdAt: messageSnapshot.createdAt,
-        versionId: messageSnapshot.versionId,
-        regionId: messageSnapshot.regionId,
-        regionIds: messageSnapshot.regionIds,
-        regions: messageSnapshot.regions,
-        referenceIds: messageSnapshot.referenceIds,
-        requestId: messageSnapshot.requestId,
-        externalRequest: messageSnapshot.externalRequest,
-        error: messageSnapshot.error,
-        author: messageSnapshot.author,
-        skillSnapshot: messageSnapshot.skillSnapshot,
-        proposal: messageSnapshot.proposal
-          ? {
-              title: messageSnapshot.proposal.title,
-              status: messageSnapshot.proposal.status,
-              superseded: messageSnapshot.proposal.superseded,
-              regionId: messageSnapshot.proposal.regionId,
-              regionIds: messageSnapshot.proposal.regionIds,
-            }
-          : messageSnapshot.proposalSummary,
-        discussion: messageSnapshot.discussion
-          ? {
-              versionId: messageSnapshot.discussion.versionId,
-              label: messageSnapshot.discussion.label,
-              image: messageSnapshot.discussion.image,
-            }
-          : undefined,
-        detailDigest: snapshot.messages.get(messageSnapshot.id),
-      }
+      return summarizeMessage(messageSnapshot, snapshot.messages.get(messageSnapshot.id))
     }),
     history: {
       total: messages.length,
@@ -259,5 +227,5 @@ export function readWorkspaceResult(workspace: PageWorkspace, args: Record<strin
       nextBeforeMessageId: includeMessages && start > 0 ? selectedMessages[start].id : null,
     },
     ...(requestedMessages || requestedVersions ? { partial: true } : {}),
-  }
+  })
 }

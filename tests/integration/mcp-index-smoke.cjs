@@ -3,6 +3,7 @@ const { temporaryProfile, artifactDirectory } = require('../support/fixtures.cjs
 const { app } = require('electron')
 const fs = require('node:fs')
 const { join } = require('node:path')
+const { randomUUID } = require('node:crypto')
 const { tmpdir } = require('node:os')
 const assert = require('node:assert/strict')
 const ts = require('typescript')
@@ -12,6 +13,8 @@ app.setPath('userData', profile)
 app.getAppPath = () => join(__dirname, '../..')
 require('../support/register-typescript.cjs')
 const pages = require('../../src/main/modules/workspace/index.ts')
+const { readPageSnapshot } = require('../../src/main/modules/workspace/repository.ts')
+const { readWorkspaceResult } = require('../../src/main/adapters/mcp/workspace-read.ts')
 const library = require('../../src/main/modules/images/library.ts')
 const { imagePath } = require('../../src/main/modules/images/access.ts')
 const { desktopTools } = require('../../src/main/adapters/mcp/tools/desktop.ts')
@@ -19,12 +22,17 @@ const { createMcpSession } = require('../../src/main/adapters/mcp/server.ts')
 const { pageCurrent, pageContextKey } = require('../../src/shared/workspace/model.ts')
 let locked = false
 let projectReads = 0
+let afterProjectRead
 const originalRead = fs.readFileSync
 fs.readFileSync = function (path, ...args) {
   if (typeof path === 'string' && path.includes('page-workspaces') && path.endsWith('.json')) {
     projectReads++
   }
-  return originalRead.call(this, path, ...args)
+  const result = originalRead.call(this, path, ...args)
+  if (typeof path === 'string' && path.includes('page-workspaces') && path.endsWith('.json')) {
+    afterProjectRead?.()
+  }
+  return result
 }
 const tools = desktopTools(
   {
@@ -158,6 +166,18 @@ app.whenReady().then(async () => {
       'recovery metadata is detached from callers',
     )
     assert.equal(projectReads, 0, 'warm summary/inbox/unchanged must not parse project JSON')
+    await a.call('get_workspace', { id, detail: 'full', message_ids: [message.id] })
+    await a.call('get_workspace_context', { id, rules_only: true })
+    assert.equal(projectReads, 0, 'warm exact-ID and rules-only reads reuse the parsed snapshot')
+    const frozen = readPageSnapshot(id)
+    assert.equal(Object.isFrozen(frozen.versions[0].editor.draft), true)
+    assert.equal(Reflect.set(frozen.versions[0].editor.draft, 'base', 'changed'), false)
+    const projected = readWorkspaceResult(frozen, {
+      detail: 'full',
+      version_ids: [frozen.currentVersionId],
+    })
+    projected.versions[0].editor.draft.base = 'caller-owned output'
+    assert.equal(readPageSnapshot(id).versions[0].editor.draft.base, draft.base)
     locked = true
     await assert.rejects(
       a.call('get_workspace', { id, since_revision: initial.revision }),
@@ -220,6 +240,19 @@ app.whenReady().then(async () => {
       'PASS external same-revision edits, detached index values, image deletion/restoration and request staleness',
     )
 
+    const persistedHash = await a.call('get_workspace', { id })
+    const imageStat = fs.statSync(path)
+    png.data.fill(100)
+    fs.writeFileSync(path, PNG.sync.write(png))
+    fs.utimesSync(path, imageStat.atime, imageStat.mtime)
+    const newHash = await a.call('get_workspace', { id, since_revision: persistedHash.revision })
+    assert.equal(newHash.versions.length, 1)
+    assert.notEqual(
+      newHash.versions[0].image.contentHash,
+      persistedHash.versions[0].image.contentHash,
+    )
+    assert.equal(pages.listPendingPageRequests()[0].stale, true)
+
     // Missing persisted content hash must be recomputed after a same-name file replacement.
     w = pages.readPage(id)
     delete pageCurrent(w).image.contentHash
@@ -246,6 +279,42 @@ app.whenReady().then(async () => {
     await assert.rejects(a.call('get_workspace', { id, since_revision: ready.revision }))
     fs.writeFileSync(file, intact)
     assert.equal((await a.call('get_workspace', { id })).id, id)
+    const external = JSON.parse(fs.readFileSync(file, 'utf8'))
+    external.title = 'Before concurrent replacement'
+    fs.writeFileSync(file, JSON.stringify(external))
+    afterProjectRead = () => {
+      afterProjectRead = undefined
+      external.title = 'After concurrent replacement'
+      fs.writeFileSync(file, JSON.stringify(external))
+    }
+    assert.throws(() => readPageSnapshot(id), /读取时已改变/)
+    assert.equal(readPageSnapshot(id).title, 'After concurrent replacement')
+
+    const template = pages.readPage(id)
+    for (let index = 0; index < 9; index++) {
+      const extra = structuredClone(template)
+      extra.id = randomUUID()
+      pages.savePage(extra)
+      readPageSnapshot(extra.id)
+    }
+    projectReads = 0
+    readPageSnapshot(id)
+    assert.equal(projectReads, 1, 'ninth distinct project evicts the oldest parsed snapshot')
+    const largeIds = []
+    for (let index = 0; index < 2; index++) {
+      const large = structuredClone(template)
+      large.id = randomUUID()
+      large.messages[0].text = 'x'.repeat(33 * 1024 * 1024)
+      pages.savePage(large)
+      readPageSnapshot(large.id)
+      largeIds.push(large.id)
+    }
+    projectReads = 0
+    readPageSnapshot(largeIds[0])
+    assert.equal(projectReads, 1, 'serialized snapshots over 64 MiB evict the older project')
+    console.log(
+      'PASS immutable bounded snapshots, exact-ID reads, persisted image hash replacement and concurrent file replacement rejection',
+    )
     console.log(
       'PASS image replacement, cancellation, deletion/restoration, corrupt-file rejection and repair',
     )

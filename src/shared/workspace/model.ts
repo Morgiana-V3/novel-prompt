@@ -1,6 +1,8 @@
 import type { NaiGenParams, NaiGenRequest, NaiVersion } from '../generation/types'
 import type { NaiImage } from '../images/types'
 import type { InpaintChange, InpaintDraft } from '../prompts/types'
+import type { PageInputContext } from './context'
+import type { PageEventMetadata } from './events'
 
 export interface PageRegion {
   id: string
@@ -200,6 +202,8 @@ export interface PageMessage {
   /** Replaced suggestions retain only a chat receipt; each version owns one latest proposal. */
   proposalSummary?: { title: string; status: PageProposal['status'] }
   error?: boolean
+  /** Structured activity; image completion and observed billing remain independent. */
+  event?: PageEventMetadata
   draftBefore?: InpaintDraft
   draftAfter?: InpaintDraft
   skills?: string[]
@@ -207,6 +211,8 @@ export interface PageMessage {
   requestId?: string
   externalRequest?: { status: 'pending' | 'completed' | 'cancelled'; contextKey: string }
   skillSnapshot?: PageSkillSnapshot
+  /** Exact request context; absence on legacy messages does not imply today's state. */
+  inputContext?: PageInputContext
 }
 export interface PageWorkspace {
   schema: 1 | 2

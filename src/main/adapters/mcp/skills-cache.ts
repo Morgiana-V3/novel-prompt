@@ -103,16 +103,31 @@ export function contextSkills(
     throw Error('指定规则不在本轮冻结目录中，请重新读取目录')
   }
   const supplied = args.skills_digests as Record<string, string> | undefined
-  const known = (section: PageSkillSection) =>
-    supplied !== undefined
-      ? supplied[section.id] === section.digest
-      : state.bodies.has(`${section.id}:${section.digest}`)
-  const selected = sections.filter(
-    (section) =>
-      section.scope === 'core' ||
-      ((!section.resourcePath || task === 'all') && scopes[task].includes(section.scope)) ||
-      requested?.includes(section.id),
+  // Snapshot before recording delivery; sending a body now must not count as prior retention.
+  const retained = new Set(
+    sections
+      .filter((section) =>
+        supplied !== undefined
+          ? supplied[section.id] === section.digest
+          : state.bodies.has(`${section.id}:${section.digest}`),
+      )
+      .map((section) => section.id),
   )
+  const known = (section: PageSkillSection) => retained.has(section.id)
+  const selectionReasons = (section: PageSkillSection) => {
+    const reasons: string[] = []
+    if (section.scope === 'core') {
+      reasons.push('core')
+    }
+    if ((!section.resourcePath || task === 'all') && scopes[task].includes(section.scope)) {
+      reasons.push(`task:${task}/scope:${section.scope}`)
+    }
+    if (requested?.includes(section.id)) {
+      reasons.push('explicit-id')
+    }
+    return reasons
+  }
+  const selected = sections.filter((section) => selectionReasons(section).length > 0)
   // Overview is discovery, not permission to bypass general user-authored rules.
   const required = sections.filter(
     (section) =>
@@ -133,6 +148,12 @@ export function contextSkills(
     .filter((section) => !known(section) && !bodies.includes(section))
     .map((section) => section.id)
   const bodiesNotModified = bodies.length === 0 && selected.every(known)
+  const reused = selected.filter((section) => known(section) && !bodies.includes(section))
+  const characters = (entries: PageSkillSection[]) =>
+    entries.reduce((total, section) => total + section.end - section.start, 0)
+  const selectedChars = characters(selected)
+  const sentChars = characters(bodies)
+  const reusedChars = characters(reused)
   if (agent) {
     for (const section of bodies) {
       state.bodies.add(`${section.id}:${section.digest}`)
@@ -162,6 +183,14 @@ export function contextSkills(
     digest: snapshot.digest,
     textLength: snapshot.text.length,
     task,
+    selectedChars,
+    sentChars,
+    reusedChars,
+    missingSelectedChars: selectedChars - sentChars - reusedChars,
+    charUnit: 'utf16-code-units',
+    retentionSource: supplied !== undefined ? 'explicit-digests' : 'delivery-cache',
+    retentionNote:
+      '显式指纹是客户端对当前上下文保留正文的声明；连接缓存只证明曾发送。两者均不证明已理解或遵守。',
     segmented: !!snapshot.sections,
     manifestChanged: previous?.digest !== snapshot.digest,
     removedIds,
@@ -170,6 +199,8 @@ export function contextSkills(
       textLength: end - start,
       selected: selected.some((section) => section.id === s.id),
       required: required.some((section) => section.id === s.id),
+      selectionReasons: selectionReasons({ ...s, start, end }),
+      retainedBeforeRequest: retained.has(s.id),
     })),
     sections: bodies.map((section) => ({
       id: section.id,

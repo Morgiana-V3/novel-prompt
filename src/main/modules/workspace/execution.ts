@@ -1,4 +1,4 @@
-import { anlasOutcomeText } from '../../../shared/generation/pricing'
+import type { NaiGenResult } from '../../../shared/generation/types'
 import { readFileSync } from 'node:fs'
 import { regionIds, regionNotes, selectRegions } from '../../../shared/workspace/regions'
 import { imagePath } from '../images/access'
@@ -10,7 +10,7 @@ import { generateImages } from '../generation/service'
 import { readImageRecipe } from '../images/library'
 import { pageLocks } from './locks'
 import { readPage, savePage } from './repository'
-import { pageEvent } from './snapshot'
+import { pageExecutionEvent } from './snapshot'
 import { checkPageParams, validateExecution } from './validation'
 
 export async function renderPage(
@@ -48,149 +48,172 @@ export async function renderPage(
       )
     : ''
   pageLocks.set(id, new AbortController())
+  const versionIds: string[] = []
+  let result: NaiGenResult | undefined
+  let attempted = false
+  let failure: { error: unknown } | undefined
   try {
-    const draft = structuredClone(pageDraft(version, null))
-    if (!draft.base.trim() && !draft.characters.some((character) => character.prompt.trim())) {
-      throw new Error('请先填写提示词，或让 AI 提出修改并采纳后再重绘')
-    }
-    const params = { ...version.editor.params }
-    checkPageParams(params)
-    if (workspace.versions.length + params.count > 1000) {
-      throw new Error('生成后将超过 1000 张候选，请减少生成张数或新建项目')
-    }
-    const request = {
-      ...draft,
-      params,
-      version: workspace.model,
-      ...(selectedExecution.kind === 'inpaint'
-        ? {
-            inpaint: {
-              imageName: version.image!.name,
-              mask,
-              strength: version.editor.strength,
-            },
-          }
-        : {}),
-    }
-    const effectiveParams = {
-      ...params,
-      noiseSchedule:
-        selectedExecution.kind === 'inpaint' &&
-        (workspace.model === 'v5' || params.noiseSchedule === 'native')
-          ? ('karras' as const)
-          : params.noiseSchedule,
-    }
-    const schemeKey = createHash('sha256')
-      .update(JSON.stringify({ ...request, params: { ...effectiveParams, seed: null, count: 1 } }))
-      .digest('hex')
-    const latest = workspace.versions.at(-1)
-    const same =
-      latest?.schemeKey === schemeKey &&
-      (latest.parentId === version.id || latest.groupId === version.groupId)
-    const groupId = same ? latest!.groupId! : randomUUID()
-    const resolveGroupNumber = () => {
-      if (same) {
-        return latest!.groupNumber!
+    // Keep returned billing and saved candidates even when execution ends without a full batch.
+    try {
+      const draft = structuredClone(pageDraft(version, null))
+      if (!draft.base.trim() && !draft.characters.some((character) => character.prompt.trim())) {
+        throw new Error('请先填写提示词，或让 AI 提出修改并采纳后再重绘')
       }
-      return (
-        Math.max(
-          0,
-          ...workspace.versions.map(
-            (version2, i) => version2.groupNumber ?? (version2.generated ? i : 0),
-          ),
-        ) + 1
+      const params = { ...version.editor.params }
+      checkPageParams(params)
+      if (workspace.versions.length + params.count > 1000) {
+        throw new Error('生成后将超过 1000 张候选，请减少生成张数或新建项目')
+      }
+      const request = {
+        ...draft,
+        params,
+        version: workspace.model,
+        ...(selectedExecution.kind === 'inpaint'
+          ? {
+              inpaint: {
+                imageName: version.image!.name,
+                mask,
+                strength: version.editor.strength,
+              },
+            }
+          : {}),
+      }
+      const effectiveParams = {
+        ...params,
+        noiseSchedule:
+          selectedExecution.kind === 'inpaint' &&
+          (workspace.model === 'v5' || params.noiseSchedule === 'native')
+            ? ('karras' as const)
+            : params.noiseSchedule,
+      }
+      const schemeKey = createHash('sha256')
+        .update(
+          JSON.stringify({ ...request, params: { ...effectiveParams, seed: null, count: 1 } }),
+        )
+        .digest('hex')
+      const latest = workspace.versions.at(-1)
+      const same =
+        latest?.schemeKey === schemeKey &&
+        (latest.parentId === version.id || latest.groupId === version.groupId)
+      const groupId = same ? latest!.groupId! : randomUUID()
+      const resolveGroupNumber = () => {
+        if (same) {
+          return latest!.groupNumber!
+        }
+        return (
+          Math.max(
+            0,
+            ...workspace.versions.map(
+              (version2, i) => version2.groupNumber ?? (version2.generated ? i : 0),
+            ),
+          ) + 1
+        )
+      }
+      const groupNumber = resolveGroupNumber()
+      const candidateNumber = same ? (latest!.candidateNumber ?? 1) + 1 : 1
+      // 图集只决定图片归类，不参与方案分组（schemeKey 已在上方计算）
+      attempted = true
+      result = await generateImages(
+        { ...request, collectionId: workspace.collectionId },
+        progress,
+        cancelled,
+        {
+          ...options,
+          workspaceId: id,
+        },
       )
+      if (cancelled()) {
+        result.stopped ??= '已停止，已完成的图片已保留'
+      }
+      options.onResult?.(result)
+      if (!result.images.length) {
+        throw new Error(result.stopped ?? '没有返回图片')
+      }
+      for (const [index, image] of result.images.entries()) {
+        const actual = readImageRecipe(image.name)!.request
+        const number = candidateNumber + index
+        const next = {
+          id: randomUUID(),
+          parentId: version.id,
+          groupId,
+          groupNumber,
+          candidateNumber: number,
+          schemeKey,
+          label: `方案 V${groupNumber} · 候选 ${number}`,
+          image,
+          createdAt: Date.now(),
+          generated: {
+            model: workspace.model,
+            draft: { base: actual.base, negative: actual.negative, characters: actual.characters },
+            params: actual.params,
+            execution: selectedExecution,
+            sourceVersionId: version.id,
+            editor: {
+              model: workspace.model,
+              draft: structuredClone(draft),
+              params: { ...version.editor.params },
+            },
+            ...(selectedExecution.kind === 'inpaint'
+              ? {
+                  inpaint: {
+                    mask,
+                    strength: version.editor.strength,
+                    label: regionLabel,
+                    instruction,
+                    regions: regionNotes(regions),
+                    target: regions.length === 1 ? regions[0].target : null,
+                  },
+                }
+              : {}),
+          },
+          editor: {
+            ...structuredClone(version.editor),
+            draft,
+            regions:
+              selectedExecution.kind === 'inpaint'
+                ? version.editor.regions.map((region2) => ({ ...region2, accepted: null }))
+                : [],
+          },
+        }
+        workspace.versions.push(next)
+        versionIds.push(next.id)
+        workspace.latestGeneratedVersionId = next.id
+        workspace.execution = selectedExecution
+        const first = !version.image && index === 0
+        if (first) {
+          workspace.currentVersionId = next.id
+        }
+      }
+    } catch (error) {
+      failure = { error }
     }
-    const groupNumber = resolveGroupNumber()
-    const candidateNumber = same ? (latest!.candidateNumber ?? 1) + 1 : 1
-    // 图集只决定图片归类，不参与方案分组（schemeKey 已在上方计算）
-    const result = await generateImages(
-      { ...request, collectionId: workspace.collectionId },
-      progress,
-      cancelled,
+    let errorText: string | undefined
+    if (failure) {
+      errorText = failure.error instanceof Error ? failure.error.message : String(failure.error)
+      errorText ||= '未知执行错误'
+    }
+    const action = regions.length ? `局部重绘 ${regionLabel}` : '按提示词生成'
+    const completion = versionIds.length
+      ? `已保存 ${versionIds.length} 张候选。${workspace.currentVersionId !== version.id ? '首张结果已设为创作蓝本。' : '当前蓝本未改变。'}`
+      : '没有保存新候选，当前蓝本未改变。'
+    pageExecutionEvent(
+      workspace,
+      `从「${version.label}」${action}，${completion}${errorText ? `未完成：${errorText}` : ''}`,
       {
-        ...options,
-        workspaceId: id,
+        kind: selectedExecution.kind,
+        sourceVersionId: version.id,
+        versionIds,
+        requestedCount: version.editor.params.count,
+        outcome: result,
+        attempted,
+        error: errorText,
       },
     )
-    if (cancelled()) {
-      result.stopped ??= '已停止，已完成的图片已保留'
+    const saved = savePage(workspace)
+    if (failure) {
+      throw failure.error
     }
-    options.onResult?.(result)
-    if (!result.images.length) {
-      throw new Error(result.stopped ?? '没有返回图片')
-    }
-    for (const [index, image] of result.images.entries()) {
-      const actual = readImageRecipe(image.name)!.request
-      const number = candidateNumber + index
-      const next = {
-        id: randomUUID(),
-        parentId: version.id,
-        groupId,
-        groupNumber,
-        candidateNumber: number,
-        schemeKey,
-        label: `方案 V${groupNumber} · 候选 ${number}`,
-        image,
-        createdAt: Date.now(),
-        generated: {
-          model: workspace.model,
-          draft: { base: actual.base, negative: actual.negative, characters: actual.characters },
-          params: actual.params,
-          execution: selectedExecution,
-          sourceVersionId: version.id,
-          editor: {
-            model: workspace.model,
-            draft: structuredClone(draft),
-            params: { ...version.editor.params },
-          },
-          ...(selectedExecution.kind === 'inpaint'
-            ? {
-                inpaint: {
-                  mask,
-                  strength: version.editor.strength,
-                  label: regionLabel,
-                  instruction,
-                  regions: regionNotes(regions),
-                  target: regions.length === 1 ? regions[0].target : null,
-                },
-              }
-            : {}),
-        },
-        editor: {
-          ...structuredClone(version.editor),
-          draft,
-          regions:
-            selectedExecution.kind === 'inpaint'
-              ? version.editor.regions.map((region2) => ({ ...region2, accepted: null }))
-              : [],
-        },
-      }
-      workspace.versions.push(next)
-      workspace.latestGeneratedVersionId = next.id
-      workspace.execution = selectedExecution
-      const first = !version.image && index === 0
-      if (first) {
-        workspace.currentVersionId = next.id
-      }
-      pageEvent(
-        workspace,
-        `从「${version.label}」${regions.length ? `局部重绘 ${regionLabel}` : '按提示词生成'}，得到「${next.label}」。${first ? '首张结果已设为创作蓝本。' : '已保存，当前蓝本未改变。'}`,
-        next.id,
-      )
-    }
-    pageEvent(workspace, anlasOutcomeText(result), workspace.latestGeneratedVersionId)
-    if (result.stopped) {
-      pageEvent(workspace, result.stopped, workspace.latestGeneratedVersionId)
-    }
-    return savePage(workspace)
-  } catch (error) {
-    pageEvent(
-      workspace,
-      `本次重绘未完成：${error instanceof Error ? error.message : String(error)}。当前版本未替换。`,
-    )
-    savePage(workspace)
-    throw error
+    return saved
   } finally {
     pageLocks.delete(id)
   }

@@ -9,16 +9,17 @@ import {
   refreshCollections,
 } from './collections-state'
 import { shellState } from '../../shared/state/shell'
-import { toast, reportError } from '../../shared/lib/notifications'
+import { copy, toast, reportError } from '../../shared/lib/notifications'
 import { cleanErr } from '../../shared/lib/format'
-import { importGenerationRequest } from '../prompts/actions'
-import { openTabForLoad } from '../creation/tabs'
+import { importGenerationRequest } from '../prompts/public/import-export'
+import { openTabForLoad } from '../creation/public/navigation'
 import { selectReferenceImage } from '../generation/public'
 import Icon from '../../shared/ui/Icon.vue'
 import Mascot from '../../shared/ui/Mascot.vue'
 import ImageViewer from '../../shared/ui/ImageViewer.vue'
 import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 import ConfirmDialog from '../../shared/ui/ConfirmDialog.vue'
+import { FavoriteButton } from '../favorites/public'
 
 const images = ref<NaiImage[]>([])
 const api = window.api
@@ -48,6 +49,14 @@ const pages = computed(() => Math.max(1, Math.ceil(filtered.value.length / 60)))
 const index = computed(() => filtered.value.findIndex((image) => image.name === selected.value))
 const storageLabel = (image: NaiImage) =>
   ({ temporary: '临时', saved: '已留存', workspace: '精修存档' })[image.storage || 'saved']
+const createdAtLabel = computed(() =>
+  current.value ? new Date(current.value.createdAt).toLocaleString('zh-CN') : '',
+)
+const deleteTitle = computed(() =>
+  current.value?.storage === 'workspace'
+    ? '精修存档由创作项目管理，请在项目中删除'
+    : '删除图片（移到系统回收站）',
+)
 let epoch = 0
 let unsubscribe: (() => void) | undefined
 async function refresh() {
@@ -165,6 +174,17 @@ async function reuse() {
     await importGenerationRequest(recipe.request, '图库载入')
     selectReferenceImage(image)
     shellState.tab = 'generate'
+  })
+}
+async function saveAs() {
+  const image = current.value
+  if (!image) {
+    return
+  }
+  await act(async () => {
+    if (await window.api.naiSaveAs(image.name)) {
+      toast('已保存')
+    }
   })
 }
 function step(delta: number) {
@@ -347,34 +367,81 @@ function step(delta: number) {
         <aside
           v-if="current"
           class="library-inspector scroll"
+          aria-label="图片详情"
         >
-          <button
-            class="library-preview"
-            aria-label="放大图片"
-            @click="lightbox = true"
-          >
-            <img
-              v-fade-img
-              :src="current.url"
-              alt="当前图片"
+          <div class="library-preview">
+            <button
+              :key="current.name"
+              class="library-preview-open"
+              aria-label="放大图片"
+              title="放大查看（也可以双击缩略图）"
+              @click="lightbox = true"
+            >
+              <img
+                v-fade-img
+                :src="current.url"
+                alt="当前图片"
+              />
+              <span class="library-preview-zoom"
+                ><Icon
+                  name="expand"
+                  :size="13"
+              /></span>
+            </button>
+          </div>
+          <dl class="library-meta">
+            <div>
+              <dt>尺寸</dt>
+              <dd>{{ current.width }} × {{ current.height }}</dd>
+            </div>
+            <div>
+              <dt>状态</dt>
+              <dd
+                class="library-storage"
+                :data-storage="current.storage || 'saved'"
+              >
+                {{ storageLabel(current) }}
+              </dd>
+            </div>
+            <div v-if="current.seed !== undefined">
+              <dt>种子</dt>
+              <dd>
+                <button
+                  class="library-seed"
+                  title="复制种子"
+                  @click="copy(String(current.seed))"
+                >
+                  {{ current.seed
+                  }}<Icon
+                    name="copy"
+                    :size="12"
+                  />
+                </button>
+              </dd>
+            </div>
+            <div>
+              <dt>时间</dt>
+              <dd>{{ createdAtLabel }}</dd>
+            </div>
+          </dl>
+          <section class="library-field">
+            <span class="library-field-label">所属图集</span>
+            <ThemeSelect
+              :model-value="current.collectionId || DEFAULT_COLLECTION"
+              :options="options"
+              :disabled="busy"
+              aria-label="图片所属图集"
+              @update:model-value="move"
             />
-          </button>
-          <p>{{ new Date(current.createdAt).toLocaleString('zh-CN') }}</p>
-          <p>{{ current.width }} × {{ current.height }} · {{ storageLabel(current) }}</p>
-          <p v-if="current.seed !== undefined">Seed {{ current.seed }}</p>
-          <label>所属图集</label
-          ><ThemeSelect
-            :model-value="current.collectionId || DEFAULT_COLLECTION"
-            :options="options"
-            :disabled="busy"
-            aria-label="图片所属图集"
-            @update:model-value="move"
-          />
+          </section>
           <p
             v-if="current.storage === 'temporary'"
-            class="muted"
+            class="library-note"
           >
-            临时图片退出后清理，分类不会自动留存。
+            <Icon
+              name="warn"
+              :size="13"
+            />临时图片退出后清理，分类不会自动留存。
           </p>
           <div class="library-actions">
             <button
@@ -385,37 +452,55 @@ function step(delta: number) {
             >
               留存图片
             </button>
+            <div class="library-primary-row">
+              <button
+                class="btn"
+                :class="{ accent: current.storage !== 'temporary' }"
+                :disabled="busy"
+                @click="reuse"
+              >
+                <Icon
+                  name="sliders"
+                  :size="14"
+                />载入提示词与参数
+              </button>
+              <FavoriteButton
+                :image="current"
+                class="library-favorite"
+              />
+            </div>
+          </div>
+          <div class="library-tools">
             <button
-              class="btn"
               :disabled="busy"
-              @click="reuse"
+              title="另存为"
+              @click="saveAs"
             >
-              载入提示词与参数
+              <Icon
+                name="download"
+                :size="15"
+              /><span>另存为</span>
             </button>
             <button
-              class="btn ghost"
               :disabled="busy"
-              @click="
-                act(async () => {
-                  if (await api.naiSaveAs(current!.name)) toast('已保存')
-                })
-              "
-            >
-              另存为
-            </button>
-            <button
-              class="btn ghost"
-              :disabled="busy"
+              title="打开文件位置"
               @click="act(() => api.naiReveal(current!.name))"
             >
-              打开文件位置
+              <Icon
+                name="folder"
+                :size="15"
+              /><span>文件位置</span>
             </button>
             <button
-              class="btn ghost"
+              class="danger"
               :disabled="busy || current.storage === 'workspace'"
+              :title="deleteTitle"
               @click="confirming = 'image'"
             >
-              删除图片
+              <Icon
+                name="trash"
+                :size="15"
+              /><span>删除</span>
             </button>
           </div>
         </aside>
@@ -457,7 +542,7 @@ function step(delta: number) {
 .library-collections {
   width: 175px;
   flex-shrink: 0;
-  padding: 18px 10px;
+  padding: 18px calc(12px - var(--scrollbar-size)) 18px 12px;
   border-right: 1px solid var(--line);
 }
 
@@ -540,10 +625,11 @@ function step(delta: number) {
   min-height: 0;
 }
 
+/* 滚动条贴住区域右缘，右内边距扣掉滚动条槽位，与左侧留白对称 */
 .library-browser {
   flex: 1;
   min-width: 0;
-  padding: 18px;
+  padding: 20px calc(20px - var(--scrollbar-size)) 20px 20px;
 }
 
 .library-grid {
@@ -585,39 +671,279 @@ function step(delta: number) {
 }
 
 .library-inspector {
-  width: 250px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 280px;
   flex-shrink: 0;
-  padding: 16px;
+  padding: 18px calc(18px - var(--scrollbar-size)) 18px 18px;
   border-left: 1px solid var(--line);
   font-size: 12px;
+  animation: library-inspector-in var(--dur-slow) var(--ease-out);
 }
 
-.library-inspector p {
-  overflow-wrap: anywhere;
+.library-inspector > * {
+  flex-shrink: 0;
 }
 
+/* ---------- 预览：棋盘底，右上角收藏，悬停出现放大提示 ---------- */
 .library-preview {
-  width: 100%;
-  background: var(--panel);
-  padding: 0;
+  position: relative;
 }
 
-.library-preview img {
-  display: block;
+.library-preview-open {
+  position: relative;
+  display: grid;
+  place-items: center;
   width: 100%;
-  max-height: 280px;
+  min-height: 160px;
+  padding: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 50% 40%, var(--bg) 0%, transparent 70%),
+    repeating-conic-gradient(var(--panel) 0% 25%, var(--hover) 0% 50%) 0 0 / 16px 16px;
+  cursor: zoom-in;
+  animation: fade-in var(--dur-base) var(--ease-out);
+  transition:
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+
+.library-preview-open:hover {
+  border-color: var(--pink-line);
+  box-shadow: var(--shadow-pop);
+}
+
+.library-preview-open img {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  border-radius: 6px;
   object-fit: contain;
+  filter: drop-shadow(0 6px 18px rgb(20 20 30 / 12%));
 }
 
-.library-inspector label {
-  display: block;
-  margin: 18px 0 8px;
+.library-preview-zoom {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: #fff;
+  background: rgb(20 20 28 / 55%);
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
 }
 
+.library-preview-open:hover .library-preview-zoom,
+.library-preview-open:focus-visible .library-preview-zoom {
+  opacity: 1;
+  transform: none;
+}
+
+/* ---------- 元信息：两列清单，长种子不再折行 ---------- */
+.library-meta {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.library-meta > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 26px;
+}
+
+.library-meta dt {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.library-meta dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.library-storage[data-storage='workspace'] {
+  color: var(--pink-deep);
+}
+
+.library-storage[data-storage='temporary'] {
+  color: var(--alias);
+}
+
+.library-seed {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: -6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: transparent;
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.library-seed .icon {
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.library-seed:hover {
+  background: var(--hover);
+}
+
+.library-seed:hover .icon,
+.library-seed:focus-visible .icon {
+  opacity: 1;
+}
+
+.library-field {
+  display: grid;
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.library-field-label {
+  font-size: 11.5px;
+  color: var(--text2);
+}
+
+.library-note {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--panel);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text2);
+}
+
+.library-note .icon {
+  margin-top: 2px;
+  color: var(--alias);
+}
+
+/* ---------- 操作：主操作整行，次要操作三等分图标按钮 ---------- */
 .library-actions {
   display: grid;
   gap: 8px;
-  margin-top: 18px;
+  margin-top: 4px;
+}
+
+.library-actions .btn {
+  justify-content: center;
+  height: 36px;
+}
+
+/* 收藏与主操作并排：星标是一个圆形开关，状态一眼可见，不再压在图片上 */
+.library-primary-row {
+  display: flex;
+  gap: 8px;
+}
+
+.library-primary-row .btn {
+  flex: 1;
+  min-width: 0;
+}
+
+.library-primary-row :deep(.library-favorite.favorite-button) {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line2);
+  border-radius: 50%;
+  background: var(--bg);
+}
+
+.library-primary-row :deep(.library-favorite.favorite-button.selected) {
+  border-color: var(--pink-line);
+  background: var(--pink-soft);
+}
+
+.library-tools {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.library-tools button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  font-size: 11px;
+  color: var(--text2);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-slow) var(--bounce);
+}
+
+.library-tools button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.library-tools button.danger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--bad) 30%, var(--line));
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.library-tools button:active:not(:disabled) {
+  transform: scale(var(--press-sm));
+}
+
+.library-tools button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.library-tools span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes library-inspector-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .library-error {
@@ -646,7 +972,7 @@ function step(delta: number) {
   }
 
   .library-inspector {
-    width: 220px;
+    width: 240px;
   }
 }
 </style>

@@ -49,17 +49,36 @@ function workspacePath(name: string): string | null {
   return owner && uuid.test(owner) ? join(workspaceRoot(), owner, name) : null
 }
 export function libraryImagePath(name: string): string | null {
-  if (typeof name !== 'string' || !safeName.test(name) || name.includes('..')) {
+  return createImagePathResolver()(name)
+}
+
+/** A synchronous read batch shares one resolved data root; it never creates directories. */
+export function createImagePathResolver() {
+  const dataRoot = storageRoot()
+  const libraryRoot = join(dataRoot, 'image-library')
+  return (name: string): string | null => {
+    if (typeof name !== 'string' || !safeName.test(name) || name.includes('..')) {
+      return null
+    }
+    const owner = /^ws-([a-f0-9-]{36})-/.exec(name)?.[1]
+    if (owner && uuid.test(owner)) {
+      const path = join(libraryRoot, 'workspaces', owner, name)
+      if (existsSync(path)) {
+        return path
+      }
+    }
+    for (const directory of [
+      join(libraryRoot, 'saved'),
+      join(libraryRoot, 'temporary'),
+      join(dataRoot, 'images'),
+    ]) {
+      const path = join(directory, name)
+      if (existsSync(path)) {
+        return path
+      }
+    }
     return null
   }
-  return (
-    [
-      workspacePath(name),
-      join(saved(), name),
-      join(temporary(), name),
-      join(legacyImageDir(), name),
-    ].find((path): path is string => !!path && existsSync(path)) ?? null
-  )
 }
 export function imageInfo(name: string, references?: Set<string>): NaiImage | null {
   const path = libraryImagePath(name)

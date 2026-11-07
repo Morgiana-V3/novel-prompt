@@ -1,67 +1,8 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { readFileSync, readdirSync, rmSync } from 'node:fs'
-import { isAbsolute, join, relative, sep } from 'node:path'
-import { createInterface } from 'node:readline'
+import { readFileSync } from 'node:fs'
+import { isAbsolute, relative, sep } from 'node:path'
 import { PNG } from 'pngjs'
-
-/** Transport failures must settle pending calls instead of waiting ten minutes. */
-export function liveClient(child, redact) {
-  const waiting = new Map()
-  let sequence = 0
-  let errors = ''
-  let closed = false
-  const rejectAll = (error) => {
-    closed = true
-    for (const pending of waiting.values()) {
-      clearTimeout(pending.timer)
-      pending.reject(error)
-    }
-    waiting.clear()
-  }
-  child.stderr.on('data', (chunk) => {
-    errors = (errors + redact(String(chunk))).slice(-8000)
-  })
-  child.on('error', rejectAll)
-  child.stdin.on('error', rejectAll)
-  child.on('exit', (code) => rejectAll(new Error(`Proxy exited ${code}: ${errors}`)))
-  createInterface({ input: child.stdout }).on('line', (line) => {
-    let message
-    try {
-      message = JSON.parse(line)
-    } catch {
-      rejectAll(new Error('MCP stdout contains invalid JSON'))
-      return
-    }
-    const pending = waiting.get(message.id)
-    if (pending) {
-      clearTimeout(pending.timer)
-      waiting.delete(message.id)
-      pending.resolve(message)
-    }
-  })
-  return (method, params = {}, timeoutMs = 600_000) =>
-    new Promise((resolve, reject) => {
-      if (closed) {
-        reject(new Error('MCP connection closed'))
-        return
-      }
-      const id = ++sequence
-      const timer = setTimeout(() => {
-        waiting.delete(id)
-        child.stdin.write(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'notifications/cancelled',
-            params: { requestId: id },
-          }) + '\n',
-        )
-        reject(new Error(`Timeout ${method}; do not replay paid operations. ${errors}`))
-      }, timeoutMs)
-      waiting.set(id, { timer, resolve, reject })
-      child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n')
-    })
-}
 
 export function imageEvidence(profile, image) {
   assert.ok(image?.path, 'MCP gallery supplies a stored image path')
@@ -110,13 +51,4 @@ export function checkInpaintPreservation(originalPath, editedPath, rectangles) {
   }
   assert.ok(changed > 0, 'inpaint must change pixels inside the selection')
   return { changedSelectedPixels: changed, outsideSelectionUnchanged: true }
-}
-
-/** Remove only this run's copied settings (including backups) after the host exits. */
-export function clearCredentials(profile) {
-  for (const name of readdirSync(join(profile, 'data'))) {
-    if (name === 'settings.json' || name.startsWith('settings.json.')) {
-      rmSync(join(profile, 'data', name), { force: true })
-    }
-  }
 }

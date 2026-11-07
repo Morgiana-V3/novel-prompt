@@ -19,7 +19,6 @@ const props = defineProps<{
   operation: string
   remoteBusy: boolean
   busy: boolean
-  editingPrompt: boolean
   hasExecutionRegion: boolean
   progress: string
   generateTask?: AppTask
@@ -27,27 +26,25 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   execution: [value: PageExecution]
-  editConfig: []
-  returnFromConfig: []
   generate: []
   preview: []
   cancel: [id: string]
   collection: [id: string]
 }>()
-const cost = computed(() =>
-  estimateLabel(
-    estimateGeneration(
-      {
-        params: props.nextEditor.params,
-        version: props.model,
-        ...(props.execution.kind === 'inpaint'
-          ? { inpaint: { strength: props.nextEditor.strength } }
-          : {}),
-      },
-      subscriptionState.error ? undefined : subscriptionState.subscription,
-    ),
+const estimate = computed(() =>
+  estimateGeneration(
+    {
+      params: props.nextEditor.params,
+      version: props.model,
+      ...(props.execution.kind === 'inpaint'
+        ? { inpaint: { strength: props.nextEditor.strength } }
+        : {}),
+    },
+    subscriptionState.error ? undefined : subscriptionState.subscription,
   ),
 )
+const cost = computed(() => estimateLabel(estimate.value))
+const isFree = computed(() => estimate.value?.maximum === 0)
 const executionIds = computed(() => regionIds(props.execution))
 const executionChoice = computed(() => {
   if (props.execution.kind === 'generate') {
@@ -89,15 +86,44 @@ function chooseExecution(id: string | null) {
   }
   emit('execution', { kind: 'inpaint', regionId: ids[0] ?? null, regionIds: ids })
 }
-const generationLabel = computed(() => {
-  if (props.operation === 'generate') {
-    return '生成中…'
-  }
-  if (props.execution.kind === 'generate') {
-    return '生成图片'
-  }
-  return '执行重绘'
+const generationLabel = computed(() =>
+  props.execution.kind === 'generate' ? '生成图片' : '执行重绘',
+)
+/* 尺寸、步数属于配置，只在悬停时提示；横条上只留预计消耗标签（与生图创作底栏一致） */
+const generateTitle = computed(() => {
+  const { width, height, steps } = props.nextEditor.params
+  return `${width}×${height} · ${steps} 步 · ${cost.value}`
 })
+const hasPrompt = computed(
+  () =>
+    !!props.nextEditor.draft.base.trim() ||
+    props.nextEditor.draft.characters.some((character) => !!character.prompt.trim()),
+)
+const canGenerate = computed(() => {
+  if (props.operation || props.remoteBusy || !hasPrompt.value) {
+    return false
+  }
+  return props.execution.kind !== 'inpaint' || props.hasExecutionRegion
+})
+
+/* 生成中：同一位置换成停止按钮；详细进度统一在右上角任务队列，这里只放进 title */
+const isGenerating = computed(() => props.operation === 'generate')
+const isCancelling = computed(() => props.generateTask?.status === 'cancelling')
+const stopLabel = computed(() => {
+  if (!props.generateTask) {
+    return '准备中…'
+  }
+  return isCancelling.value ? '完成后停止' : '停止生成'
+})
+const stopTitle = computed(() => {
+  const progressText = props.progress || '正在执行'
+  return [progressText, '详细进度见右上角任务队列'].join('\n')
+})
+function stopGeneration() {
+  if (props.generateTask) {
+    emit('cancel', props.generateTask.id)
+  }
+}
 </script>
 
 <template>
@@ -129,203 +155,90 @@ const generationLabel = computed(() => {
       title="本项目生成和修图的图片存入的图集（之后生成的图片生效）"
       @update:model-value="emit('collection', $event)"
     />
-    <span class="muted small pw-execution-summary"
-      >{{ nextEditor.params.width }}×{{ nextEditor.params.height }} ·
-      {{ nextEditor.params.steps }} 步 · {{ cost }}</span
-    >
     <div class="pw-generation-actions">
+      <span
+        class="pw-fee"
+        :class="{ free: isFree }"
+        :title="generateTitle"
+        >{{ cost }}</span
+      >
       <button
-        v-if="editingPrompt"
-        class="btn pw-config-back"
-        :disabled="!!operation || remoteBusy"
-        title="保存下一版配置并返回"
-        @click="emit('returnFromConfig')"
+        v-if="isGenerating"
+        class="btn pw-generate pw-stop"
+        data-running
+        :disabled="!generateTask || isCancelling"
+        :title="stopTitle"
+        :aria-label="stopLabel"
+        @click="stopGeneration"
       >
         <Icon
-          name="check"
-          :size="16"
-        />完成
+          name="paw"
+          :size="15"
+          class="spin-slow"
+        /><span>{{ stopLabel }}</span>
       </button>
       <button
         v-else
-        class="btn pw-config-edit"
-        :disabled="busy"
-        title="基于蓝本编辑下一次生成的提示词与参数；本版配置保持不变"
-        @click="emit('editConfig')"
-      >
-        <Icon
-          name="sliders"
-          :size="16"
-        />编辑下一版
-      </button>
-      <button
         class="btn accent pw-generate"
-        :disabled="
-          !!operation ||
-          remoteBusy ||
-          (!nextEditor.draft.base.trim() &&
-            !nextEditor.draft.characters.some((c) => c.prompt.trim())) ||
-          (execution.kind === 'inpaint' && !hasExecutionRegion)
-        "
+        :disabled="!canGenerate"
+        :title="generateTitle"
         @click="emit('generate')"
       >
         <Icon
           name="wand"
-          :size="16"
-        /><span
-          >{{ generationLabel }}<small class="pw-compact-cost">{{ cost }}</small></span
+          :size="15"
+        /><span>{{ generationLabel }}</span
         ><span
-          v-if="operation !== 'generate' && nextEditor.params.count > 1"
+          v-if="nextEditor.params.count > 1"
           class="pw-generation-count"
           >{{ nextEditor.params.count }}</span
         >
-      </button>
-    </div>
-    <div
-      v-if="operation === 'generate'"
-      class="row pw-run-progress"
-      role="status"
-    >
-      <Icon
-        name="paw"
-        :size="13"
-        class="spin-slow"
-      /><span class="muted small grow">{{ progress || '正在执行…' }}</span
-      ><button
-        v-if="generateTask"
-        class="btn small ghost"
-        :disabled="generateTask.status === 'cancelling'"
-        @click="emit('cancel', generateTask.id)"
-      >
-        {{ generateTask.status === 'cancelling' ? '完成后停止' : '停止' }}
       </button>
     </div>
   </div>
 </template>
 
 <style scoped>
-.pw-execution > .row:last-child {
-  margin-top: 10px;
-}
-
-.pw-execution > .row + .row {
-  margin-top: 8px;
-}
-
-.pw-execution p {
-  font-size: 11px;
-  color: var(--text2);
-  line-height: 1.7;
-  margin: 8px 0;
-}
-
-.pw-execution > .row {
-  gap: 10px;
-  flex-wrap: nowrap;
-  min-height: 34px;
-}
-
-.pw-execution b {
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.pw-execution-bottom > .btn {
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
+/* 与生图创作底栏同一套尺寸：30～34px 控件、8px 圆角、费用小标签、单行主按钮 */
 .pw-execution {
-  border-top: 1px solid var(--line);
-  flex-shrink: 0;
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: 64px;
-  min-height: 64px;
-  padding: 10px 0;
+  flex-shrink: 0;
+  gap: 6px;
+  height: 52px;
+  min-height: 52px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
 }
 
 .pw-execution > .btn {
   flex-shrink: 0;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 12px;
   white-space: nowrap;
-}
-
-.pw-execution-summary {
-  white-space: nowrap;
-}
-
-.pw-run-progress {
-  position: absolute;
-  inset: 0;
-  background: var(--panel);
-  padding: 14px 0;
-  z-index: 1;
-  margin: 0 !important;
-}
-
-.pw-compact-cost {
-  display: none;
-  font-size: 10px;
-  font-weight: 400;
-  line-height: 1.2;
-}
-
-@media (width <= 1250px) {
-  .pw-compact-cost {
-    display: block;
-  }
-
-  .pw-execution-summary {
-    display: none;
-  }
-
-  .pw-execution {
-    gap: 6px;
-  }
-
-  .pw-execution > .btn {
-    padding-left: 10px;
-    padding-right: 10px;
-  }
-}
-
-.pw-back-arrow {
-  transform: rotate(180deg);
-}
-
-.pw-generation-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-.pw-generation-count {
-  font-size: 11px;
-  border-left: 1px solid #ffffff60;
-  padding-left: 7px;
 }
 
 .pw-execution :deep(.theme-select) {
   flex: 0 1 auto;
-  max-width: 210px;
   width: auto;
   min-width: 0;
-  height: 36px;
-  min-height: 36px;
-  border-radius: 11px;
+  max-width: 200px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 10px;
+  gap: 4px;
+  border-radius: 8px;
   font-size: 12px;
-  padding: 0 12px;
   box-shadow: none;
 }
 
 /* 窄屏时图集选择先收缩，执行方式保持可读 */
 .pw-execution > :deep(.theme-select) {
   flex-shrink: 0;
-  min-width: 140px;
+  min-width: 132px;
 }
 
 .pw-execution .pw-collection {
@@ -344,13 +257,62 @@ const generationLabel = computed(() => {
   white-space: nowrap;
 }
 
-@media (width <= 800px) {
-  .pw-generation-actions {
-    gap: 6px;
-  }
+.pw-generation-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+  margin-left: auto;
+}
 
-  .pw-generation-actions .btn {
-    padding: 0 10px;
+.pw-fee {
+  padding: 3px 6px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  white-space: nowrap;
+  color: var(--text2);
+  background: var(--panel);
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}
+
+.pw-fee.free {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+
+.pw-generate {
+  justify-content: center;
+  gap: 7px;
+  min-width: 104px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  box-shadow: none;
+}
+
+.pw-stop {
+  border-color: var(--pink-line);
+  color: var(--pink-deep);
+  background: var(--bg);
+  animation: fade-in var(--dur-base) var(--ease-out);
+}
+
+.pw-stop:not(:disabled):hover {
+  background: var(--pink-soft);
+}
+
+.pw-generation-count {
+  padding-left: 7px;
+  border-left: 1px solid #ffffff60;
+  font-size: 11px;
+}
+
+@media (width <= 900px) {
+  .pw-fee {
+    display: none;
   }
 }
 </style>

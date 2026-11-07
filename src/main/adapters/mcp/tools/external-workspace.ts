@@ -1,4 +1,5 @@
 import { regionIds, regionNotes } from '../../../../shared/workspace/regions'
+import { latestPageExecution } from '../../../../shared/workspace/events'
 import { randomUUID } from 'node:crypto'
 import type { PageExternalReply } from '../../../../shared/workspace/model'
 import {
@@ -20,7 +21,7 @@ import {
   setPageAgent,
 } from '../../../modules/workspace/external-collaboration'
 import { listPendingPageRequests } from '../../../modules/workspace/queries'
-import { readPage } from '../../../modules/workspace/repository'
+import { readPage, readPageSnapshot } from '../../../modules/workspace/repository'
 import { editPage } from '../../../modules/workspace/service'
 import {
   discussionIsStale,
@@ -33,6 +34,7 @@ import { workspaceInpaintPreview, workspaceRectangleMask } from './inpaint'
 import { contextSkills, SKILLS_READ_SCHEMA } from '../skills-cache'
 import type { McpTool } from '../types'
 import { workspaceReceipt } from '../workspace-read'
+import { workspaceContextMaterials } from '../workspace-materials'
 
 const draft = {
   type: 'object',
@@ -400,7 +402,7 @@ export function externalWorkspaceTools(desktop: DesktopBridge): McpTool[] {
       annotations: { readOnlyHint: true, openWorldHint: false },
       run: async (argumentsRecord, signal) =>
         desktop.withWorkspace(String(argumentsRecord.id), async () => {
-          const workspace = readPage(String(argumentsRecord.id))
+          const workspace = readPageSnapshot(String(argumentsRecord.id))
           const version = pageCurrent(workspace)
           const request = pendingExternalRequest(workspace)
           if (
@@ -450,6 +452,8 @@ export function externalWorkspaceTools(desktop: DesktopBridge): McpTool[] {
             })
           }
           const preview = regionPreviews[0]?.preview ?? null
+          const skills = contextSkills(request?.skillSnapshot, argumentsRecord)
+          const materials = workspaceContextMaterials(workspace, request, regionPreviews, skills)
           const resolveProcessing = () => {
             if (workspace.agentMode !== 'external') {
               return 'internal' as const
@@ -468,6 +472,7 @@ export function externalWorkspaceTools(desktop: DesktopBridge): McpTool[] {
           return JSON.stringify({
             id: workspace.id,
             revision: workspace.revision,
+            ...materials,
             mode: workspace.agentMode ?? 'internal',
             agent: workspace.externalAgent,
             connected: agentIsConnected(workspace.externalAgent?.sessionId),
@@ -518,6 +523,7 @@ export function externalWorkspaceTools(desktop: DesktopBridge): McpTool[] {
                 partial: versionGroup.versions.some((version2) => !ids.has(version2.id)),
               })),
             latestGeneratedVersionId: workspace.latestGeneratedVersionId,
+            latestExecution: latestPageExecution(workspace.messages),
             candidatesPage: candidates.page,
             candidates: candidates.items.map((version2) => ({
               id: version2.id,
@@ -538,7 +544,7 @@ export function externalWorkspaceTools(desktop: DesktopBridge): McpTool[] {
                 image: version2.image,
                 draft: version2.generated?.draft ?? version2.editor.draft,
               })),
-            skills: contextSkills(request?.skillSnapshot, argumentsRecord),
+            skills,
             skillNames: request?.skills ?? [],
             processing: {
               state: resolveProcessing(),

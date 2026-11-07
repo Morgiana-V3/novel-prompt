@@ -8,11 +8,11 @@ export const directory = () => {
   return path
 }
 
-export function file(id: string) {
+export function file(id: string, parent = directory()) {
   if (!/^[a-f0-9-]{36}$/.test(id)) {
     throw new Error('无效的工作区标识')
   }
-  return join(directory(), `${id}.json`)
+  return join(parent, `${id}.json`)
 }
 
 export function fileSignature(path: string) {

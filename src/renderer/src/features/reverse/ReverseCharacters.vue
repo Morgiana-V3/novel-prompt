@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import SnippetButton from '../prompts/components/SnippetButton.vue'
+import { SnippetButton } from '../prompts/public/components'
 import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 import { computed, ref, watch } from 'vue'
 import type { ReverseResult } from '@shared/reverse/types'
-import type { CharDraft } from '../prompts/state'
+import { type CharDraft } from '../prompts/public/draft'
 
 const props = defineProps<{
   result?: ReverseResult

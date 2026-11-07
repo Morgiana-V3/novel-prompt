@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { reportError } from '../../shared/lib/notifications'
-import { promptState } from '../prompts/state'
+import { promptState } from '../prompts/public/draft'
 import { imageState, clearWorkspaceImage } from '../generation/public'
 import { settingsState } from '../settings/state'
 import { shellState } from '../../shared/state/shell'
@@ -721,11 +721,15 @@ async function close() {
   background: var(--panel);
 }
 
+/*
+ * 滚动容器铺满整页，滚动条贴住页面右缘（与图集、收藏一致）；
+ * 内容最大 1436px 居中，靠左右内边距实现，右侧扣掉滚动条槽位保持视觉对称。
+ */
 .sessions-home {
+  --sessions-inline: max(32px, calc((100% - 1436px) / 2));
+
   height: 100%;
-  padding: 32px;
-  max-width: 1500px;
-  margin: auto;
+  padding: 32px calc(var(--sessions-inline) - var(--scrollbar-size)) 32px var(--sessions-inline);
 }
 
 .sessions-home > header {
@@ -737,6 +741,9 @@ async function close() {
 }
 
 .sessions-home h1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 20px;
   margin: 0;
 }

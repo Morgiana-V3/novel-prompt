@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { PageMessage } from '@shared/workspace/model'
 import { computed } from 'vue'
-import { reviewChanges } from '../../prompts/prompt-review'
-import PromptReview from '../../prompts/components/PromptReview.vue'
+import { reviewChanges } from '../../prompts/public/review'
+import { PromptReview } from '../../prompts/public/review'
 const props = defineProps<{
   message: PageMessage
   selectedProposalId: string | null
@@ -82,6 +82,13 @@ const groups = computed(() => {
       </button>
     </div>
   </details>
+  <div
+    v-else-if="message.proposalSummary"
+    class="pw-proposal-summary"
+  >
+    <b>{{ message.proposalSummary.title }}</b>
+    <span class="pill">{{ statusLabel }}</span>
+  </div>
 </template>
 
 <style scoped>
@@ -127,5 +134,24 @@ const groups = computed(() => {
 .pw-plan-kind {
   font-size: 12px;
   color: var(--pink-deep);
+}
+
+.pw-proposal-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 9px 11px;
+  font-size: 11px;
+  color: var(--text2);
+  background: var(--panel);
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+}
+
+.pw-proposal-summary .pill {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 9px;
 }
 </style>

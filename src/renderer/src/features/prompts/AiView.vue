@@ -20,7 +20,7 @@ import { usePartialAdoption } from './use-partial-adoption'
 import { imageState } from '../generation/public'
 import { activeTask, cancelTask } from '../../shared/state/tasks'
 import { usePageShortcuts } from '../../shared/lib/shortcuts'
-import { lockTabs, tabRef } from '../creation/tabs'
+import { lockTabs, tabRef } from '../creation/public/session'
 import type { DesktopState, FrontendContext, FrontendRequest } from '@shared/contracts/desktop'
 
 const { navigate, isActive } = usePagePresentation()

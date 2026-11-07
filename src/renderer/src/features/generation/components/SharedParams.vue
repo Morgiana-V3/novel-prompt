@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { promptState } from '../../prompts/state'
+import { promptState, updatePromptParams } from '../../prompts/public/draft'
 import { computed } from 'vue'
 import type { UcPreset, NaiGenParams } from '@shared/generation/types'
 import ResolutionPicker from './ResolutionPicker.vue'
@@ -32,7 +32,7 @@ function updateParameters(patch: Partial<NonNullable<typeof props.params>>) {
   if (props.params) {
     emit('changeParams', patch)
   } else {
-    Object.assign(promptState.params, patch)
+    updatePromptParams(patch)
   }
 }
 const sizeKey = computed(

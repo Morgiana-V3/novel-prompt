@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { pageConfigurationChanges, type PageWorkspace } from '@shared/workspace/model'
-import { reviewDrafts } from '../../prompts/prompt-review'
-import PromptReview from '../../prompts/components/PromptReview.vue'
+import { reviewDrafts } from '../../prompts/public/review'
+import { PromptReview } from '../../prompts/public/review'
 import { FavoriteButton } from '../../favorites/public'
+import WorkspacePositions from './WorkspacePositions.vue'
 
 const props = defineProps<{ work: PageWorkspace; versionId: string; compareId: string }>()
 const iteration = computed(() =>
@@ -13,6 +14,14 @@ const groups = computed(() =>
   iteration.value.before && iteration.value.snapshot
     ? reviewDrafts(iteration.value.before.draft, iteration.value.snapshot.draft)
     : [],
+)
+const textGroups = computed(() =>
+  groups.value
+    .map((group) => ({
+      ...group,
+      fields: group.fields.filter((field) => field.kind !== 'position'),
+    }))
+    .filter((group) => group.fields.length),
 )
 function name(id: string) {
   const i = props.work.versions.findIndex((version) => version.id === id)
@@ -133,9 +142,21 @@ const maskUrl = computed(() => {
         对比对象为项目起始稿与设置，不代表导入图片的实际生成参数。
       </p>
       <PromptReview
-        :groups="groups"
+        :groups="textGroups"
         before-label="对比对象"
         after-label="正在查看"
+      />
+      <WorkspacePositions
+        v-if="iteration.before && iteration.snapshot"
+        :key="versionId + ':' + compareId"
+        :before="iteration.before.draft"
+        :after="iteration.snapshot.draft"
+        :width="iteration.snapshot.params.width"
+        :height="iteration.snapshot.params.height"
+        :before-width="iteration.before.params.width"
+        :before-height="iteration.before.params.height"
+        :before-image="iteration.source?.image"
+        :after-image="iteration.version?.image"
       />
       <p
         v-if="

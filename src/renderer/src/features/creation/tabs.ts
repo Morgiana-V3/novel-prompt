@@ -13,12 +13,12 @@ import { toast } from '../../shared/lib/notifications'
 import {
   DEFAULT_PARAMS,
   promptState,
-  toDrafts,
+  restorePromptSession,
   type CharDraft,
   type FieldRef,
   type Snapshot,
   type WorkParams,
-} from '../prompts/state'
+} from '../prompts/public/draft'
 import {
   applyGenerationParams,
   DEFAULT_GEN,
@@ -167,15 +167,16 @@ function capture(): { content: TabContent; session: TabSession } {
 }
 
 function restore(content: TabContent, session: TabSession): void {
-  promptState.prompt = content.prompt
-  promptState.negative = content.negative
-  promptState.characters = toDrafts(content.characters)
-  // 有页面在 setup 时持有 promptState.params 的引用，只能原地改；生图参数经 generation 的公开接口写入
-  Object.assign(promptState.params, { ...DEFAULT_PARAMS, ...content.params })
+  restorePromptSession({
+    prompt: content.prompt,
+    negative: content.negative,
+    characters: content.characters,
+    params: content.params,
+    history: content.history,
+    lastPreview: session.lastPreview,
+    focus: session.focus,
+  })
   applyGenerationParams({ ...DEFAULT_GEN, ...content.gen })
-  promptState.history = content.history
-  promptState.lastPreview = session.lastPreview
-  promptState.focus = session.focus
   setPreviewImage(session.currentImage)
   for (const key of registry.keys()) {
     if (!session.view.has(key)) {

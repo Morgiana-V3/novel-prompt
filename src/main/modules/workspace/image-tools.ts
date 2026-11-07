@@ -1,4 +1,4 @@
-import { anlasOutcomeText, type AnlasOutcome } from '../../../shared/generation/pricing'
+import type { AnlasOutcome } from '../../../shared/generation/pricing'
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import type { NaiImage } from '../../../shared/images/types'
@@ -17,7 +17,7 @@ import { imagePath } from '../images/access'
 import { readImageRecipe } from '../images/library'
 import { pageLocks } from './locks'
 import { readPage, savePage } from './repository'
-import { pageEvent } from './snapshot'
+import { pageExecutionEvent } from './snapshot'
 import { checkPageParams } from './validation'
 
 export interface ImageToolOptions {
@@ -84,29 +84,56 @@ export async function runImageTool(
   }
   const sourceBytes = readFileSync(sourcePath)
   pageLocks.set(id, new AbortController())
+  const versionIds: string[] = []
+  let outcome: (AnlasOutcome & { stopped?: string }) | undefined
+  let attempted = false
+  let failure: { error: unknown } | undefined
   try {
-    const images = await executeTool(
-      workspace,
-      version,
-      tool,
-      sourceBytes,
-      progress,
-      cancelled,
-      options,
-    )
-    appendToolVersions(workspace, version, tool, images.images)
-    pageEvent(workspace, anlasOutcomeText(images), workspace.latestGeneratedVersionId)
-    if (images.stopped) {
-      pageEvent(workspace, images.stopped, workspace.latestGeneratedVersionId)
+    try {
+      const result = await executeTool(workspace, version, tool, sourceBytes, progress, cancelled, {
+        ...options,
+        onAttempt: () => {
+          attempted = true
+        },
+        onResult: (result) => {
+          outcome = result
+          options.onResult?.(result)
+        },
+      })
+      outcome = result
+      if (!result.images.length) {
+        throw new Error(result.stopped ?? '没有返回图片')
+      }
+      appendToolVersions(workspace, version, tool, result.images, versionIds)
+    } catch (error) {
+      failure = { error }
     }
-    return savePage(workspace)
-  } catch (error) {
-    pageEvent(
+    let errorText: string | undefined
+    if (failure) {
+      errorText = failure.error instanceof Error ? failure.error.message : String(failure.error)
+      errorText ||= '未知执行错误'
+    }
+    const completion = versionIds.length
+      ? `已保存 ${versionIds.length} 张候选，当前蓝本未改变。`
+      : '没有保存新候选，当前蓝本未改变。'
+    pageExecutionEvent(
       workspace,
-      `${pageImageToolLabel(tool)}未完成：${error instanceof Error ? error.message : String(error)}。当前版本未替换。`,
+      `从「${version.label}」${pageImageToolLabel(tool)}，${completion}${errorText ? `未完成：${errorText}` : ''}`,
+      {
+        kind: tool.kind,
+        sourceVersionId: version.id,
+        versionIds,
+        requestedCount: tool.kind === 'upscale' ? 1 : version.editor.params.count,
+        outcome,
+        attempted,
+        error: errorText,
+      },
     )
-    savePage(workspace)
-    throw error
+    const saved = savePage(workspace)
+    if (failure) {
+      throw failure.error
+    }
+    return saved
   } finally {
     pageLocks.delete(id)
   }
@@ -119,9 +146,10 @@ async function executeTool(
   sourceBytes: Buffer,
   progress: (text: string) => void,
   cancelled: () => boolean,
-  options: ImageToolOptions,
+  options: ImageToolOptions & { onAttempt: () => void },
 ): Promise<{ images: NaiImage[]; stopped?: string } & AnlasOutcome> {
   if (tool.kind === 'upscale') {
+    options.onAttempt()
     const result = await upscaleImage(sourceBytes, readImageRecipe(version.image!.name), progress, {
       freeOnly: options.freeOnly,
       workspaceId: workspace.id,
@@ -149,6 +177,7 @@ async function executeTool(
   let result
   if (tool.kind === 'outpaint') {
     const outpaint = buildOutpaintCanvas(sourceBytes, tool)
+    options.onAttempt()
     result = await generateImages(
       {
         ...base,
@@ -160,6 +189,7 @@ async function executeTool(
     )
   } else {
     const resized = await resizeForEnhance(sourceBytes, size.width, size.height)
+    options.onAttempt()
     result = await generateImages(
       { ...base, img2img: { strength: tool.strength, noise: tool.noise } },
       progress,
@@ -171,9 +201,6 @@ async function executeTool(
     result.stopped ??= '已停止，已完成的图片已保留'
   }
   options.onResult?.(result)
-  if (!result.images.length) {
-    throw new Error(result.stopped ?? '没有返回图片')
-  }
   return result
 }
 
@@ -182,10 +209,10 @@ function appendToolVersions(
   version: PageVersion,
   tool: PageImageTool,
   images: NaiImage[],
+  versionIds: string[],
 ) {
   const groupId = randomUUID()
   const groupNumber = nextGroupNumber(workspace)
-  const toolLabel = pageImageToolLabel(tool)
   for (const [index, image] of images.entries()) {
     const recipe = readImageRecipe(image.name)?.request
     const params = recipe?.params ?? version.editor.params
@@ -227,11 +254,7 @@ function appendToolVersions(
       },
     }
     workspace.versions.push(next)
+    versionIds.push(next.id)
     workspace.latestGeneratedVersionId = next.id
-    pageEvent(
-      workspace,
-      `从「${version.label}」${toolLabel}，得到「${next.label}」。已保存，当前蓝本未改变。`,
-      next.id,
-    )
   }
 }

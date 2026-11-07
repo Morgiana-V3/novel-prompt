@@ -130,6 +130,15 @@ const emit = defineEmits<{
   left: 10px;
   top: 10px;
   background: var(--bg);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.pw-candidate:hover :deep(.candidate-favorite),
+.pw-candidate:focus-within :deep(.candidate-favorite) {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .pw-candidate-list {
@@ -194,7 +203,8 @@ const emit = defineEmits<{
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(155px, 100%), 1fr));
+  align-items: start;
   align-content: start;
   gap: 14px;
   padding: 12px 0 20px;
@@ -208,7 +218,8 @@ const emit = defineEmits<{
 }
 
 .pw-candidate-image {
-  height: 220px;
+  aspect-ratio: 1;
+  min-width: 0;
   display: grid;
   place-items: center;
   border-radius: 9px;
@@ -217,8 +228,10 @@ const emit = defineEmits<{
 }
 
 .pw-candidate-image img {
+  display: block;
   width: 100%;
-  height: 100%;
+  height: auto;
+  aspect-ratio: 1;
   object-fit: contain;
 }
 
@@ -318,7 +331,8 @@ const emit = defineEmits<{
 }
 
 @media (hover: none) {
-  .pw-candidate-delete {
+  .pw-candidate-delete,
+  .pw-candidate :deep(.candidate-favorite) {
     opacity: 1;
     pointer-events: auto;
   }

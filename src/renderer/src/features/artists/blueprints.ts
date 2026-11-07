@@ -1,6 +1,6 @@
 import type { NaiGenRequest, NaiVersion } from '@shared/generation/types'
 import type { NaiImage } from '@shared/images/types'
-import { creationSnapshots } from '../creation/tabs'
+import { creationSnapshots } from '../creation/public/navigation'
 
 export interface ArtistBlueprint {
   kind: 'creation' | 'gallery'

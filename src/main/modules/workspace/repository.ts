@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import {
@@ -8,15 +8,37 @@ import {
 } from '../../../shared/workspace/model'
 import { writeFileAtomic } from '../../infrastructure/atomic-file'
 import { imagePath } from '../images/access'
-import { pageIndex, rememberPage } from './index-cache'
+import { imageContentHash } from '../images/content-hash'
+import { imageSignature, pageIndex, pageReadStamp, readIndexes, rememberPage } from './index-cache'
+import { cachedPageSnapshot, forgetPageSnapshot, rememberPageSnapshot } from './read-cache'
 import { pageLocks } from './locks'
 import { clone, pageEvent } from './snapshot'
 import { directory, file, fileSignature } from './storage-paths'
 
 export function readPage(id: string): PageWorkspace {
+  const snapshot = readPageSnapshot(id)
+  const workspace = structuredClone(snapshot)
+  const index = readIndexes.get(snapshot)
+  if (index) {
+    readIndexes.set(workspace, index)
+  }
+  return workspace
+}
+
+/** Read-only consumers can project the immutable snapshot without cloning its history/masks. */
+export function readPageSnapshot(id: string): PageWorkspace {
   const path = file(id)
-  const signature = fileSignature(path)
-  const workspace = JSON.parse(readFileSync(path, 'utf8')) as PageWorkspace
+  const cached = cachedPageSnapshot(path, pageReadStamp(id))
+  if (cached) {
+    return cached
+  }
+  let signature = fileSignature(path)
+  const source = readFileSync(path, 'utf8')
+  if (fileSignature(path) !== signature) {
+    throw new Error('工作区文件在读取时已改变，请重新读取当前状态')
+  }
+  let sourceBytes = Buffer.byteLength(source)
+  const workspace = JSON.parse(source) as PageWorkspace
   if (
     ![1, 2].includes(workspace.schema) ||
     workspace.id !== id ||
@@ -57,19 +79,39 @@ export function readPage(id: string): PageWorkspace {
       '已升级为通用创作会话。旧版区域独立草稿保留在历史版本；请选择要继续使用的草稿。',
     )
     savePage(workspace)
+    signature = fileSignature(path)
+    sourceBytes = Buffer.byteLength(JSON.stringify(workspace))
   }
+  const imageStates = new Map<string, { missing: boolean; contentHash?: string }>()
+  const imageSignatures = new Map<string, string | null>()
   for (const version2 of workspace.versions) {
     if (version2.image) {
-      const path = imagePath(version2.image.name)
-      version2.image.missing = !path
-      version2.image.storage = 'workspace'
-      if (path && !version2.image.contentHash) {
-        version2.image.contentHash = createHash('sha256').update(readFileSync(path)).digest('hex')
+      const name = version2.image.name
+      let imageState = imageStates.get(name)
+      if (!imageState) {
+        imageSignatures.set(name, imageSignature(name))
+        const path = imagePath(name)
+        imageState = { missing: !path, ...(path ? { contentHash: imageContentHash(path) } : {}) }
+        imageStates.set(name, imageState)
       }
+      Object.assign(version2.image, imageState)
+      version2.image.storage = 'workspace'
     }
   }
+  if (fileSignature(path) !== signature) {
+    throw new Error('工作区文件在读取时已改变，请重新读取当前状态')
+  }
   rememberPage(workspace, signature)
-  return workspace
+  const index = readIndexes.get(workspace)!
+  if (fileSignature(path) !== signature) {
+    pageIndex.delete(path)
+    throw new Error('工作区文件在读取时已改变，请重新读取当前状态')
+  }
+  if (index.images.some(([name, stamp]) => imageSignatures.get(name) !== stamp)) {
+    pageIndex.delete(path)
+    throw new Error('图片在读取时已改变，请重新读取当前状态')
+  }
+  return rememberPageSnapshot(path, index.stamp, workspace, sourceBytes)
 }
 
 export function savePage(workspace: PageWorkspace): PageWorkspace {
@@ -82,6 +124,7 @@ export function savePage(workspace: PageWorkspace): PageWorkspace {
   }
   writeFileAtomic(file(workspace.id), data)
   pageIndex.delete(file(workspace.id))
+  forgetPageSnapshot(file(workspace.id))
   return workspace
 }
 
@@ -97,6 +140,7 @@ export function deletePage(id: string, revision: number): void {
   mkdirSync(removed, { recursive: true })
   renameSync(file(id), join(removed, id + '-' + Date.now() + '.json'))
   pageIndex.delete(file(id))
+  forgetPageSnapshot(file(id))
 }
 
 export function listRemovedPages(): { token: string; title: string; removedAt: number }[] {

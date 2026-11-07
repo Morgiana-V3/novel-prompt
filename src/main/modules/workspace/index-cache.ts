@@ -6,6 +6,7 @@ import {
   type PageWorkspaceSummary,
 } from '../../../shared/workspace/model'
 import { imagePath } from '../images/access'
+import { createImagePathResolver } from '../images/library'
 import { clone, discussionIsStale, pendingExternalRequest } from './snapshot'
 import { file, fileSignature } from './storage-paths'
 
@@ -104,8 +105,20 @@ export function rememberPage(workspace: PageWorkspace, signature: string) {
   }
 }
 
-export function cachedPageIndex(id: string) {
-  const path = file(id)
+export function imageSignatureBatch() {
+  const resolveImage = createImagePathResolver()
+  const signatures = new Map<string, string | null>()
+  return (name: string) => {
+    if (!signatures.has(name)) {
+      const path = resolveImage(name)
+      signatures.set(name, path ? path + ':' + fileSignature(path) : null)
+    }
+    return signatures.get(name)!
+  }
+}
+
+export function cachedPageIndex(id: string, parent?: string, signatureOf = imageSignature) {
+  const path = file(id, parent)
   const entry = pageIndex.get(path)
   if (!entry) {
     return undefined
@@ -113,7 +126,7 @@ export function cachedPageIndex(id: string) {
   try {
     if (
       fileSignature(path) === entry.signature &&
-      entry.images.every(([name, signature]) => imageSignature(name) === signature)
+      entry.images.every(([name, signature]) => signatureOf(name) === signature)
     ) {
       return entry
     }

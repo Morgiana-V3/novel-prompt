@@ -10,6 +10,7 @@ import {
 } from '../../../shared/workspace/model'
 import { composeSkills } from '../skills/service'
 import { agentIsConnected } from './agent-sessions'
+import { buildPageInputContext } from './input-context'
 import { pageLocks } from './locks'
 import { readPage, savePage } from './repository'
 import {
@@ -101,7 +102,13 @@ export function setPageAgent(
     }
     return '已切换为内置 AI；待处理的外部需求已取消。' as const
   }
-  pageEvent(workspace, resolveValue())
+  pageEvent(workspace, resolveValue(), workspace.currentVersionId, {
+    schema: 1,
+    type: 'agent',
+    severity: 'info',
+    mode,
+    ...(mode === 'external' && agent ? { name: agent.name } : {}),
+  })
   return savePage(workspace)
 }
 
@@ -155,6 +162,7 @@ export function queueExternalRequest(
   }
   message.skills = skills.skills.map((skill) => skill.name)
   message.skillSnapshot = skills.snapshot
+  message.inputContext = buildPageInputContext(workspace, message, skills.snapshot)
   workspace.messages.push(message)
   workspace.composer = ''
   return savePage(workspace)
@@ -170,7 +178,12 @@ export function cancelExternalRequest(id: string, revision: number, agent?: Page
     throw new Error('没有待处理的外部需求')
   }
   pending.externalRequest!.status = 'cancelled'
-  pageEvent(workspace, '已取消外部需求，原消息保留；后续回复不会覆盖当前内容。')
+  pageEvent(
+    workspace,
+    '已取消外部需求，原消息保留；后续回复不会覆盖当前内容。',
+    workspace.currentVersionId,
+    { schema: 1, type: 'request-cancelled', severity: 'info', requestId: pending.id },
+  )
   return savePage(workspace)
 }
 
@@ -240,6 +253,14 @@ export function replyExternalRequest(
     pageEvent(
       workspace,
       `目标：${workspace.goal || '未指定'}${workspace.preserve ? '\n保留：' + workspace.preserve : ''}`,
+      version.id,
+      {
+        schema: 1,
+        type: 'goal',
+        severity: 'info',
+        goal: workspace.goal,
+        preserve: workspace.preserve,
+      },
     )
   }
   const message = pageMessage('assistant', response.reply, version.id)

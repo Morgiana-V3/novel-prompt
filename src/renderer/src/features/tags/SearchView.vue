@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { promptState } from '../prompts/state'
+import { promptState, setPromptFocus } from '../prompts/public/draft'
 import { tagState } from './state'
 import { shellState } from '../../shared/state/shell'
 import { computed, nextTick, ref, watch } from 'vue'
 import type { SearchHit, TagCategory } from '@shared/tags/types'
 import { CATEGORY_LABEL } from '@shared/tags/types'
 import { CAT_CLASS } from './state'
-import { appendTag, fieldList, fieldLabel, sameField } from '../prompts/actions'
+import { appendTag, fieldList, fieldLabel, sameField } from '../prompts/public/editing'
 import { copy } from '../../shared/lib/notifications'
 import TagCard from './components/TagCard.vue'
 import Icon from '../../shared/ui/Icon.vue'
@@ -24,7 +24,7 @@ const targetIndex = computed(() =>
 function setTarget(i: number) {
   const field = fields.value[Number(i)]
   if (field) {
-    promptState.focus = field
+    setPromptFocus(field)
   }
 }
 

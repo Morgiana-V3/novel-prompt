@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import type { NaiGenParams, NaiSampler, NaiNoiseSchedule } from '@shared/generation/types'
 import { DEFAULT_GEN } from '../state'
-import { DEFAULT_PARAMS } from '../../prompts/state'
+import { DEFAULT_PARAMS } from '../../prompts/public/draft'
 import SharedParams from './SharedParams.vue'
 import ThemeSelect from '../../../shared/ui/ThemeSelect.vue'
 import Icon from '../../../shared/ui/Icon.vue'

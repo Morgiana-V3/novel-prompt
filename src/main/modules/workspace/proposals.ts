@@ -26,7 +26,19 @@ export function applyProposalDecision(
       throw new Error('该建议已经处理')
     }
     proposal.status = 'rejected'
-    pageEvent(workspace, `未采纳建议「${proposal.title}」，提示词和图片未改变。`)
+    pageEvent(
+      workspace,
+      `未采纳建议「${proposal.title}」，提示词和图片未改变。`,
+      message.versionId,
+      {
+        schema: 1,
+        type: 'proposal',
+        severity: 'info',
+        messageId: message.id,
+        title: proposal.title,
+        decision: 'rejected',
+      },
+    )
   } else {
     if (message.versionId !== version.id) {
       throw new Error('建议属于其他版本，请切回对应版本或重新讨论')
@@ -69,7 +81,19 @@ export function applyProposalDecision(
       })
       proposal.appliedContextKey = pageContextKey(version, regionIds(proposal), workspace)
       proposal.status = 'accepted'
-      pageEvent(workspace, `已采纳「${proposal.title}」，已更新当前提示词草稿，尚未生成图片。`)
+      pageEvent(
+        workspace,
+        `已采纳「${proposal.title}」，已更新当前提示词草稿，尚未生成图片。`,
+        version.id,
+        {
+          schema: 1,
+          type: 'proposal',
+          severity: 'info',
+          messageId: message.id,
+          title: proposal.title,
+          decision: 'accepted',
+        },
+      )
     } else {
       if (proposal.status !== 'accepted') {
         throw new Error('只能撤销已采纳建议')
@@ -92,7 +116,14 @@ export function applyProposalDecision(
         workspace.execution = clone(proposal.previousExecution)
       }
       proposal.status = 'withdrawn'
-      pageEvent(workspace, `撤销了建议「${proposal.title}」，恢复采纳前的提示词。`)
+      pageEvent(workspace, `撤销了建议「${proposal.title}」，恢复采纳前的提示词。`, version.id, {
+        schema: 1,
+        type: 'proposal',
+        severity: 'info',
+        messageId: message.id,
+        title: proposal.title,
+        decision: 'withdrawn',
+      })
     }
   }
 }

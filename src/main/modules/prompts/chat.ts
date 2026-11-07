@@ -16,6 +16,10 @@ import { modelVision, visionProvider } from '../../../shared/settings/vision'
  * 同一份 messages 的多轮请求保持同一条路，避免思考模式的多轮对话中途换模型。
  */
 export type VisionRoute = 'main' | 'vision' | 'text'
+interface RoutedChatOptions extends ChatOptions {
+  /** Called after image removal/provider selection, before request serialization. */
+  onRoute?: (route: VisionRoute | undefined) => void
+}
 const visionRoutes = new WeakMap<ChatInputMessage[], VisionRoute>()
 
 /** 这份对话最终如何处理图片；没有图片时为 undefined */
@@ -50,10 +54,17 @@ function dropImages(messages: ChatInputMessage[]): void {
 }
 
 /** 发送一轮请求；带图时按主模型和识图模型的能力分流，不能识图时降级为纯文字 */
-async function send(messages: ChatInputMessage[], options: ChatOptions): Promise<ChatMessage> {
+async function send(
+  messages: ChatInputMessage[],
+  options: RoutedChatOptions,
+): Promise<ChatMessage> {
   const settings = getSettings()
+  const dispatch = (provider?: ChatOptions['provider']) => {
+    options.onRoute?.(visionRoutes.get(messages))
+    return requestChat(messages, settings, provider ? { ...options, provider } : options)
+  }
   if (!hasImages(messages)) {
-    return requestChat(messages, settings, options)
+    return dispatch()
   }
   const vision = visionProvider(settings)
   const mainSupport = modelVision(settings.model)
@@ -70,15 +81,11 @@ async function send(messages: ChatInputMessage[], options: ChatOptions): Promise
   if (route === 'text') {
     dropImages(messages)
     visionRoutes.set(messages, route)
-    return requestChat(messages, settings, options)
+    return dispatch()
   }
   visionRoutes.set(messages, route)
   try {
-    return await requestChat(
-      messages,
-      settings,
-      route === 'vision' && vision ? { ...options, provider: vision } : options,
-    )
+    return await dispatch(route === 'vision' && vision ? vision : undefined)
   } catch (error) {
     if (!(error instanceof VisionUnsupportedError)) {
       throw error
@@ -90,11 +97,11 @@ async function send(messages: ChatInputMessage[], options: ChatOptions): Promise
     }
     if (vision) {
       visionRoutes.set(messages, 'vision')
-      return requestChat(messages, settings, { ...options, provider: vision })
+      return dispatch(vision)
     }
     visionRoutes.set(messages, 'text')
     dropImages(messages)
-    return requestChat(messages, settings, options)
+    return dispatch()
   }
 }
 
@@ -108,7 +115,7 @@ export interface SkillReadActivity {
 
 export async function chat(
   messages: ChatInputMessage[],
-  options: ChatOptions & {
+  options: RoutedChatOptions & {
     skillSnapshot?: PageSkillSnapshot
     allowSkillReads?: boolean
     onRequest?: () => void

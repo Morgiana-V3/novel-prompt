@@ -8,7 +8,13 @@ export interface McpLogEntry {
 
 export interface McpInfo {
   serverName?: string
-  runtime?: { mode: 'installed' | 'development'; dataPath: string; appPath: string }
+  runtime?: {
+    mode: 'installed' | 'development'
+    dataPath: string
+    appPath: string
+    startedAt?: number
+    buildHash?: string
+  }
   command: string
   args: string[]
   env: Record<string, string>

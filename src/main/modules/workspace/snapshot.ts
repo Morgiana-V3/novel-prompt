@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import type { AnlasOutcome } from '../../../shared/generation/pricing'
+import type { PageEventMetadata, PageExecutionEvent } from '../../../shared/workspace/events'
 import type { PageDiscussion } from '../../../shared/workspace/model'
 import { type PageMessage, type PageWorkspace } from '../../../shared/workspace/model'
 
@@ -8,14 +10,76 @@ export function pageEvent(
   workspace: PageWorkspace,
   text: string,
   versionId = workspace.currentVersionId,
-): void {
-  workspace.messages.push({
+  event?: PageEventMetadata,
+): PageMessage {
+  const message: PageMessage = {
     id: randomUUID(),
     role: 'event',
     text,
     createdAt: Date.now(),
     versionId,
-  })
+    ...(event ? { event, ...(event.severity === 'error' ? { error: true } : {}) } : {}),
+  }
+  workspace.messages.push(message)
+  return message
+}
+
+export function pageExecutionEvent(
+  workspace: PageWorkspace,
+  text: string,
+  details: Pick<
+    PageExecutionEvent,
+    'kind' | 'sourceVersionId' | 'versionIds' | 'requestedCount'
+  > & {
+    outcome?: AnlasOutcome & { stopped?: string }
+    attempted: boolean
+    error?: string
+  },
+): PageMessage {
+  const { outcome } = details
+  const returnedFailure = /^第 [1-9]\d* 张失败：/.test(outcome?.stopped ?? '')
+    ? outcome?.stopped
+    : undefined
+  const error = details.error ?? returnedFailure
+  const billing: PageExecutionEvent['billing'] = {
+    status: details.attempted ? 'unknown' : 'not-run',
+  }
+  if (Number.isFinite(outcome?.anlasDelta)) {
+    billing.status = 'known'
+    billing.anlasDelta = outcome!.anlasDelta
+  }
+  if (Number.isFinite(outcome?.usageDelta)) {
+    billing.usageDelta = outcome!.usageDelta
+  }
+  const subscription = outcome?.subscription
+  if (Number.isFinite(subscription?.anlasFixed) && Number.isFinite(subscription?.anlasPurchased)) {
+    billing.remainingAnlas = subscription!.anlasFixed! + subscription!.anlasPurchased!
+  }
+  let status: PageExecutionEvent['status'] = 'failed'
+  if (details.versionIds.length) {
+    status = !error && details.versionIds.length >= details.requestedCount ? 'complete' : 'partial'
+  }
+  let severity: PageExecutionEvent['severity'] = 'info'
+  if (error || status === 'failed') {
+    severity = 'error'
+  } else if (outcome?.stopped || billing.status === 'unknown' || status === 'partial') {
+    severity = 'warning'
+  }
+  const event: PageExecutionEvent = {
+    schema: 1,
+    type: 'execution',
+    severity,
+    kind: details.kind,
+    sourceVersionId: details.sourceVersionId,
+    versionIds: [...details.versionIds],
+    adoptedVersionId: workspace.currentVersionId,
+    requestedCount: details.requestedCount,
+    status,
+    stopped: outcome?.stopped ?? null,
+    billing,
+    ...(error ? { error } : {}),
+  }
+  return pageEvent(workspace, text, details.versionIds.at(-1) ?? details.sourceVersionId, event)
 }
 
 export function pageMessage(

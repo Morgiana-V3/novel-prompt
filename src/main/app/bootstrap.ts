@@ -7,6 +7,8 @@ import { createTaskNotifier } from './task-notifications'
 import { getSettings } from '../modules/settings/service'
 import type { TaskSnapshot } from '../../shared/tasks/model'
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { resolveRuntimeProfile } from '../../runtime/runtime-profile.cjs'
@@ -36,6 +38,9 @@ import { prepareScreenshotProfile, SHOT_DIR, takeScreenshots } from './screensho
 import { createWindowManager } from './window'
 import { appIconPath, appUserModelId, appWindowIcon, configureWindowIdentity } from './identity'
 export function startApplication(): void {
+  // Capture the loaded bundle once; later builds must not make an old host appear current.
+  const startedAt = Date.now()
+  const buildHash = createHash('sha256').update(readFileSync(__filename)).digest('hex')
   const windowManager = createWindowManager(() => desktop?.disconnected())
   const createWindow = windowManager.createWindow
   installOperationAuthorization((options, signal) => {
@@ -76,6 +81,8 @@ export function startApplication(): void {
     mode: app.isPackaged ? ('installed' as const) : ('development' as const),
     dataPath: storageRoot(),
     appPath: app.getAppPath(),
+    startedAt,
+    buildHash,
   })
   // Register before any window (including the storage migration window) is created.
   if (process.platform === 'win32') {

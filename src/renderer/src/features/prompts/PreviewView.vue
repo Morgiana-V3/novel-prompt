@@ -15,7 +15,7 @@ import EvidenceNote from './components/EvidenceNote.vue'
 import type { IconName } from '../../shared/ui/icons'
 import { activeTask, cancelTask } from '../../shared/state/tasks'
 import { usePageShortcuts } from '../../shared/lib/shortcuts'
-import { lockTabs, tabRef } from '../creation/tabs'
+import { lockTabs, tabRef } from '../creation/public/session'
 
 const { navigate, isActive, editor } = usePagePresentation()
 

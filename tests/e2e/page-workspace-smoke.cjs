@@ -1940,7 +1940,7 @@ app.whenReady().then(async () => {
         await click('.pw-context button', '回到当前')
       }
       await click('.pw-execution button', '生成图片')
-      await wait(`!document.querySelector('.pw-run-progress')`)
+      await wait(`!document.querySelector('.pw-execution [data-running]')`)
       await pause(200)
     }
     const rolled = pages.readPage(ui.id)

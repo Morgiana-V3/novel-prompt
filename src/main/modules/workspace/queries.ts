@@ -4,8 +4,8 @@ import { type PageWorkspaceSummary } from '../../../shared/workspace/model'
 import { imageInfo } from '../images/library'
 import { workspaceImageNames } from './image-references'
 import type { PageAccess, PageIndexEntry, PendingPageSummary } from './index-cache'
-import { cachedPageIndex, pageIndex, readIndexes } from './index-cache'
-import { readPage } from './repository'
+import { cachedPageIndex, imageSignatureBatch, pageIndex, readIndexes } from './index-cache'
+import { readPageSnapshot } from './repository'
 import { clone } from './snapshot'
 import { directory, file, fileSignature } from './storage-paths'
 
@@ -17,7 +17,7 @@ export function readPageAccess(id: string): PageAccess {
   if (entry && fileSignature(path) === entry.signature) {
     return clone(entry.access)
   }
-  return clone(readIndexes.get(readPage(id))!.access)
+  return clone(readIndexes.get(readPageSnapshot(id))!.access)
 }
 
 export function indexedPages(): PageIndexEntry[] {
@@ -30,12 +30,13 @@ export function indexedPages(): PageIndexEntry[] {
     }
   }
   const entries: PageIndexEntry[] = []
+  const signatureOf = imageSignatureBatch()
   for (const name of names) {
     try {
       const id = name.slice(0, -5)
-      let entry = cachedPageIndex(id)
+      let entry = cachedPageIndex(id, dir, signatureOf)
       if (!entry) {
-        entry = readIndexes.get(readPage(id))
+        entry = readIndexes.get(readPageSnapshot(id))
       }
       if (entry) {
         entries.push(entry)

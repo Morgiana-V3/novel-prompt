@@ -4,19 +4,17 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { groupFavorites, type FavoriteGroup } from '@shared/images/favorite-groups'
 import { favorites, refreshFavorites } from './state'
 import { shellState } from '../../shared/state/shell'
-import { importGenerationRequest, sectionText } from '../prompts/actions'
-import { openTabForLoad } from '../creation/tabs'
+import { importGenerationRequest, sectionText } from '../prompts/public/import-export'
+import { openTabForLoad } from '../creation/public/navigation'
 import { loadPreferences, setLoadKeepSeed } from '../generation/public'
 import { copy, toast } from '../../shared/lib/notifications'
 import { cleanErr } from '../../shared/lib/format'
 import Icon from '../../shared/ui/Icon.vue'
-import PositionCompareDialog, {
-  type RolePosition,
-} from '../prompts/components/PositionCompareDialog.vue'
+import { PositionCompareDialog, type RolePosition } from '../prompts/public/components'
 import Mascot from '../../shared/ui/Mascot.vue'
 import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 import FavoriteButton from './components/FavoriteButton.vue'
-import SnippetLibrary from '../prompts/components/SnippetLibrary.vue'
+import { SnippetLibrary } from '../prompts/public/components'
 import SplitHandle from '../../shared/ui/SplitHandle.vue'
 
 const favoriteTab = computed({
@@ -983,8 +981,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   align-content: start;
   flex: 1;
   min-height: 0;
-  padding: 4px 4px 12px;
-  margin: -4px;
+
+  /* 滚动区延伸到页面右缘与底边，滚动条贴边，与图集、创作项目一致；4px 留给卡片悬停上浮与焦点环 */
+  padding: 4px calc(24px - var(--scrollbar-size)) 24px 4px;
+  margin: -4px -24px -20px -4px;
 }
 
 .favorite-card {

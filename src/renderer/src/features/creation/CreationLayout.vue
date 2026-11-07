@@ -2,11 +2,11 @@
 import { nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import { pagePresentation } from '../../shared/lib/page-presentation'
 import { shellState, type Tab } from '../../shared/state/shell'
-import PromptEditor from '../prompts/components/PromptEditor.vue'
-import WorkspaceBar from '../prompts/components/WorkspaceBar.vue'
+import { PromptEditor } from '../prompts/public/components'
+import { WorkspaceBar } from '../prompts/public/components'
 import CreationTabs from './CreationTabs.vue'
 import { resizeWithin } from '../../shared/lib/autosize'
-import { promptState } from '../prompts/state'
+import { promptState } from '../prompts/public/draft'
 import SplitHandle from '../../shared/ui/SplitHandle.vue'
 
 const props = defineProps<{ active: boolean; panel: string }>()

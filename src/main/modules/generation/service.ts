@@ -199,6 +199,11 @@ export async function generateImages(
       if (!images.length) {
         throw error2
       }
+      // This request may have reached the provider. Earlier balance observations cannot
+      // reconcile the whole batch, even though its completed images remain available.
+      delta = undefined
+      usageKnown = false
+      sub = undefined
       stopped = `第 ${i + 1} 张失败：${(error2 as Error).message}`
       break
     }

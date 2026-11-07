@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { displayVersionLabel } from '../labels'
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { regionIds as messageRegionIds } from '@shared/workspace/regions'
 import WorkspaceRegionChecklist from './WorkspaceRegionChecklist.vue'
 import type {
@@ -14,6 +14,11 @@ import Icon from '../../../shared/ui/Icon.vue'
 import ThemeSelect from '../../../shared/ui/ThemeSelect.vue'
 import MarkdownText from '../../../shared/ui/MarkdownText.vue'
 import WorkspaceProposalCard from './WorkspaceProposalCard.vue'
+import WorkspaceInputContext from './WorkspaceInputContext.vue'
+import WorkspaceExecutionMessage from './WorkspaceExecutionMessage.vue'
+import WorkspaceActivity from './WorkspaceActivity.vue'
+import { workspaceConversationFeed } from '../conversation-feed'
+import type { PageEventMetadata } from '@shared/workspace/events'
 import { copy } from '../../../shared/lib/notifications'
 import { vAutosize } from '../../../shared/lib/autosize'
 const props = defineProps<{
@@ -63,6 +68,105 @@ const emit = defineEmits<{
 }>()
 const thread = ref<HTMLElement>()
 const input = ref<HTMLTextAreaElement>()
+const activity = ref<InstanceType<typeof WorkspaceActivity>>()
+const feed = computed(() => workspaceConversationFeed(props.work.messages))
+const requests = computed(
+  () =>
+    new Map(
+      props.work.messages
+        .filter((message) => message.role === 'user')
+        .map((message) => [message.id, message]),
+    ),
+)
+
+function inputRequest(message: PageMessage): PageMessage | undefined {
+  if (message.role === 'user') {
+    return message
+  }
+  return message.requestId ? requests.value.get(message.requestId) : undefined
+}
+
+function hasRecordedInput(message: PageMessage): boolean {
+  const request = inputRequest(message)
+  return request?.inputContext?.schema === 1 && request.inputContext.requestId === request.id
+}
+
+function noticeTitle(event: PageEventMetadata | null): string {
+  if (event?.severity === 'error') {
+    return '执行异常'
+  }
+  if (event?.type === 'request-cancelled') {
+    return '本轮需求已取消'
+  }
+  return event?.severity === 'warning' ? '需要留意' : '工作台记录'
+}
+
+function scrollThreadTo(element: HTMLElement, threadElement: HTMLElement) {
+  const top =
+    threadElement.scrollTop +
+    element.getBoundingClientRect().top -
+    threadElement.getBoundingClientRect().top -
+    threadElement.clientTop -
+    16
+  threadElement.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+}
+
+let inputNavigation = 0
+async function showRequestInput(message: PageMessage) {
+  const navigation = ++inputNavigation
+  const request = inputRequest(message)
+  if (!request) {
+    return
+  }
+  const threadElement = thread.value
+  const details = document.getElementById(`workspace-input-${request.id}`)
+  if (!(details instanceof HTMLDetailsElement) || !threadElement?.contains(details)) {
+    return
+  }
+  if (!details.open || !details.querySelector('.pw-input-context-body')) {
+    // The native toggle event mounts the lazy input body before Vue can finish its layout.
+    const toggled = new Promise<void>((resolve) => {
+      details.addEventListener('toggle', () => resolve(), { once: true })
+    })
+    details.open = true
+    await toggled
+  }
+  await nextTick()
+  if (
+    navigation !== inputNavigation ||
+    thread.value !== threadElement ||
+    !threadElement.contains(details) ||
+    !details.open
+  ) {
+    return
+  }
+  const summary = details.querySelector<HTMLElement>(':scope > summary')
+  if (!summary) {
+    return
+  }
+  summary.focus({ preventScroll: true })
+  scrollThreadTo(summary, threadElement)
+}
+
+async function focusMessage(id: string) {
+  const navigation = ++inputNavigation
+  let messageElement = document.getElementById(`workspace-message-${id}`)
+  if (!messageElement) {
+    messageElement = (await activity.value?.showMessage(id)) ?? null
+  }
+  await nextTick()
+  const threadElement = thread.value
+  if (
+    navigation !== inputNavigation ||
+    !messageElement ||
+    !threadElement?.contains(messageElement)
+  ) {
+    return
+  }
+  messageElement.focus({ preventScroll: true })
+  scrollThreadTo(messageElement, threadElement)
+}
+
 function sendOnEnter(event: KeyboardEvent) {
   if (!event.isComposing) {
     emit('send')
@@ -133,12 +237,36 @@ defineExpose({
       </div>
       <TransitionGroup name="list">
         <div
-          v-for="messageItem in work.messages"
+          v-for="{ message: messageItem, event: messageEvent, kind: messageKind } in feed.timeline"
+          :id="`workspace-message-${messageItem.id}`"
           :key="messageItem.id"
-          :class="['pw-message', messageItem.role, { failed: messageItem.error }]"
+          :class="[
+            'pw-message',
+            messageKind === 'execution' ? 'execution' : messageItem.role,
+            {
+              failed: messageItem.error || messageEvent?.severity === 'error',
+              warning: messageEvent?.severity === 'warning',
+            },
+          ]"
+          tabindex="-1"
         >
-          <template v-if="messageItem.role === 'event'"
-            ><span>{{ messageItem.text }}</span></template
+          <WorkspaceExecutionMessage
+            v-if="messageKind === 'execution' && messageEvent"
+            :message="messageItem"
+            :event="messageEvent"
+            :versions="work.versions"
+            :adopted-version-id="current.id"
+            :editing-prompt="editingPrompt"
+            :label="label"
+            :time="time"
+            @view="emit('view', $event)"
+          />
+          <template v-else-if="messageKind === 'notice'">
+            <div class="pw-event-heading">
+              <b>{{ noticeTitle(messageEvent) }}</b>
+              <time>{{ time(messageItem.createdAt) }}</time>
+            </div>
+            <span>{{ messageItem.text }}</span></template
           ><template v-else
             ><div class="pw-message-meta">
               <b>{{ messageItem.role === 'user' ? '你' : messageItem.author?.name || 'AI' }}</b
@@ -147,7 +275,15 @@ defineExpose({
                 @click="emit('view', messageItem.versionId)"
               >
                 {{ label(messageItem.versionId) }}</button
-              ><time>{{ time(messageItem.createdAt) }}</time>
+              ><button
+                v-if="messageItem.role === 'assistant' && inputRequest(messageItem)"
+                class="pw-request-input-link"
+                title="查看对应请求输入"
+                @click="showRequestInput(messageItem)"
+              >
+                本轮输入
+              </button>
+              <time>{{ time(messageItem.createdAt) }}</time>
             </div>
             <MarkdownText
               v-if="messageItem.role === 'assistant'"
@@ -159,9 +295,17 @@ defineExpose({
             >
               {{ messageItem.text }}
             </div>
+            <WorkspaceInputContext
+              v-if="messageItem.role === 'user'"
+              :message="messageItem"
+              :messages="work.messages"
+              @message="focusMessage"
+            />
             <div
               v-if="
-                messageItem.discussion && messageItem.discussion.versionId !== messageItem.versionId
+                !hasRecordedInput(messageItem) &&
+                messageItem.discussion &&
+                messageItem.discussion.versionId !== messageItem.versionId
               "
               class="pw-citations"
             >
@@ -173,7 +317,7 @@ defineExpose({
               ><span>建议修改 {{ label(messageItem.versionId) }}</span>
             </div>
             <div
-              v-if="messageItem.referenceIds?.length"
+              v-if="messageItem.referenceIds?.length && !hasRecordedInput(messageItem)"
               class="pw-citations"
             >
               <button
@@ -186,7 +330,7 @@ defineExpose({
               </button>
             </div>
             <details
-              v-if="messageItem.regions?.length"
+              v-if="messageItem.regions?.length && !hasRecordedInput(messageItem)"
               class="pw-message-regions"
             >
               <summary class="disclosure">
@@ -200,18 +344,20 @@ defineExpose({
               </p>
             </details>
             <WorkspaceProposalCard
-              v-if="messageItem.proposal"
+              v-if="messageItem.proposal || messageItem.proposalSummary"
               :message="messageItem"
               :selected-proposal-id="selectedProposalId"
               :busy="busy"
               :is-stale="stale(messageItem)"
               :adopted-version-id="current.id"
-              :execution-label="planLabel(messageItem.proposal.execution, messageItem.versionId)"
-              :status-label="status(messageItem.proposal.status)"
+              :execution-label="planLabel(messageItem.proposal?.execution, messageItem.versionId)"
+              :status-label="
+                status(messageItem.proposal?.status ?? messageItem.proposalSummary!.status)
+              "
               @decide="emit('proposal', messageItem, $event)"
             />
             <details
-              v-if="messageItem.skills"
+              v-if="messageItem.skills && !hasRecordedInput(messageItem)"
               class="pw-used-skills"
             >
               <summary class="disclosure">本轮 Skill · {{ messageItem.skills.length }}</summary>
@@ -220,6 +366,16 @@ defineExpose({
           >
         </div>
       </TransitionGroup>
+      <WorkspaceActivity
+        ref="activity"
+        :entries="feed.activity"
+        :versions="work.versions"
+        :editing-prompt="editingPrompt"
+        :label="label"
+        :time="time"
+        @view="emit('view', $event)"
+        @message="focusMessage"
+      />
       <div
         v-if="pendingRequest"
         class="pw-external-wait"
@@ -588,6 +744,32 @@ defineExpose({
   color: var(--bad);
 }
 
+.pw-message.event.warning {
+  color: var(--alias);
+}
+
+.pw-message.event.failed,
+.pw-message.event.warning {
+  padding: 9px 11px;
+  font-size: 11px;
+  background: var(--panel);
+  border-left-color: currentcolor;
+  border-radius: 0 7px 7px 0;
+}
+
+.pw-event-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.pw-event-heading time {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--muted);
+}
+
 .pw-citations {
   display: flex;
   gap: 8px;
@@ -776,6 +958,17 @@ defineExpose({
   font-size: 10px;
   color: var(--muted);
   margin-top: 8px;
+}
+
+.pw-request-input-link {
+  font-size: 10px;
+  color: var(--pink-deep);
+}
+
+.pw-message:focus-visible {
+  outline: 1px solid var(--pink-line);
+  outline-offset: 4px;
+  border-radius: 5px;
 }
 
 .pw-conversation {

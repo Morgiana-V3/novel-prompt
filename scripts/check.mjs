@@ -1,85 +1,33 @@
+import { cases, legacyCases, legacyOptionalCases } from './check-cases.mjs'
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { closeSync, openSync, readFileSync } from 'node:fs'
+import { closeSync, openSync, readFileSync, mkdirSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { temporaryProfile } from '../tests/support/fixtures.cjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const require = createRequire(import.meta.url)
-const electron = require('electron')
 const mode = process.argv[2] ?? 'quick'
-const output = temporaryProfile('novel-prompt-check-')
-const cases = {
-  pricing: ['node', 'tests/unit/novelai-pricing.cjs', false],
-  'task:notifications': ['node', 'tests/unit/task-notifications.cjs', false],
-  confirmations: ['electron', 'tests/integration/confirmation-smoke.cjs', false],
-  'operations:policy': ['electron', 'tests/integration/operation-policy-smoke.cjs', false],
-  'images:clipboard': ['electron', 'tests/integration/image-clipboard-smoke.cjs', false],
-  collections: ['electron', 'tests/integration/collections-smoke.cjs', false],
-  statistics: ['electron', 'tests/integration/statistics-smoke.cjs', false],
-  'chat:presets': ['electron', 'tests/integration/chat-presets-smoke.cjs', false],
-  'vision:routing': ['electron', 'tests/integration/vision-routing-smoke.cjs', false],
-  'mcp:library': ['electron', 'tests/integration/mcp-library-smoke.cjs', false],
-  'creation:tabs': ['electron', 'tests/e2e/creation-tabs-smoke.cjs', true],
-  'storage:snippets': ['electron', 'tests/integration/storage-snippets-smoke.cjs', false],
-  'storage:recovery': ['electron', 'tests/integration/storage-recovery-smoke.cjs', false],
-  'artists:catalog': ['node', 'tests/integration/artists-catalog-smoke.cjs', false],
-  artists: ['electron', 'tests/e2e/artists-smoke.cjs', true],
-  'tags:complete': ['electron', 'tests/integration/tag-complete-smoke.cjs', false],
-  'data:tools': ['electron', 'tests/e2e/data-tools-smoke.cjs', true],
-  artifacts: ['node', 'tests/unit/artifact-paths.cjs', false],
-  'electron:errors': ['node', 'tests/unit/electron-errors-smoke.cjs', false],
-  'reverse:models': ['node', 'tests/unit/reverse-models-smoke.cjs', false],
-  'reverse:recommendations': ['electron', 'tests/e2e/reverse-recommendations-smoke.cjs', true],
-  'mcp:launch': ['node', 'tests/unit/mcp-launch-smoke.cjs', false],
-  'optimize:convergence': ['node', 'tests/unit/optimize-convergence-checks.cjs', false],
-  'mcp:relay': ['node', 'tests/integration/mcp-relay-smoke.cjs', false],
-  'mcp:recovery': ['electron', 'tests/integration/mcp-recovery-smoke.cjs', false],
-  'mcp:context': ['electron', 'tests/integration/mcp-context-smoke.cjs', false],
-  'mcp:index': ['electron', 'tests/integration/mcp-index-smoke.cjs', false],
-  'mcp:preview-cache': ['electron', 'tests/integration/mcp-preview-cache-smoke.cjs', false],
-  'mcp:host': ['node', 'tests/e2e/mcp-host-smoke.mjs', true],
-  startup: ['node', 'tests/e2e/workspace-startup-smoke.mjs', true],
-  desktop: ['electron', 'tests/e2e/desktop-mcp-smoke.cjs', true],
-  'desktop:lifecycle': ['electron', 'tests/e2e/desktop-lifecycle-smoke.cjs', false],
-  pages: ['electron', 'tests/e2e/page-workspace-smoke.cjs', true],
-  inpaint: ['electron', 'tests/e2e/inpaint-smoke.cjs', true],
-  favorites: ['electron', 'tests/e2e/favorites-smoke.cjs', true],
-  'favorites:dev': ['node', 'tests/e2e/favorites-dev-smoke.mjs', true],
-  settings: ['electron', 'tests/e2e/settings-save-smoke.cjs', true],
-  'inpaint:mcp': ['electron', 'tests/integration/inpaint-mcp-smoke.cjs', false],
-  retention: ['electron', 'tests/integration/retention-smoke.cjs', false],
-  'workspace:cleanup': ['electron', 'tests/integration/workspace-cleanup-smoke.cjs', false],
-  skills: ['electron', 'tests/integration/skill-packages-smoke.cjs', true],
-  'skills:builtins': ['electron', 'tests/integration/builtin-skills-smoke.cjs', false],
-  'skills:templates': ['electron', 'tests/integration/skill-templates-smoke.cjs', false],
-  'discussion:tools': ['electron', 'tests/integration/discussion-tools-smoke.cjs', false],
-  prompt: ['electron', 'tests/e2e/prompt-smoke.cjs', true],
-  tasks: ['electron', 'tests/e2e/tasks-smoke.cjs', true],
-  'tasks:background': ['electron', 'tests/integration/background-tasks-smoke.cjs', false],
-  update: ['electron', 'tests/integration/update-smoke.cjs', false],
-}
-const optionalCases = {
-  'mcp:performance': ['electron', 'tests/integration/mcp-performance-smoke.cjs', false],
-  isolation: ['node', 'tests/e2e/environment-isolation-smoke.mjs', true],
-}
+// Log storage only: never override the running application's profile or settings.
+const output = join(tmpdir(), `novel-prompt-validation-${randomUUID()}`)
+mkdirSync(output, { recursive: true })
 let selected = process.argv.slice(2)
 if (mode === 'quick') {
-  selected = [
-    'artifacts',
-    'mcp:launch',
-    'optimize:convergence',
-    'task:notifications',
-    'mcp:relay',
-    'mcp:index',
-    'workspace:cleanup',
-  ]
+  selected = ['contracts', 'tests:registration', 'mcp:readonly']
 } else if (mode === 'full') {
-  selected = Object.keys(cases)
+  selected = ['contracts', 'tests:registration', 'live']
 }
 for (const name of selected) {
-  if (!cases[name] && !optionalCases[name]) {
+  if (legacyCases[name] || legacyOptionalCases[name]) {
+    if (!cases[name]) {
+      throw new Error(
+        `${name} is a historical fixture and is not current acceptance. Use quick/full against the running development host.`,
+      )
+    }
+  }
+  if (!cases[name]) {
     throw new Error(`Unknown check: ${name}`)
   }
 }
@@ -97,16 +45,21 @@ async function run(name, executable, args) {
     const child = spawn(executable, args, {
       cwd: root,
       env: environment,
-      // Electron foreground regressions explicitly exercise show()/isVisible().
-      // SW_HIDE inherited from CreateProcess suppresses the first native show.
-      windowsHide: executable !== electron,
+      windowsHide: true,
       stdio: ['ignore', descriptor, descriptor],
     })
     closeSync(descriptor)
+    const timeoutMs = name === 'live' ? 20 * 60_000 : 4 * 60_000
     const timeout = setTimeout(() => {
       child.kill()
-      reject(new Error(`${name} exceeded four minutes; logs: ${output}`))
-    }, 240_000)
+      const uncertainty =
+        name === 'live'
+          ? ' Only the validation client was stopped; the existing host remains running. Paid-operation results may be unknown: inspect operation IDs and balances before retrying.'
+          : ''
+      reject(
+        new Error(`${name} exceeded ${timeoutMs / 60_000} minutes.${uncertainty} Logs: ${output}`),
+      )
+    }, timeoutMs)
     const monitor = setInterval(() => {
       if (
         /App threw an error during load|TEST_MAIN_PROCESS_ERROR/.test(readFileSync(logPath, 'utf8'))
@@ -166,18 +119,12 @@ await run('typecheck', process.execPath, [
   '-p',
   'tsconfig.json',
 ])
-if (
-  mode === 'quick' ||
-  mode === 'full' ||
-  selected.some((name) => (cases[name] ?? optionalCases[name])[2])
-) {
-  await run('build', process.execPath, [
-    join(root, 'node_modules/electron-vite/bin/electron-vite.js'),
-    'build',
-  ])
-}
+// The current dev host owns out/: production compilation is an explicit npm run build.
 for (const name of selected) {
-  const [runtime, filename] = cases[name] ?? optionalCases[name]
-  await run(name, runtime === 'electron' ? electron : process.execPath, [join(root, filename)])
+  const [, filename, , args = []] = cases[name]
+  await run(name, process.execPath, [join(root, filename), ...args])
 }
 console.log(`All ${selected.length} checks passed. Logs: ${output}`)
+if (selected.includes('live')) {
+  console.log('自动灰度已通过；MCP、AI 或工作台改动仍须完成并记录外部 Agent 的真实前台交互验收。')
+}

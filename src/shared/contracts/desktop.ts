@@ -3,6 +3,7 @@ import type { NaiImage } from '../images/types'
 import type { AiChange, AiOptimizeResult, InpaintDraft } from '../prompts/types'
 import type { WorkspaceConfigPatch } from '../workspace/config'
 import type { PageAgentActivity, PageExternalReply } from '../workspace/model'
+import type { PageExecutionObservation } from '../workspace/events'
 
 export const APP_TABS = [
   'creation',
@@ -125,6 +126,8 @@ export interface DesktopState {
     regions?: { id: string; label: string; instruction: string; target: number | null }[]
     latestProposal?: { id: string; title: string; status: string } | null
     lastMessage?: string
+    /** Persistent execution result; image completion and billing verification are separate. */
+    latestExecution?: PageExecutionObservation | null
     focusedProposalId?: string | null
     config?: {
       open: boolean

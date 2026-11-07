@@ -32,6 +32,10 @@ export interface ChatOptions {
   /** 覆盖设置中的思考模式：false = 强制关闭 */
   thinking?: boolean
   signal?: AbortSignal
+  /** After authorization and preflight cancellation, immediately before network dispatch. */
+  onDispatch?: () => void
+  /** A valid provider message was returned; this does not assert content correctness. */
+  onResponse?: () => void
 }
 
 const isDeepSeek = (baseUrl: string, model: string) =>
@@ -120,10 +124,20 @@ export async function requestChat(
     )
     let recorded = false
     try {
-      return await requestOnce(url, apiKey, payload, limitMs, requestSignal, (usage) => {
-        recorded = true
-        reportUsage(provider, model, readTokenUsage(usage))
-      })
+      const reply = await requestOnce(
+        url,
+        apiKey,
+        payload,
+        limitMs,
+        requestSignal,
+        (usage) => {
+          recorded = true
+          reportUsage(provider, model, readTokenUsage(usage))
+        },
+        opts.onDispatch,
+      )
+      opts.onResponse?.()
+      return reply
     } catch (caught) {
       const error = hasImages(messages) ? visionError(caught, model) : caught
       // 限流、服务繁忙、网络抖动可以稍后重试；Key 错误、参数错误、超时、用户取消不重试
@@ -287,11 +301,21 @@ async function requestOnce(
   limitMs: number,
   signal: AbortSignal | undefined,
   onUsage: (usage: unknown) => void,
+  onDispatch?: () => void,
 ): Promise<ChatMessage> {
   if (signal?.aborted) {
     throw new Error('已取消')
   }
+  try {
+    const protocol = new URL(url).protocol
+    if (protocol !== 'https:' && protocol !== 'http:') {
+      throw new Error('Unsupported protocol')
+    }
+  } catch {
+    throw new AiServiceError(`AI 服务地址无效，请检查「设置」里的 Base URL：${url}`)
+  }
   const timeout = AbortSignal.timeout(limitMs)
+  onDispatch?.()
   let res: Response
   try {
     res = await net.fetch(url, {

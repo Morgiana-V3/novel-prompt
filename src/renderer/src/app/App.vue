@@ -1,10 +1,10 @@
 <script setup lang="ts">
+import { useDesktopSession } from './desktop/use-desktop-session'
+import { imageState } from '../features/generation/public'
 import ConfirmDialog from '../shared/ui/ConfirmDialog.vue'
 import type { ConfirmationRequest } from '@shared/contracts/confirmation'
 
 import { reportError } from '../shared/lib/notifications'
-import { promptState } from '../features/prompts/state'
-import { imageState, setPreviewImage } from '../features/generation/public'
 import { settingsState } from '../features/settings/state'
 import { tagState } from '../features/tags/state'
 import { shellState } from '../shared/state/shell'
@@ -12,38 +12,25 @@ import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } f
 import { refreshDb } from '../features/tags/state'
 import { loadSkills } from '../features/skills/state'
 import { saveSettings, checkUpdate, dismissUpdate, receiveUpdate } from '../features/settings/state'
-import { importImagePrompt, flushWorkspace, applyWorkspace } from '../features/prompts/actions'
-import { refreshFavorites } from '../features/favorites/public'
-import { refreshSnippets } from '../features/prompts/snippets-state'
 import {
-  creationTabs,
-  createTab,
-  openTabForLoad,
-  switchTab,
-  tabSummaries,
-  tabsBlocker,
-} from '../features/creation/tabs'
+  importImagePrompt,
+  flushWorkspace,
+  refreshSnippets,
+  readPngPrompt,
+} from '../features/prompts/public/import-export'
+import { refreshFavorites } from '../features/favorites/public'
+import { openTabForLoad } from '../features/creation/public/navigation'
 import { cleanErr } from '../shared/lib/format'
 import { toast, runToastAction } from '../shared/lib/notifications'
 import { type Tab } from '../shared/state/shell'
-import {
-  APP_TABS,
-  type DesktopCommand,
-  type DesktopState,
-  type FrontendRequest,
-  type FrontendContext,
-} from '@shared/contracts/desktop'
-import { readPngPrompt } from '../features/prompts/png-import'
-import CompareView from '../features/prompts/CompareView.vue'
-import CreationLayout from '../features/creation/CreationLayout.vue'
+import { CompareView, AiView, PreviewView } from '../features/prompts/public/views'
+import { CreationLayout } from '../features/creation/public/views'
 import SearchView from '../features/tags/SearchView.vue'
-import AiView from '../features/prompts/AiView.vue'
-import PreviewView from '../features/prompts/PreviewView.vue'
 import GenerateView from '../features/generation/GenerateView.vue'
 import GalleryView from '../features/gallery/GalleryView.vue'
 import FavoritesView from '../features/favorites/FavoritesView.vue'
 import ReverseView from '../features/reverse/ReverseView.vue'
-import ArtistStudio from '../features/artists/ArtistStudio.vue'
+import { ArtistStudio } from '../features/artists/public/views'
 import SubscriptionStatus from '../features/generation/components/SubscriptionStatus.vue'
 import WorkspacesView from '../features/workspace/WorkspacesView.vue'
 import SettingsView from '../features/settings/SettingsView.vue'
@@ -55,8 +42,7 @@ import type { NaiVersion } from '@shared/generation/types'
 import TaskCenter from './components/TaskCenter.vue'
 import UpdateAction from '../features/settings/components/UpdateAction.vue'
 import { prepareUpdateKey, updateLabel } from '../features/settings/updates'
-import { connectTasks, taskState, cancelTask } from '../shared/state/tasks'
-import { taskIsActive } from '@shared/tasks/model'
+import { connectTasks, cancelTask } from '../shared/state/tasks'
 
 const confirmations = ref<ConfirmationRequest[]>([])
 const confirmation = computed(() => confirmations.value[0])
@@ -166,12 +152,13 @@ async function retryCleanup() {
     cleanupBusy.value = false
   }
 }
+let offProgress: (() => void) | undefined
 let offTasks: (() => void) | undefined
 let offUpdate: (() => void) | undefined
-let offDesktop: (() => void) | undefined
 let offSkills: (() => void) | undefined
 let offLibrary: (() => void)[] = []
 let updateTimer: ReturnType<typeof setTimeout> | undefined
+let appAlive = true
 const workspaceView = ref<InstanceType<typeof WorkspacesView>>()
 const settingsView = ref<InstanceType<typeof SettingsView>>()
 const reverseView = ref<InstanceType<typeof ReverseView>>()
@@ -251,299 +238,17 @@ watch(
   },
   { flush: 'post' },
 )
-const desktopSession = crypto.randomUUID()
-const frontend = ref<DesktopState['frontend']>(null)
-const agentTask = computed(() =>
-  taskState.tasks.find((task) => task.origin === 'agent' && taskIsActive(task)),
-)
-const agentOperating = computed(() => frontend.value?.status === 'running' || !!agentTask.value)
-const agentStage = computed(() =>
-  frontend.value?.status === 'running' ? frontend.value.stage : (agentTask.value?.message ?? ''),
-)
-const showAgentResult = ref(false)
-let agentResultTimer: ReturnType<typeof setTimeout> | undefined
-watch(
-  () => frontend.value?.status,
-  (status) => {
-    clearTimeout(agentResultTimer)
-    showAgentResult.value = status === 'completed'
-    if (showAgentResult.value) {
-      agentResultTimer = setTimeout(() => {
-        showAgentResult.value = false
-      }, 4000)
-    }
-  },
-)
-onBeforeUnmount(() => clearTimeout(agentResultTimer))
-let frontendController: AbortController | null = null
-let frontendId = ''
-let cancelledFrontendId = ''
-let markDesktopReady: () => void
-const desktopReady = new Promise<void>((resolve) => {
-  markDesktopReady = resolve
-})
-let offFrontend: (() => void) | undefined
-function stopFrontend() {
-  frontendController?.abort()
-  window.api.cancelFrontend()
-}
-provide('frontend-control', { state: frontend, stop: stopFrontend })
-let captureLease = ''
-let captureStyle: HTMLStyleElement | null = null
-let captureTimer: ReturnType<typeof setTimeout> | undefined
-function endCapture(lease = captureLease) {
-  if (lease !== captureLease) {
-    return
-  }
-  clearTimeout(captureTimer)
-  captureStyle?.remove()
-  captureStyle = null
-  captureLease = ''
-}
-async function prepareCapture(lease: string) {
-  if (!lease || captureLease) {
-    throw new Error('截图准备尚未完成，请稍后重试')
-  }
-  captureLease = lease
-  const selector = 'input[type="password"], [data-mcp-private]'
-  const privateElements = [...document.querySelectorAll(selector)].filter(
-    (el) => el.getClientRects().length > 0,
-  )
-  const redactedFields = privateElements.length
-  const redactions = privateElements
-    .flatMap((el) => [el, ...el.querySelectorAll('*')])
-    .flatMap((el) =>
-      [...el.getClientRects()].map((bounds) => ({
-        x: bounds.x,
-        y: bounds.y,
-        width: bounds.width,
-        height: bounds.height,
-      })),
-    )
-  captureStyle = document.createElement('style')
-  captureStyle.id = 'np-mcp-capture-privacy'
-  captureStyle.textContent = `${selector}, [data-mcp-private] * { visibility: hidden !important; }`
-  document.head.append(captureStyle)
-  const expiresAt = Date.now() + 10000
-  captureTimer = setTimeout(() => endCapture(lease), 10000)
-  try {
-    await nextTick()
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('界面尚未绘制，请显示窗口后重试')), 1500)
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
-          clearTimeout(timer)
-          resolve()
-        }),
-      )
-    })
-    return {
-      desktop: desktopSnapshot(),
-      redactedFields,
-      redactions,
-      expiresAt,
-      viewport: {
-        width: document.documentElement.clientWidth,
-        height: document.documentElement.clientHeight,
-        devicePixelRatio: window.devicePixelRatio,
-      },
-    }
-  } catch (error) {
-    endCapture(lease)
-    throw error
-  }
-}
-let desktopRevision = 0
-let desktopKey = ''
-function desktopSnapshot(): DesktopState {
-  const blockers: string[] = []
-  if (confirmation.value) {
-    blockers.push('等待用户确认付费授权')
-  }
-  try {
-    generateView.value?.prepareUpdate()
-  } catch (error) {
-    blockers.push(cleanErr(error))
-  }
-  if (workspaceView.value?.isCreating()) {
-    blockers.push('正在新建图片精修项目')
-  }
-  const value = {
-    tab: shellState.tab,
-    creationPanel: creationPanel.value,
-    creationAi: aiView.value?.desktopState(),
-    draft: {
-      base: promptState.prompt,
-      negative: promptState.negative,
-      characters: promptState.characters.map((character) => ({ ...character })),
-    },
-    creationTabs: tabSummaries(),
-    model: settingsState.settings?.naiVersion ?? 'v5',
-    image: imageState.currentImage ? { ...imageState.currentImage } : null,
-    workspace: workspaceView.value?.desktopState() ?? null,
-    blockers,
-    frontend: frontend.value ? { ...frontend.value } : null,
-  }
-  const key = JSON.stringify(value)
-  if (key !== desktopKey) {
-    desktopKey = key
-    desktopRevision++
-  }
-  return { token: `${desktopSession}:${desktopRevision}`, ...value }
-}
-function publishDesktop() {
-  window.api.publishDesktop(desktopSnapshot())
-}
-watch(() => JSON.stringify(desktopSnapshot()), publishDesktop, { flush: 'post' })
-async function desktopCommand(command: DesktopCommand) {
-  try {
-    const argumentsRecord = command.args
-    if (command.type !== 'snapshot') {
-      await desktopReady
-    }
-    if (
-      confirmation.value &&
-      !['snapshot', 'capture-prepare', 'capture-end', 'workspace-release'].includes(command.type)
-    ) {
-      throw new Error('等待用户确认付费授权，Agent 不能代替用户操作')
-    }
-    if (command.type === 'capture-prepare') {
-      const result = await prepareCapture(String(argumentsRecord.lease))
-      window.api.replyDesktop({ id: command.id, result })
-      return
-    }
-    if (command.type === 'capture-end') {
-      endCapture(String(argumentsRecord.lease))
-    } else if (command.type === 'frontend') {
-      const request = argumentsRecord as unknown as FrontendRequest
-      if (request.actionId === cancelledFrontendId) {
-        throw new Error('前台操作已停止')
-      }
-      if (frontendController) {
-        throw new Error('前台操作正在执行')
-      }
-      if (request.expected_token && request.expected_token !== desktopSnapshot().token) {
-        throw new Error('界面内容已变化，请重新读取 get_app_state，未覆盖用户输入')
-      }
-      generateView.value?.prepareUpdate()
-      if (!workspaceView.value) {
-        throw new Error('工作台尚未就绪')
-      }
-      const ctrl = new AbortController()
-      frontendController = ctrl
-      frontendId = request.actionId
-      frontend.value = { label: request.label, stage: '准备操作…', status: 'running' }
-      const context: FrontendContext = {
-        actionId: request.actionId,
-        agentSession: request.agent_session,
-        signal: ctrl.signal,
-        step: async (message) => {
-          if (ctrl.signal.aborted) {
-            throw new Error('已停止，已保存的内容保留')
-          }
-          frontend.value = { label: request.label, stage: message, status: 'running' }
-          await nextTick()
-          publishDesktop()
-          // Keep each UI transition visible before advancing to the next action.
-          await new Promise((resolve) => setTimeout(resolve, request.step_delay_ms ?? 300))
-          if (ctrl.signal.aborted) {
-            throw new Error('已停止，已保存的内容保留')
-          }
-        },
-      }
-      try {
-        if (request.action.startsWith('creation-ai-')) {
-          if (workspaceView.value.desktopState()?.editing) {
-            throw new Error('请先保存或完成图片精修中的编辑')
-          }
-          shellState.tab = 'ai'
-          await nextTick()
-          if (!aiView.value) {
-            throw new Error('智能优化页面尚未就绪')
-          }
-          await aiView.value.frontendAction(request, context)
-        } else {
-          shellState.tab = 'workspace'
-          await workspaceView.value.frontendAction(request, context)
-        }
-        frontend.value = {
-          label: request.label,
-          stage: ctrl.signal.aborted ? '已停止，已完成的结果保留' : '已完成',
-          status: ctrl.signal.aborted ? 'error' : 'completed',
-        }
-      } catch (error) {
-        frontend.value = { label: request.label, stage: cleanErr(error), status: 'error' }
-        throw error
-      } finally {
-        frontendController = null
-        frontendId = ''
-      }
-    } else if (command.type === 'navigate') {
-      if (!APP_TABS.includes(argumentsRecord.tab as Tab)) {
-        throw new Error('未知页面')
-      }
-      generateView.value?.prepareUpdate()
-      if (argumentsRecord.workspace_id) {
-        await workspaceView.value?.agentOpen(String(argumentsRecord.workspace_id))
-      }
-      const tabId = argumentsRecord.creation_tab_id
-      if (tabId !== undefined) {
-        if (!creationTabs.list.some((tab) => tab.id === tabId)) {
-          throw new Error('标签不存在，请重新读取 get_app_state 的 creationTabs')
-        }
-        const reason = tabsBlocker()
-        if (reason && tabId !== creationTabs.activeId) {
-          throw new Error(`${reason}，暂时不能切换标签`)
-        }
-        switchTab(String(tabId))
-      }
-      shellState.tab = argumentsRecord.tab as Tab
-    } else if (command.type === 'apply-prompt') {
-      generateView.value?.prepareUpdate()
-      if (argumentsRecord.expected_token !== desktopSnapshot().token) {
-        throw new Error('界面内容已变化，请重新读取 get_app_state 后再提交，未覆盖用户输入')
-      }
-      // target=new_tab：按「载入配置」规则承接（当前标签为空则直接用，否则新开）；
-      // target=fresh_tab：总是新开标签。都不覆盖用户正在编辑的标签
-      const target = argumentsRecord.target ?? 'current'
-      const title = typeof argumentsRecord.tab_title === 'string' ? argumentsRecord.tab_title : ''
-      if (target !== 'current') {
-        const reason = tabsBlocker()
-        if (reason) {
-          throw new Error(`${reason}，暂时不能新开标签`)
-        }
-        const opened = target === 'fresh_tab' ? createTab(title) : openTabForLoad(title)
-        if (!opened) {
-          throw new Error('无法新开标签：已达 10 个上限，请先让用户关闭不用的标签')
-        }
-      }
-      applyWorkspace(argumentsRecord.draft as DesktopState['draft'], 'Agent 修改前')
-      flushWorkspace()
-      toast(
-        target === 'current'
-          ? 'Agent 已更新当前提示词，可从历史恢复'
-          : 'Agent 已在标签中写入提示词，原标签未改动',
-      )
-    } else if (command.type === 'workspace-lock') {
-      await workspaceView.value?.beginRemote(
-        String(argumentsRecord.id),
-        String(argumentsRecord.lease),
-      )
-    } else if (command.type === 'workspace-release') {
-      await workspaceView.value?.endRemote(
-        String(argumentsRecord.id),
-        String(argumentsRecord.lease),
-      )
-    } else if (command.type === 'show-image') {
-      setPreviewImage(argumentsRecord.image as DesktopState['image'])
-    }
-    await nextTick()
-    publishDesktop()
-    window.api.replyDesktop({ id: command.id, result: desktopSnapshot() })
-  } catch (error2) {
-    window.api.replyDesktop({ id: command.id, error: cleanErr(error2) })
-  }
-}
+const {
+  frontend,
+  agentTask,
+  agentOperating,
+  agentStage,
+  showAgentResult,
+  stopFrontend,
+  connectDesktop,
+  markDesktopReady,
+} = useDesktopSession({ confirmation, creationPanel, workspaceView, generateView, aiView })
+
 provide(prepareUpdateKey, async () => {
   await nextTick()
   reverseView.value?.prepareUpdate()
@@ -555,15 +260,13 @@ provide(prepareUpdateKey, async () => {
   flushWorkspace()
 })
 onBeforeUnmount(() => {
+  appAlive = false
+  offProgress?.()
   offTasks?.()
   offUpdate?.()
-  offDesktop?.()
   offSkills?.()
   offLibrary.forEach((off) => off())
-  offFrontend?.()
-  frontendController?.abort()
   clearTimeout(updateTimer)
-  endCapture()
 })
 
 onMounted(async () => {
@@ -592,31 +295,22 @@ onMounted(async () => {
       void refreshSnippets().catch((candidate) => toast(cleanErr(candidate)))
     }),
   ]
-  let commands = Promise.resolve()
-  offFrontend = window.api.onFrontendCancel((id) => {
-    cancelledFrontendId = id
-    if (id === frontendId) {
-      frontendController?.abort()
-    }
-  })
-  offDesktop = window.api.onDesktopCommand((command) => {
-    if (
-      ['snapshot', 'capture-prepare', 'capture-end', 'workspace-release'].includes(command.type)
-    ) {
-      void desktopCommand(command).catch(reportError)
-    } else {
-      commands = commands.then(() => desktopCommand(command))
-    }
-  })
-  publishDesktop()
+  connectDesktop()
   offUpdate = window.api.onUpdate(receiveUpdate)
   void window.api
     .updateState()
     .then(receiveUpdate)
     .catch(() => {})
-  settingsState.settings = await window.api.getSettings()
+  const settings = await window.api.getSettings()
+  if (!appAlive) {
+    return
+  }
+  settingsState.settings = settings
   await refreshDb()
-  window.api.onProgress((progress) => {
+  if (!appAlive) {
+    return
+  }
+  offProgress = window.api.onProgress((progress) => {
     tagState.progress = progress
     if (progress.stage === 'done' || progress.stage === 'error') {
       refreshDb().catch(reportError)

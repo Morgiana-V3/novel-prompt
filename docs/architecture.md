@@ -4,7 +4,7 @@
 
 ## 运行与依赖
 
-Electron 主进程是唯一应用宿主，窗口和 MCP 客户端共享服务、任务与数据。独立 Node MCP 代理只负责 stdio 与宿主桥接，不持有另一份业务状态。开发数据为 novel-prompt-dev；安装版使用 Electron userData；显式 NOVELPROMPT_USER_DATA 用于隔离验收，开发版拒绝安装版目录及其父子目录。
+Electron 主进程是唯一应用宿主，窗口和 MCP 客户端共享服务、任务与数据。独立 Node MCP 代理只负责 stdio 与宿主桥接，不持有另一份业务状态。开发数据为 novel-prompt-dev；安装版使用 Electron userData。显式 NOVELPROMPT_USER_DATA 覆盖能力保留，开发版拒绝安装版目录及其父子目录；当前验收按用户约定直接连接现有开发实例，不使用独立 profile。
 
 依赖方向为 app 装配 adapters 与 modules，adapters 调用 modules，modules 使用 providers / infrastructure。renderer 的 app 组合 features，功能使用 renderer/shared；src/shared 只能包含平台无关的模型、契约和规则。preload 只桥接明确授权的接口。
 
@@ -25,6 +25,10 @@ Electron 主进程是唯一应用宿主，窗口和 MCP 客户端共享服务、
 人工操作或 MCP 前台命令 → 工作台明确动作 → preload API → 领域 IPC → 工作台用例 → 存储及图片服务。前台命令保留 token、窗口可见步骤、草稿与编辑归属保护。后台 MCP 工具经过权限和输入校验调用同一业务规则，不伪装成人工界面操作。
 
 提交需求 → 创建讨论快照/冻结规则 → 内部 AI 或外部 Agent 回复 → 保存待审核 proposal → 采纳时核对 revision/contextKey → 更新草稿 → 明确生成或重绘 → 保存实际图片和参数 → 浏览/对比候选。viewedVersion 是浏览对象，discussionVersion 是讨论对象，currentVersionId 是采用稿，也是下一次执行底图；三者不能混同。
+
+工作台消息的可选 `event` 使用 `shared/workspace/events.ts` 统一契约。一次生成或画布修图持久化一条 execution，记录来源、全部候选、执行时采用稿、完成/部分完成/失败及独立费用观测；`known` 仅表示余额差可观测，不是供应商逐请求账单。`unknown` 不得按零处理，`not-run` 仅用于尚未进入生成服务。MCP 摘要与桌面状态保留结构化 `latestExecution`，包含原消息编号和观测时间，不代表实时余额或再次消费授权。
+
+聊天主线展示用户需求、Agent 判断、方案及执行结果；正常费用放在结果详情，常规操作放在可展开记录，异常继续显式展示。旧消息只按严格的已知程序格式分类，不改写存储、不猜测其费用归属。任务面板的内存记录不能替代持久化执行记录。模型历史在截取窗口前筛掉可确认冗余的回执，并单记 `filteredRoutineCount`；失败、费用未知、候选、蓝本变更和关键决定继续保留。冻结输入记录最近执行与费用的历史观测，旧冻结输入不重算。
 
 ## IPC 注册清单
 
@@ -239,6 +243,7 @@ DesktopCommand.type 包含 snapshot、capture-prepare、capture-end、navigate�
 - generation/service 编排费用保护、取消与保存；providers/novelai 负责 HTTP、供应商参数和响应解包。聊天 provider 接收配置，避免反向读取应用设置。
 - MCP bridge/runtime 负责宿主连接，stdio 读取传输，server 管理会话/分组/去重；operations 是写入去重日志唯一入口。tools/ 按领域注册，workspace-read/result、connection-state、skills-cache 负责投影与连接缓存。前台命令依然经过真实界面。
 - PageWorkspace 组合版本侧栏、画布、候选、讨论、方案、配置和执行栏；use-version-browser、use-config-editor、use-autosave、use-discussion-composer、use-agent-state 分担状态。commands 复用人工动作；工作台自动保存只有一个调度入口。
+- 工作台左侧标签仅浏览当前查看版本的画布、只读生成记录、修改对比与候选；「编辑配置」入口独立位于左侧工具栏右端，编辑仍在左侧，右侧始终保留 AI 对话。编辑沿用 use-config-editor 的同一份草稿与保存动作。版本侧栏默认展开，开合独立于编辑状态；人工点击历史版本时先保存草稿再浏览，不切换采用稿。候选缩略图沿用图集的方形 contain 展示，完整保留画幅，收藏和删除仅悬停/聚焦显示（触屏保留可发现入口）。生成记录展示冻结请求，起始稿明确不代表导入图片实际参数；角色布局及位置变化复用 prompts 公共位置对比组件，自动位置不伪装为已知坐标。位置对比通过 beforeReference / afterReference 接收两侧独立底图及画幅，未提供时保留共用 reference 的兼容行为；工作台按对比来源与正在查看版本传图，图片和坐标使用相同比例，缺失或加载失败时保留网格与位置记录。
 - InpaintEditor 组合 canvas-engine、history、use-mask-interaction、use-analysis、generation 与批注弹窗；canvas、URL、监听器和订阅由所属生命周期释放。
 - Generate 使用 use-gallery 与 GenerationResult；Settings 使用 AgentSettings/use-mcp-settings 和 UpdateSettings/use-update-settings。业务状态归属对应 feature；renderer/shared/state 只保留跨页 shell/tasks。
 - src/shared 不使用 Vue/Electron/文件存储/浏览器全局。PNG 文本解析注入 inflate；main 使用 zlib，renderer 使用 DecompressionStream。模型、采样器、调度与 UC 枚举由 shared/generation/types 同时供类型、校验和 MCP schema 使用。
@@ -246,7 +251,7 @@ DesktopCommand.type 包含 snapshot、capture-prepare、capture-end、navigate�
 
 ## 验证
 
-统一入口、运行前提和隔离要求见 testing.md。验收关注行为与保护约束，不以文件数或文件行数判断成功。
+统一入口与当前本机开发验收规则见 testing.md。验收关注行为与保护约束，不以文件数或文件行数判断成功。
 
 Skill 目录包由 modules/skills/package-files.ts 校验和整体写入；入口与 Markdown 参考资料分别冻结到 PageSkillSnapshot 的分段索引，resourcePath 标记按需资源。内置 AI 通过 prompts/chat.ts 的受限读取工具补读当前快照，MCP 通过 skills_ids 补读。图片保留在包内供界面预览，不注入模型上下文。新增 IPC：skills:import-directory（预览）、skills:export（整包导出）。
 
@@ -304,4 +309,27 @@ Skill 目录包由 modules/skills/package-files.ts 校验和整体写入；入�
 - 跨 feature 依赖目前仅对 generation 的可变状态和 favorites 公共入口做强约束，其他领域仍可直连内部模块。后续围绕 creation/prompts/artists 的真实复用边界逐步定义入口；不能将当前检查通过表述为所有 feature 已隔离。
 - 仓库根目录的 `skills/`、`skill-templates/` 是空的旧目录，实际资源源头为 `resources/skills/`；本次未迁移或删除本地非源码目录。`out/`、`release/` 为忽略的构建产物，不应作为源码职责的依据。
 - MCP 性能基准发现两项后续优化点：约 35 MB 的合成工作台只取一条消息，仍整读、投影和计算指纹，中位耗时约 218 ms；200 个项目的列表命中缓存后仍需同步验证元数据与历史图片，中位耗时约 148 ms。可优先做按文件签名失效且有容量上限的查询投影、按需筛选，以及分离纯路径解析与目录初始化。保留外部修改和遮罩变化检测，不能以缓存加速牺牲正确性。
-- 上述数据来自 `mcp:performance` 输出的 `performance-results.json`，是源码加载器下的合成基准，本次与其他回归并行运行，不含浏览器和 stdio 端到端耗时，未清 OS 缓存或强制 GC；不能视为生产性能或内存峰值。本次未实施这两项较大重构。
+- 上述数据来自优化前 `mcp:performance` 输出的 `performance-results.json`，是源码加载器下的历史合成基准，当时与其他回归并行运行，不含浏览器和 stdio 端到端耗时，未清 OS 缓存或强制 GC；不能视为生产性能或内存峰值。后续优化与新的真实测试规则见下节。
+
+## 2026-11-06 优化落地
+
+- `modules/workspace/read-cache.ts` 保存深冻结的只读快照，最多 8 个项目、按序列化源文件计算的 64 MiB 预算；这不是 V8 堆内存上限。`readPageSnapshot` 供查询投影使用，写操作经 `readPage` 获取独立克隆。读取前后复核文件签名，保存或删除主动失效，不用时间窗口容忍旧状态。
+- `adapters/mcp/workspace-read.ts` 的指定消息/版本查询先选中目标再投影，不为未请求的历史和遮罩计算指纹。普通增量查询复用已确认不可变的投影；返回数据与缓存分离，保留连接作用域的 revision 和遮罩变化识别。
+- 工作台列表在一次扫描内复用图片路径和签名；图片访问将纯路径解析与目录初始化分离。图片内容哈希按文件身份、大小和修改/变更时间失效，最多 256 项，不保留图片字节；同名图片替换后不会继续相信旧持久化哈希。
+- `app/desktop/` 分别管理桌面快照与 token、前台动作及取消、截图隐私租约、IPC 命令连接。`App.vue` 负责装配和页面呈现，桌面命令仍调用视图已暴露的动作。启动等待期间卸载时不再补注册监听和计时器。
+- 工作台新增 `use-discussion-actions`、`use-proposal-actions`、`use-execution-actions`，分别管理讨论、方案审核与生成/修图；共用 `action-context` 的操作锁、autosave/revision 链和动态前台上下文。`PageWorkspace.vue` 保留布局、焦点、导航和选区显示。
+- 重绘编辑器由 `use-source-image` 管理图片解码、元数据和 URL 生命周期，`use-mask-raster` 管理显示/命中/导出的同一遮罩栅格与缓存。它们与已有交互、持久化、分析模块协作；手动操作和前台 MCP 不维护第二套遮罩或草稿。
+- prompts 公共接口按草稿观察、编辑动作、导入导出、审阅及组件拆分；creation 区分标签导航和标签会话；artists 提供页面装配入口。公共观察视图复用原状态，恢复标签、修改焦点/参数通过明确动作。边界检查拒绝跨 feature 直连内部实现和公共入口的通配转导出。
+- `scripts/check-cases.mjs` 区分当前验收与历史 fixture。静态 IPC/事件及实际 MCP 目录核对文档，测试登记检查跟踪执行导入并防止 npm 脚本重新直启历史夹具。新接口、新测试及目录迁移必须同步维护这些检查。
+- 用户已要求后续全部直接使用当前本机开发实例、配置与现有数据。`quick` 为静态检查加当前宿主只读核对，`full` 加真实计费灰度；不启动隔离应用、不改权限、不退出现有宿主。`runtime.startedAt/buildHash` 在启动时捕获，验收核对项目/模式/数据位置和实际加载的主进程代码。测试作品带标记并保留，旧作品不覆盖；完整操作要求见 `AGENTS.md` 和 `testing.md`。
+
+## 工作台输入组织与传输
+
+- `shared/workspace/context.ts` 定义 `PageInputContext`；`modules/workspace/input-context.ts` 在提交时冻结目标、保留要求、讨论对象、修改底稿与参数、图片用途、规则目录和历史范围。内置讨论及外部需求复用该构建入口，原规则正文仍保存在同一请求的 `skillSnapshot`。内置回复通过 `requestId` 关联请求；旧记录没有冻结输入时，不将当前状态当作历史事实。
+- 内置模型输入使用同一清单核心，保留原有最近消息及较早摘录，不新增规则删减或历史摘要替换。当前 Chat Completions 接口按无状态请求组织，每次仍携带本轮所需的完整 `messages` 和规则正文；之前通过工具读入的参考正文也须保留在后续请求的消息中。本地缓存和供应商报告的缓存命中都不代表模型记得此前内容，不能据此省略必要文本。
+- `discussion-images.ts` 保留每张图的讨论、修改、参考或区域用途；同一条模型请求内，编码内容相同的图片只装配一次字节，不同版本的角色说明和生成记录仍保留。JPEG 编码缓存最多 24 项、以字符串存储估算 16 MiB；源图内容、文件签名、遮罩与尺寸参与校验，外部替换不会沿用旧图。`images.mode` 及各项 `status` 说明装配带图、纯文本降级、缺图或外部可读取材料；部分装配失败会清除此前的 `included`、共用关系和区域边界，不能把半成品当作已发送输入。
+- 图片装配与请求投递分别记录。可选 `images.delivery` 表示最近一次供应商请求的阶段：`prepared` 为已准备、尚未进入该次网络提交；`attempted` 为通过本地 Key 存在、授权、地址及请求前取消检查后进入网络提交尝试；`responded` 为返回有效供应商消息。`attempts` / `responses` 累计本轮实际尝试及有效消息数，保留多轮处理中此前已发生的请求。网络失败或 HTTP 鉴权拒绝可能已有尝试而无有效回复；这些状态都不证明模型理解、方案正确或执行完成。外部客户端和旧快照没有这些字段时，不推断其投递状态。
+- `prompts/chat.ts` 在确定实际识图路由、必要时移除图片之后，通过可选 `onRoute` 同步快照的 `images` 字段及其 JSON 表示，再交给供应商序列化；纯文本降级按 `images.mode=text-only` 记录。供应商的可选 `onDispatch` 在实际提交前记录尝试，`onResponse` 在有效消息返回后记录回复。目标、草稿、规则和历史范围保持提交时的事实，图片路由及投递字段则记录本轮随后观察到的发送过程。
+- 前端 `WorkspaceInputContext` 的“查看本轮输入”默认收起，从用户消息的冻结 `inputContext` 和同一消息的 `skillSnapshot` 展示原始任务、讨论图与修改底图、完整草稿/参数、区域、规则篇目及历史索引；回复通过 `requestId` 定位原请求。规则正文按冻结区段读取，缺失或不一致时明确提示，旧消息不拿当前状态补推。图片栏区分“已装配”和投递阶段，规则目录及历史索引不表示外部 Agent 已读取；决定状态冻结于提交时，链接仅定位原消息。
+- 外部 `get_workspace_context` 的 `inputContext` 默认仅小摘要，完整冻结输入按 `get_workspace(detail:full,message_ids)` 读取；`materials` 给出图片、预览、缺失规则及近期决定的补读入口。`rules_only` 不装配图片与完整历史。旧需求重建会标记来源，无法重建时明确说明。
+- 规则传输沿用篇目 digest，增加选择原因及选中、发送、复用、缺失的 UTF-16 字符数。显式 `skills_digests` 仅代表客户端声明正文仍在当前上下文；连接缓存仅证明曾投递。上下文丢失后使用空指纹表或 `skills_mode:full` 恢复，未发送且未持有的正文不能计为复用。既有用户 Skill 与优先级保持原样，本批不实施条件拆篇。

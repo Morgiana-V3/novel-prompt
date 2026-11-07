@@ -6,7 +6,7 @@ import type { useVersionBrowser } from '../use-version-browser'
 defineProps<{
   groupCards: ReturnType<typeof useVersionBrowser>['groupCards']['value']
   viewedGroup: ReturnType<typeof useVersionBrowser>['viewedGroup']['value']
-  editingPrompt: boolean
+  disabled: boolean
 }>()
 const emit = defineEmits<{
   view: [versionId: string]
@@ -23,7 +23,7 @@ const emit = defineEmits<{
       v-for="group in groupCards"
       :key="group.id"
       class="pw-version"
-      :disabled="editingPrompt"
+      :disabled="disabled"
       :class="{ selected: viewedGroup.id === group.id }"
       @click="emit('view', group.cover.id)"
     >

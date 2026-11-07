@@ -50,6 +50,13 @@ for (const filename of sourceFiles(join(root, 'src'))) {
   const edges = []
   const dependencies = []
   function collect(node) {
+    if (
+      /^src\/renderer\/src\/features\/(?:creation|prompts|artists)\/public\//.test(source) &&
+      ts.isExportDeclaration(node) &&
+      !node.exportClause
+    ) {
+      failures.push(`${source} must name its public exports; wildcard barrels expose internal APIs`)
+    }
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
       if (node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
         const clause = ts.isImportDeclaration(node) ? node.importClause : undefined
@@ -118,6 +125,21 @@ for (const filename of sourceFiles(join(root, 'src'))) {
     const sourceFeature = source.match(/^src\/renderer\/src\/features\/([^/]+)\//)?.[1]
     const targetFeature = target.match(/^src\/renderer\/src\/features\/([^/]+)\//)?.[1]
     if (sourceFeature !== targetFeature) {
+      if (
+        ['creation', 'prompts', 'artists'].includes(targetFeature) &&
+        !target.startsWith(`src/renderer/src/features/${targetFeature}/public/`)
+      ) {
+        failures.push(`${source} must use ${targetFeature}/public instead of ${target}`)
+      }
+      if (
+        ['creation', 'prompts', 'artists'].includes(targetFeature) &&
+        target.endsWith('/public/views.ts') &&
+        !source.startsWith('src/renderer/src/app/')
+      ) {
+        failures.push(
+          `${source} cannot assemble ${targetFeature} pages; use its actions or controls`,
+        )
+      }
       if (target === 'src/renderer/src/features/generation/state.ts') {
         failures.push(`${source} must use generation/public.ts instead of mutable generation state`)
       }

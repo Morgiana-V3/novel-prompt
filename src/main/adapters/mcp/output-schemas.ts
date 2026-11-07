@@ -1,5 +1,6 @@
 import { RESULT_SCHEMA } from './contract'
 import type { Schema } from './schema'
+import { pageExecutionObservationSchema, pageMessageEventSchema } from './workspace-event-schema'
 
 const str = { type: 'string' }
 const num = { type: 'number' }
@@ -55,6 +56,8 @@ const message = shape(
     role: str,
     text: str,
     textTruncated: bool,
+    inputContext: objectSchema,
+    event: pageMessageEventSchema,
     versionId: str,
     proposal: objectSchema,
     detailDigest: str,
@@ -77,6 +80,7 @@ const desktopWorkspace = shape(
     regions: array(region),
     config: objectSchema,
     pendingRequestId: nullable(str),
+    latestExecution: nullable(pageExecutionObservationSchema),
   },
   ['id', 'revision', 'title', 'versionId', 'regionId', 'pane', 'editing', 'composer'],
 )
@@ -102,6 +106,7 @@ const workspace = shape(
     revision: int,
     title: str,
     currentVersionId: str,
+    latestExecution: nullable(pageExecutionObservationSchema),
     detail: { type: 'string', enum: ['summary', 'full'] },
     delta: bool,
     notModified: bool,
@@ -129,6 +134,13 @@ const rules = nullable(
   shape({
     digest: str,
     task: str,
+    selectedChars: int,
+    sentChars: int,
+    reusedChars: int,
+    missingSelectedChars: int,
+    charUnit: str,
+    retentionSource: { type: 'string', enum: ['explicit-digests', 'delivery-cache'] },
+    retentionNote: str,
     segmented: bool,
     manifestChanged: bool,
     removedIds: strings,
@@ -142,6 +154,8 @@ const rules = nullable(
         textLength: int,
         selected: bool,
         required: bool,
+        selectionReasons: strings,
+        retainedBeforeRequest: bool,
       }),
     ),
     sections: array(shape({ id: str, digest: str, text: str })),
@@ -159,6 +173,16 @@ const context = shape(
     revision: int,
     model: str,
     skills: rules,
+    inputContext: nullable(
+      shape({
+        requestId: str,
+        capturedAt: num,
+        revision: int,
+        detailAvailable: bool,
+        read: nullable(objectSchema),
+      }),
+    ),
+    materials: objectSchema,
     requestId: nullable(str),
     request: nullable(objectSchema),
     draft,
@@ -167,6 +191,7 @@ const context = shape(
     discussion: objectSchema,
     currentVersionId: str,
     adoptedVersionId: str,
+    latestExecution: nullable(pageExecutionObservationSchema),
     candidates: array(
       shape({ id: str, groupId: str, label: str, adopted: bool, image: nullable(image) }),
     ),

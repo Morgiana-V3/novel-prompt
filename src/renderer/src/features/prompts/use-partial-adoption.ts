@@ -3,7 +3,7 @@ import type { InpaintDraft } from '@shared/prompts/types'
 import { applyWorkspace, current } from './actions'
 import { adoptionPlan } from './partial-adoption'
 import { toast } from '../../shared/lib/notifications'
-import { tabRef } from '../creation/tabs'
+import { tabRef } from '../creation/public/session'
 
 /** scope 区分不同页面；采纳进度跟随生图创作的当前标签 */
 export function usePartialAdoption(scope: string) {

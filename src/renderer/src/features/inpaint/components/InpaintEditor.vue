@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { useMaskRaster } from '../use-mask-raster'
+import { useSourceImage } from '../use-source-image'
 import { estimateGeneration, estimateLabel } from '@shared/generation/pricing'
 import { subscriptionState } from '../../generation/subscription'
 import { useEditorPersistence } from '../use-editor-persistence'
-import SnippetButton from '../../prompts/components/SnippetButton.vue'
+import { SnippetButton } from '../../prompts/public/components'
 import { useInpaintAnalysis } from '../use-analysis'
 import RegionComment from './RegionComment.vue'
 import RegionContextMenu from './RegionContextMenu.vue'
@@ -13,24 +15,22 @@ import { useMaskInteraction } from '../use-mask-interaction'
 
 import { reportError } from '../../../shared/lib/notifications'
 import type { Point, Region, RegionBackup } from '../model'
-import { drawStroke, createMaskCanvas, encodeMask, createRegionLayer } from '../canvas-engine'
 import { backupRegion, useMaskHistory } from '../history'
 
-import { promptState } from '../../prompts/state'
+import { promptState } from '../../prompts/public/draft'
 import { settingsState } from '../../settings/state'
-import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import type { NaiGenParams, NaiGenResult, NaiVersion } from '@shared/generation/types'
 import type { NaiImage } from '@shared/images/types'
 import type { InpaintDraft } from '@shared/prompts/types'
-import { readPngPrompt } from '../../prompts/png-import'
 import { cleanErr } from '../../../shared/lib/format'
-import { toDrafts } from '../../prompts/state'
+import { toDrafts } from '../../prompts/public/draft'
 import Icon from '../../../shared/ui/Icon.vue'
 import ImageViewport from '../../../shared/ui/ImageViewport.vue'
 import ThemeSelect from '../../../shared/ui/ThemeSelect.vue'
 import { splitMaskComponent } from '../mask-components'
-import PromptReview from '../../prompts/components/PromptReview.vue'
-import { reviewChanges } from '../../prompts/prompt-review'
+import { PromptReview } from '../../prompts/public/review'
+import { reviewChanges } from '../../prompts/public/review'
 import { vAutosize } from '../../../shared/lib/autosize'
 import { changeLabel } from '@shared/prompts/inpaint-plan'
 import type { PageEditorState } from '@shared/workspace/model'
@@ -93,8 +93,6 @@ const mask = ref<HTMLCanvasElement>()
 const previewMask = ref<HTMLCanvasElement>()
 const dialog = ref<HTMLElement>()
 const viewport = ref<InstanceType<typeof ImageViewport>>()
-const coverage = ref(0)
-const historyCount = ref(0)
 const editable = computed(
   () =>
     opened.value &&
@@ -159,6 +157,27 @@ const strokes = computed({
   set: (value) => {
     selected.value.strokes = value
   },
+})
+const {
+  coverage,
+  historyCount,
+  layer,
+  maskFromPixels,
+  renderMask,
+  measureMask,
+  exportMask,
+  invalidateLayer,
+  clearLayers,
+} = useMaskRaster({
+  mask,
+  previewMask,
+  width,
+  height,
+  regions,
+  selected,
+  selectedId,
+  strokes,
+  active: () => active.value,
 })
 const editDraft = computed(() => selected.value.accepted ?? draft)
 const panel = ref<'regions' | 'suggestions' | 'prompt'>('prompt')
@@ -228,14 +247,13 @@ const stopQueue = ref(false)
 const batchReady = computed(() =>
   annotations.value.filter((region) => region.accepted && region.hasPixels),
 )
-const layerCache = new Map<string, HTMLCanvasElement>()
 let resultDraft: InpaintDraft | null = null
 const cloneDraft = (draft2: InpaintDraft): InpaintDraft => JSON.parse(JSON.stringify(draft2))
 function invalidateRegion(region: Region) {
   region.plan = null
   region.checked = []
   region.accepted = null
-  layerCache.delete(region.id)
+  invalidateLayer(region.id)
 }
 function invalidateAll() {
   regions.value.forEach(invalidateRegion)
@@ -282,7 +300,7 @@ function editMask(region: Region) {
 }
 function restoreRegion(region: Region, saved: RegionBackup) {
   Object.assign(region, saved)
-  layerCache.delete(region.id)
+  invalidateLayer(region.id)
   chooseRegion(region)
 }
 function removeRegion() {
@@ -292,7 +310,7 @@ function removeRegion() {
   const removed = selected.value
   const index = regions.value.indexOf(removed)
   const saved = backupRegion(removed)
-  layerCache.delete(selectedId.value)
+  invalidateLayer(selectedId.value)
   regions.value = regions.value.filter((region) => region.id !== selectedId.value)
   if (!regions.value.length) {
     regions.value.push(makeRegion())
@@ -306,15 +324,6 @@ function removeRegion() {
     regions.value.splice(Math.min(index, regions.value.length), 0, removed)
     restoreRegion(removed, saved)
   })
-}
-function layer(region: Region): HTMLCanvasElement {
-  const cached = layerCache.get(region.id)
-  if (cached) {
-    return cached
-  }
-  const canvas = createRegionLayer(region, width.value, height.value)
-  layerCache.set(region.id, canvas)
-  return canvas
 }
 function regionMarker(region: Region) {
   const position = region.anchor
@@ -516,57 +525,6 @@ const { persistEditor, restoreEditor, cancelPendingSave } = useEditorPersistence
   props,
   nextRegionNumber: () => ++regionNumber,
 })
-function maskFromPixels(pixels: Uint8ClampedArray) {
-  return markRaw(createMaskCanvas(pixels, width.value, height.value))
-}
-function renderMask() {
-  const ctx = mask.value?.getContext('2d', { willReadFrequently: true })
-  if (!ctx) {
-    return
-  }
-  ctx.clearRect(0, 0, width.value, height.value)
-  ctx.globalCompositeOperation = 'source-over'
-  // Display, hit testing, splitting and export all use the same raster. Drawing
-  // strokes again on a different canvas can produce different edge coverage.
-  ctx.drawImage(layer(selected.value), 0, 0)
-  if (active.value) {
-    drawStroke(ctx, active.value)
-  }
-  ctx.globalCompositeOperation = 'source-over'
-  // Composite every region before applying the user's opacity once. Selection,
-  // comments and overlapping masks must never change the preview's strength.
-  const preview = previewMask.value?.getContext('2d')
-  if (preview) {
-    preview.clearRect(0, 0, width.value, height.value)
-    // Keep compositing order and source canvases independent of selection.
-    // Only the unfinished stroke needs the temporary interaction surface.
-    for (const region of regions.value) {
-      preview.drawImage(
-        active.value && region.id === selectedId.value ? mask.value! : layer(region),
-        0,
-        0,
-      )
-    }
-    preview.globalCompositeOperation = 'source-in'
-    preview.fillStyle = '#ff6b9a'
-    preview.fillRect(0, 0, width.value, height.value)
-    preview.globalCompositeOperation = 'source-over'
-  }
-}
-function measureMask() {
-  const data = mask.value?.getContext('2d')?.getImageData(0, 0, width.value, height.value).data
-  let count = 0
-  if (data) {
-    for (let i = 3; i < data.length; i += 4) {
-      if (data[i]) {
-        count++
-      }
-    }
-  }
-  coverage.value = data ? (count / (data.length / 4)) * 100 : 0
-  selected.value.hasPixels = count > 0
-  historyCount.value = strokes.value.length + (selected.value.baseMask ? 1 : 0)
-}
 /** 图片预览中的完整重绘模式不会自动保存，关闭即丢失；有内容时需要再确认一次 */
 const hasUnsavedWork = computed(
   () =>
@@ -575,61 +533,19 @@ const hasUnsavedWork = computed(
       (region) => region.hasPixels || region.instruction.trim() || region.accepted,
     ),
 )
-function exportMask(region = selected.value): string {
-  return encodeMask(layer(region), width.value, height.value)
-}
-
-async function loadSource(image: NaiImage, readPrompt = true) {
-  loading.value = true
-  error.value = ''
-  let url = ''
-  try {
-    const bytes = await window.api.naiReadImage(image.name)
-    const blob = new Blob([new Uint8Array(bytes)], { type: 'image/png' })
-    url = URL.createObjectURL(blob)
-    const img = new Image()
-    img.src = url
-    await img.decode()
-    if (!alive) {
-      URL.revokeObjectURL(url)
-      return
-    }
-    if (
-      img.naturalWidth * img.naturalHeight > 4 * 1024 * 1024 ||
-      img.naturalWidth % 64 ||
-      img.naturalHeight % 64
-    ) {
-      throw new Error('原图宽高需为 64 的倍数，总像素不超过 4096×1024；重绘会保持原图尺寸。')
-    }
-    if (readPrompt) {
-      try {
-        const meta = await readPngPrompt(blob)
-        draft.base = meta.base
-        draft.negative = meta.negative
-        draft.characters = toDrafts(meta.characters)
-        settings.qualityTags = false
-        settings.ucPreset = 'none'
-        if (meta.request && !props.initialEditor) {
-          Object.assign(settings, meta.request.params, { count: 1 })
-          promptNote.value = '已读取原图提示词和生成参数。'
-        } else {
-          promptNote.value = '已读取原图提示词。'
-        }
-      } catch {
-        promptNote.value = '原图没有可读取的提示词，已使用当前工作区内容，请核对后修改。'
-      }
-    }
-    if (!alive) {
-      URL.revokeObjectURL(url)
-      return
-    }
-    if (sourceUrl.value) {
-      URL.revokeObjectURL(sourceUrl.value)
-    }
-    sourceUrl.value = url
-    source.value = image
-    width.value = img.naturalWidth
-    height.value = img.naturalHeight
+const { loadSource } = useSourceImage({
+  source,
+  sourceUrl,
+  loading,
+  error,
+  width,
+  height,
+  draft,
+  settings,
+  promptNote,
+  initialEditor: () => props.initialEditor,
+  isAlive: () => alive,
+  resetEditor: async (readPrompt) => {
     result.value = null
     viewing.value = 'source'
     zoom.value = 100
@@ -639,7 +555,7 @@ async function loadSource(image: NaiImage, readPrompt = true) {
       draft.characters = toDrafts(resultDraft.characters)
     }
     resultDraft = null
-    layerCache.clear()
+    clearLayers()
     regionNumber = 0
     regions.value = [makeRegion()]
     selectedId.value = regions.value[0].id
@@ -656,15 +572,8 @@ async function loadSource(image: NaiImage, readPrompt = true) {
     if (readPrompt && props.initialEditor) {
       await restoreEditor(props.initialEditor)
     }
-  } catch (error2) {
-    if (url) {
-      URL.revokeObjectURL(url)
-    }
-    error.value = cleanErr(error2)
-  } finally {
-    loading.value = false
-  }
-}
+  },
+})
 
 async function generate(batch = false) {
   if (
@@ -856,15 +765,12 @@ onBeforeUnmount(() => {
   cancelPendingSave()
   alive = false
   cancelDraw()
-  layerCache.clear()
+  clearLayers()
   if (analyzing.value) {
     void window.api.cancelInpaintPlan().catch(reportError)
   }
   unsubscribe?.()
   window.removeEventListener('keydown', key)
-  if (sourceUrl.value) {
-    URL.revokeObjectURL(sourceUrl.value)
-  }
   if (previousFocus?.isConnected) {
     previousFocus.focus()
   }

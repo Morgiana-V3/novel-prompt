@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import SnippetButton from '../prompts/components/SnippetButton.vue'
+import { SnippetButton } from '../prompts/public/components'
 import { computed, ref, watch } from 'vue'
 import type { ReverseResult } from '@shared/reverse/types'
 import ArtistWeights from './ArtistWeights.vue'

@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { displayVersionLabel } from '../labels'
 import { useRemoteWorkspace } from '../use-remote-workspace'
+import { useDiscussionActions } from '../use-discussion-actions'
+import { useProposalActions } from '../use-proposal-actions'
+import { useExecutionActions } from '../use-execution-actions'
+import type { WorkspaceOperation } from '../action-context'
 import { settingsState, saveSettings } from '../../settings/state'
 const aiCollapsed = computed(() => settingsState.settings?.workspaceAiCollapsed ?? false)
 const toggleAi = () => saveSettings({ workspaceAiCollapsed: !aiCollapsed.value }).catch(reportError)
 import { regionIds } from '@shared/workspace/regions'
+import { latestPageExecution } from '@shared/workspace/events'
 import { regionOverlay } from '../region-overlay'
 import { useDiscussionComposer } from '../use-discussion-composer'
 
@@ -34,15 +39,9 @@ import type {
   PageExecution,
   PageEditorState,
   PageImageTool,
-  PageMessage,
   PageWorkspace,
 } from '@shared/workspace/model'
-import {
-  pageContextKey,
-  pageEditorBaseline,
-  pageEditorChanges,
-  pageLatestProposal,
-} from '@shared/workspace/model'
+import { pageEditorBaseline, pageEditorChanges, pageLatestProposal } from '@shared/workspace/model'
 
 import { cleanErr } from '../../../shared/lib/format'
 
@@ -55,8 +54,7 @@ import SplitHandle from '../../../shared/ui/SplitHandle.vue'
 import WorkspacePrompt from './WorkspacePrompt.vue'
 import WorkspaceIterations from './WorkspaceIterations.vue'
 
-import { taskState, cancelTask } from '../../../shared/state/tasks'
-import { taskIsActive } from '@shared/tasks/model'
+import { cancelTask } from '../../../shared/state/tasks'
 
 const props = defineProps<{ workspace: PageWorkspace }>()
 const inpaintEditor = ref<InstanceType<typeof InpaintEditor>>()
@@ -192,7 +190,7 @@ function updateSelection() {
   overlayMode.value = 'annotation'
   showMask.value = true
 }
-const historyOpen = ref(false)
+const historyOpen = ref(true)
 const editing = ref(false)
 const clearingImage = ref<string | null>(null)
 watch([viewedId, pane, editingPrompt, () => shellState.tab], () => {
@@ -224,18 +222,17 @@ async function clearImage(versionId: string) {
     operation.value = ''
   }
 }
-const operation = ref<'chat' | 'generate' | 'save' | ''>('')
+const operation = ref<WorkspaceOperation>('')
 const error = ref('')
-const progress = ref('')
 const zoom = ref(100)
 const overlay = ref('')
 const remoteBusy = ref(false)
-const pendingText = ref('')
 const showMask = ref(true)
 const conversation = ref<InstanceType<typeof WorkspaceConversation>>()
 const dialog = ref<HTMLElement>()
 const viewport = ref<InstanceType<typeof WorkspaceCanvas>>()
 const promptEditor = ref<InstanceType<typeof WorkspacePrompt>>()
+const snapshotPrompt = ref<InstanceType<typeof WorkspacePrompt>>()
 const renaming = ref(false)
 const nameInput = ref<HTMLInputElement>()
 const nameDraft = ref('')
@@ -285,85 +282,71 @@ const { notesValue, savedNotes, mutate, flushNotes } = useWorkspaceAutosave(
   () => emit('updated'),
 )
 
-let unsubscribe: (() => void) | undefined
 let alive = true
 const busy = computed(() => !!operation.value || editingPrompt.value || remoteBusy.value)
-/** 本会话正在进行的生成任务，用于在执行区直接停止 */
-const generateTask = computed(() =>
-  taskState.tasks.find(
-    (task) =>
-      task.kind === 'page-generate' && task.targetId === work.value.id && taskIsActive(task),
-  ),
-)
-const chatProgress = computed(
-  () =>
-    taskState.tasks.find(
-      (task) => task.kind === 'page-chat' && task.targetId === work.value.id && taskIsActive(task),
-    )?.message ?? '',
-)
+const actionContext = {
+  work,
+  operation,
+  error,
+  flushNotes,
+  updated: () => emit('updated'),
+  frontendContext: () => frontendContext,
+}
+const { pendingText, chatProgress, setAgentMode, cancelExternal, cancelChat, send } =
+  useDiscussionActions(actionContext, {
+    isBusy: () => busy.value,
+    external,
+    pendingRequest,
+    discussionVersion,
+    composer,
+    selectedRegionIds,
+    references,
+    savedNotes,
+    notesValue,
+    scrollEnd,
+    focusComposer: () => conversation.value?.focusComposer(),
+  })
+const { stale, proposal } = useProposalActions(actionContext, {
+  current,
+  isBusy: () => busy.value,
+  mutate,
+  selectedProposalId,
+  regionId,
+  selectedRegionIds,
+  beginConfig,
+})
+const { progress, generateTask, setExecution, setCollection, generate, runImageTool } =
+  useExecutionActions(actionContext, {
+    current,
+    remoteBusy,
+    configDraft,
+    hasExecutionRegions: () => !!executionRegions.value.length,
+    mutate,
+    finishConfig,
+    showExecutionOverlay: () => {
+      overlayMode.value = 'execution'
+    },
+    inspectMask,
+    refreshOverlay,
+    showResult: showGeneratedResult,
+    scrollEnd,
+  })
+
+async function showGeneratedResult(kind: 'generate' | 'image-tool') {
+  await nextTick()
+  viewedId.value = work.value.latestGeneratedVersionId ?? current.value.id
+  pane.value = 'canvas'
+  if (
+    kind === 'generate' &&
+    !current.value.editor.regions.some((region) => region.id === regionId.value)
+  ) {
+    regionId.value = null
+  }
+}
 const time = (at: number) =>
   new Date(at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 const status = (text: string) =>
   ({ pending: '待采纳', accepted: '已采纳', rejected: '未采纳', withdrawn: '已撤销' })[text] ?? text
-function stale(message: PageMessage) {
-  return (
-    !!message.proposal &&
-    (message.proposal.superseded ||
-      message.versionId !== current.value.id ||
-      message.proposal.contextKey !==
-        pageContextKey(current.value, regionIds(message.proposal), work.value))
-  )
-}
-async function setAgentMode(mode: 'internal' | 'external') {
-  if (busy.value) {
-    return
-  }
-  operation.value = 'save'
-  error.value = ''
-  try {
-    await flushNotes()
-    work.value = await window.api.pagesAgent(
-      work.value.id,
-      work.value.revision,
-      mode,
-      frontendContext?.actionId,
-    )
-    savedNotes.value = JSON.stringify(notesValue())
-    emit('updated')
-  } catch (error2) {
-    error.value = cleanErr(error2)
-  } finally {
-    operation.value = ''
-    await scrollEnd()
-  }
-}
-async function cancelExternal() {
-  if (busy.value) {
-    return
-  }
-  operation.value = 'save'
-  error.value = ''
-  try {
-    await flushNotes()
-    work.value = await window.api.pagesExternalCancel(
-      work.value.id,
-      work.value.revision,
-      frontendContext?.actionId,
-    )
-    emit('updated')
-  } catch (error2) {
-    error.value = cleanErr(error2)
-  } finally {
-    operation.value = ''
-  }
-}
-async function cancelChat() {
-  try {
-    await window.api.pagesCancel(work.value.id)
-  } catch (error2) {
-    error.value = cleanErr(error2)
-  }
-}
 async function saveEditor(editor: PageEditorState) {
   await mutate({ type: 'editor', versionId: current.value.id, editor })
 }
@@ -413,115 +396,6 @@ async function closeEditor() {
   overlayMode.value = 'annotation'
   await refreshOverlay()
 }
-async function send() {
-  if (busy.value || !composer.value.trim() || (external.value && pendingRequest.value)) {
-    return
-  }
-  const discussionVersionId = discussionVersion.value.id
-  error.value = ''
-  operation.value = 'chat'
-  try {
-    await flushNotes()
-    const text = composer.value
-    pendingText.value = text
-    composer.value = ''
-    await scrollEnd()
-    work.value = await window.api.pagesChat(
-      work.value.id,
-      work.value.revision,
-      text,
-      [...selectedRegionIds.value],
-      [...references.value],
-      frontendContext?.actionId,
-      discussionVersionId,
-    )
-    references.value = []
-    savedNotes.value = JSON.stringify(notesValue())
-    emit('updated')
-  } catch (error2) {
-    error.value = cleanErr(error2)
-    try {
-      work.value = await window.api.pagesRead(work.value.id)
-      composer.value = work.value.composer
-      savedNotes.value = JSON.stringify(notesValue())
-    } catch {
-      /* Preserve local state if reading also fails. */
-    }
-  } finally {
-    pendingText.value = ''
-    operation.value = ''
-    await scrollEnd()
-    conversation.value?.focusComposer()
-  }
-}
-async function proposal(message: PageMessage, decision: 'accept' | 'reject' | 'undo') {
-  if (busy.value) {
-    return
-  }
-  error.value = ''
-  operation.value = 'save'
-  try {
-    await flushNotes()
-    await mutate({ type: 'proposal', messageId: message.id, decision })
-    selectedProposalId.value = null
-    if (message.proposal?.regionId) {
-      regionId.value = message.proposal.regionId
-      selectedRegionIds.value = regionIds(message.proposal)
-    }
-  } catch (error2) {
-    error.value = cleanErr(error2)
-  } finally {
-    operation.value = ''
-  }
-  if (decision === 'accept' && !error.value) {
-    await beginConfig(frontendContext?.agentSession ?? null)
-  }
-}
-async function setExecution(execution: PageExecution) {
-  if (operation.value || remoteBusy.value) {
-    return
-  }
-  operation.value = 'save'
-  error.value = ''
-  try {
-    if (
-      execution.kind === 'inpaint' &&
-      configDraft.value &&
-      (configDraft.value.params.width !== current.value.editor.params.width ||
-        configDraft.value.params.height !== current.value.editor.params.height)
-    ) {
-      throw new Error('局部重绘需保持底图尺寸，请先恢复尺寸')
-    }
-    await flushNotes()
-    await mutate({ type: 'execution', execution })
-    overlayMode.value = 'execution'
-    if (execution.kind === 'inpaint') {
-      inspectMask()
-      await refreshOverlay()
-    }
-  } catch (error2) {
-    error.value = cleanErr(error2)
-  } finally {
-    operation.value = ''
-  }
-}
-
-async function setCollection(collectionId: string) {
-  if (operation.value || remoteBusy.value || collectionId === work.value.collectionId) {
-    return
-  }
-  operation.value = 'save'
-  error.value = ''
-  try {
-    await flushNotes()
-    await mutate({ type: 'collection', collectionId })
-  } catch (error2) {
-    error.value = cleanErr(error2)
-  } finally {
-    operation.value = ''
-  }
-}
-
 function planLabel(execution?: PageExecution, versionId = current.value.id) {
   if (execution?.kind !== 'inpaint') {
     return '按提示词生成新图'
@@ -552,50 +426,6 @@ function inspectMask() {
   pane.value = 'canvas'
 }
 
-async function generate() {
-  if (
-    operation.value ||
-    remoteBusy.value ||
-    (work.value.execution.kind === 'inpaint' && !executionRegions.value.length)
-  ) {
-    return
-  }
-  error.value = ''
-  progress.value = '正在检查重绘参数…'
-  operation.value = 'generate'
-  try {
-    await finishConfig()
-    await flushNotes()
-    if (work.value.execution.kind === 'inpaint') {
-      inspectMask()
-      await refreshOverlay()
-    }
-    work.value = await window.api.pagesGenerate(
-      work.value.id,
-      work.value.revision,
-      JSON.parse(JSON.stringify(work.value.execution)),
-      frontendContext?.actionId,
-    )
-    await nextTick()
-    viewedId.value = work.value.latestGeneratedVersionId ?? current.value.id
-    pane.value = 'canvas'
-    if (!current.value.editor.regions.some((region2) => region2.id === regionId.value)) {
-      regionId.value = null
-    }
-    emit('updated')
-  } catch (error2) {
-    error.value = cleanErr(error2)
-    try {
-      work.value = await window.api.pagesRead(work.value.id)
-    } catch {
-      /* Keep existing state. */
-    }
-  } finally {
-    operation.value = ''
-    progress.value = ''
-    await scrollEnd()
-  }
-}
 /** 扩图用对话框；放大、精修用按钮下方的轻量面板 */
 const openTool = ref<{
   kind: PageImageTool['kind']
@@ -607,38 +437,6 @@ function openImageTool(kind: PageImageTool['kind'], anchor: { left: number; bott
 async function runToolFromPanel(tool: PageImageTool) {
   openTool.value = null
   await runImageTool(tool)
-}
-async function runImageTool(tool: PageImageTool) {
-  if (operation.value || remoteBusy.value) {
-    return
-  }
-  error.value = ''
-  progress.value = '正在准备修图…'
-  operation.value = 'generate'
-  try {
-    await finishConfig()
-    await flushNotes()
-    work.value = await window.api.pagesImageTool(
-      work.value.id,
-      work.value.revision,
-      JSON.parse(JSON.stringify(tool)),
-    )
-    await nextTick()
-    viewedId.value = work.value.latestGeneratedVersionId ?? current.value.id
-    pane.value = 'canvas'
-    emit('updated')
-  } catch (error2) {
-    error.value = cleanErr(error2)
-    try {
-      work.value = await window.api.pagesRead(work.value.id)
-    } catch {
-      /* Keep existing state. */
-    }
-  } finally {
-    operation.value = ''
-    progress.value = ''
-    await scrollEnd()
-  }
 }
 async function continueVersion(id: string) {
   if (busy.value) {
@@ -748,6 +546,7 @@ function desktopState() {
       ? { id: latest.id, title: latest.proposal.title, status: latest.proposal.status }
       : null,
     lastMessage: work.value.messages.at(-1)?.text ?? '',
+    latestExecution: latestPageExecution(work.value.messages),
     agentMode: work.value.agentMode ?? 'internal',
     agentName: agentLabel.value,
     agentConnected: agentConnected.value,
@@ -860,17 +659,11 @@ function key(event2: KeyboardEvent) {
 }
 onMounted(() => {
   window.addEventListener('keydown', key)
-  unsubscribe = window.api.onNaiStep('page-generate', (text) => {
-    if (operation.value === 'generate') {
-      progress.value = text
-    }
-  })
   void scrollEnd().catch(reportError)
 })
 onBeforeUnmount(() => {
   alive = false
   window.removeEventListener('keydown', key)
-  unsubscribe?.()
   previousFocus?.focus()
 })
 function markVersionMissing(version: PageWorkspace['versions'][number]) {
@@ -881,6 +674,18 @@ function markVersionMissing(version: PageWorkspace['versions'][number]) {
 function viewCandidate(versionId: string) {
   viewedId.value = versionId
   pane.value = 'canvas'
+}
+async function viewHistory(versionId: string) {
+  if (operation.value || remoteBusy.value || editing.value) {
+    return
+  }
+  if (editingPrompt.value) {
+    await returnFromConfig()
+    if (editingPrompt.value) {
+      return
+    }
+  }
+  viewCandidate(versionId)
 }
 function updateConfigDraft(patch: Partial<PageEditorState>) {
   if (!configDraft.value || operation.value || remoteBusy.value) {
@@ -933,17 +738,14 @@ async function openPane(target: typeof pane.value) {
       return
     }
   }
-  if (target === 'changes') {
-    review(viewed.value.id)
-    return
-  }
   pane.value = target
 }
 async function openNextConfig() {
   if (editingPrompt.value) {
-    return
+    await returnFromConfig()
+  } else {
+    await beginConfigFromButton()
   }
-  await beginConfigFromButton()
 }
 async function discardConfig() {
   if (!configDraft.value || operation.value || remoteBusy.value) {
@@ -1028,19 +830,7 @@ async function beginConfigFromButton() {
             title="查看这张图生成时使用的配置（只读）"
             @click="openPane('prompt')"
           >
-            本版配置</button
-          ><button
-            class="pw-next-tab"
-            :class="{ on: editingPrompt }"
-            :disabled="tabsLocked"
-            :title="'基于蓝本 ' + displayVersionLabel(current.label) + ' 编辑下一次生成的配置'"
-            @click="openNextConfig"
-          >
-            下一版配置<span
-              v-if="nextChanges?.count"
-              class="pw-tab-badge"
-              >{{ nextChanges.count }}</span
-            ></button
+            生成记录</button
           ><button
             :class="{ on: !editingPrompt && pane === 'changes' }"
             :disabled="tabsLocked"
@@ -1061,10 +851,30 @@ async function beginConfigFromButton() {
             />
           </button>
         </div>
-        <div
-          v-if="!editingPrompt"
-          class="pw-header-actions"
-        >
+        <div class="pw-header-actions">
+          <button
+            class="btn ghost small pw-next-entry"
+            :class="{ on: editingPrompt }"
+            :aria-pressed="editingPrompt"
+            :disabled="!!operation || remoteBusy || editing"
+            :title="
+              editingPrompt
+                ? '保存配置并返回查看'
+                : '基于蓝本 ' + displayVersionLabel(current.label) + ' 编辑下一次生成的配置'
+            "
+            @click="openNextConfig"
+          >
+            <Icon
+              :name="editingPrompt ? 'check' : 'sliders'"
+              :size="15"
+            /><span class="pw-entry-label">{{ editingPrompt ? '保存配置' : '编辑配置' }}</span>
+            <span
+              class="pw-entry-count"
+              :class="{ visible: !!nextChanges?.count }"
+              :aria-hidden="!nextChanges?.count"
+              ><span class="pw-tab-badge">{{ nextChanges?.count || 0 }}</span></span
+            >
+          </button>
           <button
             class="icon-btn sm"
             :aria-pressed="historyOpen"
@@ -1170,11 +980,11 @@ async function beginConfigFromButton() {
     </header>
     <div class="pw-main">
       <WorkspaceVersionSidebar
-        v-if="historyOpen && !editingPrompt"
+        v-if="historyOpen"
         :group-cards="groupCards"
         :viewed-group="viewedGroup"
-        :editing-prompt="editingPrompt"
-        @view="viewedId = $event"
+        :disabled="!!operation || remoteBusy || editing"
+        @view="viewHistory"
         @missing="markVersionMissing"
       />
       <div class="pw-canvas-column">
@@ -1190,11 +1000,11 @@ async function beginConfigFromButton() {
           class="pw-scope-bar pw-next-bar"
         >
           <div class="pw-scope-label">
-            <b>下一版</b
+            <b>下一次生成</b
             ><span
               class="muted small"
               :title="'基于蓝本 ' + current.label"
-              >基于 {{ displayVersionLabel(current.label) }}</span
+              >蓝本 {{ displayVersionLabel(current.label) }}</span
             >
             <span
               class="small pw-next-summary"
@@ -1269,12 +1079,6 @@ async function beginConfigFromButton() {
                 :size="16"
               />
             </button>
-            <span
-              v-if="pane === 'prompt'"
-              class="pill"
-              title="这是生成这张图时使用的配置，不能修改；要调整请编辑下一版"
-              >只读</span
-            >
             <button
               class="btn small pw-adopt"
               :class="{ ghost: !historical }"
@@ -1301,7 +1105,7 @@ async function beginConfigFromButton() {
             class="pw-prompt-actions"
           >
             <button
-              v-if="snapshotEditor"
+              v-if="snapshotEditor && historical"
               class="btn ghost small"
               :disabled="busy"
               :title="
@@ -1319,7 +1123,7 @@ async function beginConfigFromButton() {
             <button
               class="icon-btn sm"
               title="复制完整提示词"
-              @click="promptEditor?.copyPrompt()"
+              @click="snapshotPrompt?.copyPrompt()"
             >
               <Icon
                 name="copy"
@@ -1377,11 +1181,12 @@ async function beginConfigFromButton() {
         <template v-else-if="pane === 'prompt'"
           ><WorkspacePrompt
             v-if="snapshotEditor"
-            ref="promptEditor"
+            ref="snapshotPrompt"
             :key="viewed.id"
             :editor="snapshotEditor"
             :model="snapshotEditor.model ?? work.model"
             :image="viewed.image"
+            :initial="!viewed.generated"
           />
           <div
             v-else
@@ -1409,15 +1214,12 @@ async function beginConfigFromButton() {
           :operation="operation"
           :remote-busy="remoteBusy"
           :busy="busy"
-          :editing-prompt="editingPrompt"
           :has-execution-region="!!executionRegions.length"
           :progress="progress"
           :generate-task="generateTask"
           :collection-id="work.collectionId"
           @execution="setExecution"
           @collection="setCollection"
-          @edit-config="beginConfigFromButton"
-          @return-from-config="returnFromConfig"
           @generate="generate"
           @preview="inspectMask"
           @cancel="cancelTask"
@@ -1538,6 +1340,45 @@ async function beginConfigFromButton() {
   width: var(--pw-chat-width);
   overflow: hidden;
   transition: width var(--dur-slow) var(--ease-out);
+}
+
+.pw-next-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.pw-entry-label {
+  margin-left: 5px;
+}
+
+.pw-entry-count {
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    max-width var(--dur-slow) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-slow) var(--ease-out);
+}
+
+.pw-entry-count.visible {
+  max-width: 4em;
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.pw-entry-count .pw-tab-badge {
+  display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pw-entry-count {
+    transition: none;
+  }
 }
 
 .pw-ai-dock > :deep(.pw-conversation) {

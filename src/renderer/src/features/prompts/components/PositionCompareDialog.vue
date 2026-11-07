@@ -7,6 +7,12 @@ export interface RolePosition {
   label: string
   position: string
 }
+interface PositionReference {
+  url: string
+  opacity: number
+  width?: number
+  height?: number
+}
 const props = withDefaults(
   defineProps<{
     before: RolePosition[]
@@ -14,16 +20,31 @@ const props = withDefaults(
     width?: number
     height?: number
     /** 参考底图：与角色位置编辑器相同的当前预览图 */
-    reference?: { url: string; opacity: number } | null
+    reference?: PositionReference | null
+    /** 两个版本分别提供底图；未提供时沿用共享参考图。 */
+    beforeReference?: PositionReference | null
+    afterReference?: PositionReference | null
+    beforeWidth?: number
+    beforeHeight?: number
     /** 只读查看一份布局（使用 after），不做前后对比 */
     single?: boolean
     title?: string
   }>(),
-  { width: 832, height: 1216, reference: null, single: false, title: '' },
+  {
+    width: 832,
+    height: 1216,
+    reference: null,
+    beforeReference: undefined,
+    afterReference: undefined,
+    beforeWidth: undefined,
+    beforeHeight: undefined,
+    single: false,
+    title: '',
+  },
 )
 const heading = computed(() => props.title || (props.single ? '角色位置布局' : '角色位置对比'))
 const showReference = ref(true)
-const referenceFailed = ref(false)
+const failedReferences = ref<Record<string, string>>({})
 const emit = defineEmits<{ close: [] }>()
 // 先播离场过渡，结束后再通知父组件卸载
 const opened = ref(true)
@@ -31,12 +52,13 @@ const close = () => {
   opened.value = false
 }
 const COLORS = ['#ff6b9a', '#3b82f6', '#1f9d68', '#c97f00', '#8b5cf6', '#0ea5e9']
-const aspect = computed(() => `${props.width} / ${props.height}`)
-/** 单图模式下按视口高度限制宽度，保持画幅比例不被 max-height 压扁 */
-const canvasStyle = computed(() => ({
-  aspectRatio: aspect.value,
-  ...(props.single ? { width: `min(100%, calc(56vh * ${props.width} / ${props.height}))` } : {}),
-}))
+/** 每侧按自己的画幅限制宽度，图片与坐标共用同一比例，避免裁切或压扁。 */
+function canvasStyle(width: number, height: number) {
+  return {
+    aspectRatio: `${width} / ${height}`,
+    width: `min(100%, calc(${props.single ? 56 : 46}vh * ${width} / ${height}))`,
+  }
+}
 /** 同一个角色在前后两侧用同一个颜色和编号；位置变了的角色额外描边 */
 const moved = computed(() => {
   if (props.single) {
@@ -70,25 +92,39 @@ function unplaced(list: RolePosition[]) {
   return list.filter((role) => !parsePosition(role.position)).map((role) => role.label)
 }
 const panels = computed(() => {
+  const afterReference = props.afterReference === undefined ? props.reference : props.afterReference
   const after = {
     key: 'after',
     title: props.single ? '' : '修改后',
     markers: markers(props.after),
     unplaced: unplaced(props.after),
+    reference: afterReference,
+    style: canvasStyle(
+      afterReference?.width || props.width,
+      afterReference?.height || props.height,
+    ),
   }
   if (props.single) {
     return [after]
   }
+  const beforeReference =
+    props.beforeReference === undefined ? props.reference : props.beforeReference
   return [
     {
       key: 'before',
       title: '修改前',
       markers: markers(props.before),
       unplaced: unplaced(props.before),
+      reference: beforeReference,
+      style: canvasStyle(
+        beforeReference?.width || props.beforeWidth || props.width,
+        beforeReference?.height || props.beforeHeight || props.height,
+      ),
     },
     after,
   ]
 })
+const hasReference = computed(() => panels.value.some((panel) => panel.reference))
 /** 只读布局时说明未设坐标的角色会如何摆放（与请求体 characterCaptions 一致） */
 const autoNote = computed(() => {
   if (!props.single || !props.after.length) {
@@ -137,7 +173,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey, true))
               <p v-if="single">{{ width }} × {{ height }} · 共 {{ after.length }} 个角色</p>
             </div>
             <label
-              v-if="reference && !referenceFailed"
+              v-if="hasReference"
               class="reference-toggle"
               ><input
                 v-model="showReference"
@@ -163,16 +199,20 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey, true))
               <figcaption v-if="panel.title">{{ panel.title }}</figcaption>
               <div
                 class="position-canvas"
-                :style="canvasStyle"
+                :style="panel.style"
               >
                 <img
-                  v-if="reference && showReference && !referenceFailed"
+                  v-if="
+                    panel.reference &&
+                    showReference &&
+                    failedReferences[panel.key] !== panel.reference.url
+                  "
                   class="position-reference"
-                  :src="reference.url"
-                  :style="{ opacity: reference.opacity / 100 }"
+                  :src="panel.reference.url"
+                  :style="{ opacity: panel.reference.opacity / 100 }"
                   alt=""
                   draggable="false"
-                  @error="referenceFailed = true"
+                  @error="failedReferences[panel.key] = panel.reference.url"
                 />
                 <span
                   v-for="marker in panel.markers"
@@ -184,6 +224,12 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey, true))
                   >{{ marker.index + 1 }}</span
                 >
               </div>
+              <p
+                v-if="panel.reference && failedReferences[panel.key] === panel.reference.url"
+                class="position-note"
+              >
+                底图加载失败，位置记录仍可查看。
+              </p>
               <ul class="position-legend">
                 <li
                   v-for="marker in panel.markers"
@@ -266,7 +312,7 @@ header > div:first-child {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   pointer-events: none;
   animation: fade-in var(--dur-slow) var(--ease-out);
 }
@@ -304,7 +350,7 @@ figcaption {
 /* 5×5 网格底纹，与角色位置编辑器的格子对应 */
 .position-canvas {
   position: relative;
-  max-height: 46vh;
+  margin: 0 auto;
   border: 1px solid var(--line2);
   border-radius: 12px;
   background-color: var(--panel);

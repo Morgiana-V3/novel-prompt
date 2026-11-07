@@ -65,6 +65,7 @@ ${AGENT_ENTRY}
 2. 前台返回 DesktopState：后续用返回的 token，或 get_app_state.desktop.token 作为 expected_token；后台写入用最新 get_workspace/get_workspace_context.revision。两种凭据不互换，不编造 id。
 3. 前台写入串行执行，等待每步完成。可穿插 get_workspace_context、search_tags、analyze_prompt、read_image 等读取。get_workspace 类读取可能先保存打开会话的输入草稿；用户正在编辑时会拒绝，不强行覆盖。
 4. 慢速演示为前台操作传 step_delay_ms:2000；它只控制可见步骤停留，不代表推理或生图总延迟。ui_capture_app 不接受此参数。
+5. 面向用户的 reply/summary 聚焦实际画面判断、修改理由、保留要求、风险和需要决定的事项。默认不逐项自述读取 Skill、规则指纹、缓存命中、调用编号或余额流水；规则与执行详情保留可核查记录。用户明确询问，或费用未知、异常扣费、权限和停止状态影响下一步决定时，简要说明事实与限制。余额未变不等于没有使用额度，工具成功不等于画面满足要求；执行记录与 Agent 的画面判断分别表述。
 
 ## A. 外部 Agent 主导，前台全程可见
 1. ui_open_workspace(id)，或 ui_create_workspace(title,source)。source 可为 blank/current/image；image 需要图库 image_name。
@@ -83,7 +84,7 @@ ${AGENT_ENTRY}
 - 新需求：set_workspace_agent(mode:external) → 按需 add_workspace_region(id,revision,version_id,rectangles,instruction) → submit_workspace_request(id,revision,text,discussion_version_id?,region_ids?,reference_ids?) → get_workspace_context → 自行分析 → reply_workspace_request。添加区域必须指定已采用候选；提交会冻结讨论图片与 Skill，存在未发送草稿时拒绝覆盖。不调用内置 AI，不自动采用或生成。list_workspace_requests 可发现待处理需求，但不自动唤醒。独立后台重绘可用 prepare_inpaint → 查看预览 → 自己拟定提示词 → inpaint_image，具体参数读 schema。
 - 后台表示不展示交互步骤，当前并非完全隔离的沙箱：共享数据、图片选择和打开会话可能同步变化。用户要求绝不干扰当前状态时，应先确认将调用工具的副作用；没有满足条件的写入入口时只读并说明限制。
 
-外部 Agent 创作建议：get_app_state → prompt_guide（按当前模型读取适用 Skill）→ validate_tags / analyze_prompt → ui_propose_creation_edit(creation_proposal:{draft,summary,changes}) → 读取 desktop.creationAi → ui_review_creation_ai。提交前读取最新 token，不自动采纳；source=external 标记来源，无需内置 AI Key 或调用权限。完整稿与原稿相同表示本轮无修改，不代表已验证生图质量。summary 应说明 Skill 约束、已查证依据和实图证据；未经验证的预期不能写成保证。
+外部 Agent 创作建议：get_app_state → prompt_guide（按当前模型读取适用 Skill）→ validate_tags / analyze_prompt → ui_propose_creation_edit(creation_proposal:{draft,summary,changes}) → 读取 desktop.creationAi → ui_review_creation_ai。提交前读取最新 token，不自动采纳；source=external 标记来源，无需内置 AI Key 或调用权限。完整稿与原稿相同表示本轮无修改，不代表已验证生图质量。summary 应说明具体修改理由、已查证依据和实图证据；规则导致的实际限制须说明，不以“已读取规则”代替解释，未经验证的预期不能写成保证。
 
 生图创作建议的采纳：读取 desktop.creationAi 的 result、sent、changes 和过期状态，按授权 ui_review_creation_ai(decision:accept|undo,change_ids?)。不传 change_ids 表示全部；逐项选择使用当前 changes[].id。每步使用最新 token。采纳只改提示词；真实生图可用 ui_create_workspace(source:current) 承接当前稿，再配置参数、ui_generate_workspace 并 read_image 核验。
 
@@ -95,14 +96,14 @@ ${AGENT_ENTRY}
 ## D. 版本与比较的共同概念
 - 版本组（groupId）：同一配置的一组生成结果；左栏显示版本 V1 / V2。
 - 候选（versionId）：组内某一张图片，有稳定 id 和独立生成记录；version_id 参数始终接受候选 id，不能传组 id。
-- 查看对象（viewedVersionId / viewedGroupId）：画布、本版配置、修改对比、本版图片共用同一候选，切 tab 不改变它；查看不会采用。
+- 查看对象（viewedVersionId / viewedGroupId）：画布、生成记录、修改对比、本版图片共用同一候选，切 tab 不改变它；查看不会采用。
 - 本版图片（pane:images）：展示查看版本组内的候选缩略图。选择候选只查看，不采用；采用需要 ui_review_workspace(decision:switch)。
 - 当前蓝本（adoptedVersionId / currentVersionId；旧状态字段 versionId，字段名兼容保留）：后续修改、批注、生成的目标。历史图片配置只读；ui_review_workspace(decision:switch) 对应界面「设为蓝本」，明确切换下一版草稿的起点。
 - 对比对象（comparisonVersionId）：仅作差异参照；comparisonMode=source 默认实际来源，specified 为指定候选，不改变查看与采用对象。ui_view_workspace(pane:changes,compare_version_id) 控制参照；空字符串恢复默认。compare_workspace_versions 可在后台只读比较。
 - 图像生成快照（generated）与该候选可编辑草稿（editor）不同；initial 是会话起始稿，不能推断为导入图片的实际生成参数。
-- 本版配置页（pane:prompt）始终只读 generated/initial 快照，已采用图片也不例外。「下一版配置」页签或底部「编辑下一版」打开基于蓝本的下一版草稿（pane 报告为 config-edit），切换到其他页签或点「完成」时保存，直接生成也先保存；页签上的数字是相对蓝本原配置的修改数。查看其他版本不会覆盖下一版草稿。张数 count 支持 1/2/4，qualityTags 和 ucPreset 可编辑；同批逐张保存，停止时保留已完成图片。遮罩存在时尺寸锁定，disabledFields 会说明原因。
+- 生成记录页（pane:prompt）始终只读 generated/initial 快照，已采用图片也不例外。左侧工具栏右端的「编辑配置」入口打开基于蓝本的下一版草稿（pane 报告为 config-edit），切换到其他页签或在原入口点「保存配置」时保存，直接生成也先保存；入口上的数字是相对蓝本原配置的修改数，编辑仍在左侧展示，右侧始终保留 AI 对话。版本历史展开与编辑独立，人工点击历史候选时先保存草稿再浏览，失败保留编辑。查看其他版本不会覆盖下一版草稿。张数 count 支持 1/2/4，qualityTags 和 ucPreset 可编辑；同批逐张保存，停止时保留已完成图片。遮罩存在时尺寸锁定，disabledFields 会说明原因。
 - 手动编辑的前台入口是 ui_edit_workspace_config：begin → update(patch.draft/params/strength) → save 或 cancel，不需要 AI 建议。每一步使用最新 token。get_app_state.desktop.workspace.config 返回 open、owner、dirty、sourceVersionId、draft、params、strength、disabledFields。只允许本 MCP 连接继续自己打开的编辑；用户触碰表单后归用户所有，不能强行取消或保存。重新连接时请让用户完成/退出编辑，不能接管旧连接的编辑。
-- 修改对比仅展示有变化的配置，完整内容在本版配置中查看。方案留在对应对话消息内；pane:suggestions 是兼容入口，只展开消息中的方案，不再切换到独立页签。focusedProposalId 表示通过操作定位的方案，不代表已采纳。
+- 修改对比仅展示有变化的配置，完整内容在生成记录中查看。方案留在对应对话消息内；pane:suggestions 是兼容入口，只展开消息中的方案，不再切换到独立页签。focusedProposalId 表示通过操作定位的方案，不代表已采纳。
 - 多区域修改：region_ids 指定本轮勾选区域；get_workspace_context.selectedRegions 给出各区说明与预览。联合讨论并在 reply 按区域说明修改及冲突。inpaint 方案的 execution.regionIds 必须包含本轮全部选中区域；统一草稿、统一强度、合并遮罩执行一次。未选区域不加入；region_id 仍可用于单区。
 - 讨论对象（discussion）在发送时冻结；建议的 editTarget 始终是已采用稿。引用（referenceIds）仅为讨论资料，也不等于对比对象或重绘底图。
 
@@ -113,6 +114,11 @@ ${AGENT_ENTRY}
 - get_workspace_context 默认 skills_task:overview，只给必读总则与冻结目录。编写提示词选 prompt，画面分析选 preview，重绘选 inpaint（同时读取提示词规则），需要全部选 all；skills_ids 补读指定篇目。scope=all 用户规则在具体任务中必读。动手前确认 missingRequiredIds 为空且实际保留相关正文；目录/指纹不是正文，不确定是否相关时补读。
 - rules_only:true 只返回项目/请求标识、模型及规则；若 requestId 与之前读取的任务不同，重新读完整任务上下文。每篇有独立 digest，sections 仅返回所选篇目中未读或变化的正文；manifest 始终给出当前名称、范围、优先级和指纹，removedIds 标识不再启用的篇目。修改或重排规则只影响新提交需求，不能用当前 get_skill 替换已冻结规则。
 - skills_digests 可显式声明实际保留的正文指纹表（从已读 sections 建立，不能从 manifest 冒充已读）。它取代连接缓存判断，缺失或不匹配的所选篇目会重发。skills_mode:metadata 只看目录、不标记已读；full 强制重读所选篇目。上下文压缩或回复丢失后必须补读。bodiesNotModified 仅表示没有需要发送的新正文，仍须处理 manifestChanged、最新 manifest 与 removedIds。未分段的冻结原文保持完整，不猜测切分、不替换历史。
+- 标准读取顺序：先获取本轮请求、材料清单和规则目录；补正文用 rules_only:true，一次给出本轮需要的 skills_task/skills_ids；历史详情用 get_workspace 的 message_ids/version_ids。materials 只指出要读什么，不证明已经看过图片或正文。缺少相关规则或实际像素时先补读，不能以路径、目录或摘要代替。
+- get_workspace_context 的 inputContext 只给输入快照的小摘要，不重复顶层已有的当前草稿、参数或规则目录。需要核对发送时的完整输入时按 inputContext.read 调用 get_workspace(detail:full,message_ids:[requestId])；summary 消息也只给小摘要。materials.inputContextSource=frozen 才表示原始冻结输入；reconstructed 是按现存状态重建的旧记录摘要，detailAvailable:false 时不得声称历史完整输入可恢复。
+- 新请求的输入历史会排除确认的常规回执，history.filteredRoutineCount 单独计数；omittedCount 表示其余未列入历史窗口的消息，两者都不表示原记录被删除。拒绝、撤销、停止、失败、实际生成和蓝本切换仍是业务事实，不以建议的当前状态覆盖其发生顺序。冻结输入的 latestExecution/latestBillingObservation 是提交前已有记录，不能当作实时余额或付费授权；需要当前额度时调用 nai_subscription，涉及未知执行结果先查询操作与版本记录。
+- 传 skills_digests 前逐篇确认正文仍在本轮模型上下文。只落在磁盘、曾收到过工具响应或存在 manifest 指纹都不算保留。上下文压缩后删除已丢失篇目的声明，传剩余指纹补读；完全丢失时传空表，或 skills_mode:full 强制重读。重新连接后先核对当前请求与接管归属，再确认 retained 正文是否仍适用，不继承旧连接的投递假设。
+- selectedChars/sentChars/reusedChars 按 JavaScript 字符长度统计所选、此次发送和复用正文，不是 token、字节或费用。manifest.selectionReasons 说明选择依据。retentionSource=explicit-digests 表示依据客户端声明，delivery-cache 仅表示本连接曾发送；selectionComplete/bodiesNotModified 都不证明已理解、正确使用或已完成任务。
 - get_workspace 默认 detail:summary，返回最近 10 个候选摘要和最近 5 条消息，每条正文最多 400 字符；textTruncated 表示节选。需要完整方案/提示词时用 detail:full 配合 message_ids/version_ids 精确读取；完整历史用 detail:full 分页。后台写入同样返回摘要，不附整份历史。
 - 消息用 message_limit/before_message_id；候选用 version_limit/before_version_id，默认 10、最多 100，分页信息分别在 history/versionsPage（任务上下文为 candidatesPage）。单独翻一类时另一类不重复返回，included:false 不能理解成删除。翻页传上一页 revision 作为 history_revision；会话改变时拒绝混合分页。summary/full 分开缓存。since_revision 基于本连接缓存的该 detail 版本，返回 delta:true 的新增/修改消息与候选，按 id 替换，并应用 removedMessageIds/removedVersionIds；旧消息的采纳/撤销也会返回。消息和候选的增量分别可能有多页，保持 since_revision 和 history_revision，读完两类所有页再推进本地 revision。get_workspace_context 的 groups 只列当前候选页中的 id，partial/totalCandidates 说明该组还有其他候选；adoptedVersionId 和当前稿始终单独返回。
 - 未变时返回 notModified；首次使用、重连或基线淘汰时 resetRequired:true，返回当前分页快照，须重建缓存并按需补齐历史。单条详情请求 partial:true，不是完整快照；不能用缺失字段删除本地数据。list_images 返回 items/hasMore/nextBeforeName，可按 storage/query 筛选，用 before_name 翻页。

@@ -214,6 +214,30 @@ app.whenReady().then(async () => {
     })
     assert.equal(version.versions[0].editor.draft.base, draft.base)
     assert.equal(version.messages.length, 0)
+    const selectedOnly = structuredClone(pages.readPage(w.id))
+    Object.defineProperty(selectedOnly.versions[0], 'generated', {
+      get: () => {
+        throw new Error('unselected candidate must not be projected or hashed')
+      },
+    })
+    assert.equal(
+      readWorkspaceResult(selectedOnly, { detail: 'full', message_ids: [original.id] }).messages
+        .length,
+      1,
+    )
+    const selectedVersionOnly = structuredClone(pages.readPage(w.id))
+    Object.defineProperty(selectedVersionOnly.messages[0], 'text', {
+      get: () => {
+        throw new Error('unselected history must not be projected or hashed')
+      },
+    })
+    assert.equal(
+      readWorkspaceResult(selectedVersionOnly, {
+        detail: 'full',
+        version_ids: [w.currentVersionId],
+      }).versions.length,
+      1,
+    )
     const full = await a.data('get_workspace', { id: w.id, detail: 'full', message_limit: 100 })
     assert.equal(full.messages.length, 13)
     w = pages.readPage(w.id)

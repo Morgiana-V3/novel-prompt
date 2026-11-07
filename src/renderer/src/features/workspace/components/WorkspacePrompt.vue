@@ -4,16 +4,18 @@ import type { NaiImage } from '@shared/images/types'
 import type { NaiVersion } from '@shared/generation/types'
 import type { PageEditorState } from '@shared/workspace/model'
 import { copy } from '../../../shared/lib/notifications'
-import { sectionText } from '../../prompts/actions'
+import { sectionText } from '../../prompts/public/import-export'
 import { DEFAULT_GEN } from '../../generation/public'
-import { DEFAULT_PARAMS } from '../../prompts/state'
-import PromptEditor from '../../prompts/components/PromptEditor.vue'
+import { DEFAULT_PARAMS } from '../../prompts/public/draft'
+import { PromptEditor } from '../../prompts/public/components'
 import GenerationParameters from '../../generation/components/GenerationParameters.vue'
 import Icon from '../../../shared/ui/Icon.vue'
+import WorkspaceRecord from './WorkspaceRecord.vue'
 const props = defineProps<{
   editor: PageEditorState
   model: NaiVersion
   image: NaiImage | null
+  initial?: boolean
   editable?: boolean
   disabled?: boolean
   sizeLocked?: boolean
@@ -66,7 +68,17 @@ defineExpose({ copyPrompt: () => copy(sectionText(active.value.draft)) })
     class="workspace-prompt scroll"
     :data-editing="!!editable"
   >
-    <div class="workspace-config-body">
+    <WorkspaceRecord
+      v-if="!editable"
+      :editor="active"
+      :model="model"
+      :image="image"
+      :initial="initial"
+    />
+    <div
+      v-else
+      class="workspace-config-body"
+    >
       <PromptEditor
         :draft="active.draft"
         show-presets
