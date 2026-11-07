@@ -86,7 +86,7 @@ const KIND_LABELS: Record<PositionChangeKind, string> = {
   >
     <header class="positions-head">
       <Icon
-        name="frame"
+        name="position"
         :size="14"
       />
       <b :title="POSITION_NOTE">角色位置</b>

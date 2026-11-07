@@ -35,7 +35,7 @@ import type { ReasoningEffort } from '@shared/settings/types'
 const categories = [
   { id: 'tags', label: 'Tag 词库', icon: 'tag' },
   { id: 'services', label: 'AI 服务', icon: 'sparkle' },
-  { id: 'statistics', label: '使用统计', icon: 'tasks' },
+  { id: 'statistics', label: '使用统计', icon: 'chart' },
   { id: 'other', label: '存储与更新', icon: 'folder' },
   { id: 'guide', label: '操作说明', icon: 'book' },
 ] as const
@@ -693,7 +693,7 @@ async function translate() {
               @click="updateImplications"
             >
               <Icon
-                name="swap"
+                name="download"
                 :size="15"
               />{{ tagState.db?.implicationCount ? '更新包含关系' : '下载包含关系' }}
             </button>

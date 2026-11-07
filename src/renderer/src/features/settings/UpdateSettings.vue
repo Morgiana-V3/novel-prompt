@@ -37,7 +37,7 @@ const { checking, versionText, updateSub, runCheck } = useUpdateSettings()
             @click="runCheck"
           >
             <Icon
-              name="swap"
+              name="refresh"
               :size="13"
             />{{ checking ? '检查中' : '检查更新' }}
           </button>

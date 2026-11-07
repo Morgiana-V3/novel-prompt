@@ -439,7 +439,7 @@ async function close() {
         class="session-empty"
       >
         <Icon
-          name="chat"
+          name="refine"
           :size="36"
         />
         <p>暂无项目</p>

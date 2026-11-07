@@ -333,7 +333,7 @@ onBeforeUnmount(() => {
           <div class="pos-head">
             <span class="group-badge pink"
               ><Icon
-                name="frame"
+                name="position"
                 :size="14"
             /></span>
             <h3>角色位置</h3>

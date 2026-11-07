@@ -79,7 +79,7 @@ const icon = (task: AppTask): IconName => {
   if (task.status === 'cancelled') {
     return 'stop' as const
   }
-  return 'sparkle' as const
+  return 'paw' as const
 }
 function duration(task: AppTask) {
   const seconds = Math.max(0, Math.floor(((task.endedAt ?? now.value) - task.startedAt) / 1000))
@@ -247,7 +247,7 @@ function closePanel() {
               class="task-empty"
             >
               <Icon
-                name="layers"
+                name="tasks"
                 :size="30"
               /><b>暂时没有任务</b
               ><span>AI 分析、图片生成与数据更新的进度<br />都会显示在这里。</span>

@@ -106,7 +106,7 @@ function remove(i: number) {
         @click="posEditing = 0"
       >
         <Icon
-          name="frame"
+          name="position"
           :size="14"
         />编辑位置
       </button>
@@ -153,7 +153,7 @@ function remove(i: number) {
             @click="posEditing = indexItem"
           >
             <Icon
-              name="frame"
+              name="position"
               :size="15"
             />
           </button>

@@ -24,7 +24,7 @@ async function set(next: boolean) {
     style="--d: 200ms"
   >
     <div class="card-head">
-      <span class="card-icon"><Icon name="tasks" /></span>
+      <span class="card-icon"><Icon name="bell" /></span>
       <div>
         <h2>任务完成提醒</h2>
       </div>

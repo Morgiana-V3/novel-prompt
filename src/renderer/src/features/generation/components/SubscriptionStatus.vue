@@ -148,7 +148,7 @@ onBeforeUnmount(() => {
         @click="refreshSubscription()"
       >
         <Icon
-          name="swap"
+          name="refresh"
           :size="14"
           :class="{ spin: subscriptionState.loading }"
         />
@@ -161,7 +161,7 @@ onBeforeUnmount(() => {
         @click="openSettings"
       >
         <Icon
-          name="sliders"
+          name="key"
           :size="14"
         />
       </button>

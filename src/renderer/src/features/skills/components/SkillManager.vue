@@ -187,7 +187,7 @@ const openPicker = () => (skillsState.skillPanel = true)
     style="--d: 90ms"
   >
     <div class="card-head">
-      <span class="card-icon"><Icon name="layers" /></span>
+      <span class="card-icon"><Icon name="skill" /></span>
       <div>
         <h2>Skill 管理</h2>
       </div>

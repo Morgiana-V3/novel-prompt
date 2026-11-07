@@ -819,7 +819,7 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
           <div class="ip-head">
             <span class="group-badge pink"
               ><Icon
-                name="edit"
+                name="tool-inpaint"
                 :size="16"
             /></span>
             <h3 id="ip-title">{{ selectionOnly ? '页面选区与提示词' : '局部重绘' }}</h3>
@@ -850,7 +850,7 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                     @click="tool = 'brush'"
                   >
                     <Icon
-                      name="edit"
+                      name="brush"
                       :size="14"
                     />画笔
                   </button>
@@ -867,7 +867,7 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                     @click="tool = 'rect'"
                   >
                     <Icon
-                      name="frame"
+                      name="select"
                       :size="14"
                     />框选
                   </button>
@@ -879,7 +879,7 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                   @click="undo"
                 >
                   <Icon
-                    name="reset"
+                    name="undo"
                     :size="15"
                   />
                 </button>
@@ -1019,7 +1019,7 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                   @click="restoreRemoval"
                 >
                   <Icon
-                    name="reset"
+                    name="undo"
                     :size="13"
                   />撤销{{ lastRemoval.label.replace(/^已/, '') }}
                 </button>
@@ -1445,7 +1445,7 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
               @click="generate(false)"
             >
               <Icon
-                name="wand"
+                name="generate"
                 :size="16"
                 :class="{ 'spin-slow': running }"
               />{{ running ? '正在重绘' : result ? '再试当前区域' : '重绘当前区域' }}

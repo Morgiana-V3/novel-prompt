@@ -1,0 +1,59 @@
+# 图标语义对照
+
+图标定义在 `src/renderer/src/shared/ui/icons.ts`：24×24 画布、1.8 圆头描边、圆角转折，按 NovelAI 的线性语汇自绘。一个含义只对应一个图标；新增按钮先查本表，含义不符时新画一个，不拿外形相近的图标凑数。
+
+## 导航
+
+| 页面 | 图标 |
+| --- | --- |
+| 词库检索 | `tag` |
+| 生图创作 | `generate` |
+| 画师调试 | `brush` |
+| 图片反推 | `reverse` |
+| 图片精修 | `refine` |
+| 图集管理 | `album` |
+| 收藏管理 | `star` |
+| 应用设置 | `settings` |
+
+## 动作
+
+| 含义 | 图标 | 说明 |
+| --- | --- | --- |
+| 生成图片 / 执行重绘 / 去生图 | `generate` | 生图创作、图片精修底栏、局部重绘、画师对照、空状态入口统一使用 |
+| 停止生成 | `stop` | 与生成按钮同一位置替换 |
+| 运行中 | `paw` + `spin-slow` | 只表示进行中，不作为按钮含义 |
+| AI 分析 / 优化 | `sparkle` | 只用于调用 AI 的动作 |
+| 外部 Agent / MCP | `agent` | |
+| 载入提示词与参数 | `import` | 图集、结果图、PNG 读取、拖放加载 |
+| 用于新项目 / 打开图片精修 | `refine` | |
+| 在文件夹中显示 | `folder` | |
+| 另存为 / 下载 / 导出 | `download` | |
+| 导入文件 | `upload` | |
+| 刷新 / 检查更新 | `refresh` | |
+| 撤销 | `undo` | |
+| 恢复默认 | `reset` | |
+| 固定种子 / 只读 | `lock` | |
+| 随机种子 | `dice` | |
+| 复制 | `copy` | |
+| 粘贴 | `paste` | |
+| 编辑文字 / 重命名 | `edit` | |
+| 删除 | `trash` | |
+| 关闭 / 移除 | `x` | |
+| 历史版本 | `history` | |
+| 版本 / 多张同组 | `layers` | 不用于 Skill |
+| Skill | `skill` | |
+| 生成参数 / 编辑配置 | `sliders` | 不用于导航或设置 |
+| 设置入口 | `settings` | |
+| 账户密钥 | `key` | |
+| 本地识别模型 | `chip` | |
+| 角色位置 | `position` | |
+| 修改范围 / 焦点 | `frame` | |
+| 框选 | `select` | |
+| 局部重绘 / 扩图 / 精修 / 放大 | `tool-inpaint` / `tool-outpaint` / `tool-enhance` / `tool-upscale` | |
+| 画笔 | `brush` | |
+| 显示 / 隐藏、推测画面 | `eye` | |
+| 放大查看 | `expand` | |
+| 使用统计 | `chart` | |
+| 提醒 | `bell` | |
+| 任务 | `tasks` | |
+| 画风 / 构图镜头 / 场景 / 光影 | `palette` / `camera` / `scene` / `sun` | 画面推测分区 |

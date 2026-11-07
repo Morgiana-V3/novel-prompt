@@ -109,7 +109,7 @@ const preview = (text: string) => text.replace(/\s+/g, ' ').trim().slice(0, 60) 
         @click="fileInput?.click()"
       >
         <Icon
-          name="image"
+          name="import"
           :size="15"
         />
       </button>
@@ -119,7 +119,7 @@ const preview = (text: string) => text.replace(/\s+/g, ' ').trim().slice(0, 60) 
         @click="open = !open"
       >
         <Icon
-          name="book"
+          name="history"
           :size="15"
         />
       </button>
@@ -173,7 +173,7 @@ const preview = (text: string) => text.replace(/\s+/g, ' ').trim().slice(0, 60) 
             @click="(undoWorkspace(), (open = false))"
           >
             <Icon
-              name="swap"
+              name="undo"
               :size="13"
             />撤销上一次
           </button>

@@ -79,7 +79,7 @@ const deleteLabel = computed(() => {
           @click="emit('seed', current)"
         >
           <Icon
-            name="paw"
+            name="lock"
             :size="15"
           />
         </button>
@@ -89,7 +89,7 @@ const deleteLabel = computed(() => {
           @click="emit('loadPrompt', current)"
         >
           <Icon
-            name="paste"
+            name="import"
             :size="15"
           />
         </button>
@@ -109,7 +109,7 @@ const deleteLabel = computed(() => {
           @click="emit('reveal', current)"
         >
           <Icon
-            name="book"
+            name="folder"
             :size="15"
           />
         </button>
@@ -140,7 +140,7 @@ const deleteLabel = computed(() => {
         class="viewer-busy"
       >
         <Icon
-          name="image"
+          name="paw"
           :size="16"
           class="spin-slow"
         />下一张生成中…
@@ -183,7 +183,7 @@ const deleteLabel = computed(() => {
         @click="emit('inpaint', current)"
       >
         <Icon
-          name="edit"
+          name="tool-inpaint"
           :size="14"
         />局部重绘
       </button>
@@ -199,7 +199,7 @@ const deleteLabel = computed(() => {
         @click="emit('positions')"
       >
         <Icon
-          name="frame"
+          name="position"
           :size="14"
         /><span class="action-label">对照图片定位</span>
       </button>
@@ -211,7 +211,7 @@ const deleteLabel = computed(() => {
         @click="emit('workspace')"
       >
         <Icon
-          name="chat"
+          name="refine"
           :size="14"
         /><span class="action-label">用于新项目</span>
       </button>

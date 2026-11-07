@@ -104,8 +104,8 @@ const POINTS: {
   icon: IconName
   badge: string
 }[] = [
-  { key: 'style', label: '画风', icon: 'sparkle', badge: 'pink' },
-  { key: 'composition', label: '构图镜头', icon: 'frame', badge: 'nl' },
+  { key: 'style', label: '画风', icon: 'palette', badge: 'pink' },
+  { key: 'composition', label: '构图镜头', icon: 'camera', badge: 'nl' },
   { key: 'scene', label: '场景', icon: 'scene', badge: 'ok' },
   { key: 'lighting', label: '光影色调', icon: 'sun', badge: 'alias' },
 ]
@@ -243,7 +243,7 @@ usePageShortcuts(() => isActive('preview'), {
               aria-label="推测 Skill"
               @click="openSkill"
             >
-              <Icon name="layers" />
+              <Icon name="skill" />
             </button>
             <div class="run-actions">
               <button
@@ -590,7 +590,7 @@ usePageShortcuts(() => isActive('preview'), {
             @click="toGenerate"
           >
             <Icon
-              name="image"
+              name="generate"
               :size="15"
             />去生图验证
           </button>

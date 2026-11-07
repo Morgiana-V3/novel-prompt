@@ -70,31 +70,31 @@ const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: bool
   {
     key: 'creation',
     label: '生图创作',
-    icon: 'sparkle',
+    icon: 'generate',
     desc: '在同一页编辑提示词，检查词条、智能优化、推测画面并生成图片',
   },
   {
     key: 'artists',
     label: '画师调试',
-    icon: 'sliders',
+    icon: 'brush',
     desc: '编辑画师串，固定内容和种子，对比每次调整的实际效果',
   },
   {
     key: 'reverse',
     label: '图片反推',
-    icon: 'search',
+    icon: 'reverse',
     desc: '从参考图在本机识别基础提示词与画师风格，不上传图片',
   },
   {
     key: 'workspace',
     label: '图片精修',
-    icon: 'wand',
+    icon: 'refine',
     desc: '围绕一张图持续讨论、局部重绘和修图，保留每个版本',
   },
   {
     key: 'gallery',
     label: '图集管理',
-    icon: 'folder',
+    icon: 'album',
     desc: '按图集整理、查看和复用生成图片',
     tool: true,
   },
@@ -108,7 +108,7 @@ const tabs: { key: Tab; label: string; icon: IconName; desc: string; tool?: bool
   {
     key: 'settings',
     label: '应用设置',
-    icon: 'sliders',
+    icon: 'settings',
     desc: '词库、AI 服务与软件设置',
     tool: true,
   },
@@ -525,7 +525,7 @@ async function onDrop(event2: DragEvent) {
             :title="agentStage"
           >
             <Icon
-              name="sparkle"
+              name="agent"
               :size="14"
               class="spin-slow"
             /><b>外部 Agent 正在操作</b><span>{{ agentStage }}</span
@@ -625,7 +625,7 @@ async function onDrop(event2: DragEvent) {
       >
         <div class="drop-card">
           <Icon
-            name="image"
+            name="import"
             :size="30"
           />
           <b>松手加载图片配置</b>

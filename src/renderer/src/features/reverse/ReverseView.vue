@@ -608,7 +608,7 @@ async function source(url: string) {
             @click="analyze"
           >
             <Icon
-              name="search"
+              name="reverse"
               :size="14"
             />{{ recognitionLabel }}
           </button>
@@ -660,7 +660,7 @@ async function source(url: string) {
               :class="{ ready: selectedReady }"
             ></span
             >模型<Icon
-              name="sliders"
+              name="chip"
               :size="14"
             />
           </button>

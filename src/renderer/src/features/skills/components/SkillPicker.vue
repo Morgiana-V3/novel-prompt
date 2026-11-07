@@ -188,7 +188,7 @@ onBeforeUnmount(() => {
     >
       <span class="st-icon"
         ><Icon
-          name="layers"
+          name="skill"
           :size="15"
       /></span>
       <span class="st-text">
@@ -329,7 +329,7 @@ onBeforeUnmount(() => {
                 @click="manage"
               >
                 <Icon
-                  name="sliders"
+                  name="settings"
                   :size="13"
                 />管理 Skill
               </button>

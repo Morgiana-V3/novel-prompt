@@ -150,7 +150,7 @@ const advancedChanged = computed(
           @click="seed = null"
         >
           <Icon
-            name="x"
+            name="dice"
             :size="14"
           />
         </button>

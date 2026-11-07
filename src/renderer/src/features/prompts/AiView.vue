@@ -566,7 +566,7 @@ defineExpose({ desktopState, frontendAction })
               @click="undoAdopt"
             >
               <Icon
-                name="swap"
+                name="undo"
                 :size="13"
               />撤销采用
             </button>

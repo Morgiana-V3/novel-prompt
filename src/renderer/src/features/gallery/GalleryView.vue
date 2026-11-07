@@ -460,7 +460,7 @@ function step(delta: number) {
                 @click="reuse"
               >
                 <Icon
-                  name="sliders"
+                  name="import"
                   :size="14"
                 />载入提示词与参数
               </button>

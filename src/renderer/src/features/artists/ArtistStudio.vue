@@ -392,7 +392,7 @@ function addFromCatalog(name: string) {
             >
               <div class="artist-image-symbol">
                 <Icon
-                  name="sliders"
+                  name="brush"
                   :size="32"
                 />
               </div>
@@ -457,7 +457,7 @@ function addFromCatalog(name: string) {
             @click="openSeed"
           >
             <Icon
-              name="sliders"
+              name="lock"
               :size="14"
             />固定种子
             <span class="artist-settings-summary">{{ state.context.params.seed }}</span>
@@ -502,7 +502,7 @@ function addFromCatalog(name: string) {
             @click="studio.generate"
           >
             <Icon
-              name="sparkle"
+              name="generate"
               :size="16"
             />生成对照
           </button>
@@ -594,7 +594,7 @@ function addFromCatalog(name: string) {
                 @click="randomSeed"
               >
                 <Icon
-                  name="reset"
+                  name="dice"
                   :size="15"
                 />
               </button></div

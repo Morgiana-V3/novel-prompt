@@ -1023,7 +1023,7 @@ async function beginConfigFromButton() {
               @click="discardConfig"
             >
               <Icon
-                name="x"
+                name="undo"
                 :size="13"
               /><span>撤销本次修改</span>
             </button>

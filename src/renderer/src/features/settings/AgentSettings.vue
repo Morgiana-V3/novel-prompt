@@ -26,7 +26,7 @@ const emit = defineEmits<{
     style="--d: 120ms"
   >
     <div class="card-head">
-      <span class="card-icon blue"><Icon name="wand" /></span>
+      <span class="card-icon blue"><Icon name="agent" /></span>
       <div>
         <h2>Agent 接入（MCP）</h2>
       </div>
@@ -196,7 +196,7 @@ const emit = defineEmits<{
             @click="emit('manageSkills')"
           >
             <Icon
-              name="layers"
+              name="skill"
               :size="14"
             />Skill 启用与优先级
           </button>
@@ -213,7 +213,7 @@ const emit = defineEmits<{
           @click="loadMcp"
         >
           <Icon
-            name="swap"
+            name="refresh"
             :size="13"
           />刷新
         </button>

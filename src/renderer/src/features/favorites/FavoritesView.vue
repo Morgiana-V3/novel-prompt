@@ -669,7 +669,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                   @click="layoutOpen = true"
                 >
                   <Icon
-                    name="frame"
+                    name="position"
                     :size="15"
                   />
                 </button>
@@ -833,7 +833,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             @click="shellState.tab = 'generate'"
           >
             <Icon
-              name="image"
+              name="generate"
               :size="14"
             />去生图
           </button>

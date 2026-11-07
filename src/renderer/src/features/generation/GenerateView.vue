@@ -510,7 +510,7 @@ function openImageWorkspace() {
               @click="shellState.tab = 'favorites'"
             >
               <Icon
-                name="layers"
+                name="star"
                 :size="14"
               />载入收藏
             </button>
@@ -589,7 +589,7 @@ function openImageWorkspace() {
                 @click="run"
               >
                 <Icon
-                  name="image"
+                  name="generate"
                   :size="17"
                   :class="{ 'spin-slow': running }"
                 />
@@ -644,7 +644,7 @@ function openImageWorkspace() {
           @click="shellState.tab = 'settings'"
         >
           <Icon
-            name="sliders"
+            name="settings"
             :size="16"
           />去设置
         </button>
@@ -713,7 +713,7 @@ function openImageWorkspace() {
               @click="openFolder"
             >
               <Icon
-                name="book"
+                name="folder"
                 :size="14"
               />打开文件夹
             </button>

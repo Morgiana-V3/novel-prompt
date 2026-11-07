@@ -172,9 +172,8 @@ function stopGeneration() {
         @click="stopGeneration"
       >
         <Icon
-          name="paw"
+          name="stop"
           :size="15"
-          class="spin-slow"
         /><span>{{ stopLabel }}</span>
       </button>
       <button
@@ -185,7 +184,7 @@ function stopGeneration() {
         @click="emit('generate')"
       >
         <Icon
-          name="wand"
+          name="generate"
           :size="15"
         /><span>{{ generationLabel }}</span
         ><span

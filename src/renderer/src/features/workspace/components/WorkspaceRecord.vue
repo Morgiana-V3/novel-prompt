@@ -50,7 +50,7 @@ const positionReference = computed(() => {
     <header class="record-summary">
       <span class="record-lock">
         <Icon
-          name="eye"
+          name="lock"
           :size="13"
         />只读记录
       </span>
@@ -64,7 +64,7 @@ const positionReference = computed(() => {
         @click="positionsOpen = true"
       >
         <Icon
-          name="frame"
+          name="position"
           :size="13"
         />角色位置
       </button>
