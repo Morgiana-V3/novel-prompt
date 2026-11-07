@@ -417,7 +417,7 @@ defineExpose({
         class="pw-thinking"
       >
         <Icon
-          name="sparkle"
+          name="paw"
           :size="16"
           class="spin-slow"
         />{{ progress || '正在分析上下文…' }}<button @click="emit('cancelChat')">停止</button>
@@ -448,7 +448,16 @@ defineExpose({
         class="pw-error"
         role="alert"
       >
-        {{ error }}<button @click="emit('clearError')">×</button>
+        {{ error
+        }}<button
+          aria-label="关闭错误提示"
+          @click="emit('clearError')"
+        >
+          <Icon
+            name="x"
+            :size="13"
+          />
+        </button>
       </div>
       <div
         v-if="references.length"
@@ -460,7 +469,11 @@ defineExpose({
           :disabled="busy"
           @click="emit('reference', id)"
         >
-          引用 {{ label(id) }} ×
+          引用 {{ label(id)
+          }}<Icon
+            name="x"
+            :size="11"
+          />
         </button>
       </div>
       <WorkspaceRegionChecklist

@@ -488,6 +488,7 @@
 }
 
 .artist-dialog {
+  flex-direction: column;
   width: min(520px, 90vw);
   max-height: 85dvh;
   padding: 0;
@@ -499,9 +500,9 @@
   box-shadow: var(--shadow-modal);
 }
 
+/* flex-direction 写在基础类上，[open] 只负责显示：退场期间 dialog 仍显示，方向不能跟着失效 */
 .artist-dialog[open] {
   display: flex;
-  flex-direction: column;
 }
 
 .artist-dialog-heading {

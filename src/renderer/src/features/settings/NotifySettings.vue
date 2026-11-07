@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSegIndicator } from '../../shared/lib/seg-indicator'
 import { computed } from 'vue'
 import Icon from '../../shared/ui/Icon.vue'
 import { toast } from '../../shared/lib/notifications'
@@ -31,7 +32,10 @@ async function set(next: boolean) {
     </div>
     <div class="form-grid">
       <div class="form-field full">
-        <div class="seg">
+        <div
+          v-seg-indicator
+          class="seg"
+        >
           <button
             :class="{ on: !enabled }"
             @click="set(false)"

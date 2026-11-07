@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AnimatedNumber from '../../../shared/ui/AnimatedNumber.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { taskIsActive } from '@shared/tasks/model'
 import { settingsState } from '../../settings/state'
@@ -36,7 +37,6 @@ const balance = computed(() => {
   }
   return (account.anlasFixed ?? 0) + (account.anlasPurchased ?? 0)
 })
-const anlas = computed(() => balance.value?.toLocaleString() ?? '—')
 const balanceNotice = ref('')
 let noticeTimer: ReturnType<typeof setTimeout> | undefined
 watch(
@@ -168,7 +168,7 @@ onBeforeUnmount(() => {
     </header>
     <template v-if="hasToken">
       <div class="subscription-row">
-        <span>Anlas</span><b>{{ anlas }}</b>
+        <span>Anlas</span><b><AnimatedNumber :value="balance" /></b>
       </div>
       <div
         v-if="isV5"

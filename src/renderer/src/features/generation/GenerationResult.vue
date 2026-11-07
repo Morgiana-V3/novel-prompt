@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { vFadeImg } from '../../shared/lib/fade-image'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { NaiImage } from '@shared/images/types'
 import Icon from '../../shared/ui/Icon.vue'
 import { FavoriteButton } from '../favorites/public'
@@ -15,6 +14,10 @@ const props = defineProps<{
   deleting: string | null
   /** 当前生图参数已固定为这张图的种子 */
   seedFixed: boolean
+  /** 之后又改过提示词或参数，这张是上一次配置的结果 */
+  stale?: boolean
+  /** 刚生成出来的图：播放一次“去噪显影” */
+  fresh?: boolean
 }>()
 const emit = defineEmits<{
   seed: [image: NaiImage]
@@ -29,6 +32,26 @@ const emit = defineEmits<{
   positions: []
   workspace: []
 }>()
+/*
+ * 换图时先在后台解码新图，解码完成再替换同一个 <img> 的地址：
+ * 旧画面保留到新图就绪，结果卡片不会先塌陷消失再撑开。
+ */
+const shownUrl = ref(props.current.url)
+let swapRequest = 0
+watch(
+  () => props.current.url,
+  async (url) => {
+    const request = ++swapRequest
+    const next = new Image()
+    next.src = url
+    await next.decode().catch(() => undefined)
+    if (request === swapRequest) {
+      shownUrl.value = url
+    }
+  },
+)
+const developing = computed(() => !!props.fresh && shownUrl.value === props.current.url)
+
 const storageLabel = computed(() => {
   if (props.current.storage === 'temporary') {
     return '临时'
@@ -69,6 +92,14 @@ const deleteLabel = computed(() => {
       >
         种子 {{ current.seed }}
       </button>
+      <Transition name="fade">
+        <span
+          v-if="stale"
+          class="pill result-stale"
+          title="提示词或生成参数已调整，这张是上一次配置的结果；再次生成可查看最新效果"
+          >旧配置</span
+        >
+      </Transition>
       <div class="actions ml-auto">
         <button
           class="icon-btn sm seed-toggle"
@@ -128,13 +159,21 @@ const deleteLabel = computed(() => {
       :class="['viewer-stage', { busy: running }]"
       @click="emit('lightbox')"
     >
-      <img
-        :key="current.url"
-        v-fade-img
-        :src="current.url"
-        alt="生成结果"
-        draggable="false"
-      />
+      <span
+        class="viewer-frame"
+        :class="{ developing }"
+      >
+        <img
+          :src="shownUrl"
+          alt="生成结果"
+          draggable="false"
+        />
+        <span
+          v-if="developing"
+          class="denoise-grain"
+          aria-hidden="true"
+        ></span>
+      </span>
       <div
         v-if="running"
         class="viewer-busy"
@@ -220,6 +259,21 @@ const deleteLabel = computed(() => {
 </template>
 
 <style scoped>
+.result-stale {
+  gap: 5px;
+  color: var(--alias);
+  background: color-mix(in srgb, var(--alias) 10%, var(--bg));
+  cursor: help;
+}
+
+.result-stale::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentcolor;
+}
+
 /* 固定种子是可切换状态：选中时显示粉色底，再点一次恢复随机 */
 .seed-toggle.on {
   background: var(--pink-soft);

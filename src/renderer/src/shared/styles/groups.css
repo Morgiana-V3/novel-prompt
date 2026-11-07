@@ -3,7 +3,6 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  animation: fade-up var(--dur-slow) var(--ease-out) backwards;
 }
 
 .group-head {

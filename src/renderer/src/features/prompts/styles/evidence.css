@@ -49,7 +49,7 @@
   line-height: 1.7;
   color: var(--nl);
   background: var(--nl-soft);
-  animation: fade-up var(--dur-slow) var(--ease-out) backwards;
+  animation: fade-in var(--dur-base) var(--ease-out);
 }
 
 .evidence-note .icon {

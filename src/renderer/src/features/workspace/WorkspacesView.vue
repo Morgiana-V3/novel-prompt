@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import AnimatedNumber from '../../shared/ui/AnimatedNumber.vue'
+import { detachLeaving } from '../../shared/lib/list-motion'
+import { backdropCloser, closeDialogThen } from '../../shared/lib/dialog-motion'
 import { reportError } from '../../shared/lib/notifications'
 import { promptState } from '../prompts/public/draft'
 import { imageState, clearWorkspaceImage } from '../generation/public'
@@ -31,6 +34,7 @@ const frontendControl = inject<{ state: Ref<DesktopState['frontend']>; stop: () 
 )
 const frontendRunning = computed(() => frontendControl?.state.value?.status === 'running')
 const modalOpen = () => creating.value
+const formLeaving = ref(false)
 function dismissDialog() {
   if (frontendRunning.value) {
     frontendControl?.stop()
@@ -42,14 +46,19 @@ function dismissDialog() {
   creating.value = false
   error.value = ''
 }
+const projectBackdrop = backdropCloser(() => dismissDialog())
 watch([creating, () => shellState.tab], async () => {
   await nextTick()
   if (modalOpen() && shellState.tab === 'workspace') {
     if (!projectDialog.value?.open) {
       projectDialog.value?.showModal()
     }
-  } else {
-    projectDialog.value?.close()
+  } else if (projectDialog.value?.open) {
+    // 表单保留到退场动画结束，避免关闭时先变成空壳再缩小
+    formLeaving.value = true
+    closeDialogThen(projectDialog.value, () => {
+      formLeaving.value = false
+    })
   }
 })
 const workspace = ref<InstanceType<typeof PageWorkspace>>()
@@ -404,7 +413,7 @@ async function close() {
       <header>
         <div>
           <h1>
-            创作项目 <span class="pill">{{ sessions.length }}</span>
+            创作项目 <span class="pill"><AnimatedNumber :value="sessions.length" /></span>
           </h1>
         </div>
         <div class="row">
@@ -450,7 +459,12 @@ async function close() {
           创建第一个项目
         </button>
       </div>
-      <div class="session-grid">
+      <TransitionGroup
+        tag="div"
+        name="list"
+        class="session-grid list-motion"
+        @before-leave="detachLeaving"
+      >
         <article
           v-for="s in sessions"
           :key="s.id"
@@ -495,7 +509,7 @@ async function close() {
             />
           </button>
         </article>
-      </div>
+      </TransitionGroup>
     </section>
     <div
       ref="deletePopover"
@@ -551,11 +565,8 @@ async function close() {
       class="project-dialog"
       aria-label="创作项目管理"
       @cancel.prevent="dismissDialog"
-      @click="
-        (e) => {
-          if (e.target === projectDialog) dismissDialog()
-        }
-      "
+      @pointerdown="projectBackdrop.onPointerdown"
+      @click="projectBackdrop.onClick"
     >
       <button
         v-if="frontendRunning"
@@ -565,7 +576,7 @@ async function close() {
         Agent 正在操作 · 停止
       </button>
       <section
-        v-if="creating"
+        v-if="creating || formLeaving"
         class="session-create"
         :inert="frontendRunning"
       >
@@ -673,15 +684,9 @@ async function close() {
   overflow: auto;
 }
 
-/* 只做进场：关闭前内容已被 v-if 移除，离场动画会露出空壳 */
-.project-dialog[open] {
-  animation: pop var(--dur-slow) var(--ease-out);
-}
-
 .project-dialog::backdrop {
   background: var(--scrim);
   backdrop-filter: blur(3px);
-  animation: fade-in var(--dur-base) var(--ease-out);
 }
 
 .project-dialog .session-create {
@@ -799,12 +804,14 @@ async function close() {
   padding: 6px;
   transition:
     border-color var(--dur-fast) var(--ease-out),
-    box-shadow var(--dur-base) var(--ease-out);
+    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-slow) var(--ease-glide);
 }
 
 .session-card:has(.session-open:hover:not(:disabled)) {
   border-color: var(--pink-line);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-lift);
+  transform: translateY(var(--lift-card));
 }
 
 .session-open {

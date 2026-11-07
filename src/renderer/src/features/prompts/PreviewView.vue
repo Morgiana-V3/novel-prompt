@@ -5,10 +5,11 @@ import { skillsState } from '../skills/state'
 import { usePagePresentation } from '../../shared/lib/page-presentation'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { AiPreviewResult, Confidence, PreviewPoint } from '@shared/prompts/types'
-import { copy, toast } from '../../shared/lib/notifications'
+import { copy, reportError, toast } from '../../shared/lib/notifications'
 import { workKey } from './actions'
 import { cleanErr } from '../../shared/lib/format'
 import Icon from '../../shared/ui/Icon.vue'
+import RunButton from '../../shared/ui/RunButton.vue'
 import Mascot from '../../shared/ui/Mascot.vue'
 import BasisPill from './components/BasisPill.vue'
 import EvidenceNote from './components/EvidenceNote.vue'
@@ -23,6 +24,11 @@ const running = ref(false)
 const steps = tabRef<string[]>('preview.steps', () => [])
 const error = tabRef('preview.error', () => '')
 const task = computed(() => activeTask('preview'))
+function cancelRun() {
+  if (task.value) {
+    cancelTask(task.value.id).catch(reportError)
+  }
+}
 let offStep: (() => void) | undefined
 /** 推测结果存在全局，图片预览可以拿它和实际出图对照 */
 const result = computed(() => promptState.lastPreview?.result ?? null)
@@ -246,27 +252,19 @@ usePageShortcuts(() => isActive('preview'), {
               <Icon name="skill" />
             </button>
             <div class="run-actions">
-              <button
-                v-if="running && task"
-                class="btn ghost"
-                :disabled="task.status === 'cancelling'"
-                title="取消（Esc）"
-                @click="cancelTask(task.id)"
-              >
-                {{ task.status === 'cancelling' ? '正在取消…' : '取消' }}
-              </button>
-              <button
-                class="btn accent"
-                :disabled="running"
-                @click="run"
-              >
-                <Icon
-                  name="eye"
-                  :size="14"
-                  :class="{ 'spin-slow': running }"
-                />
-                {{ running ? '正在想象' : '开始推测' }}
-              </button>
+              <RunButton
+                label="开始推测"
+                icon="eye"
+                running-label="想象中"
+                :running="running"
+                :can-stop="!!task"
+                :stopping="task?.status === 'cancelling'"
+                stop-label="取消"
+                stopping-label="正在取消"
+                stop-title="取消（Esc）"
+                @run="run"
+                @stop="cancelRun"
+              />
             </div>
           </div>
         </footer>

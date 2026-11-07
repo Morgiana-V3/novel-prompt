@@ -29,6 +29,7 @@ import { FavoriteButton } from '../favorites/public'
 import type { NaiGenRequest } from '@shared/generation/types'
 import { saveSettings } from '../settings/state'
 import Icon from '../../shared/ui/Icon.vue'
+import RunButton from '../../shared/ui/RunButton.vue'
 import Mascot from '../../shared/ui/Mascot.vue'
 import GenerationParameters from './components/GenerationParameters.vue'
 import { PositionEditor } from '../prompts/public/components'
@@ -228,13 +229,22 @@ const resizeAll = () => resizeWithin(leftPane.value)
 
 let checkTimer: ReturnType<typeof setTimeout> | undefined
 let checkEpoch = 0
+let checkedConfig = ''
+/*
+ * 尺寸、步数、模型变了才清空结果显示「检查中」；生成结束后余额会刷新一到两次，
+ * 这时只在后台静默复核、结果到了再替换，避免左侧费用文案反复闪成「检查中」并带动整行宽度跳动。
+ */
 watch(
   () => [params.width, params.height, gen.steps, version.value, sub.value],
   () => {
     clearTimeout(checkTimer)
     const epoch = ++checkEpoch
-    check.value = null
-    checkError.value = ''
+    const config = `${params.width}x${params.height}:${gen.steps}:${version.value}`
+    if (config !== checkedConfig) {
+      checkedConfig = config
+      check.value = null
+      checkError.value = ''
+    }
     checkTimer = setTimeout(async () => {
       try {
         const result = await window.api.naiFreeCheck(
@@ -244,6 +254,7 @@ watch(
         )
         if (epoch === checkEpoch) {
           check.value = result
+          checkError.value = ''
         }
       } catch (error) {
         if (epoch === checkEpoch) {
@@ -337,7 +348,9 @@ async function run() {
       sentRecipes.value[img.name] = recipeKey
     }
     if (generationResult.images.length) {
-      showGenerated(generationResult.images[generationResult.images.length - 1])
+      const latest = generationResult.images[generationResult.images.length - 1]
+      showGenerated(latest)
+      markFresh(latest.name)
     }
     if (generationResult.stopped && !generationResult.images.length) {
       error.value = generationResult.stopped
@@ -350,6 +363,28 @@ async function run() {
     running.value = false
   }
 }
+
+/* 刚出的图播放一次去噪显影，稍后清掉标记，之后再切回这张图不重播 */
+const DEVELOP_MS = 1400
+const freshImage = ref('')
+let freshTimer: ReturnType<typeof setTimeout> | undefined
+function markFresh(name: string) {
+  clearTimeout(freshTimer)
+  freshImage.value = name
+  freshTimer = setTimeout(() => {
+    freshImage.value = ''
+  }, DEVELOP_MS)
+}
+onBeforeUnmount(() => clearTimeout(freshTimer))
+
+/** 当前图片之后又改过提示词或参数：结果头部用小标签提示，不再占用整行横幅 */
+const currentIsStale = computed(() => {
+  const image = current.value
+  if (!image || !sentRecipes.value[image.name]) {
+    return false
+  }
+  return sentRecipes.value[image.name] !== JSON.stringify(currentRecipe.value)
+})
 
 async function cancel() {
   cancelling.value = true
@@ -481,61 +516,63 @@ function openImageWorkspace() {
             :size="16"
           />
         </button>
-        <div
-          v-show="parametersOpen"
-          id="creation-generation-settings"
-          ref="leftPane"
-          class="pane-body scroll generation-settings-popover"
-          role="dialog"
-          aria-label="生成设置"
-          :data-generation-settings-open="parametersOpen ? '' : undefined"
-        >
-          <div class="field-head gen-params-head">
-            <label class="field-label">生成参数</label>
-            <button
-              class="btn ghost small ml-auto"
-              :disabled="savingRecipe"
-              title="保存当前提示词、模型和全部生成参数，无需先出图"
-              @click="saveRecipe"
-            >
-              <Icon
-                name="star"
-                :size="14"
-              />收藏配置
-            </button>
-            <button
-              class="btn ghost small"
+        <Transition name="popover-up">
+          <div
+            v-show="parametersOpen"
+            id="creation-generation-settings"
+            ref="leftPane"
+            class="pane-body scroll generation-settings-popover"
+            role="dialog"
+            aria-label="生成设置"
+            :data-generation-settings-open="parametersOpen ? '' : undefined"
+          >
+            <div class="field-head gen-params-head">
+              <label class="field-label">生成参数</label>
+              <button
+                class="btn ghost small ml-auto"
+                :disabled="savingRecipe"
+                title="保存当前提示词、模型和全部生成参数，无需先出图"
+                @click="saveRecipe"
+              >
+                <Icon
+                  name="star"
+                  :size="14"
+                />收藏配置
+              </button>
+              <button
+                class="btn ghost small"
+                :disabled="running"
+                title="在收藏页挑选配置并载入"
+                @click="shellState.tab = 'favorites'"
+              >
+                <Icon
+                  name="star"
+                  :size="14"
+                />载入收藏
+              </button>
+              <button
+                class="btn ghost small"
+                :disabled="running || isDefault"
+                title="步数、Guidance、采样器、画幅等全部恢复默认"
+                @click="resetDefaults"
+              >
+                <Icon
+                  name="reset"
+                  :size="14"
+                />恢复默认
+              </button>
+            </div>
+            <GenerationParameters
+              prompt-presets-in-editor
+              expanded-sizes
+              :gen="gen"
+              :params="params"
               :disabled="running"
-              title="在收藏页挑选配置并载入"
-              @click="shellState.tab = 'favorites'"
-            >
-              <Icon
-                name="star"
-                :size="14"
-              />载入收藏
-            </button>
-            <button
-              class="btn ghost small"
-              :disabled="running || isDefault"
-              title="步数、Guidance、采样器、画幅等全部恢复默认"
-              @click="resetDefaults"
-            >
-              <Icon
-                name="reset"
-                :size="14"
-              />恢复默认
-            </button>
+              @change-gen="updateGenerationOptions"
+              @change-params="updatePromptParameters"
+            />
           </div>
-          <GenerationParameters
-            prompt-presets-in-editor
-            expanded-sizes
-            :gen="gen"
-            :params="params"
-            :disabled="running"
-            @change-gen="updateGenerationOptions"
-            @change-params="updatePromptParameters"
-          />
-        </div>
+        </Transition>
 
         <CollectionPicker class="dock-collection" />
         <label
@@ -568,35 +605,20 @@ function openImageWorkspace() {
           </div>
           <div class="row run-bar">
             <div class="run-actions">
-              <button
-                v-if="running"
-                class="btn ghost"
-                :disabled="cancelling"
-                title="当前这张完成后停止（Esc）"
-                @click="cancel"
-              >
-                {{ cancelling ? '即将停止' : '停止' }}
-              </button>
-              <button
-                v-if="!running"
-                class="btn accent"
-                :disabled="running || inpaintBusy || imageState.generating"
+              <RunButton
+                :label="gen.count > 1 ? `生成 ${gen.count} 张` : '生成'"
+                :running="running"
+                :stopping="cancelling"
+                :disabled="inpaintBusy || imageState.generating"
                 :title="
                   !isActive('compare') && !isActive('generate')
                     ? '生成当前提示词'
                     : `生成（${runKeyLabel}）`
                 "
-                @click="run"
-              >
-                <Icon
-                  name="generate"
-                  :size="17"
-                  :class="{ 'spin-slow': running }"
-                />
-                <span>{{
-                  running ? '正在生成' : gen.count > 1 ? `生成 ${gen.count} 张` : '生成'
-                }}</span>
-              </button>
+                stop-title="当前这张完成后停止（Esc）"
+                @run="run"
+                @stop="cancel"
+              />
             </div>
           </div>
         </footer>
@@ -604,16 +626,6 @@ function openImageWorkspace() {
     </Teleport>
 
     <section class="pane right scroll">
-      <p
-        v-if="
-          current &&
-          sentRecipes[current.name] &&
-          sentRecipes[current.name] !== JSON.stringify(currentRecipe)
-        "
-        class="evidence-note warn"
-      >
-        提示词或生成参数已调整，当前图片是上一次配置的结果。再次生成可查看最新效果。
-      </p>
       <div
         v-if="running && !current"
         class="empty"
@@ -668,6 +680,8 @@ function openImageWorkspace() {
           :pending-delete="pendingDelete"
           :deleting="deleting"
           :seed-fixed="seedFixed"
+          :stale="currentIsStale"
+          :fresh="!!current && current.name === freshImage"
           @seed="toggleSeed"
           @load-prompt="loadFromImage"
           @copy-image="copyImage"
@@ -866,6 +880,9 @@ function openImageWorkspace() {
   white-space: nowrap;
   font-size: 10px;
   font-weight: 400;
+  transition:
+    color var(--dur-base) var(--ease-out),
+    background-color var(--dur-base) var(--ease-out);
 }
 
 .creation-generation > .fee-status.bad {
@@ -886,6 +903,7 @@ function openImageWorkspace() {
   border-radius: 14px;
   background: var(--bg);
   box-shadow: 0 8px 32px #0000001f;
+  transform-origin: bottom left;
 }
 
 .generation-settings-popover .gen-params-head {

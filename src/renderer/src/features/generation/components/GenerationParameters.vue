@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSegIndicator } from '../../../shared/lib/seg-indicator'
 import { computed } from 'vue'
 import type { NaiGenParams, NaiSampler, NaiNoiseSchedule } from '@shared/generation/types'
 import { DEFAULT_GEN } from '../state'
@@ -94,7 +95,10 @@ const advancedChanged = computed(
       class="param"
     >
       <span class="side-label">张数（逐张生成）</span>
-      <div class="seg block">
+      <div
+        v-seg-indicator
+        class="seg block"
+      >
         <button
           v-for="n in [1, 2, 4]"
           :key="n"

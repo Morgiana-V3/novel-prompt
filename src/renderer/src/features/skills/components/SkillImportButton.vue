@@ -73,7 +73,7 @@ function select(kind: 'file' | 'directory') {
   >
     <button @click="select('file')">
       <Icon
-        name="book"
+        name="file"
         :size="15"
       />Markdown 文件
     </button>

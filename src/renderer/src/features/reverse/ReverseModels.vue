@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import IconSwap from '../../shared/ui/IconSwap.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { ReverseModel, ReverseStatus } from '@shared/reverse/types'
 import Icon from '../../shared/ui/Icon.vue'
+import { backdropCloser, closeDialogThen } from '../../shared/lib/dialog-motion'
 import { modelSize as size, summarizeReverseModels } from './model-summary'
 
 const props = defineProps<{
@@ -26,6 +28,11 @@ const dialog = ref<HTMLDialogElement>()
 const removeConfirm = ref(false)
 onMounted(() => dialog.value?.showModal())
 onBeforeUnmount(() => dialog.value?.close())
+
+function requestClose() {
+  closeDialogThen(dialog.value, () => emit('close'))
+}
+const backdrop = backdropCloser(requestClose)
 </script>
 
 <template>
@@ -34,8 +41,9 @@ onBeforeUnmount(() => dialog.value?.close())
       ref="dialog"
       class="reverse-model-dialog"
       aria-labelledby="reverse-model-title"
-      @cancel.prevent="emit('close')"
-      @click="$event.target === $event.currentTarget && emit('close')"
+      @cancel.prevent="requestClose"
+      @pointerdown="backdrop.onPointerdown"
+      @click="backdrop.onClick"
       @keydown.stop
     >
       <header>
@@ -43,7 +51,7 @@ onBeforeUnmount(() => dialog.value?.close())
         <button
           class="icon-btn sm"
           aria-label="关闭模型管理"
-          @click="emit('close')"
+          @click="requestClose"
         >
           <Icon
             name="x"
@@ -59,7 +67,7 @@ onBeforeUnmount(() => dialog.value?.close())
           v-for="model in models"
           :key="model.id"
         >
-          <Icon
+          <IconSwap
             :name="model.ready ? 'check' : 'download'"
             :size="14"
           />

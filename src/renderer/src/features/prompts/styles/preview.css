@@ -24,7 +24,7 @@
 }
 
 .import-zone.over .group-badge .icon {
-  animation: wiggle 0.6s ease infinite;
+  animation: float 1.4s var(--ease-loop) infinite;
 }
 
 .import-zone .group-badge {

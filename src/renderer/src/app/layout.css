@@ -241,12 +241,12 @@ nav.sliding .nav-item.active {
 }
 
 /*
- * 切换页面只保留这一层轻淡入；视图用 v-show 切换，重新显示时会重播。
- * 子元素的进场动画在切换时由 App.vue 直接结束，避免三层动画叠加。
+ * 切换页面只保留这一层进场：按侧栏顺序判断方向，往下切从下方滑入、往上切从上方滑入。
+ * 视图用 v-show 切换，重新显示时会重播；子元素的进场动画在切换时由 App.vue 直接结束，避免多层叠加。
  */
 .view,
 .sessions-view {
-  animation: view-in var(--dur-base) var(--ease-out);
+  animation: page-in var(--dur-slow) var(--ease-glide);
 }
 
 .view {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSegIndicator } from '../shared/lib/seg-indicator'
 import { useDesktopSession } from './desktop/use-desktop-session'
 import { imageState } from '../features/generation/public'
 import ConfirmDialog from '../shared/ui/ConfirmDialog.vue'
@@ -218,6 +219,30 @@ watch(
   { flush: 'pre' },
 )
 
+/** 切页方向：在新视图显示前写入，page-in 动画据此从下方或上方滑入 */
+const PAGE_ENTER_OFFSET_PX = 10
+/** 生图创作的各分页（检查、优化、推测、预览）在侧栏里同属「生图创作」 */
+const SAME_PAGE_OFFSET_PX = 4
+function navIndex(tab: Tab): number {
+  const key = CREATION_PANELS.includes(tab) ? 'creation' : tab
+  return tabs.findIndex((item) => item.key === key)
+}
+watch(
+  () => shellState.tab,
+  (next, previous) => {
+    const nextIndex = navIndex(next)
+    const previousIndex = navIndex(previous)
+    let offset = SAME_PAGE_OFFSET_PX
+    if (nextIndex > previousIndex) {
+      offset = PAGE_ENTER_OFFSET_PX
+    } else if (nextIndex < previousIndex) {
+      offset = -PAGE_ENTER_OFFSET_PX
+    }
+    contentEl.value?.style.setProperty('--page-enter-y', `${offset}px`)
+  },
+  { flush: 'pre' },
+)
+
 /**
  * 视图用 v-show 切换，重新显示时其中所有 CSS 进场动画都会重播（卡片依次弹出等）。
  * 切换页面只保留视图自身的淡入（view-in），其余有限次的进场动画直接结束；
@@ -230,6 +255,7 @@ watch(
       if (
         animation instanceof CSSAnimation &&
         animation.animationName !== 'view-in' &&
+        animation.animationName !== 'page-in' &&
         animation.effect?.getComputedTiming().iterations !== Infinity
       ) {
         animation.finish()
@@ -484,7 +510,10 @@ async function onDrop(event2: DragEvent) {
         <SkillPicker v-if="settingsState.settings" />
         <div v-if="settingsState.settings">
           <div class="side-label">目标模型</div>
-          <div class="seg block">
+          <div
+            v-seg-indicator
+            class="seg block"
+          >
             <button
               :class="{ on: settingsState.settings.naiVersion === 'v4.5' }"
               :disabled="switchingVersion || imageState.generating"
@@ -518,49 +547,54 @@ async function onDrop(event2: DragEvent) {
           class="agent-status-slot"
           aria-live="polite"
         >
-          <div
-            v-if="agentOperating"
-            class="agent-operating"
-            role="status"
-            :title="agentStage"
+          <Transition
+            name="status-pill"
+            mode="out-in"
           >
-            <Icon
-              name="agent"
-              :size="14"
-              class="spin-slow"
-            /><b>外部 Agent 正在操作</b><span>{{ agentStage }}</span
-            ><button
-              class="btn ghost small"
-              @click="
-                frontend?.status === 'running'
-                  ? stopFrontend()
-                  : agentTask && cancelTask(agentTask.id)
-              "
+            <div
+              v-if="agentOperating"
+              class="agent-operating"
+              role="status"
+              :title="agentStage"
             >
-              停止
-            </button>
-          </div>
-          <details
-            v-else-if="frontend?.status === 'error'"
-            class="agent-error"
-          >
-            <summary class="disclosure">Agent 操作未完成</summary>
-            <div role="alert">
-              {{ frontend.stage
-              }}<button
+              <Icon
+                name="agent"
+                :size="14"
+                class="spin-slow"
+              /><b>外部 Agent 正在操作</b><span>{{ agentStage }}</span
+              ><button
                 class="btn ghost small"
-                @click="frontend = null"
+                @click="
+                  frontend?.status === 'running'
+                    ? stopFrontend()
+                    : agentTask && cancelTask(agentTask.id)
+                "
               >
-                关闭
+                停止
               </button>
             </div>
-          </details>
-          <span
-            v-else-if="showAgentResult"
-            class="muted small"
-            role="status"
-            >Agent 操作已完成</span
-          >
+            <details
+              v-else-if="frontend?.status === 'error'"
+              class="agent-error"
+            >
+              <summary class="disclosure">Agent 操作未完成</summary>
+              <div role="alert">
+                {{ frontend.stage
+                }}<button
+                  class="btn ghost small"
+                  @click="frontend = null"
+                >
+                  关闭
+                </button>
+              </div>
+            </details>
+            <span
+              v-else-if="showAgentResult"
+              class="muted small"
+              role="status"
+              >Agent 操作已完成</span
+            >
+          </Transition>
         </div>
         <TaskCenter />
       </header>
@@ -609,7 +643,7 @@ async function onDrop(event2: DragEvent) {
           v-show="shellState.tab === 'workspace'"
           ref="workspaceView"
         />
-        <GalleryView v-if="shellState.tab === 'gallery'" />
+        <GalleryView v-show="shellState.tab === 'gallery'" />
         <FavoritesView v-show="shellState.tab === 'favorites'" />
         <SettingsView
           v-show="shellState.tab === 'settings'"
@@ -671,9 +705,12 @@ async function onDrop(event2: DragEvent) {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  padding: 2px 3px 2px 10px;
+  border-radius: 999px;
   font-size: 11px;
   color: var(--pink-deep);
-  min-width: 0;
+  background: var(--pink-soft);
 }
 
 .agent-operating b {

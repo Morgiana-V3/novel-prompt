@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { vSegIndicator } from '../../../shared/lib/seg-indicator'
+import Icon from '../../../shared/ui/Icon.vue'
 import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue'
 import type { SkillResource } from '@shared/skills/types'
 import MarkdownText from '../../../shared/ui/MarkdownText.vue'
@@ -195,7 +197,10 @@ function remove(): void {
         class="btn ghost small"
         @click="add"
       >
-        ＋ 新增参考
+        <Icon
+          name="plus"
+          :size="13"
+        />新增参考
       </button>
     </aside>
     <section class="skill-document-main">
@@ -207,6 +212,7 @@ function remove(): void {
         >
         <div
           v-if="!imageUrl"
+          v-seg-indicator
           class="seg"
           aria-label="Markdown 显示模式"
         >

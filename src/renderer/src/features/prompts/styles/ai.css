@@ -23,7 +23,7 @@
   font-size: 12.5px;
   white-space: pre-wrap;
   word-break: break-all;
-  animation: shake var(--dur-emph) var(--ease-out);
+  animation: alert-in var(--dur-emph) var(--ease-out);
 }
 
 .timeline {
@@ -173,7 +173,7 @@
   height: 5px;
   border-radius: 50%;
   background: var(--pink);
-  animation: dot 0.9s ease-in-out infinite;
+  animation: dot 1.2s ease-in-out infinite;
 }
 
 .dots i:nth-child(2) {

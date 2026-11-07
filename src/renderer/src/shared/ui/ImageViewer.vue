@@ -39,7 +39,6 @@ const thumbnails = computed(() => {
 })
 const displayed = ref(props.image)
 const loading = ref(false)
-const direction = ref(1)
 let imageRequest = 0
 const zoom = ref(100)
 const width = ref(props.image.width || 0)
@@ -132,12 +131,10 @@ const close = () => {
 }
 watch(
   () => props.image.url,
-  async (url, previousUrl) => {
+  async (url) => {
     hideMenu()
     const request = ++imageRequest
     const next = props.image
-    const previousIndex = props.images?.findIndex((image) => image.url === previousUrl) ?? -1
-    direction.value = imageIndex.value >= previousIndex ? 1 : -1
     loading.value = true
     failed.value = false
     // Decode before replacing the visible image, keeping the previous frame on screen.
@@ -340,10 +337,6 @@ onBeforeUnmount(() => {
         <div
           class="iv-stage"
           :aria-busy="loading"
-          :style="{
-            '--iv-enter-offset': `${direction * 22}px`,
-            '--iv-leave-offset': `${direction * -14}px`,
-          }"
         >
           <Transition name="iv-image">
             <ImageViewport
@@ -569,27 +562,22 @@ onBeforeUnmount(() => {
   box-shadow: none;
 }
 
+/*
+ * 切换图片只在原位快速交叉淡化，主体不左右移动；方向感由下方缩略图条承担，
+ * 连续快速翻看时画面保持稳定。
+ */
 .iv-image-enter-active {
-  transition:
-    opacity var(--dur-slow) ease,
-    transform var(--dur-emph) cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition: opacity var(--dur-fast) var(--ease-out);
 }
 
 .iv-image-leave-active {
   pointer-events: none;
-  transition:
-    opacity var(--dur-base) ease,
-    transform var(--dur-slow) cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition: opacity var(--dur-fast) var(--ease-in);
 }
 
-.iv-image-enter-from {
-  opacity: 0;
-  transform: translateX(var(--iv-enter-offset)) scale(0.985);
-}
-
+.iv-image-enter-from,
 .iv-image-leave-to {
   opacity: 0;
-  transform: translateX(var(--iv-leave-offset)) scale(0.99);
 }
 
 .iv-step {

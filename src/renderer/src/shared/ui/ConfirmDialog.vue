@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, useId } from 'vue'
 import Icon from './Icon.vue'
+import { backdropCloser, closeDialogThen } from '../lib/dialog-motion'
 
 defineProps<{
   title: string
@@ -17,6 +18,20 @@ const dialog = ref<HTMLDialogElement>()
 const id = useId()
 onMounted(() => dialog.value?.showModal())
 onBeforeUnmount(() => dialog.value?.close())
+
+/** 先播完退场再通知父组件；关闭期间对话框已不可交互，不会重复触发 */
+function finish(result: 'confirm' | 'cancel' | 'alternate') {
+  closeDialogThen(dialog.value, () => {
+    if (result === 'confirm') {
+      emit('confirm')
+    } else if (result === 'alternate') {
+      emit('alternate')
+    } else {
+      emit('cancel')
+    }
+  })
+}
+const backdrop = backdropCloser(() => finish('cancel'))
 </script>
 
 <template>
@@ -27,7 +42,9 @@ onBeforeUnmount(() => dialog.value?.close())
       role="alertdialog"
       :aria-labelledby="`${id}-title`"
       :aria-describedby="`${id}-message`"
-      @cancel.prevent="emit('cancel')"
+      @cancel.prevent="finish('cancel')"
+      @pointerdown="backdrop.onPointerdown"
+      @click="backdrop.onClick"
       @keydown.stop
     >
       <div class="confirm-head">
@@ -66,20 +83,20 @@ onBeforeUnmount(() => dialog.value?.close())
         <button
           :class="['btn', cost ? '' : 'ghost small']"
           autofocus
-          @click="emit('cancel')"
+          @click="finish('cancel')"
         >
           {{ cancelLabel ?? '取消' }}
         </button>
         <button
           v-if="alternateLabel"
           :class="['btn', cost ? '' : 'small']"
-          @click="emit('alternate')"
+          @click="finish('alternate')"
         >
           {{ alternateLabel }}
         </button>
         <button
           :class="['btn', cost ? '' : 'small', danger ? 'danger' : 'primary']"
-          @click="emit('confirm')"
+          @click="finish('confirm')"
         >
           {{ confirmLabel }}
         </button>

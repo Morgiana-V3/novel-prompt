@@ -1,8 +1,37 @@
-/* ---------- 动画 ---------- */
+/*
+ * ---------- 动效角色 ----------
+ * 每种动画只对应一种场景，新增动效先选角色，不要给所有元素都套 fade-up：
+ * - page-in      侧栏切换页面：按导航顺序从下方或上方滑入
+ * - view-in      页面内的面板 / 同一区域内切换视图（4px 淡入）
+ * - fade-up      集合首次出现时的卡片 / 列表项，配合 --i 依次错开
+ * - fade-in      状态变化引出的内联提示、小块内容（不位移，避免文字跳动）
+ * - jelly-in     弹窗（原生 dialog、.modal-panel）：平稳张开、轻微越过后落定，退场仍是快速缩小淡出
+ * - pop          浮层、新加入的单个元素
+ * - slide-in-end 从右侧（结束侧）进入的检查器 / 详情栏
+ * - alert-in     错误提示：淡入并闪一下左侧强调色，不抖动
+ * - float        拖放等待中的轻浮动循环
+ * - dot / indeterminate / breathe / spin  进行中状态
+ * - shimmer      首次加载的骨架占位
+ * - 原生 dialog、status-pill、popover-up 见下方各自说明
+ * 页面结构容器（.card、.group 等）不单独做进场，由页面的 view-in 统一承担。
+ */
 @keyframes view-in {
   from {
     opacity: 0;
     transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 侧栏切页：按导航方向从下方或上方轻滑入（--page-enter-y 由 App.vue 按前后顺序设置） */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--page-enter-y, 6px));
   }
 
   to {
@@ -60,20 +89,6 @@
   }
 }
 
-@keyframes twinkle {
-  0% {
-    transform: scale(1) rotate(0);
-  }
-
-  50% {
-    transform: scale(1.3) rotate(20deg);
-  }
-
-  100% {
-    transform: scale(1) rotate(0);
-  }
-}
-
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -93,48 +108,105 @@
 
 @keyframes dot {
   0%,
+  80%,
   100% {
     transform: translateY(0);
-    opacity: 0.5;
+    opacity: 0.35;
   }
 
-  50% {
+  40% {
     transform: translateY(-4px);
     opacity: 1;
   }
 }
 
-@keyframes shake {
+/*
+ * 弹窗弹出：从 95% 平稳张开，只轻轻越过终点不到 1% 再落定，不做回落抖动；
+ * 纵向略晚一点到位，保留一丝弹性但不张扬。
+ */
+@keyframes jelly-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.955, 0.94);
+    animation-timing-function: cubic-bezier(0.22, 0.8, 0.36, 1);
+  }
+
+  62% {
+    opacity: 1;
+    transform: scale(1.004, 1.008);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.3, 1);
+  }
+
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes slide-in-end {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes alert-in {
+  0% {
+    opacity: 0;
+    box-shadow: inset 3px 0 0 var(--bad);
+  }
+
+  40% {
+    opacity: 1;
+    box-shadow: inset 3px 0 0 var(--bad);
+  }
+
+  100% {
+    box-shadow: inset 0 0 0 var(--bad);
+  }
+}
+
+@keyframes float {
   0%,
   100% {
-    transform: translateX(0);
+    transform: translateY(0);
   }
 
-  20%,
-  60% {
-    transform: translateX(-4px);
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+/* 不定进度：35% 宽的光条从左侧外匀速滑到右侧外，只动 transform */
+@keyframes indeterminate {
+  from {
+    transform: translateX(-100%);
   }
 
-  40%,
-  80% {
-    transform: translateX(4px);
+  to {
+    transform: translateX(290%);
+  }
+}
+
+/* 骨架占位的柔光：背景从右向左扫过 */
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+
+  100% {
+    background-position: 0% 0;
   }
 }
 
 @keyframes stripes {
   to {
     background-position: 22.6px 0;
-  }
-}
-
-/* 配合 width: 35% 的不定进度条：从左侧外滑入到右侧外，只动 transform */
-@keyframes slide {
-  0% {
-    transform: translateX(-100%);
-  }
-
-  100% {
-    transform: translateX(286%);
   }
 }
 
@@ -239,6 +311,10 @@ img[data-fade]:not(.img-ready) {
 }
 
 /* 列表增删：TransitionGroup name="list"，离场元素由 detachLeaving 移出文档流 */
+.list-motion {
+  position: relative;
+}
+
 .list-enter-from {
   opacity: 0;
   transform: translateY(6px);
@@ -294,6 +370,53 @@ img[data-fade]:not(.img-ready) {
   opacity: 0;
 }
 
+/*
+ * 状态标签伸展进场（Transition name="status-pill"）：像任务按钮一样从贴近右侧的一端展开，
+ * 用 clip-path 只裁切不重排，旁边的元素不会被推动；退场更快地收回同一端。
+ */
+.status-pill-enter-active {
+  transition:
+    clip-path var(--dur-emph) var(--ease-glide),
+    opacity var(--dur-base) var(--ease-morph);
+}
+
+.status-pill-leave-active {
+  transition:
+    clip-path var(--dur-slow) var(--ease-in),
+    opacity var(--dur-fast) var(--ease-in);
+}
+
+.status-pill-enter-from,
+.status-pill-leave-to {
+  opacity: 0;
+  clip-path: inset(0 0 0 100% round 999px);
+}
+
+.status-pill-enter-to,
+.status-pill-leave-from {
+  clip-path: inset(0 0 0 0 round 999px);
+}
+
+/* 向上展开的浮层（贴在底栏上方，如生成设置）：从底边长出、收回底边 */
+.popover-up-enter-active {
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-slow) var(--ease-glide);
+}
+
+.popover-up-leave-active {
+  transition:
+    opacity var(--dur-fast) var(--ease-in),
+    transform var(--dur-fast) var(--ease-in);
+  pointer-events: none;
+}
+
+.popover-up-enter-from,
+.popover-up-leave-to {
+  opacity: 0;
+  transform: translateY(6px) scale(0.98);
+}
+
 /* 锚定在触发按钮附近的浮层面板（任务中心等），transform-origin 由组件自己指定 */
 .popover-enter-active {
   transition:
@@ -315,15 +438,45 @@ img[data-fade]:not(.img-ready) {
 }
 
 /*
- * 原生 <dialog> 在 top layer 中渲染，套不了 <Transition>：统一只做进场。
- * :where() 不加权重，组件里自定义的 animation 仍然优先。
+ * 原生 <dialog>：进场果冻弹出（jelly-in），close() 后缩小淡出再真正隐藏。
+ * display / overlay 用 allow-discrete 延后切换，退场动画播完才离开 top layer。
+ * 由 v-if 卸载的对话框配合 shared/lib/dialog-motion.ts 的 closeDialogThen 先播退场。
+ * :where() 不加权重，组件可以覆盖。
  */
+:where(dialog) {
+  opacity: 0;
+  transform: translateY(8px) scale(0.97);
+  transition:
+    opacity var(--dur-fast) var(--ease-in),
+    transform var(--dur-fast) var(--ease-in),
+    overlay var(--dur-fast) allow-discrete,
+    display var(--dur-fast) allow-discrete;
+}
+
 :where(dialog[open]) {
-  animation: pop var(--dur-slow) var(--ease-out);
+  opacity: 1;
+  transform: none;
+  animation: jelly-in var(--dur-jelly) both;
 }
 
 :where(dialog)::backdrop {
-  animation: fade-in var(--dur-base) var(--ease-out);
+  opacity: 0;
+  transition:
+    opacity var(--dur-fast) var(--ease-in),
+    overlay var(--dur-fast) allow-discrete,
+    display var(--dur-fast) allow-discrete;
+}
+
+:where(dialog[open])::backdrop {
+  opacity: 1;
+  transition-duration: var(--dur-base);
+  transition-timing-function: var(--ease-out);
+}
+
+@starting-style {
+  :where(dialog[open])::backdrop {
+    opacity: 0;
+  }
 }
 
 /* Shared modal motion; parents unmount only after the leave transition. */
@@ -339,10 +492,6 @@ img[data-fade]:not(.img-ready) {
   pointer-events: none;
 }
 
-.modal-enter-active .modal-panel {
-  transition: transform var(--dur-slow) var(--ease-out);
-}
-
 .modal-leave-active .modal-panel {
   transition: transform var(--dur-fast) var(--ease-in);
 }
@@ -352,7 +501,11 @@ img[data-fade]:not(.img-ready) {
   opacity: 0;
 }
 
-.modal-enter-from .modal-panel,
+/* 面板挂载即果冻弹出；离场沿用快速缩小，与原生 dialog 一致 */
+.modal-panel {
+  animation: jelly-in var(--dur-jelly) both;
+}
+
 .modal-leave-to .modal-panel {
-  transform: translateY(10px) scale(0.98);
+  transform: translateY(6px) scale(0.97);
 }

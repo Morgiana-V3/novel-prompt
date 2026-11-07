@@ -24,6 +24,11 @@
   --nl-soft: #edf4ff;
   --shadow-sm: 0 1px 2px rgb(20 20 30 / 4%), 0 1px 3px rgb(20 20 30 / 6%);
   --shadow: 0 6px 24px rgb(20 20 30 / 6%);
+
+  /* 悬停上浮：图片卡片、项目卡统一一档，小标签更轻一档；配同一层上浮阴影 */
+  --lift-card: -2px;
+  --lift-chip: -1px;
+  --shadow-lift: 0 10px 22px rgb(20 20 30 / 10%);
   --shadow-pop: 0 1px 2px rgb(20 20 30 / 4%), 0 10px 30px rgb(20 20 30 / 12%);
   --shadow-modal: 0 24px 60px rgb(20 20 30 / 22%);
   --scrim: rgb(16 16 20 / 42%);
@@ -33,10 +38,22 @@
   --bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
+
+  /* 位移类过渡（滑块、指示条、抽屉）：起步快、收尾长，读起来是“滑过去”而不是“弹过去” */
+  --ease-glide: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* 原地变形（颜色、底色、形态整体切换）：两端都缓，避免一开头就跳到终点 */
+  --ease-morph: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* 往返循环（浮动、扫光、不定进度）：两端都缓 */
+  --ease-loop: cubic-bezier(0.65, 0, 0.35, 1);
   --dur-fast: 0.14s;
   --dur-base: 0.2s;
   --dur-slow: 0.28s;
   --dur-emph: 0.4s;
+
+  /* 弹窗进场：张开到落定的总时长 */
+  --dur-jelly: 0.42s;
 
   /* 一次性反馈（收藏、星标闪动、提示摆动等）的基准时长；循环动画（加载、吉祥物）是动画自身的速度，不随它调整 */
   --dur-feedback: 0.6s;

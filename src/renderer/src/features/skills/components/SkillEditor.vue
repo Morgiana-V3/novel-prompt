@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSegIndicator } from '../../../shared/lib/seg-indicator'
 import { reportError } from '../../../shared/lib/notifications'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import type { SkillDoc, SkillModel, SkillScope, SkillResource } from '@shared/skills/types'
@@ -198,7 +199,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               </div>
               <div class="form-field">
                 <label>作用于</label>
-                <div class="seg">
+                <div
+                  v-seg-indicator
+                  class="seg"
+                >
                   <button
                     v-for="s in scopes"
                     :key="s.v"
@@ -212,7 +216,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               </div>
               <div class="form-field">
                 <label>适用模型</label>
-                <div class="seg">
+                <div
+                  v-seg-indicator
+                  class="seg"
+                >
                   <button
                     v-for="m in models"
                     :key="m.v"

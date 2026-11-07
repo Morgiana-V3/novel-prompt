@@ -387,7 +387,7 @@ function closePanel() {
   transform: translateX(6px);
   transition:
     opacity var(--dur-base) ease,
-    transform var(--dur-emph) cubic-bezier(0.22, 1, 0.36, 1);
+    transform var(--dur-emph) var(--ease-glide);
 }
 
 .task-chevron {
@@ -452,8 +452,8 @@ function closePanel() {
   border-radius: 10px;
   background: var(--panel);
   transition:
-    width var(--dur-emph) cubic-bezier(0.22, 1, 0.36, 1),
-    border-radius var(--dur-emph) cubic-bezier(0.22, 1, 0.36, 1),
+    width var(--dur-emph) var(--ease-glide),
+    border-radius var(--dur-emph) var(--ease-glide),
     background-color var(--dur-base) ease,
     transform var(--dur-base) ease;
 }
@@ -486,7 +486,7 @@ function closePanel() {
   inset: 0;
   transition:
     opacity var(--dur-base) ease,
-    transform var(--dur-emph) cubic-bezier(0.22, 1, 0.36, 1);
+    transform var(--dur-emph) var(--ease-glide);
 }
 
 .task-loading {
@@ -762,7 +762,7 @@ function closePanel() {
   border-radius: 4px;
   transform: none;
   transition: none;
-  animation: task-progress 1.8s ease-in-out infinite;
+  animation: indeterminate 1.6s var(--ease-loop) infinite;
 }
 
 .task-footnote {
@@ -792,15 +792,5 @@ function closePanel() {
 .task-empty span {
   font-size: 11px;
   line-height: 1.9;
-}
-
-@keyframes task-progress {
-  from {
-    transform: translateX(-110%);
-  }
-
-  to {
-    transform: translateX(390%);
-  }
 }
 </style>

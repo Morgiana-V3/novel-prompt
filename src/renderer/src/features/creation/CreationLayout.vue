@@ -285,8 +285,8 @@ watch(
   background: var(--pink);
   pointer-events: none;
   transition:
-    transform var(--dur-slow) cubic-bezier(0.22, 1, 0.36, 1),
-    width var(--dur-slow) cubic-bezier(0.22, 1, 0.36, 1);
+    transform var(--dur-slow) var(--ease-glide),
+    width var(--dur-slow) var(--ease-glide);
 }
 
 @media (prefers-reduced-motion: reduce) {

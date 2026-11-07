@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import IconSwap from '../../shared/ui/IconSwap.vue'
 import { computed, ref } from 'vue'
 import type { ReverseResult } from '@shared/reverse/types'
 import { rankArtists } from '@shared/reverse/candidates'
@@ -69,7 +70,7 @@ const agreement = computed(() => {
               >优先试试</span
             >
             <span class="recommendation-add"
-              ><Icon
+              ><IconSwap
                 :name="selected(artist.name) ? 'check' : 'plus'"
                 :size="14"
             /></span>
@@ -136,7 +137,7 @@ const agreement = computed(() => {
               >
                 <span>{{ tag.name }}</span
                 ><small>{{ tag.score.toFixed(4) }}</small
-                ><Icon
+                ><IconSwap
                   :name="selected(tag.name) ? 'check' : 'plus'"
                   :size="12"
                 />

@@ -323,8 +323,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
   border-radius: 6px;
   background: var(--hover);
   transition:
-    width var(--dur-base) var(--ease-out),
-    height var(--dur-base) var(--ease-out);
+    width var(--dur-base) var(--ease-glide),
+    height var(--dur-base) var(--ease-glide);
 }
 
 .pit-preview-outer.expanding {
@@ -342,7 +342,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
   position: absolute;
   object-fit: fill;
   border-radius: 4px;
-  transition: all var(--dur-base) var(--ease-out);
+
+  /* 小尺寸预览随扩图边距移动，只过渡实际变化的定位与尺寸 */
+  transition:
+    left var(--dur-base) var(--ease-glide),
+    top var(--dur-base) var(--ease-glide),
+    width var(--dur-base) var(--ease-glide),
+    height var(--dur-base) var(--ease-glide);
 }
 
 .pit-size {

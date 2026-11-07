@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AnimatedNumber from '../../shared/ui/AnimatedNumber.vue'
+import { detachLeaving } from '../../shared/lib/list-motion'
 import { vFadeImg } from '../../shared/lib/fade-image'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { NaiImage } from '@shared/images/types'
@@ -25,7 +27,12 @@ const images = ref<NaiImage[]>([])
 const api = window.api
 const retention = ref('all')
 const selected = ref('')
-const page = ref(1)
+/* 无限滚动：先显示 60 张，接近底部再追加；切换图集或筛选时重置 */
+const PAGE_SIZE = 60
+const STAGGER_CAP = 16
+const shownCount = ref(PAGE_SIZE)
+const browser = ref<HTMLElement>()
+const loadMoreSentinel = ref<HTMLElement>()
 const loading = ref(false)
 const busy = ref(false)
 const error = ref('')
@@ -44,8 +51,11 @@ const filtered = computed(() =>
       (retention.value === 'all' || image.storage === retention.value),
   ),
 )
-const visible = computed(() => filtered.value.slice((page.value - 1) * 60, page.value * 60))
-const pages = computed(() => Math.max(1, Math.ceil(filtered.value.length / 60)))
+const visible = computed(() => filtered.value.slice(0, shownCount.value))
+const hasMore = computed(() => shownCount.value < filtered.value.length)
+/** 每批新追加的缩略图从 0 开始依次错开入场 */
+const staggerIndex = (position: number) => Math.min(position % PAGE_SIZE, STAGGER_CAP)
+const gridKey = computed(() => `${collection.value}|${retention.value}`)
 const index = computed(() => filtered.value.findIndex((image) => image.name === selected.value))
 const storageLabel = (image: NaiImage) =>
   ({ temporary: '临时', saved: '已留存', workspace: '精修存档' })[image.storage || 'saved']
@@ -86,22 +96,61 @@ async function refresh() {
     }
   }
 }
+/*
+ * 详情栏常驻占位，始终有一张选中：切换图集或筛选时默认选中第一张；
+ * 删除或移出当前图集后选中原位置的相邻图片；图集为空时显示占位。
+ */
 watch([collection, retention], () => {
-  page.value = 1
-  selected.value = ''
+  shownCount.value = PAGE_SIZE
+  selected.value = filtered.value[0]?.name ?? ''
   lightbox.value = false
+  browser.value?.scrollTo({ top: 0 })
 })
-watch(pages, (value) => {
-  page.value = Math.min(page.value, value)
+let lastIndex = 0
+watch(index, (position) => {
+  if (position >= 0) {
+    lastIndex = position
+  }
 })
+watch(
+  filtered,
+  (list) => {
+    if (list.some((image) => image.name === selected.value)) {
+      return
+    }
+    const neighbor = list[Math.min(lastIndex, list.length - 1)]
+    selected.value = neighbor?.name ?? ''
+  },
+  { immediate: true },
+)
+
+let loadMoreObserver: IntersectionObserver | undefined
+function observeLoadMore(element: HTMLElement | undefined) {
+  loadMoreObserver?.disconnect()
+  if (element) {
+    loadMoreObserver?.observe(element)
+  }
+}
+watch(loadMoreSentinel, observeLoadMore)
+
 onMounted(() => {
   void refresh().catch(reportError)
   unsubscribe = window.api.onGalleryChanged(() => {
     void refresh().catch(reportError)
   })
+  loadMoreObserver = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((entry) => entry.isIntersecting) && hasMore.value) {
+        shownCount.value += PAGE_SIZE
+      }
+    },
+    { root: browser.value, rootMargin: '600px 0px' },
+  )
+  observeLoadMore(loadMoreSentinel.value)
 })
 onBeforeUnmount(() => {
   unsubscribe?.()
+  loadMoreObserver?.disconnect()
   epoch++
 })
 async function act(action: () => Promise<unknown>) {
@@ -188,10 +237,14 @@ async function saveAs() {
   })
 }
 function step(delta: number) {
-  const image = filtered.value[index.value + delta]
+  const nextIndex = index.value + delta
+  const image = filtered.value[nextIndex]
   if (image) {
     selected.value = image.name
-    page.value = Math.floor(index.value / 60) + 1
+    // 大图里翻到尚未加载的位置时，同步把网格追加到那里
+    if (nextIndex >= shownCount.value) {
+      shownCount.value = (Math.floor(nextIndex / PAGE_SIZE) + 1) * PAGE_SIZE
+    }
   }
 }
 </script>
@@ -244,25 +297,33 @@ function step(delta: number) {
         :class="{ active: collection === 'all' }"
         @click="collection = 'all'"
       >
-        <span>全部图片</span><small>{{ images.length }}</small>
+        <span>全部图片</span><small><AnimatedNumber :value="images.length" /></small>
       </button>
-      <button
-        v-for="item in collections"
-        :key="item.id"
-        class="collection-item"
-        :class="{ active: collection === item.id }"
-        @click="collection = item.id"
+      <TransitionGroup
+        tag="div"
+        name="list"
+        class="collection-list list-motion"
+        @before-leave="detachLeaving"
       >
-        <span>{{ item.name }}</span
-        ><small>{{
-          images.filter((image) => (image.collectionId || 'default') === item.id).length
-        }}</small>
-      </button>
+        <button
+          v-for="item in collections"
+          :key="item.id"
+          class="collection-item"
+          :class="{ active: collection === item.id }"
+          @click="collection = item.id"
+        >
+          <span>{{ item.name }}</span
+          ><small>{{
+            images.filter((image) => (image.collectionId || 'default') === item.id).length
+          }}</small>
+        </button>
+      </TransitionGroup>
     </aside>
     <main class="library-main">
       <header class="library-toolbar">
         <h2>
-          {{ activeCollection?.name || '全部图片' }} <small>{{ filtered.length }}</small>
+          {{ activeCollection?.name || '全部图片' }}
+          <small><AnimatedNumber :value="filtered.length" /></small>
         </h2>
         <div class="row">
           <button
@@ -307,202 +368,224 @@ function step(delta: number) {
         {{ error }}
       </p>
       <div class="library-content">
-        <div class="library-browser scroll">
+        <div
+          ref="browser"
+          class="library-browser scroll"
+          :aria-busy="loading"
+        >
           <div
-            v-if="!filtered.length && !error"
+            v-if="loading && !images.length && !error"
+            class="library-grid library-skeleton"
+            role="status"
+            aria-label="正在读取图库"
+          >
+            <span
+              v-for="n in 12"
+              :key="n"
+              class="library-skeleton-tile"
+              :style="{ '--i': n }"
+            ></span>
+          </div>
+          <div
+            v-else-if="!filtered.length && !error"
             class="library-empty"
           >
             <Mascot
-              v-if="!loading"
               :mood="retention === 'all' ? 'sleep' : 'shrug'"
               :size="120"
             />
-            <p v-if="loading">正在读取图库…</p>
-            <p v-else-if="retention !== 'all'">没有符合筛选条件的图片</p>
+            <p v-if="retention !== 'all'">没有符合筛选条件的图片</p>
             <p v-else>这个图集还没有图片</p>
           </div>
-          <div class="library-grid">
-            <button
-              v-for="image in visible"
-              :key="image.name"
-              class="library-thumb"
-              :class="{ selected: selected === image.name }"
-              :aria-label="`查看图片 ${image.name}`"
-              @click="selected = image.name"
-              @dblclick="lightbox = true"
-            >
-              <img
-                v-fade-img
-                :src="image.url"
-                alt="生成图片"
-                loading="lazy"
-                draggable="false"
-              />
-              <span
-                >{{ image.width }} × {{ image.height
-                }}<small>{{ storageLabel(image) }}</small></span
-              >
-            </button>
-          </div>
-          <div
-            v-if="pages > 1"
-            class="library-pagination"
+          <Transition
+            name="library-swap"
+            mode="out-in"
           >
-            <button
-              class="btn ghost small"
-              :disabled="page === 1"
-              @click="page--"
+            <div
+              v-if="filtered.length"
+              :key="gridKey"
+              class="library-grid"
             >
-              上一页</button
-            ><span>{{ page }} / {{ pages }}</span
-            ><button
-              class="btn ghost small"
-              :disabled="page === pages"
-              @click="page++"
-            >
-              下一页
-            </button>
-          </div>
+              <button
+                v-for="(image, position) in visible"
+                :key="image.name"
+                class="library-thumb"
+                :class="{ selected: selected === image.name }"
+                :style="{ '--i': staggerIndex(position) }"
+                :aria-label="`查看图片 ${image.name}`"
+                @click="selected = image.name"
+                @dblclick="lightbox = true"
+              >
+                <img
+                  v-fade-img
+                  :src="image.url"
+                  alt="生成图片"
+                  loading="lazy"
+                  draggable="false"
+                />
+                <span
+                  >{{ image.width }} × {{ image.height
+                  }}<small>{{ storageLabel(image) }}</small></span
+                >
+              </button>
+            </div>
+          </Transition>
+          <div
+            v-if="hasMore"
+            ref="loadMoreSentinel"
+            class="library-sentinel"
+            aria-hidden="true"
+          ></div>
         </div>
         <aside
-          v-if="current"
           class="library-inspector scroll"
           aria-label="图片详情"
         >
-          <div class="library-preview">
-            <button
-              :key="current.name"
-              class="library-preview-open"
-              aria-label="放大图片"
-              title="放大查看（也可以双击缩略图）"
-              @click="lightbox = true"
-            >
-              <img
-                v-fade-img
-                :src="current.url"
-                alt="当前图片"
-              />
-              <span class="library-preview-zoom"
-                ><Icon
-                  name="expand"
-                  :size="13"
-              /></span>
-            </button>
-          </div>
-          <dl class="library-meta">
-            <div>
-              <dt>尺寸</dt>
-              <dd>{{ current.width }} × {{ current.height }}</dd>
-            </div>
-            <div>
-              <dt>状态</dt>
-              <dd
-                class="library-storage"
-                :data-storage="current.storage || 'saved'"
-              >
-                {{ storageLabel(current) }}
-              </dd>
-            </div>
-            <div v-if="current.seed !== undefined">
-              <dt>种子</dt>
-              <dd>
-                <button
-                  class="library-seed"
-                  title="复制种子"
-                  @click="copy(String(current.seed))"
-                >
-                  {{ current.seed
-                  }}<Icon
-                    name="copy"
-                    :size="12"
-                  />
-                </button>
-              </dd>
-            </div>
-            <div>
-              <dt>时间</dt>
-              <dd>{{ createdAtLabel }}</dd>
-            </div>
-          </dl>
-          <section class="library-field">
-            <span class="library-field-label">所属图集</span>
-            <ThemeSelect
-              :model-value="current.collectionId || DEFAULT_COLLECTION"
-              :options="options"
-              :disabled="busy"
-              aria-label="图片所属图集"
-              @update:model-value="move"
-            />
-          </section>
           <p
-            v-if="current.storage === 'temporary'"
-            class="library-note"
+            v-if="!current"
+            class="library-inspector-empty"
           >
             <Icon
-              name="warn"
-              :size="13"
-            />临时图片退出后清理，分类不会自动留存。
+              name="image"
+              :size="26"
+            />{{ loading && !images.length ? '正在读取图库…' : '这个图集还没有图片' }}
           </p>
-          <div class="library-actions">
-            <button
-              v-if="current.storage === 'temporary'"
-              class="btn primary"
-              :disabled="busy"
-              @click="act(() => api.naiRetain(current!.name))"
-            >
-              留存图片
-            </button>
-            <div class="library-primary-row">
+          <template v-else>
+            <div class="library-preview">
               <button
-                class="btn"
-                :class="{ accent: current.storage !== 'temporary' }"
+                :key="current.name"
+                class="library-preview-open"
+                aria-label="放大图片"
+                title="放大查看（也可以双击缩略图）"
+                @click="lightbox = true"
+              >
+                <img
+                  v-fade-img
+                  :src="current.url"
+                  alt="当前图片"
+                />
+                <span class="library-preview-zoom"
+                  ><Icon
+                    name="expand"
+                    :size="13"
+                /></span>
+              </button>
+            </div>
+            <dl class="library-meta">
+              <div>
+                <dt>尺寸</dt>
+                <dd>{{ current.width }} × {{ current.height }}</dd>
+              </div>
+              <div>
+                <dt>状态</dt>
+                <dd
+                  class="library-storage"
+                  :data-storage="current.storage || 'saved'"
+                >
+                  {{ storageLabel(current) }}
+                </dd>
+              </div>
+              <div v-if="current.seed !== undefined">
+                <dt>种子</dt>
+                <dd>
+                  <button
+                    class="library-seed"
+                    title="复制种子"
+                    @click="copy(String(current.seed))"
+                  >
+                    {{ current.seed
+                    }}<Icon
+                      name="copy"
+                      :size="12"
+                    />
+                  </button>
+                </dd>
+              </div>
+              <div>
+                <dt>时间</dt>
+                <dd>{{ createdAtLabel }}</dd>
+              </div>
+            </dl>
+            <section class="library-field">
+              <span class="library-field-label">所属图集</span>
+              <ThemeSelect
+                :model-value="current.collectionId || DEFAULT_COLLECTION"
+                :options="options"
                 :disabled="busy"
-                @click="reuse"
+                aria-label="图片所属图集"
+                @update:model-value="move"
+              />
+            </section>
+            <p
+              v-if="current.storage === 'temporary'"
+              class="library-note"
+            >
+              <Icon
+                name="warn"
+                :size="13"
+              />临时图片退出后清理，分类不会自动留存。
+            </p>
+            <div class="library-actions">
+              <button
+                v-if="current.storage === 'temporary'"
+                class="btn primary"
+                :disabled="busy"
+                @click="act(() => api.naiRetain(current!.name))"
+              >
+                留存图片
+              </button>
+              <div class="library-primary-row">
+                <button
+                  class="btn"
+                  :class="{ accent: current.storage !== 'temporary' }"
+                  :disabled="busy"
+                  @click="reuse"
+                >
+                  <Icon
+                    name="import"
+                    :size="14"
+                  />载入提示词与参数
+                </button>
+                <FavoriteButton
+                  :image="current"
+                  class="library-favorite"
+                />
+              </div>
+            </div>
+            <div class="library-tools">
+              <button
+                :disabled="busy"
+                title="另存为"
+                @click="saveAs"
               >
                 <Icon
-                  name="import"
-                  :size="14"
-                />载入提示词与参数
+                  name="download"
+                  :size="15"
+                /><span>另存为</span>
               </button>
-              <FavoriteButton
-                :image="current"
-                class="library-favorite"
-              />
+              <button
+                :disabled="busy"
+                title="打开文件位置"
+                @click="act(() => api.naiReveal(current!.name))"
+              >
+                <Icon
+                  name="folder"
+                  :size="15"
+                /><span>文件位置</span>
+              </button>
+              <button
+                class="danger"
+                :disabled="busy || current.storage === 'workspace'"
+                :title="deleteTitle"
+                @click="confirming = 'image'"
+              >
+                <Icon
+                  name="trash"
+                  :size="15"
+                /><span>删除</span>
+              </button>
             </div>
-          </div>
-          <div class="library-tools">
-            <button
-              :disabled="busy"
-              title="另存为"
-              @click="saveAs"
-            >
-              <Icon
-                name="download"
-                :size="15"
-              /><span>另存为</span>
-            </button>
-            <button
-              :disabled="busy"
-              title="打开文件位置"
-              @click="act(() => api.naiReveal(current!.name))"
-            >
-              <Icon
-                name="folder"
-                :size="15"
-              /><span>文件位置</span>
-            </button>
-            <button
-              class="danger"
-              :disabled="busy || current.storage === 'workspace'"
-              :title="deleteTitle"
-              @click="confirming = 'image'"
-            >
-              <Icon
-                name="trash"
-                :size="15"
-              /><span>删除</span>
-            </button>
-          </div>
+          </template>
         </aside>
       </div>
     </main>
@@ -620,9 +703,28 @@ function step(delta: number) {
 }
 
 .library-content {
+  position: relative;
   display: flex;
   flex: 1;
   min-height: 0;
+}
+
+/* 切换图集 / 筛选：旧网格快速淡出，新网格里的缩略图依次浮入（与收藏的生图配方一致） */
+.library-swap-enter-active {
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.library-swap-leave-active {
+  transition: opacity var(--dur-fast) var(--ease-in);
+}
+
+.library-swap-enter-from,
+.library-swap-leave-to {
+  opacity: 0;
+}
+
+.library-sentinel {
+  height: 1px;
 }
 
 /* 滚动条贴住区域右缘，右内边距扣掉滚动条槽位，与左侧留白对称 */
@@ -646,6 +748,24 @@ function step(delta: number) {
   background: var(--bg);
   min-width: 0;
   text-align: left;
+  animation: fade-up var(--dur-slow) var(--ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * var(--dur-stagger));
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-slow) var(--ease-glide);
+}
+
+.library-thumb:hover {
+  border-color: var(--pink-line);
+  box-shadow: var(--shadow-lift);
+  transform: translateY(var(--lift-card));
+}
+
+.library-thumb:active {
+  transform: translateY(0) scale(var(--press));
+  transition-duration: var(--dur-fast);
 }
 
 .library-thumb.selected {
@@ -670,16 +790,27 @@ function step(delta: number) {
   color: var(--text2);
 }
 
+/* 详情栏常驻占位：网格宽度固定，选中图片切换时只更新栏内内容，不挤压、不跳动 */
 .library-inspector {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  width: 280px;
+  width: 300px;
   flex-shrink: 0;
   padding: 18px calc(18px - var(--scrollbar-size)) 18px 18px;
   border-left: 1px solid var(--line);
   font-size: 12px;
-  animation: library-inspector-in var(--dur-slow) var(--ease-out);
+  background: var(--bg);
+}
+
+.library-inspector-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: auto 0;
+  color: var(--muted);
+  text-align: center;
 }
 
 .library-inspector > * {
@@ -934,21 +1065,19 @@ function step(delta: number) {
   white-space: nowrap;
 }
 
-@keyframes library-inspector-in {
-  from {
-    opacity: 0;
-    transform: translateX(8px);
-  }
-
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
 .library-error {
   color: var(--bad);
   padding: 0 20px;
+}
+
+/* 首次读取：按网格形状排出占位块，柔光依次扫过，读完后原位换成缩略图 */
+.library-skeleton-tile {
+  aspect-ratio: 1 / 1.13;
+  border-radius: 8px;
+  background: linear-gradient(100deg, var(--panel) 35%, var(--hover) 50%, var(--panel) 65%) 0 0 /
+    250% 100%;
+  animation: shimmer 1.4s var(--ease-loop) infinite;
+  animation-delay: calc(var(--i, 0) * 60ms);
 }
 
 .library-empty {
@@ -957,22 +1086,13 @@ function step(delta: number) {
   padding: 70px 10px;
 }
 
-.library-pagination {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  padding: 18px;
-  font-size: 12px;
-}
-
 @media (width < 1150px) {
   .library-collections {
     width: 145px;
   }
 
   .library-inspector {
-    width: 240px;
+    width: 260px;
   }
 }
 </style>

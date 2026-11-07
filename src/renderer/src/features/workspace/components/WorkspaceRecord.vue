@@ -173,7 +173,7 @@ const positionReference = computed(() => {
   gap: 14px;
   max-width: 1080px;
   padding: 6px 0 28px;
-  animation: fade-up var(--dur-slow) var(--ease-out);
+  animation: view-in var(--dur-base) var(--ease-out);
 }
 
 /* ---------- 摘要条：明确这是只读记录 ---------- */

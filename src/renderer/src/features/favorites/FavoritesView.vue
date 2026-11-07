@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AnimatedNumber from '../../shared/ui/AnimatedNumber.vue'
+import { vSegIndicator } from '../../shared/lib/seg-indicator'
 import { vFadeImg } from '../../shared/lib/fade-image'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { groupFavorites, type FavoriteGroup } from '@shared/images/favorite-groups'
@@ -315,7 +317,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     aria-label="收藏图片与生成记录"
   >
     <header class="favorites-toolbar">
-      <div class="seg">
+      <div
+        v-seg-indicator
+        class="seg"
+      >
         <button
           :class="{ on: favoriteTab === 'recipes' }"
           :data-count="favorites.items.length || null"
@@ -370,7 +375,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       >
         <template v-if="overview">
           <span class="muted small"
-            >{{ filtered.length }} 组 · {{ favorites.items.length }} 张</span
+            ><AnimatedNumber :value="filtered.length" /> 组 ·
+            <AnimatedNumber :value="favorites.items.length" /> 张</span
           >
           <button
             v-if="tag"
@@ -1026,9 +1032,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 
 .favorite-card:hover .favorite-cover {
-  transform: translateY(-3px);
+  transform: translateY(var(--lift-card));
   border-color: var(--pink-line);
-  box-shadow: var(--shadow-pop);
+  box-shadow: var(--shadow-lift);
 }
 
 .favorite-card:hover .favorite-cover img {

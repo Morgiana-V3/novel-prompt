@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { backdropCloser, DIALOG_EXIT_MS } from '../../shared/lib/dialog-motion'
+import IconSwap from '../../shared/ui/IconSwap.vue'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { NaiVersion } from '@shared/generation/types'
 import {
@@ -114,16 +116,22 @@ function close() {
   dialog.value?.close()
   onClose()
 }
+const backdrop = backdropCloser(() => close())
 function onClose() {
   // Native close events are queued; a previous close must not clear a reopened dialog.
   if (dialog.value?.open) {
     return
   }
-  opened.value = false
   loading.value = false
   enlargedArtist.value = null
   serial++
   clearTimeout(timer)
+  // 内容保留到退场动画播完再卸载，避免先变成空壳再缩小；期间若已重新打开则保留
+  setTimeout(() => {
+    if (!dialog.value?.open) {
+      opened.value = false
+    }
+  }, DIALOG_EXIT_MS)
 }
 function openSource() {
   window.api.openWebUrl(artistCatalogUrl(props.version)).catch(reportError)
@@ -185,7 +193,8 @@ defineExpose({ open })
     class="artist-catalog-dialog"
     aria-labelledby="artist-catalog-title"
     @close="onClose"
-    @click.self="close"
+    @pointerdown="backdrop.onPointerdown"
+    @click="backdrop.onClick"
     @cancel="cancel"
   >
     <template v-if="opened">
@@ -321,7 +330,7 @@ defineExpose({ open })
                 :disabled="busy || isSelected(artist.name)"
                 @click="$emit('add', artist.name)"
               >
-                <Icon
+                <IconSwap
                   :name="isSelected(artist.name) ? 'check' : 'plus'"
                   :size="13"
                 />{{ isSelected(artist.name) ? '已在当前方案' : '加入画师串' }}

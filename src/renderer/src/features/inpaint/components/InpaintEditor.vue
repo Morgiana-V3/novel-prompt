@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSegIndicator } from '../../../shared/lib/seg-indicator'
 import { useMaskRaster } from '../use-mask-raster'
 import { useSourceImage } from '../use-source-image'
 import { estimateGeneration, estimateLabel } from '@shared/generation/pricing'
@@ -26,6 +27,7 @@ import type { InpaintDraft } from '@shared/prompts/types'
 import { cleanErr } from '../../../shared/lib/format'
 import { toDrafts } from '../../prompts/public/draft'
 import Icon from '../../../shared/ui/Icon.vue'
+import RunButton from '../../../shared/ui/RunButton.vue'
 import ImageViewport from '../../../shared/ui/ImageViewport.vue'
 import ThemeSelect from '../../../shared/ui/ThemeSelect.vue'
 import { splitMaskComponent } from '../mask-components'
@@ -244,6 +246,8 @@ const annotations = computed(() =>
     .sort((region, region2) => region.number - region2.number),
 )
 const stopQueue = ref(false)
+/** 本次执行的区域数：多于一个时生成按钮才提供“停止后续区域” */
+const runningQueueSize = ref(0)
 const batchReady = computed(() =>
   annotations.value.filter((region) => region.accepted && region.hasPixels),
 )
@@ -451,6 +455,11 @@ function finishComment() {
 }
 function dismissFloating(pointerEvent: PointerEvent) {
   const target = pointerEvent.target as HTMLElement
+  // 点在遮罩本身（编辑面板外）：按关闭处理，有未保存内容时 close() 会先请求确认
+  if (target === pointerEvent.currentTarget) {
+    close().catch(reportError)
+    return
+  }
   if (target.closest('.ip-comment, .ip-context-menu')) {
     return
   }
@@ -616,6 +625,7 @@ async function generate(batch = false) {
       mask: exportMask(region),
       draft: cloneDraft(region.accepted ?? draft),
     }))
+    runningQueueSize.value = queue.length
     await executeInpaintQueue({
       sourceImage: source.value.name,
       queue,
@@ -643,6 +653,7 @@ async function generate(batch = false) {
     status.value = ''
   } finally {
     running.value = false
+    runningQueueSize.value = 0
     emit('busy', false)
   }
 }
@@ -843,7 +854,10 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
           <div class="ip-body">
             <div class="ip-work">
               <div class="ip-tools">
-                <div class="seg">
+                <div
+                  v-seg-indicator
+                  class="seg"
+                >
                   <button
                     :class="{ on: tool === 'brush' }"
                     :disabled="!editable"
@@ -893,6 +907,7 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                 </button>
                 <div
                   v-if="result"
+                  v-seg-indicator
                   class="seg ml-auto"
                 >
                   <button
@@ -1044,7 +1059,10 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
               </div>
             </div>
             <div class="ip-settings scroll">
-              <div class="seg ip-tabs">
+              <div
+                v-seg-indicator
+                class="seg ip-tabs"
+              >
                 <button
                   :class="{ on: panel === 'regions' }"
                   @click="panel = 'regions'"
@@ -1418,17 +1436,10 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
           </div>
           <div class="ip-foot">
             <span
-              v-if="running || !coverage"
+              v-if="!running && !coverage"
               class="muted small"
-              >{{ running ? '正在重绘…' : '请先选择区域' }}</span
+              >请先选择区域</span
             >
-            <button
-              v-if="running"
-              class="btn ghost small"
-              @click="stopQueue = true"
-            >
-              {{ stopQueue ? '将在本张完成后停止' : '停止后续区域' }}
-            </button>
             <button
               v-if="!selectionOnly && batchReady.length"
               title="按批注顺序生成，每一区域以上一区域结果为底图；重新执行从原图开始"
@@ -1438,18 +1449,19 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
             >
               生成已采纳的 {{ batchReady.length }} 个区域
             </button>
-            <button
+            <RunButton
               v-if="!selectionOnly"
-              class="btn accent ml-auto"
+              class="ml-auto"
+              :label="result ? '再试当前区域' : '重绘当前区域'"
+              running-label="重绘中"
+              :running="running"
               :disabled="!canRun"
-              @click="generate(false)"
-            >
-              <Icon
-                name="generate"
-                :size="16"
-                :class="{ 'spin-slow': running }"
-              />{{ running ? '正在重绘' : result ? '再试当前区域' : '重绘当前区域' }}
-            </button>
+              :can-stop="runningQueueSize > 1"
+              :stopping="stopQueue"
+              stop-title="本张完成后停止后续区域"
+              @run="generate(false)"
+              @stop="stopQueue = true"
+            />
             <button
               v-else
               class="btn accent ml-auto"

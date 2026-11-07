@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Icon from '../../../shared/ui/Icon.vue'
 import { computed } from 'vue'
 import { diffPrompt } from '../prompt-diff'
 import type { ReviewGroup } from '../prompt-review'
@@ -82,7 +83,13 @@ const prepared = computed(() =>
             class="review-position"
           >
             <span class="review-old">{{ field.before }}</span
-            ><span aria-label="变更为">→</span><span class="review-new">{{ field.after }}</span>
+            ><span
+              class="review-arrow"
+              aria-label="变更为"
+              ><Icon
+                name="arrow"
+                :size="11" /></span
+            ><span class="review-new">{{ field.after }}</span>
           </div>
           <slot
             name="adoption"

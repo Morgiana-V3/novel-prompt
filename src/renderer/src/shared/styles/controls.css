@@ -17,7 +17,8 @@
     background-color var(--dur-fast) var(--ease-out),
     border-color var(--dur-fast) var(--ease-out),
     color var(--dur-fast) var(--ease-out),
-    box-shadow var(--dur-base) var(--ease-out);
+    box-shadow var(--dur-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
 }
 
 .btn:hover:not(:disabled) {
@@ -86,8 +87,12 @@
   color: #fff;
 }
 
+.btn.accent .icon {
+  transition: transform var(--dur-base) var(--ease-glide);
+}
+
 .btn.accent:hover:not(:disabled) .icon {
-  animation: twinkle var(--dur-feedback) var(--bounce);
+  transform: translateY(-1px) rotate(-8deg) scale(1.06);
 }
 
 .btn.ghost {
@@ -195,6 +200,46 @@
 
 .seg button.on .icon {
   color: var(--pink);
+}
+
+/*
+ * v-seg-indicator：选中底块是一块独立的白色滑块，切换时从旧位置滑到新位置；
+ * 按钮本身只变文字颜色。定位完成前（无 data-seg-active）仍用按钮自己的底色兜底。
+ */
+.seg[data-seg-indicator] {
+  position: relative;
+  isolation: isolate;
+}
+
+.seg[data-seg-active]::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  width: var(--seg-w);
+  height: var(--seg-h);
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  transform: translate(var(--seg-x), var(--seg-y));
+  pointer-events: none;
+}
+
+.seg[data-seg-active][data-seg-animate]::before {
+  transition:
+    transform var(--dur-slow) var(--ease-glide),
+    width var(--dur-slow) var(--ease-glide),
+    height var(--dur-slow) var(--ease-glide);
+}
+
+.seg[data-seg-active] > button.on {
+  background: transparent;
+  box-shadow: none;
+}
+
+.seg[data-seg-active] > button:hover:not(.on, :disabled) {
+  background: rgb(255 255 255 / 45%);
 }
 
 .seg.block {

@@ -21,8 +21,15 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/*
+ * AI 结果卡按 --d 依次出现（结果是逐段生成的，顺序进场有意义）；
+ * 普通设置卡、表单卡没有 --d，跟随页面一起出现，不再各自浮入。
+ */
+.card[style*='--d'] {
   animation: fade-up var(--dur-slow) var(--ease-out) backwards;
-  animation-delay: var(--d, 0ms);
+  animation-delay: var(--d);
 }
 
 .card-head {
@@ -280,5 +287,5 @@ input[type='checkbox']:disabled {
   width: 35%;
   animation:
     stripes 0.8s linear infinite,
-    slide 1.4s ease-in-out infinite;
+    indeterminate 1.6s var(--ease-loop) infinite;
 }

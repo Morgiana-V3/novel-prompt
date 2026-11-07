@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSegIndicator } from '../../../shared/lib/seg-indicator'
 import { computed, ref, watch } from 'vue'
 import {
   RESOLUTION_PRESETS,
@@ -59,6 +60,7 @@ function orient(key: Orientation) {
     />
     <div
       v-if="tier !== 'custom'"
+      v-seg-indicator
       class="seg block"
     >
       <button

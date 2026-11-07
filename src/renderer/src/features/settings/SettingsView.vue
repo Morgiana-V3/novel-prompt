@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSegIndicator } from '../../shared/lib/seg-indicator'
 import {
   tagCompletionLimit,
   DEFAULT_TAG_COMPLETION_LIMIT,
@@ -956,7 +957,10 @@ async function translate() {
                 class="form-field full"
               >
                 <label>DeepSeek 思考模式</label>
-                <div class="seg">
+                <div
+                  v-seg-indicator
+                  class="seg"
+                >
                   <button
                     v-for="option in efforts"
                     :key="option.v"
@@ -1050,7 +1054,10 @@ async function translate() {
                 :key="index"
                 :class="item.ok ? 'ok' : 'bad'"
               >
-                {{ item.ok ? '✓' : '✕' }} {{ item.message }}
+                <Icon
+                  :name="item.ok ? 'check' : 'x'"
+                  :size="13"
+                />{{ item.message }}
               </li>
             </ul>
           </div>

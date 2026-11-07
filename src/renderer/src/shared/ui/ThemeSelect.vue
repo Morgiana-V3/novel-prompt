@@ -1,4 +1,5 @@
 <script setup lang="ts" generic="T extends string | number | boolean | null">
+import Icon from './Icon.vue'
 import { reportError } from '../lib/notifications'
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef, useAttrs, useId, watch } from 'vue'
 
@@ -176,14 +177,11 @@ onBeforeUnmount(() => {
     @blur="close"
   >
     <span>{{ label }}</span
-    ><svg
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <path d="m6 9 6 6 6-6" />
-    </svg>
+    ><Icon
+      name="chevron"
+      class="theme-select-caret"
+      :size="12"
+    />
   </button>
   <Teleport :to="portal">
     <Transition name="select-menu">
@@ -223,8 +221,10 @@ onBeforeUnmount(() => {
             ><span
               v-if="option.value === modelValue"
               aria-hidden="true"
-              >✓</span
-            >
+              ><Icon
+                name="check"
+                :size="13"
+            /></span>
           </div>
         </div>
       </div>
@@ -251,18 +251,19 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.theme-select svg {
+.theme-select-caret {
   flex-shrink: 0;
   fill: none;
   stroke: var(--muted);
   stroke-width: 2.4;
   stroke-linecap: round;
   stroke-linejoin: round;
+  transform: rotate(90deg);
   transition: transform var(--dur-base) var(--ease-out);
 }
 
-.theme-select.expanded svg {
-  transform: rotate(180deg);
+.theme-select.expanded .theme-select-caret {
+  transform: rotate(-90deg);
 }
 
 .theme-select:hover:not(:disabled),

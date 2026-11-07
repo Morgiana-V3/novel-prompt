@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { backdropCloser } from '../../shared/lib/dialog-motion'
+import { detachLeaving } from '../../shared/lib/list-motion'
 import { computed, ref } from 'vue'
 import Icon from '../../shared/ui/Icon.vue'
+import RunButton from '../../shared/ui/RunButton.vue'
 import ImageViewer from '../../shared/ui/ImageViewer.vue'
 import { shellState } from '../../shared/state/shell'
 import { reportError, toast } from '../../shared/lib/notifications'
@@ -11,6 +14,10 @@ import ArtistCatalog from './ArtistCatalog.vue'
 
 const studio = useArtistStudio()
 const { state, selected, busy, trials, persistenceError } = studio
+/** 已出结果（成功或失败）的候选数，作为生成按钮的确定进度 */
+const finishedTrials = computed(
+  () => trials.trials.filter((trial) => trial.state === 'done' || trial.state === 'error').length,
+)
 const pasteDialog = ref<HTMLDialogElement>()
 const seedDialog = ref<HTMLDialogElement>()
 const catalog = ref<InstanceType<typeof ArtistCatalog>>()
@@ -112,6 +119,8 @@ function openSeed() {
 function closeSeed() {
   seedDialog.value?.close()
 }
+const pasteBackdrop = backdropCloser(() => pasteDialog.value?.close())
+const seedBackdrop = backdropCloser(() => closeSeed())
 function addFromCatalog(name: string) {
   try {
     studio.addArtist(name)
@@ -175,7 +184,12 @@ function addFromCatalog(name: string) {
             >下限 {{ state.weightRange.min }}</span
           >
         </div>
-        <div class="artist-editor-list">
+        <TransitionGroup
+          tag="div"
+          name="list"
+          class="artist-editor-list list-motion"
+          @before-leave="detachLeaving"
+        >
           <article
             v-for="artist in selected.artists"
             :key="artist.id"
@@ -227,11 +241,12 @@ function addFromCatalog(name: string) {
           </article>
           <p
             v-if="!selected.artists.length"
+            key="empty"
             class="artist-empty-list"
           >
             当前是无画师对照。可以加入画师，或直接查看内容提示词的效果。
           </p>
-        </div>
+        </TransitionGroup>
         <form
           class="artist-add"
           @submit.prevent="addArtist"
@@ -484,28 +499,18 @@ function addFromCatalog(name: string) {
             title="按账户额度计费"
             >{{ studio.pendingCount.value }} 张</span
           >
-          <button
-            v-if="trials.running"
-            class="btn"
-            :disabled="trials.stopRequested"
-            @click="studio.stop"
-          >
-            <Icon
-              name="stop"
-              :size="14"
-            />停止试图
-          </button>
-          <button
-            v-else
-            class="btn accent"
+          <RunButton
+            label="生成对照"
+            running-label="试图中"
+            :running="trials.running"
+            :stopping="trials.stopRequested"
             :disabled="busy || !studio.hasContent.value || !studio.pendingCount.value"
-            @click="studio.generate"
-          >
-            <Icon
-              name="generate"
-              :size="16"
-            />生成对照
-          </button>
+            :current="finishedTrials"
+            :total="trials.running ? trials.trials.length : undefined"
+            stop-title="当前这张完成后停止试图"
+            @run="studio.generate"
+            @stop="studio.stop"
+          />
         </div>
       </div>
     </footer>
@@ -513,7 +518,8 @@ function addFromCatalog(name: string) {
     <dialog
       ref="pasteDialog"
       class="artist-dialog"
-      @click.self="pasteDialog?.close()"
+      @pointerdown="pasteBackdrop.onPointerdown"
+      @click="pasteBackdrop.onClick"
     >
       <header class="artist-dialog-heading">
         <h3>粘贴画师串</h3>
@@ -562,7 +568,8 @@ function addFromCatalog(name: string) {
       ref="seedDialog"
       class="artist-dialog artist-seed-dialog"
       aria-labelledby="artist-seed-title"
-      @click.self="closeSeed"
+      @pointerdown="seedBackdrop.onPointerdown"
+      @click="seedBackdrop.onClick"
     >
       <header class="artist-dialog-heading">
         <h3 id="artist-seed-title">固定种子</h3>

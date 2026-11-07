@@ -208,7 +208,7 @@ const emit = defineEmits<{
   align-content: start;
   gap: 14px;
   padding: 12px 0 20px;
-  animation: fade-in var(--dur-base) var(--ease-out);
+  animation: view-in var(--dur-base) var(--ease-out);
 }
 
 .pw-candidate:hover,

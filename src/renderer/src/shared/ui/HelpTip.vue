@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { reportError } from '../lib/notifications'
+import Icon from './Icon.vue'
 import { nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue'
 
 defineProps<{ text: string; label: string }>()
@@ -163,33 +164,11 @@ onBeforeUnmount(() => {
     @blur="blur"
     @click.prevent.stop="toggle"
   >
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 20 20"
-      fill="none"
-      aria-hidden="true"
-    >
-      <circle
-        cx="10"
-        cy="10"
-        r="7.25"
-        stroke="currentColor"
-        stroke-width="1.3"
-      />
-      <path
-        d="M10 9v5"
-        stroke="currentColor"
-        stroke-width="1.5"
-        stroke-linecap="round"
-      />
-      <circle
-        cx="10"
-        cy="6"
-        r=".9"
-        fill="currentColor"
-      />
-    </svg>
+    <Icon
+      name="info"
+      :size="13"
+      :stroke="1.6"
+    />
   </button>
   <Teleport to="body">
     <Transition name="help-tip">

@@ -391,6 +391,7 @@ const openPicker = () => (skillsState.skillPanel = true)
         <div
           v-if="importing"
           class="skill-import-mask"
+          @pointerdown.self="importing = null"
         >
           <section
             class="skill-import-dialog modal-panel"

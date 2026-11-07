@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSegIndicator } from '../../../shared/lib/seg-indicator'
 import { reportError } from '../../../shared/lib/notifications'
 import type { NaiVersion } from '@shared/generation/types'
 import { subscriptionState, refreshSubscription } from '../../generation/subscription'
@@ -132,7 +133,10 @@ onBeforeUnmount(() => {
       <template v-if="kind === 'enhance'">
         <div class="ptp-field">
           <span class="side-label">放大倍数</span>
-          <div class="seg">
+          <div
+            v-seg-indicator
+            class="seg"
+          >
             <button
               :class="{ on: enhance.scale === 1 }"
               @click="enhance.scale = 1"
@@ -207,7 +211,8 @@ onBeforeUnmount(() => {
   border-radius: 12px;
   background: var(--panel);
   box-shadow: var(--shadow-modal);
-  animation: fade-up var(--dur-base) var(--ease-out);
+  transform-origin: top left;
+  animation: pop var(--dur-base) var(--ease-glide);
 }
 
 .ptp-head {

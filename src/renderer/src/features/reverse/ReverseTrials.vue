@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Icon from '../../shared/ui/Icon.vue'
 import { SnippetButton } from '../prompts/public/components'
 import { computed, ref, watch } from 'vue'
 import type { ReverseResult } from '@shared/reverse/types'
@@ -125,7 +126,10 @@ watch(
           :aria-label="'移除方案 ' + trial.id"
           @click="trials = trials.filter((item) => item.id !== trial.id)"
         >
-          ×
+          <Icon
+            name="x"
+            :size="13"
+          />
         </button>
       </article>
     </div>

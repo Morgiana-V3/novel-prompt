@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSegIndicator } from '../../shared/lib/seg-indicator'
 import { useMcpSettings } from './use-mcp-settings'
 import { copy } from '../../shared/lib/notifications'
 import Icon from '../../shared/ui/Icon.vue'
@@ -41,7 +42,10 @@ const emit = defineEmits<{
 
       <div class="form-field full">
         <label>Agent 仅允许免费操作</label>
-        <div class="seg">
+        <div
+          v-seg-indicator
+          class="seg"
+        >
           <button
             :class="{ on: freeOnly }"
             @click="emit('permission', 'agentFreeOnly', true)"
@@ -62,7 +66,10 @@ const emit = defineEmits<{
       </div>
       <div class="form-field">
         <label>允许调用 AI 服务</label>
-        <div class="seg">
+        <div
+          v-seg-indicator
+          class="seg"
+        >
           <button
             :class="{ on: !allowAi }"
             @click="emit('permission', 'mcpAllowAi', false)"
@@ -84,7 +91,10 @@ const emit = defineEmits<{
       </div>
       <div class="form-field">
         <label>允许生图</label>
-        <div class="seg">
+        <div
+          v-seg-indicator
+          class="seg"
+        >
           <button
             :class="{ on: !allowGenerate }"
             @click="emit('permission', 'mcpAllowGenerate', false)"

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSegIndicator } from '../../../shared/lib/seg-indicator'
 import { promptState, updatePromptParams } from '../../prompts/public/draft'
 import { computed } from 'vue'
 import type { UcPreset, NaiGenParams } from '@shared/generation/types'
@@ -68,6 +69,7 @@ function setSize(width: number, height: number) {
     />
     <div
       v-else
+      v-seg-indicator
       class="seg block"
     >
       <button
@@ -86,7 +88,10 @@ function setSize(width: number, height: number) {
     class="param"
   >
     <span class="side-label">Add Quality Tags</span>
-    <div class="seg block">
+    <div
+      v-seg-indicator
+      class="seg block"
+    >
       <button
         :disabled="disabled"
         :class="{ on: parameters.qualityTags }"
@@ -110,7 +115,10 @@ function setSize(width: number, height: number) {
     class="param wide"
   >
     <span class="side-label">UC 预设</span>
-    <div class="seg block">
+    <div
+      v-seg-indicator
+      class="seg block"
+    >
       <button
         v-for="option in UC_OPTIONS"
         :key="option.key"

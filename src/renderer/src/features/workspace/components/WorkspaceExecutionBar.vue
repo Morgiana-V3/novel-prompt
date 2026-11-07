@@ -9,7 +9,7 @@ import type { AppTask } from '@shared/tasks/model'
 import ThemeSelect from '../../../shared/ui/ThemeSelect.vue'
 import CollectionPicker from '../../gallery/CollectionPicker.vue'
 import { DEFAULT_COLLECTION } from '@shared/images/collections'
-import Icon from '../../../shared/ui/Icon.vue'
+import RunButton from '../../../shared/ui/RunButton.vue'
 const props = defineProps<{
   model: NaiVersion
   current: PageVersion
@@ -106,18 +106,12 @@ const canGenerate = computed(() => {
   return props.execution.kind !== 'inpaint' || props.hasExecutionRegion
 })
 
-/* 生成中：同一位置换成停止按钮；详细进度统一在右上角任务队列，这里只放进 title */
+/* 生成中：同一个按钮原地变成停止键；详细进度统一在右上角任务队列，这里只放进 title */
 const isGenerating = computed(() => props.operation === 'generate')
 const isCancelling = computed(() => props.generateTask?.status === 'cancelling')
-const stopLabel = computed(() => {
-  if (!props.generateTask) {
-    return '准备中…'
-  }
-  return isCancelling.value ? '完成后停止' : '停止生成'
-})
 const stopTitle = computed(() => {
   const progressText = props.progress || '正在执行'
-  return [progressText, '详细进度见右上角任务队列'].join('\n')
+  return [progressText, '点击在当前这张完成后停止 · 详细进度见右上角任务队列'].join('\n')
 })
 function stopGeneration() {
   if (props.generateTask) {
@@ -162,37 +156,21 @@ function stopGeneration() {
         :title="generateTitle"
         >{{ cost }}</span
       >
-      <button
-        v-if="isGenerating"
-        class="btn pw-generate pw-stop"
-        data-running
-        :disabled="!generateTask || isCancelling"
-        :title="stopTitle"
-        :aria-label="stopLabel"
-        @click="stopGeneration"
-      >
-        <Icon
-          name="stop"
-          :size="15"
-        /><span>{{ stopLabel }}</span>
-      </button>
-      <button
-        v-else
-        class="btn accent pw-generate"
+      <RunButton
+        class="pw-generate"
+        :label="generationLabel"
+        :running="isGenerating"
         :disabled="!canGenerate"
+        :can-stop="!!generateTask"
+        :stopping="isCancelling"
+        :current="generateTask?.current"
+        :total="generateTask?.total"
+        :count="nextEditor.params.count"
         :title="generateTitle"
-        @click="emit('generate')"
-      >
-        <Icon
-          name="generate"
-          :size="15"
-        /><span>{{ generationLabel }}</span
-        ><span
-          v-if="nextEditor.params.count > 1"
-          class="pw-generation-count"
-          >{{ nextEditor.params.count }}</span
-        >
-      </button>
+        :stop-title="stopTitle"
+        @run="emit('generate')"
+        @stop="stopGeneration"
+      />
     </div>
   </div>
 </template>
@@ -290,23 +268,6 @@ function stopGeneration() {
   border-radius: 8px;
   font-size: 13px;
   box-shadow: none;
-}
-
-.pw-stop {
-  border-color: var(--pink-line);
-  color: var(--pink-deep);
-  background: var(--bg);
-  animation: fade-in var(--dur-base) var(--ease-out);
-}
-
-.pw-stop:not(:disabled):hover {
-  background: var(--pink-soft);
-}
-
-.pw-generation-count {
-  padding-left: 7px;
-  border-left: 1px solid #ffffff60;
-  font-size: 11px;
 }
 
 @media (width <= 900px) {

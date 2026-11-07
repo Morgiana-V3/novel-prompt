@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import IconSwap from '../../../shared/ui/IconSwap.vue'
 import {
   computed,
   nextTick,
@@ -454,7 +455,7 @@ onBeforeUnmount(() => {
         @mousedown.prevent
         @click="copyText"
       >
-        <Icon
+        <IconSwap
           :name="copied ? 'check' : 'copy'"
           :size="13"
         />

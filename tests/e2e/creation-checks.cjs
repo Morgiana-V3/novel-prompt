@@ -657,9 +657,7 @@ module.exports = async function checkCreation({
     `!!document.querySelector('.generate .viewer') && !!document.querySelector('.creation-generation .run-bar .btn.accent')`,
   )
   assert.equal(calls, 1)
-  await waitUI(
-    `document.querySelector('.generate .evidence-note.warn')?.textContent.includes('上一次配置')`,
-  )
+  await waitUI(`document.querySelector('.generate .result-stale')?.title.includes('上一次配置')`)
   assert.equal(
     await js(`document.querySelector('.generate').textContent.includes('推测 vs 实际')`),
     false,

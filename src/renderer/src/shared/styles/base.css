@@ -38,6 +38,25 @@ textarea,
   user-select: none;
 }
 
+/*
+ * 交互控件本身永远不参与划选：即使放在可选中的内容区域里，
+ * 双击、拖选也不会把按钮文字、标签、分段开关选成高亮块。直接声明优先于从容器继承的 text。
+ */
+button,
+[role='button'],
+summary,
+label,
+select,
+nav,
+.btn,
+.icon-btn,
+.pill,
+.chip,
+.seg,
+.group-badge {
+  user-select: none;
+}
+
 img {
   -webkit-user-drag: none;
 }
@@ -72,6 +91,20 @@ button {
 :is(button, a[href], summary, [role='button'], [tabindex]:not([tabindex='-1'])):focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
+}
+
+/*
+ * 聚焦框只在 Tab 键导航时出现（shared/lib/focus-modality.ts 设置 data-focus-ring）。
+ * 其余情况下把主题聚焦光环变量置为透明，并去掉各组件 :focus-visible 的描边。
+ * 例外说明：这里需要 !important，组件的 scoped :focus-visible 描边规则权重更高，
+ * 而这条只在非 Tab 导航时生效，不影响键盘用户。
+ */
+html:not([data-focus-ring]) {
+  --focus-ring: 0 0 0 0 transparent;
+}
+
+html:not([data-focus-ring]) :focus-visible {
+  outline: none !important;
 }
 
 input,

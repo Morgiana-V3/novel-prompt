@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import IconSwap from '../../../shared/ui/IconSwap.vue'
+import { vSegIndicator } from '../../../shared/lib/seg-indicator'
 import { displayVersionLabel } from '../labels'
 import { useRemoteWorkspace } from '../use-remote-workspace'
 import { useDiscussionActions } from '../use-discussion-actions'
@@ -817,7 +819,10 @@ async function beginConfigFromButton() {
   >
     <header class="pw-header">
       <div class="pw-header-tools">
-        <div class="pw-view-tabs seg">
+        <div
+          v-seg-indicator
+          class="pw-view-tabs seg"
+        >
           <button
             :class="{ on: !editingPrompt && pane === 'canvas' }"
             :disabled="tabsLocked"
@@ -864,7 +869,7 @@ async function beginConfigFromButton() {
             "
             @click="openNextConfig"
           >
-            <Icon
+            <IconSwap
               :name="editingPrompt ? 'check' : 'sliders'"
               :size="15"
             /><span class="pw-entry-label">{{ editingPrompt ? '保存配置' : '编辑配置' }}</span>
@@ -883,7 +888,7 @@ async function beginConfigFromButton() {
             @click="historyOpen = !historyOpen"
           >
             <Icon
-              name="layers"
+              name="history"
               :size="17"
             />
           </button>
@@ -1116,7 +1121,7 @@ async function beginConfigFromButton() {
               @click="editFromSnapshot"
             >
               <Icon
-                name="edit"
+                name="import"
                 :size="13"
               />{{ historical ? '载入到下一版' : '编辑下一版' }}
             </button>
@@ -1326,8 +1331,8 @@ async function beginConfigFromButton() {
 
 <style scoped>
 /*
- * AI 对话栏开合：外层 dock 只动宽度并裁切，对话栏本身保持固定宽度，
- * 收起过程中内容不会被挤压重排；标题栏右列同步缩窄，开关始终停在右上角。
+ * AI 对话栏开合：dock 宽度与标题栏右列用同一时长、同一曲线逐帧收放，左侧画布与右侧对话栏同步移动，
+ * 不再出现“左边先跳、右边再挤”的错位帧；对话栏本身固定宽度，只被 dock 裁切，内容不重排。
  */
 .pw-ai-collapsed .pw-header {
   grid-template-columns: minmax(0, 1fr) 240px;
@@ -1339,7 +1344,7 @@ async function beginConfigFromButton() {
   flex-shrink: 0;
   width: var(--pw-chat-width);
   overflow: hidden;
-  transition: width var(--dur-slow) var(--ease-out);
+  transition: width var(--dur-emph) var(--ease-morph);
 }
 
 .pw-next-entry {
@@ -1383,23 +1388,23 @@ async function beginConfigFromButton() {
 
 .pw-ai-dock > :deep(.pw-conversation) {
   transition:
-    opacity var(--dur-base) var(--ease-out),
-    transform var(--dur-slow) var(--ease-out);
+    opacity var(--dur-slow) var(--ease-morph),
+    transform var(--dur-emph) var(--ease-morph);
 }
 
 .pw-ai-collapsed .pw-ai-dock {
   width: 0;
 }
 
+.pw-ai-collapsed .pw-ai-dock > :deep(.pw-conversation) {
+  opacity: 0;
+  transform: translateX(16px);
+}
+
 /* 拖动分隔条时宽度实时跟随，不走开合动画 */
 :global(body.split-resizing) .pw-ai-dock,
 :global(body.split-resizing) .pw-header {
   transition: none;
-}
-
-.pw-ai-collapsed .pw-ai-dock > :deep(.pw-conversation) {
-  opacity: 0;
-  transform: translateX(24px);
 }
 
 .pw-ai-toggle {
@@ -1547,6 +1552,7 @@ async function beginConfigFromButton() {
 }
 
 .pw-main {
+  position: relative;
   display: flex;
   flex: 1;
   min-height: 0;
@@ -1579,7 +1585,7 @@ async function beginConfigFromButton() {
   flex: 1;
   min-height: 0;
   padding: 8px 0;
-  animation: fade-in var(--dur-base) var(--ease-out);
+  animation: view-in var(--dur-base) var(--ease-out);
 }
 
 .pw-canvas-bar {
@@ -1895,7 +1901,7 @@ async function beginConfigFromButton() {
   gap: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--pw-chat-width);
-  transition: grid-template-columns var(--dur-slow) var(--ease-out);
+  transition: grid-template-columns var(--dur-emph) var(--ease-morph);
 }
 
 .pw-header-tools {

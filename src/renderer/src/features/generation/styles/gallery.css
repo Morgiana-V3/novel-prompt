@@ -199,7 +199,7 @@ select.input:hover:not(:disabled) {
   border-radius: 12px;
   font-size: 12.5px;
   line-height: 1.7;
-  animation: fade-up var(--dur-slow) var(--ease-out) backwards;
+  animation: fade-in var(--dur-base) var(--ease-out);
 }
 
 .free-check .icon {
@@ -254,6 +254,72 @@ select.input:hover:not(:disabled) {
   cursor: zoom-in;
   min-height: 240px;
   background: repeating-conic-gradient(#f6f6f8 0% 25%, #fff 0% 50%) 50% / 20px 20px;
+}
+
+/* 图片外框与图片等大：显影颗粒只盖在画面上，不铺到棋盘格背景 */
+.viewer-frame {
+  position: relative;
+  display: grid;
+  max-width: 100%;
+  border-radius: 10px;
+}
+
+/*
+ * 去噪显影：新生成的图从模糊、低饱和、带颗粒的状态分 8 步逐级变清晰，
+ * 呼应扩散模型逐步去噪的采样过程；只在刚出图时播放一次，浏览旧图不播放。
+ */
+.viewer-frame.developing img {
+  animation: denoise-image 1.15s steps(8, jump-end) both;
+}
+
+.denoise-grain {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.55 0 0 0 0 0.52 0 0 0 0 0.6 0 0 0 1.4 -0.2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")
+    0 0 / 180px 180px;
+  mix-blend-mode: hard-light;
+  animation:
+    denoise-grain-fade 1.15s steps(8, jump-end) both,
+    denoise-grain-shift 1.15s steps(8, jump-end) both;
+}
+
+@keyframes denoise-image {
+  0% {
+    filter: blur(18px) saturate(0.15) contrast(0.9) brightness(1.08);
+    transform: scale(1.015);
+  }
+
+  45% {
+    filter: blur(5px) saturate(0.55) contrast(0.96) brightness(1.03);
+  }
+
+  100% {
+    filter: none;
+    transform: none;
+  }
+}
+
+@keyframes denoise-grain-fade {
+  0% {
+    opacity: 0.85;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+/* 每一步换一块噪点，像采样过程中噪声在变化 */
+@keyframes denoise-grain-shift {
+  0% {
+    background-position: 0 0;
+  }
+
+  100% {
+    background-position: 137px -91px;
+  }
 }
 
 .viewer-stage img {
@@ -349,8 +415,8 @@ select.input:hover:not(:disabled) {
 }
 
 .thumb:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 18px rgb(20 20 30 / 12%);
+  transform: translateY(var(--lift-card));
+  box-shadow: var(--shadow-lift);
 }
 
 .thumb.on {

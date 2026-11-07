@@ -49,7 +49,7 @@ export function artistString(artists: ArtistEntry[]): string {
 function initialState() {
   return {
     revision: 3,
-    source: 'unset' as 'unset' | 'creation' | 'gallery' | 'sample' | 'legacy',
+    source: 'unset' as 'unset' | 'creation' | 'gallery' | 'favorite' | 'sample' | 'legacy',
     sourceId: '',
     sourceTitle: '',
     sourceKey: '',

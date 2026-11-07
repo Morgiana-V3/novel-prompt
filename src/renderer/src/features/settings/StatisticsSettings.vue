@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { vSegIndicator } from '../../shared/lib/seg-indicator'
+import Icon from '../../shared/ui/Icon.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import {
   addTotals,
@@ -150,7 +152,10 @@ const features = computed(() => {
       class="btn ghost small"
       @click="$emit('open')"
     >
-      查看统计 →
+      查看统计<Icon
+        name="arrow"
+        :size="12"
+      />
     </button>
     <small v-if="error">{{ error }}</small>
     <small v-else-if="totals.requests > totals.reported"
@@ -226,7 +231,10 @@ const features = computed(() => {
     <section class="statistics-section">
       <div class="statistics-toolbar">
         <h3>每日趋势</h3>
-        <div class="seg">
+        <div
+          v-seg-indicator
+          class="seg"
+        >
           <button
             v-for="value in [7, 30, 90]"
             :key="value"
@@ -238,7 +246,10 @@ const features = computed(() => {
         </div>
       </div>
       <div class="statistics-toolbar">
-        <div class="seg">
+        <div
+          v-seg-indicator
+          class="seg"
+        >
           <button
             v-for="item in metricOptions"
             :key="item.key"

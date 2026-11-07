@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { detachLeaving } from '../../../shared/lib/list-motion'
 import { computed, nextTick, onMounted, reactive, ref, toRef } from 'vue'
 import type { PromptSnippet } from '@shared/prompts/snippets'
 import { deleteSnippet, refreshSnippets, saveSnippet, snippetStore } from '../snippets-state'
@@ -142,9 +143,12 @@ function copyText(item: PromptSnippet) {
     >
       {{ error }}
     </p>
-    <div
-      class="snippet-list scroll"
+    <TransitionGroup
+      tag="div"
+      name="list"
+      class="snippet-list scroll list-motion"
       role="list"
+      @before-leave="detachLeaving"
     >
       <template
         v-for="(item, index) in rows"
@@ -275,6 +279,7 @@ function copyText(item: PromptSnippet) {
       </template>
       <div
         v-if="!filtered.length && editing !== 'new'"
+        key="empty"
         class="snippet-empty"
       >
         <Icon
@@ -288,7 +293,7 @@ function copyText(item: PromptSnippet) {
             : '把常用的画师串、光影、负面词存成片段，在提示词框悬停时的星标里一键插入。'
         }}</span>
       </div>
-    </div>
+    </TransitionGroup>
   </section>
 </template>
 

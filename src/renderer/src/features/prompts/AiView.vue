@@ -11,6 +11,7 @@ import { cleanErr } from '../../shared/lib/format'
 import { vAutosize, resizeWithin } from '../../shared/lib/autosize'
 import { type ReviewGroup, type ReviewField } from './prompt-review'
 import Icon from '../../shared/ui/Icon.vue'
+import RunButton from '../../shared/ui/RunButton.vue'
 import Mascot from '../../shared/ui/Mascot.vue'
 import EvidenceNote from './components/EvidenceNote.vue'
 import AiFieldAdoption from './components/AiFieldAdoption.vue'
@@ -56,6 +57,11 @@ const result = tabRef<AiOptimizeResult | null>('ai.result', () => null)
 const resultSource = tabRef<'internal' | 'external'>('ai.resultSource', () => 'internal')
 const error = tabRef('ai.error', () => '')
 const task = computed(() => activeTask('optimize'))
+function cancelRun() {
+  if (task.value) {
+    cancelTask(task.value.id).catch(reportError)
+  }
+}
 let offStep: (() => void) | undefined
 /** 发起请求时的提示词，用于对比改动 */
 const sent = tabRef<{ base: string; negative: string; characters: AiCharacter[] } | null>(
@@ -467,26 +473,19 @@ defineExpose({ desktopState, frontendAction })
         >
           <div class="row run-bar">
             <div class="run-actions">
-              <button
-                v-if="running && task"
-                class="btn ghost"
-                :disabled="task.status === 'cancelling'"
-                @click="cancelTask(task.id)"
-              >
-                {{ task.status === 'cancelling' ? '正在取消…' : '取消' }}
-              </button>
-              <button
-                class="btn accent"
-                :disabled="running"
-                @click="run"
-              >
-                <Icon
-                  name="sparkle"
-                  :size="14"
-                  :class="{ spin: running }"
-                />
-                {{ running ? '正在思考' : runLabel }}
-              </button>
+              <RunButton
+                :label="runLabel"
+                icon="sparkle"
+                running-label="思考中"
+                :running="running"
+                :can-stop="!!task"
+                :stopping="task?.status === 'cancelling'"
+                stop-label="取消"
+                stopping-label="正在取消"
+                stop-title="取消（Esc）"
+                @run="run"
+                @stop="cancelRun"
+              />
             </div>
           </div>
         </footer>

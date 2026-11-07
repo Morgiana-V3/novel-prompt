@@ -96,7 +96,9 @@ function toggleNotes(id: string) {
           v-if="change.before && change.after"
           class="change-arrow"
           aria-hidden="true"
-          >→</span
+          ><Icon
+            name="arrow"
+            :size="11" /></span
         ><ins v-if="change.after">{{ change.after }}</ins>
         <template #after>
           <div

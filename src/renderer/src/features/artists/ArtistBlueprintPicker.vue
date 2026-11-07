@@ -1,15 +1,29 @@
 <script setup lang="ts">
+import { backdropCloser } from '../../shared/lib/dialog-motion'
 import { computed, onBeforeUnmount, ref } from 'vue'
-import type { NaiImage } from '@shared/images/types'
+import type { NaiImage, SavedRecipe } from '@shared/images/types'
 import type { NaiVersion } from '@shared/generation/types'
 import Icon from '../../shared/ui/Icon.vue'
 import { reportError } from '../../shared/lib/notifications'
 import { creationBlueprints, type ArtistBlueprint } from './blueprints'
+import { favorites, refreshFavorites } from '../favorites/public'
+
+type BlueprintSource = 'gallery' | 'favorite' | 'creation'
 
 const props = defineProps<{ version: NaiVersion; busy: boolean }>()
 const emit = defineEmits<{ select: [blueprint: ArtistBlueprint] }>()
 const dialog = ref<HTMLDialogElement>()
-const source = ref<'gallery' | 'creation'>('gallery')
+const source = ref<BlueprintSource>('gallery')
+/** 收藏配方：只列出带提示词的配置，按收藏时间倒序 */
+const recipes = computed(() =>
+  [...favorites.items]
+    .filter(
+      (item) =>
+        !!item.recipe.request.base.trim() ||
+        item.recipe.request.characters.some((character) => character.prompt.trim()),
+    )
+    .sort((a, b) => b.createdAt - a.createdAt),
+)
 const images = ref<NaiImage[]>([])
 const limit = ref(36)
 const selected = ref<ArtistBlueprint | null>(null)
@@ -48,8 +62,13 @@ function open() {
   selectedId.value = ''
   limit.value = 36
   dialog.value?.showModal()
-  if (source.value === 'gallery') {
+  loadSource(source.value)
+}
+function loadSource(next: BlueprintSource) {
+  if (next === 'gallery') {
     loadImages().catch(reportError)
+  } else if (next === 'favorite' && !favorites.loaded) {
+    refreshFavorites().catch(reportError)
   }
 }
 function close() {
@@ -57,15 +76,26 @@ function close() {
   loading.value = false
   dialog.value?.close()
 }
-function changeSource(next: 'gallery' | 'creation') {
+const backdrop = backdropCloser(() => close())
+function changeSource(next: BlueprintSource) {
   serial++
   source.value = next
   selected.value = null
   selectedId.value = ''
   error.value = ''
   loading.value = false
-  if (next === 'gallery') {
-    loadImages().catch(reportError)
+  loadSource(next)
+}
+function selectRecipe(item: SavedRecipe) {
+  serial++
+  loading.value = false
+  error.value = ''
+  selectedId.value = item.id
+  selected.value = {
+    kind: 'favorite',
+    id: item.id,
+    title: item.name,
+    request: item.recipe.request,
   }
 }
 async function selectImage(image: NaiImage) {
@@ -130,7 +160,8 @@ onBeforeUnmount(() => {
     :class="{ 'creation-source': source === 'creation' }"
     :style="{ '--blueprint-tab-count': tabs.length }"
     aria-labelledby="blueprint-title"
-    @click.self="close"
+    @pointerdown="backdrop.onPointerdown"
+    @click="backdrop.onClick"
     @cancel.prevent="close"
   >
     <header>
@@ -154,6 +185,12 @@ onBeforeUnmount(() => {
         图库图片
       </button>
       <button
+        :aria-pressed="source === 'favorite'"
+        @click="changeSource('favorite')"
+      >
+        收藏配方
+      </button>
+      <button
         :aria-pressed="source === 'creation'"
         @click="changeSource('creation')"
       >
@@ -162,7 +199,7 @@ onBeforeUnmount(() => {
     </nav>
     <div
       class="blueprint-layout"
-      :class="{ 'with-preview': source === 'gallery' && selected }"
+      :class="{ 'with-preview': source !== 'creation' && selected }"
     >
       <div
         class="blueprint-body"
@@ -185,6 +222,33 @@ onBeforeUnmount(() => {
               :alt="image.name"
               loading="lazy"
             /><span :title="image.name">{{ image.name }}</span>
+          </button>
+        </div>
+        <div
+          v-else-if="source === 'favorite'"
+          class="blueprint-images"
+        >
+          <button
+            v-for="item in recipes"
+            :key="item.id"
+            :class="{ selected: selectedId === item.id }"
+            :aria-label="`选择收藏配方 ${item.name}`"
+            :aria-pressed="selectedId === item.id"
+            @click="selectRecipe(item)"
+          >
+            <img
+              v-if="item.thumbnail || item.imageUrl"
+              :src="item.thumbnail || item.imageUrl"
+              :alt="item.name"
+              loading="lazy"
+            /><span
+              v-else
+              class="blueprint-config-only"
+              ><Icon
+                name="sliders"
+                :size="22"
+            /></span>
+            <span :title="item.name">{{ item.name }}</span>
           </button>
         </div>
         <div
@@ -223,6 +287,12 @@ onBeforeUnmount(() => {
           图库中暂无图片，可以从创作标签选择。
         </p>
         <p
+          v-if="source === 'favorite' && favorites.loaded && !recipes.length"
+          class="blueprint-empty"
+        >
+          还没有收藏的生图配方，可以在图片上点星标收藏。
+        </p>
+        <p
           v-if="loading"
           role="status"
         >
@@ -244,7 +314,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <section
-        v-if="source === 'gallery' && selected"
+        v-if="source !== 'creation' && selected"
         class="blueprint-preview"
       >
         <strong>{{ selected.title }}</strong>
@@ -284,6 +354,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .blueprint-dialog {
+  flex-direction: column;
   width: min(780px, 92vw);
   height: min(700px, 88dvh);
   max-height: 88dvh;
@@ -296,9 +367,9 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-modal);
 }
 
+/* flex-direction 写在基础类上，[open] 只负责显示：退场期间 dialog 仍显示，方向不能跟着失效 */
 .blueprint-dialog[open] {
   display: flex;
-  flex-direction: column;
 }
 
 .blueprint-dialog.creation-source {
@@ -391,6 +462,16 @@ nav button[aria-pressed='true'] {
   width: 100%;
   height: 130px;
   object-fit: contain;
+}
+
+/* 仅收藏了配置、没有图片的配方：用占位块保持网格对齐 */
+.blueprint-images .blueprint-config-only {
+  display: grid;
+  place-items: center;
+  height: 130px;
+  border-radius: 6px;
+  color: var(--muted);
+  background: var(--panel);
 }
 
 .blueprint-images span {

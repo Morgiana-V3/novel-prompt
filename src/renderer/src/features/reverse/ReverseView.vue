@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vSegIndicator } from '../../shared/lib/seg-indicator'
 import { useModelManager } from './use-model-manager'
 import { SnippetButton } from '../prompts/public/components'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -445,7 +446,11 @@ async function source(url: string) {
         >
           1 · 识别与提示词
         </button>
-        <span aria-hidden="true">→</span>
+        <Icon
+          class="reverse-stage-arrow"
+          name="arrow"
+          :size="13"
+        />
         <button
           :class="{ active: stage === 'trials' }"
           :aria-current="stage === 'trials' ? 'step' : undefined"
@@ -749,6 +754,7 @@ async function source(url: string) {
         </div>
         <div
           v-show="!!result && !running"
+          v-seg-indicator
           class="seg reverse-adjustment-tabs"
         >
           <button
@@ -1198,7 +1204,7 @@ progress {
   height: 5px;
   border-radius: 50%;
   background: var(--pink);
-  animation: recognition-pulse 1.2s ease-in-out infinite;
+  animation: dot 1.2s ease-in-out infinite;
 }
 
 .recognition-dots i:nth-child(2) {
@@ -1207,20 +1213,6 @@ progress {
 
 .recognition-dots i:nth-child(3) {
   animation-delay: 300ms;
-}
-
-@keyframes recognition-pulse {
-  0%,
-  80%,
-  100% {
-    opacity: 0.3;
-    transform: translateY(0);
-  }
-
-  40% {
-    opacity: 1;
-    transform: translateY(-4px);
-  }
 }
 
 .reverse-recognition-empty p {

@@ -264,7 +264,7 @@ function navigateScope(event: KeyboardEvent) {
             @click="comparing = true"
           >
             <Icon
-              name="eye"
+              name="position"
               :size="13"
             />查看位置对比
           </button>
@@ -286,7 +286,10 @@ function navigateScope(event: KeyboardEvent) {
             >
               <span class="position-values"
                 ><code class="old">{{ item.field.before || '自动' }}</code
-                ><span class="position-arrow">→</span
+                ><span class="position-arrow"
+                  ><Icon
+                    name="arrow"
+                    :size="11" /></span
                 ><code class="new">{{ item.field.after || '自动' }}</code></span
               >
             </AdoptChoice>
@@ -297,7 +300,10 @@ function navigateScope(event: KeyboardEvent) {
               <span class="locked-label">{{ item.field.label }} · 随角色整组采纳</span>
               <span class="position-values"
                 ><code class="old">{{ item.field.before || '自动' }}</code
-                ><span class="position-arrow">→</span
+                ><span class="position-arrow"
+                  ><Icon
+                    name="arrow"
+                    :size="11" /></span
                 ><code class="new">{{ item.field.after || '自动' }}</code></span
               >
             </div>
