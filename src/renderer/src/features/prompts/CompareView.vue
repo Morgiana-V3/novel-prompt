@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { detachLeaving } from '../../shared/lib/list-motion'
 import { promptState } from './state'
 import { settingsState } from '../settings/state'
 import { tagState } from '../tags/state'
@@ -79,9 +80,25 @@ const analysisKey = computed(() =>
     tagState.db?.tagCount,
   ]),
 )
-const result = computed(() =>
-  analyzed.value?.key === analysisKey.value ? analyzed.value.result : null,
-)
+/*
+ * 编辑提示词后先保留上一次的检查结果，新结果到了再整体替换：列表不再先清空闪成空状态，
+ * 卡片按词条文本保持身份，只有真正新增 / 删除的卡片做进出动画，其余平滑补位。
+ * 结果过期期间不允许替换、删除等操作（词条位置可能已变化）。
+ */
+const result = computed(() => analyzed.value?.result ?? null)
+const resultStale = computed(() => !!analyzed.value && analyzed.value.key !== analysisKey.value)
+const tokenKeys = computed(() => {
+  const keys = new Map<AnalyzedToken, string>()
+  const seen = new Map<string, number>()
+  for (const token of result.value?.tokens ?? []) {
+    const base = `${token.section}|${token.status}|${token.prefix ?? ''}${token.core}`
+    const occurrence = seen.get(base) ?? 0
+    seen.set(base, occurrence + 1)
+    keys.set(token, `${base}#${occurrence}`)
+  }
+  return keys
+})
+const tokenKey = (token: AnalyzedToken) => tokenKeys.value.get(token) ?? token.raw
 const selectedTokens = ref<AnalyzedToken[]>([])
 const ctrlSelection = ref(false)
 let clearHighlights: (() => void) | undefined
@@ -146,7 +163,9 @@ onBeforeUnmount(() => {
 })
 
 const currentTokens = (tokens: AnalyzedToken[]) =>
-  tokens.length > 0 && tokens.every((analyzedToken) => result.value?.tokens.includes(analyzedToken))
+  !resultStale.value &&
+  tokens.length > 0 &&
+  tokens.every((analyzedToken) => result.value?.tokens.includes(analyzedToken))
 
 const groups = computed(() => {
   const analyzedToken = result.value?.tokens ?? []
@@ -386,6 +405,7 @@ function formatPrompt() {
     <section
       ref="rightPane"
       class="pane right scroll"
+      :class="{ 'compare-stale': resultStale }"
       @keydown="selectionKey"
     >
       <div class="section-tabs">
@@ -505,65 +525,72 @@ function formatPrompt() {
             />全部移除
           </button>
         </div>
-        <div
-          v-for="(group, index) in groups.unknown"
-          :key="'u' + index"
-          class="unknown-item token-selectable"
-          :class="{ 'token-selected': ctrlSelection && selectedTokens.includes(group) }"
-          tabindex="0"
-          role="button"
-          :aria-pressed="ctrlSelection && selectedTokens.includes(group)"
-          :style="{ '--i': index }"
-          @keydown.enter.self.prevent="locate(group, $event)"
-          @keydown.space.self.prevent="locate(group, $event)"
+        <TransitionGroup
+          tag="div"
+          name="list"
+          class="token-list list-motion"
+          @before-leave="detachLeaving"
         >
           <div
-            class="unknown-head"
-            @click="locate(group, $event)"
+            v-for="(group, index) in groups.unknown"
+            :key="tokenKey(group)"
+            class="unknown-item token-selectable"
+            :class="{ 'token-selected': ctrlSelection && selectedTokens.includes(group) }"
+            tabindex="0"
+            role="button"
+            :aria-pressed="ctrlSelection && selectedTokens.includes(group)"
+            :style="{ '--i': index }"
+            @keydown.enter.self.prevent="locate(group, $event)"
+            @keydown.space.self.prevent="locate(group, $event)"
           >
-            <span class="tag-raw wavy">{{ group.prefix ?? '' }}{{ group.core }}</span>
-            <span
-              v-if="group.section"
-              class="muted small"
-              >第 {{ group.section + 1 }} 段</span
+            <div
+              class="unknown-head"
+              @click="locate(group, $event)"
             >
-            <button
-              class="icon-btn sm ml-auto"
-              title="移除"
-              @click.stop="removeToken(group)"
-            >
-              <Icon
-                name="x"
-                :size="14"
-              />
-            </button>
-          </div>
-          <div
-            v-if="group.suggestions?.length"
-            class="suggest"
-          >
-            <span class="muted small">是不是想找：</span>
-            <button
-              v-for="tag in group.suggestions"
-              :key="tag.name"
-              class="chip"
-              @click="replaceWith(group, tag)"
-            >
-              {{ tag.display
-              }}<span
-                v-if="tag.zh"
-                class="chip-zh"
-                >{{ tag.zh }}</span
+              <span class="tag-raw wavy">{{ group.prefix ?? '' }}{{ group.core }}</span>
+              <span
+                v-if="group.section"
+                class="muted small"
+                >第 {{ group.section + 1 }} 段</span
               >
-            </button>
+              <button
+                class="icon-btn sm ml-auto"
+                title="移除"
+                @click.stop="removeToken(group)"
+              >
+                <Icon
+                  name="x"
+                  :size="14"
+                />
+              </button>
+            </div>
+            <div
+              v-if="group.suggestions?.length"
+              class="suggest"
+            >
+              <span class="muted small">是不是想找：</span>
+              <button
+                v-for="tag in group.suggestions"
+                :key="tag.name"
+                class="chip"
+                @click="replaceWith(group, tag)"
+              >
+                {{ tag.display
+                }}<span
+                  v-if="tag.zh"
+                  class="chip-zh"
+                  >{{ tag.zh }}</span
+                >
+              </button>
+            </div>
+            <div
+              v-else
+              class="muted small"
+            >
+              没有相近的 tag，可以试试智能优化
+            </div>
           </div>
-          <div
-            v-else
-            class="muted small"
-          >
-            没有相近的 tag，可以试试智能优化
-          </div>
-        </div>
+        </TransitionGroup>
       </div>
 
       <div
@@ -590,33 +617,40 @@ function formatPrompt() {
             />全部修正
           </button>
         </div>
-        <div
-          v-for="(group, index) in groups.alias"
-          :key="'a' + index"
-          class="alias-item token-selectable"
-          :class="{ 'token-selected': ctrlSelection && selectedTokens.includes(group) }"
-          tabindex="0"
-          role="button"
-          :aria-pressed="ctrlSelection && selectedTokens.includes(group)"
-          :style="{ '--i': index }"
-          @keydown.enter.self.prevent="locate(group, $event)"
-          @keydown.space.self.prevent="locate(group, $event)"
-          @click="locate(group, $event)"
+        <TransitionGroup
+          tag="div"
+          name="list"
+          class="token-list list-motion"
+          @before-leave="detachLeaving"
         >
-          <span class="tag-raw">{{ group.core }}</span>
-          <span class="arrow"
-            ><Icon
-              name="arrow"
-              :size="16"
-          /></span>
-          <TagCard :tag="group.aliasOf!" />
-          <button
-            class="btn small"
-            @click.stop="replaceWith(group, group.aliasOf!)"
+          <div
+            v-for="(group, index) in groups.alias"
+            :key="tokenKey(group)"
+            class="alias-item token-selectable"
+            :class="{ 'token-selected': ctrlSelection && selectedTokens.includes(group) }"
+            tabindex="0"
+            role="button"
+            :aria-pressed="ctrlSelection && selectedTokens.includes(group)"
+            :style="{ '--i': index }"
+            @keydown.enter.self.prevent="locate(group, $event)"
+            @keydown.space.self.prevent="locate(group, $event)"
+            @click="locate(group, $event)"
           >
-            修正
-          </button>
-        </div>
+            <span class="tag-raw">{{ group.core }}</span>
+            <span class="arrow"
+              ><Icon
+                name="arrow"
+                :size="16"
+            /></span>
+            <TagCard :tag="group.aliasOf!" />
+            <button
+              class="btn small"
+              @click.stop="replaceWith(group, group.aliasOf!)"
+            >
+              修正
+            </button>
+          </div>
+        </TransitionGroup>
       </div>
 
       <div
@@ -641,10 +675,15 @@ function formatPrompt() {
             词库翻译
           </button>
         </div>
-        <div class="tag-grid">
+        <TransitionGroup
+          tag="div"
+          name="list"
+          class="tag-grid list-motion"
+          @before-leave="detachLeaving"
+        >
           <div
             v-for="(group, indexItem) in groups.valid"
-            :key="'v' + indexItem"
+            :key="tokenKey(group)"
             class="valid-wrap token-selectable"
             :class="{ 'token-selected': ctrlSelection && selectedTokens.includes(group) }"
             tabindex="0"
@@ -670,7 +709,7 @@ function formatPrompt() {
               />{{ group.warning }}
             </div>
           </div>
-        </div>
+        </TransitionGroup>
       </div>
 
       <div
@@ -688,33 +727,40 @@ function formatPrompt() {
           <h3>自然语言 / 文字</h3>
           <span class="group-count">{{ groups.other.length }}</span>
         </div>
-        <div
-          v-for="(group, index) in groups.other"
-          :key="'n' + index"
-          class="nl-item token-selectable"
-          :class="{ 'token-selected': ctrlSelection && selectedTokens.includes(group) }"
-          tabindex="0"
-          role="button"
-          :aria-pressed="ctrlSelection && selectedTokens.includes(group)"
-          :style="{ '--i': index }"
-          @keydown.enter.self.prevent="locate(group, $event)"
-          @keydown.space.self.prevent="locate(group, $event)"
-          @click="locate(group, $event)"
+        <TransitionGroup
+          tag="div"
+          name="list"
+          class="token-list list-motion"
+          @before-leave="detachLeaving"
         >
-          <span :class="['badge', group.status]">{{
-            group.status === 'text' ? '文字' : '句子'
-          }}</span>
-          <span>{{ group.prefix ?? '' }}{{ group.core }}</span>
           <div
-            v-if="group.warning"
-            class="warn-line"
+            v-for="(group, index) in groups.other"
+            :key="tokenKey(group)"
+            class="nl-item token-selectable"
+            :class="{ 'token-selected': ctrlSelection && selectedTokens.includes(group) }"
+            tabindex="0"
+            role="button"
+            :aria-pressed="ctrlSelection && selectedTokens.includes(group)"
+            :style="{ '--i': index }"
+            @keydown.enter.self.prevent="locate(group, $event)"
+            @keydown.space.self.prevent="locate(group, $event)"
+            @click="locate(group, $event)"
           >
-            <Icon
-              name="warn"
-              :size="13"
-            />{{ group.warning }}
+            <span :class="['badge', group.status]">{{
+              group.status === 'text' ? '文字' : '句子'
+            }}</span>
+            <span>{{ group.prefix ?? '' }}{{ group.core }}</span>
+            <div
+              v-if="group.warning"
+              class="warn-line"
+            >
+              <Icon
+                name="warn"
+                :size="13"
+              />{{ group.warning }}
+            </div>
           </div>
-        </div>
+        </TransitionGroup>
       </div>
     </section>
   </div>

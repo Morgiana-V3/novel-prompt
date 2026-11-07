@@ -445,12 +445,12 @@ img[data-fade]:not(.img-ready) {
  */
 :where(dialog) {
   opacity: 0;
-  transform: translateY(8px) scale(0.97);
+  transform: var(--jelly-out-scale);
   transition:
-    opacity var(--dur-fast) var(--ease-in),
-    transform var(--dur-fast) var(--ease-in),
-    overlay var(--dur-fast) allow-discrete,
-    display var(--dur-fast) allow-discrete;
+    opacity var(--dur-jelly-out) var(--ease-fade-late),
+    transform var(--dur-jelly-out) var(--ease-jelly-out),
+    overlay var(--dur-jelly-out) allow-discrete,
+    display var(--dur-jelly-out) allow-discrete;
 }
 
 :where(dialog[open]) {
@@ -462,9 +462,9 @@ img[data-fade]:not(.img-ready) {
 :where(dialog)::backdrop {
   opacity: 0;
   transition:
-    opacity var(--dur-fast) var(--ease-in),
-    overlay var(--dur-fast) allow-discrete,
-    display var(--dur-fast) allow-discrete;
+    opacity var(--dur-jelly-out) var(--ease-in),
+    overlay var(--dur-jelly-out) allow-discrete,
+    display var(--dur-jelly-out) allow-discrete;
 }
 
 :where(dialog[open])::backdrop {
@@ -485,7 +485,7 @@ img[data-fade]:not(.img-ready) {
 }
 
 .modal-leave-active {
-  transition: opacity var(--dur-fast) var(--ease-in);
+  transition: opacity var(--dur-jelly-out) var(--ease-fade-late);
 }
 
 .modal-leave-active > * {
@@ -493,7 +493,7 @@ img[data-fade]:not(.img-ready) {
 }
 
 .modal-leave-active .modal-panel {
-  transition: transform var(--dur-fast) var(--ease-in);
+  transition: transform var(--dur-jelly-out) var(--ease-jelly-out);
 }
 
 .modal-enter-from,
@@ -507,5 +507,5 @@ img[data-fade]:not(.img-ready) {
 }
 
 .modal-leave-to .modal-panel {
-  transform: translateY(6px) scale(0.97);
+  transform: var(--jelly-out-scale);
 }

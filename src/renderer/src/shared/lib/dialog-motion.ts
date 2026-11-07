@@ -3,7 +3,8 @@
  * 由父组件 v-if 卸载的对话框（确认框、模型管理）需要先 close() 播放退场，再通知父组件卸载，
  * 否则元素被直接移除，退场动画来不及播放。
  */
-export const DIALOG_EXIT_MS = 170
+/** 与 motion.css 的 --dur-jelly-out（0.26s）保持一致，略留余量 */
+export const DIALOG_EXIT_MS = 280
 
 function prefersReducedMotion(): boolean {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches

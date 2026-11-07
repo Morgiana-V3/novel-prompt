@@ -163,7 +163,6 @@ const KIND_LABELS: Record<PositionChangeKind, string> = {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--bg);
-  user-select: text;
 }
 
 .positions-head {

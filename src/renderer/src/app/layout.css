@@ -197,7 +197,6 @@ nav.sliding .nav-item.active {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--text2);
-  user-select: text;
 }
 
 .main {

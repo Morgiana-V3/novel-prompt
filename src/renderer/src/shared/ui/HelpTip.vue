@@ -248,7 +248,6 @@ onBeforeUnmount(() => {
   overflow: visible;
   overflow-wrap: anywhere;
   text-wrap: pretty;
-  user-select: text;
   cursor: auto;
 }
 

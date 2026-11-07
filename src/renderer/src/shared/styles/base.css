@@ -10,7 +10,12 @@ body,
   overflow: hidden;
 }
 
-/* 桌面应用：界面元素（按钮、标签、卡片、标题）默认不可划选，只有内容区域可以选中复制 */
+/*
+ * 全局禁止划选：界面文字一律不可选中。只有两类地方开放——
+ * 1. 可编辑的输入框、文本域、编辑器；
+ * 2. 用户需要复制的内容：提示词正文、AI 结果与对话、Markdown 文档、配置代码（在各组件里单独声明 user-select: text）。
+ * 新增可复制区域时给具体的内容元素加 user-select: text 或 .selectable，不要加在整块容器上。
+ */
 body {
   user-select: none;
   cursor: default;
@@ -20,22 +25,8 @@ input,
 textarea,
 [contenteditable='true'],
 .selectable,
-.result-text,
-.notes,
-.error-box,
-.effect-row .grow,
-.evidence,
-.nl-item > span:not(.badge),
-.tl-item,
-.warn-line {
+.result-text {
   user-select: text;
-}
-
-/* 可选中的区域里嵌套的按钮、标签仍然不参与划选 */
-.effect-row .grow button,
-.notes .chip-zh,
-.row-tags {
-  user-select: none;
 }
 
 /*
@@ -82,28 +73,13 @@ button {
   padding: 0;
 }
 
-/* Replace Chromium's native focus outline across interactive controls. Mouse
-   clicks keep the normal appearance; keyboard navigation gets a theme halo. */
-:is(button, a[href], summary, [role='button'], [tabindex]):focus {
-  outline: none;
-}
-
-:is(button, a[href], summary, [role='button'], [tabindex]:not([tabindex='-1'])):focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
 /*
- * 聚焦框只在 Tab 键导航时出现（shared/lib/focus-modality.ts 设置 data-focus-ring）。
- * 其余情况下把主题聚焦光环变量置为透明，并去掉各组件 :focus-visible 的描边。
- * 例外说明：这里需要 !important，组件的 scoped :focus-visible 描边规则权重更高，
- * 而这条只在非 Tab 导航时生效，不影响键盘用户。
+ * 桌面应用不显示任何聚焦框：去掉浏览器默认描边（主题光环变量在 variables.css 中为透明）。
+ * 例外说明：需要 !important，组件内 scoped 的 :focus-visible 描边规则权重更高。
+ * 输入框的激活态由各自的边框颜色表示，不受影响。
  */
-html:not([data-focus-ring]) {
-  --focus-ring: 0 0 0 0 transparent;
-}
-
-html:not([data-focus-ring]) :focus-visible {
+:focus,
+:focus-visible {
   outline: none !important;
 }
 

@@ -32,7 +32,9 @@
   --shadow-pop: 0 1px 2px rgb(20 20 30 / 4%), 0 10px 30px rgb(20 20 30 / 12%);
   --shadow-modal: 0 24px 60px rgb(20 20 30 / 22%);
   --scrim: rgb(16 16 20 / 42%);
-  --focus-ring: 0 0 0 3px var(--pink-line);
+
+  /* 桌面应用不显示聚焦框：保留变量供组件引用，但始终透明 */
+  --focus-ring: 0 0 0 0 transparent;
 
   /* 动效：页面/面板/卡片用 ease-out，回弹只留给按压、toast、吉祥物等小面积反馈 */
   --bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -54,6 +56,12 @@
 
   /* 弹窗进场：张开到落定的总时长 */
   --dur-jelly: 0.42s;
+
+  /* 弹窗离场：进场的镜像——先极轻地鼓一下，再明显缩小到约 90% 并淡出；透明度后段才快速下降，缩小过程看得见 */
+  --dur-jelly-out: 0.26s;
+  --ease-jelly-out: cubic-bezier(0.5, -0.25, 0.75, 0.6);
+  --ease-fade-late: cubic-bezier(0.7, 0, 1, 1);
+  --jelly-out-scale: scale(0.9, 0.88);
 
   /* 一次性反馈（收藏、星标闪动、提示摆动等）的基准时长；循环动画（加载、吉祥物）是动画自身的速度，不随它调整 */
   --dur-feedback: 0.6s;

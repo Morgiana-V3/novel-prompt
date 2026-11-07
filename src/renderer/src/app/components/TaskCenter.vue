@@ -691,7 +691,6 @@ function closePanel() {
   margin: 10px 0;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  user-select: text;
 }
 
 .task-card footer {

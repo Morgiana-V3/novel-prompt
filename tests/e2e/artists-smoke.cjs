@@ -822,7 +822,7 @@ app.whenReady().then(async () => {
       'different source model is labeled explicitly',
     )
     assert.equal(
-      await js(`document.querySelector('.artist-diff')`),
+      await js(`document.querySelector('.artist-changes')`),
       null,
       'no empty change section',
     )

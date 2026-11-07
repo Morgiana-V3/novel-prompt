@@ -113,7 +113,6 @@
   line-height: 1.8;
   font-size: 13px;
   color: var(--text2);
-  user-select: text;
 }
 
 .verdict-card {

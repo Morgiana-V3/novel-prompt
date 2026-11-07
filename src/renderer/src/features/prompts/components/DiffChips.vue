@@ -113,7 +113,6 @@ watch(
 .prompt-diff {
   min-width: 0;
   container-type: inline-size;
-  user-select: text;
 }
 
 .diff-context {

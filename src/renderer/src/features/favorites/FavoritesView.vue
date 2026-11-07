@@ -1282,7 +1282,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  user-select: text;
 }
 
 .favorite-meta {
@@ -1334,7 +1333,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   font-size: 12px;
   line-height: 1.7;
   color: var(--text2);
-  user-select: text;
 }
 
 .favorite-hint {

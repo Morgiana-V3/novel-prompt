@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { backdropCloser } from '../../shared/lib/dialog-motion'
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { NaiImage, SavedRecipe } from '@shared/images/types'
 import type { NaiVersion } from '@shared/generation/types'
 import Icon from '../../shared/ui/Icon.vue'
@@ -71,8 +71,98 @@ function loadSource(next: BlueprintSource) {
     refreshFavorites().catch(reportError)
   }
 }
+/*
+ * ---------- 搜索 ----------
+ * 收藏配方按名称、标签、备注、提示词；创作标签按标题与提示词；
+ * 图库图片按种子、尺寸，输入关键词后再按需读取每张图保存的提示词建立索引（只在弹窗打开期间保留）。
+ */
+const INDEX_CONCURRENCY = 6
+const query = ref('')
+const normalizedQuery = computed(() => query.value.trim().toLowerCase())
+const promptIndex = ref(new Map<string, string>())
+const indexing = ref(false)
+const indexedCount = ref(0)
+let indexSerial = 0
+
+function matches(...texts: (string | undefined)[]): boolean {
+  const keyword = normalizedQuery.value
+  return !keyword || texts.some((text) => !!text && text.toLowerCase().includes(keyword))
+}
+function requestText(request: ArtistBlueprint['request']): string {
+  return [request.base, ...request.characters.map((character) => character.prompt)].join(' ')
+}
+const visibleImages = computed(() =>
+  images.value.filter((image) =>
+    matches(
+      image.name,
+      image.seed === undefined ? undefined : String(image.seed),
+      `${image.width}x${image.height}`,
+      `${image.width} × ${image.height}`,
+      promptIndex.value.get(image.name),
+    ),
+  ),
+)
+const visibleRecipes = computed(() =>
+  recipes.value.filter((item) =>
+    matches(item.name, item.note, item.tags.join(' '), requestText(item.recipe.request)),
+  ),
+)
+const visibleTabs = computed(() =>
+  tabs.value.filter((tab) => matches(tab.title, requestText(tab.request))),
+)
+
+async function buildPromptIndex() {
+  if (indexing.value || source.value !== 'gallery') {
+    return
+  }
+  const serialAtStart = ++indexSerial
+  const pending = images.value.filter((image) => !promptIndex.value.has(image.name))
+  if (!pending.length) {
+    return
+  }
+  indexing.value = true
+  indexedCount.value = images.value.length - pending.length
+  const next = new Map(promptIndex.value)
+  let cursor = 0
+  const worker = async () => {
+    while (cursor < pending.length && serialAtStart === indexSerial) {
+      const image = pending[cursor++]
+      const recipe = await window.api.naiRecipe(image.name).catch(() => null)
+      next.set(image.name, recipe ? requestText(recipe.request) : '')
+      indexedCount.value++
+      if (indexedCount.value % 24 === 0) {
+        promptIndex.value = new Map(next)
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: INDEX_CONCURRENCY }, worker))
+  if (serialAtStart === indexSerial) {
+    promptIndex.value = next
+    indexing.value = false
+  }
+}
+watch(normalizedQuery, (keyword) => {
+  limit.value = 36
+  if (keyword && source.value === 'gallery') {
+    buildPromptIndex().catch(reportError)
+  }
+})
+
+const searchPlaceholder = computed(() => {
+  if (source.value === 'gallery') {
+    return '搜索提示词、种子或尺寸'
+  }
+  if (source.value === 'favorite') {
+    return '搜索名称、标签或提示词'
+  }
+  return '搜索标签名或提示词'
+})
 function close() {
   serial++
+  indexSerial++
+  indexing.value = false
+  promptIndex.value = new Map()
+  query.value = ''
   loading.value = false
   dialog.value?.close()
 }
@@ -85,6 +175,9 @@ function changeSource(next: BlueprintSource) {
   error.value = ''
   loading.value = false
   loadSource(next)
+  if (next === 'gallery' && normalizedQuery.value) {
+    buildPromptIndex().catch(reportError)
+  }
 }
 function selectRecipe(item: SavedRecipe) {
   serial++
@@ -130,6 +223,30 @@ async function selectImage(image: NaiImage) {
     }
   }
 }
+/*
+ * 选中后只在底栏显示一行摘要（名称 · 模型 · 尺寸 · 角色数），完整提示词放在悬停提示里；
+ * 不再弹出右侧预览栏，网格列数保持不变，选择时不会抖动。
+ */
+const selectedSummary = computed(() => {
+  const blueprint = selected.value
+  if (!blueprint) {
+    return '选择要用于对照的画面内容'
+  }
+  const { version: model, params, characters } = blueprint.request
+  const modelNote =
+    model !== props.version ? `（将用 ${props.version.toUpperCase()} 重新生成）` : ''
+  return `${blueprint.title} · ${model.toUpperCase()}${modelNote} · ${params.width} × ${params.height} · ${characters.length} 个角色`
+})
+const selectedPrompt = computed(() => {
+  const request = selected.value?.request
+  if (!request) {
+    return ''
+  }
+  const characters = request.characters.map(
+    (character, index) => `角色 ${index + 1}：${character.prompt}`,
+  )
+  return [request.base || '仅角色提示词', ...characters].join('\n')
+})
 function selectTab(blueprint: ArtistBlueprint) {
   selectedId.value = blueprint.id
   selected.value = blueprint
@@ -150,6 +267,7 @@ function scroll(event: Event) {
 defineExpose({ open })
 onBeforeUnmount(() => {
   serial++
+  indexSerial++
 })
 </script>
 
@@ -196,11 +314,26 @@ onBeforeUnmount(() => {
       >
         创作标签
       </button>
+      <label class="blueprint-search">
+        <Icon
+          name="search"
+          :size="14"
+        />
+        <input
+          v-model="query"
+          type="search"
+          class="input"
+          :placeholder="searchPlaceholder"
+          aria-label="搜索蓝本"
+        />
+        <small
+          v-if="indexing"
+          class="blueprint-indexing"
+          >建立索引 {{ indexedCount }}/{{ images.length }}</small
+        >
+      </label>
     </nav>
-    <div
-      class="blueprint-layout"
-      :class="{ 'with-preview': source !== 'creation' && selected }"
-    >
+    <div class="blueprint-layout">
       <div
         class="blueprint-body"
         @scroll="scroll"
@@ -210,7 +343,7 @@ onBeforeUnmount(() => {
           class="blueprint-images"
         >
           <button
-            v-for="image in images.slice(0, limit)"
+            v-for="image in visibleImages.slice(0, limit)"
             :key="image.name"
             :class="{ selected: selectedId === image.name }"
             :aria-label="`选择蓝本图片 ${image.name}`"
@@ -229,7 +362,7 @@ onBeforeUnmount(() => {
           class="blueprint-images"
         >
           <button
-            v-for="item in recipes"
+            v-for="item in visibleRecipes"
             :key="item.id"
             :class="{ selected: selectedId === item.id }"
             :aria-label="`选择收藏配方 ${item.name}`"
@@ -256,7 +389,7 @@ onBeforeUnmount(() => {
           class="blueprint-tabs"
         >
           <button
-            v-for="tab in tabs"
+            v-for="tab in visibleTabs"
             :key="tab.id"
             :class="{ selected: selectedId === tab.id }"
             :aria-pressed="selectedId === tab.id"
@@ -313,34 +446,12 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
-      <section
-        v-if="source !== 'creation' && selected"
-        class="blueprint-preview"
-      >
-        <strong>{{ selected.title }}</strong>
-        <p>{{ selected.request.base || '仅角色提示词' }}</p>
-        <details v-if="selected.request.negative || selected.request.characters.length">
-          <summary>角色与负面提示词</summary>
-          <p
-            v-for="(character, index) in selected.request.characters"
-            :key="index"
-          >
-            角色 {{ index + 1 }}：{{ character.prompt }}<br />负面：{{ character.negative || '无' }}
-          </p>
-          <p>全局负面：{{ selected.request.negative || '无' }}</p>
-        </details>
-        <small
-          >{{ selected.request.version.toUpperCase() }} · {{ selected.request.params.width }} ×
-          {{ selected.request.params.height }} ·
-          {{ selected.request.characters.length }} 个角色</small
-        >
-        <p v-if="selected.request.version !== version">
-          将使用侧栏的 {{ version.toUpperCase() }} 模型重新生成对照。
-        </p>
-      </section>
     </div>
     <footer>
-      <span>{{ selected ? selected.title : '选择要用于对照的画面内容' }}</span
+      <span
+        class="blueprint-summary"
+        :title="selectedPrompt"
+        >{{ selectedSummary }}</span
       ><button
         class="btn primary"
         :disabled="!selected || loading || busy"
@@ -412,12 +523,31 @@ nav {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.blueprint-layout.with-preview {
-  grid-template-columns: minmax(0, 1fr) 240px;
+/* 搜索框放在来源切换右侧 */
+.blueprint-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  color: var(--muted);
 }
 
-.with-preview .blueprint-images {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.blueprint-search .icon {
+  position: absolute;
+  left: 11px;
+  pointer-events: none;
+}
+
+.blueprint-search input {
+  width: 240px;
+  padding-left: 32px;
+}
+
+.blueprint-indexing {
+  font-size: 11px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 nav button {
@@ -508,28 +638,9 @@ nav button[aria-pressed='true'] {
 }
 
 .blueprint-tabs small,
-.blueprint-preview small,
 footer span {
   font-size: 11px;
   color: var(--text2);
-}
-
-.blueprint-preview {
-  min-height: 0;
-  overflow: auto;
-  padding: 16px;
-  border-left: 1px solid var(--line);
-  overflow-wrap: anywhere;
-}
-
-.blueprint-preview summary {
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.blueprint-preview p {
-  font-size: 12px;
-  line-height: 1.7;
 }
 
 .blueprint-error {
@@ -552,16 +663,13 @@ footer button {
 }
 
 footer span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 @media (width <= 650px) {
-  .blueprint-layout.with-preview {
-    grid-template-columns: minmax(0, 1fr) 180px;
-  }
-
   .blueprint-images {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }

@@ -138,7 +138,6 @@ defineExpose({ copyPrompt: () => copy(sectionText(active.value.draft)) })
 .workspace-prompt {
   flex: 1;
   min-height: 0;
-  user-select: text;
 }
 
 .workspace-config-body {
