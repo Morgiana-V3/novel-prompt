@@ -78,8 +78,9 @@ Agent 根据读到的内容与看到的画面自主判断问题，提出具体�
 - 当前开发宿主加载 SHA256 `4626330b5078b273c941a5d08bb90807f007672d066dc076545c02168514643b`；`check:full` 静态及真实服务灰度通过，核对 106 项 IPC/事件契约、87 个 MCP 工具。Anlas 8958 → 8957。
 - 外部 Agent 亲自查看真实参考图，提交并采纳完整反推稿，带入创作后在新测试工作台生成；全局、负面、角色及位置字段保持一致。生成图保留持书人物、服装与樱花环境，但构图和细节不是精确复原。内置完整反推另行实测通过，仍有发色、瞳色和裙色标签偏差；本轮不作准确率或 Skill 对照结论。
 - 两个真实 MCP 连接验证工具分组隔离；断开其中一个连接再初始化后，已完成操作记录、工作台及生成版本保持一致。未中断执行中的付费操作，未重放未知写入，也未重启宿主，不能把这项结果扩大为全部故障恢复通过。
-- Windows 1.1.0 安装包和便携包已构建，检查更新清单摘要、原生依赖及包内资源；未执行安装器。未发现本机安装记录，但存在正式版数据目录，须先确认旧版程序位置，避免为了验收将已有数据交给旧程序降级打开。图鉴按钮尚缺真实点击验收。
-- 报告位于 `%TEMP%/novel-release-1.1.0-review/`：`preflight-report.json`、`external-report.json`、`reconnect-report.json`、`artifact-report.json`；有效候选包仅在 `artifacts-final/`。这些记录不代表已公开发布或安装升级验收完成。
+- Windows 1.1.0 安装包和便携包已构建，检查更新清单摘要、原生依赖及包内资源。用户确认本机未安装后，执行官方 1.0.0 安装器但不启动旧程序，再由候选 1.1.0 安装器覆盖；两次安装均退出成功，所核对的 428 个正式版数据文件内容保持不变，新版 app.asar 与候选包一致。
+- 通过安装目录中的 NovelPrompt.exe 与随包 mcp-proxy.cjs 冷启动 1.1.0，确认 installed 模式、正式版数据目录、87 个工具、工作台列表读取和画师调试页面截图。开发宿主保持运行。未启动旧版应用，因此不宣称已覆盖旧版实际使用后的完整迁移；在线更新下载安装、图鉴按钮点击仍未验收。
+- 报告位于 `%TEMP%/novel-release-1.1.0-review/`：`preflight-report.json`、`external-report.json`、`reconnect-report.json`、`artifact-report.json`、`install-baseline-report.json`、`install-upgrade-report.json`、`installed-mcp-report.json`；有效候选包仅在 `artifacts-final/`。这些记录不代表已公开发布或全部升级场景验收完成。
 
 ## 2026-11-06 当前开发实例验收记录
 
