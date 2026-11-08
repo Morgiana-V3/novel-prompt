@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { vSegIndicator } from '../../shared/lib/seg-indicator'
 import { useModelManager } from './use-model-manager'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { FrontendRequest, FrontendContext } from '@shared/contracts/desktop'
+import ReversePrompt from './ReversePrompt.vue'
 import type { ReverseModel, ReverseResult, ReverseStatus } from '@shared/reverse/types'
 import { shellState } from '../../shared/state/shell'
-import { toast } from '../../shared/lib/notifications'
+import { reportError, toast } from '../../shared/lib/notifications'
 import { cleanErr } from '../../shared/lib/format'
 import { type CharDraft } from '../prompts/public/draft'
 import { imageState } from '../generation/public'
@@ -13,8 +15,6 @@ import { reverseTrialParams } from './trial-defaults'
 import Icon from '../../shared/ui/Icon.vue'
 import Mascot from '../../shared/ui/Mascot.vue'
 import ReverseModels from './ReverseModels.vue'
-import ReverseCharacters from './ReverseCharacters.vue'
-import ReverseTagBoard from './ReverseTagBoard.vue'
 import ReverseReference from './ReverseReference.vue'
 import ArtistRecommendations from './ArtistRecommendations.vue'
 import { estimateArtistMix, rankArtists } from '@shared/reverse/candidates'
@@ -27,6 +27,7 @@ import { loadReversePreferences, saveReversePreferences } from './preferences'
 import SplitHandle from '../../shared/ui/SplitHandle.vue'
 
 const status = ref<ReverseStatus>()
+const fullPrompt = ref<InstanceType<typeof ReversePrompt>>()
 const preferences = loadReversePreferences()
 const selection = ref<ReverseModel[]>(preferences.models)
 const threshold = ref(preferences.tagThreshold)
@@ -51,10 +52,6 @@ watch(
   { deep: true },
 )
 const stage = ref<'recognition' | 'trials'>('recognition')
-const analyzedModels = ref('')
-const modelsChanged = computed(
-  () => !!result.value && analyzedModels.value !== [...selection.value].sort().join(','),
-)
 /*
  * 推荐画师列表的勾选只用于「对比画师」（各单独出一张）；混合组成是另一份固定推荐，
  * 默认就是推测组成，可在列表里把画师加入 / 移出组成，「调优比例」只调组成的比例。
@@ -106,6 +103,7 @@ const missingModels = computed(() => models.value.filter((model) => !model.ready
 const missingBytes = computed(() =>
   missingModels.value.reduce((total, model) => total + model.missingBytes, 0),
 )
+/** 分类标签与完整提示词共享同一份本地识别结果。 */
 const filteredTags = computed(() =>
   (result.value?.tags ?? []).filter((tag) => tag.score >= threshold.value),
 )
@@ -121,32 +119,6 @@ watch(
   },
   { deep: true },
 )
-function splitTags(text: string) {
-  return text
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean)
-}
-/* 调阈值只增减识别出的标签：用户划掉的仍保持划掉，手动补充的保留 */
-watch(threshold, (next, previous) => {
-  if (!result.value) {
-    return
-  }
-  const current = new Set(splitTags(content.value))
-  const recognized = new Set(result.value.tags.map((tag) => tag.name))
-  const struck = new Set(
-    result.value.tags
-      .filter((tag) => tag.score >= previous && !current.has(tag.name))
-      .map((tag) => tag.name),
-  )
-  const extras = [...current].filter((name) => !recognized.has(name))
-  content.value = [
-    ...result.value.tags
-      .filter((tag) => tag.score >= next && !struck.has(tag.name))
-      .map((tag) => tag.name),
-    ...extras,
-  ].join(', ')
-})
 const error = ref('')
 const image = ref<File>()
 const imageUrl = ref('')
@@ -155,39 +127,19 @@ const result = ref<ReverseResult>()
 const content = ref('')
 const characterText = ref('')
 const characters = ref<CharDraft[]>([])
-const croppedResult = ref<ReverseResult>()
-const reference = ref<InstanceType<typeof ReverseReference>>()
-const cropEnabled = ref(false)
-const hasCrop = ref(false)
-const cropModels = computed<ReverseModel[]>(() =>
-  selection.value.filter((model) => model === 'wd' || model === 'pixai'),
-)
-const cropReady = computed(
-  () =>
-    cropModels.value.length > 0 &&
-    !!status.value &&
-    status.value.models.filter((m) => cropModels.value.includes(m.model)).every((m) => m.ready),
-)
-const characterResult = computed(() => croppedResult.value ?? result.value)
 const characterUsesPixai = computed(
   () =>
-    characterResult.value?.characterModel === 'pixai' ||
-    (!characterResult.value && selection.value.includes('pixai')),
+    result.value?.characterModel === 'pixai' ||
+    (!result.value && selection.value.includes('pixai')),
 )
-const activeCharacterThreshold = computed({
-  get: () => (characterUsesPixai.value ? pixaiCharacterThreshold.value : characterThreshold.value),
-  set: (value: number) => {
-    if (characterUsesPixai.value) {
-      pixaiCharacterThreshold.value = value
-    } else {
-      characterThreshold.value = value
-    }
-  },
-})
+const activeCharacterThreshold = computed(() =>
+  characterUsesPixai.value ? pixaiCharacterThreshold.value : characterThreshold.value,
+)
 const promptContent = computed(() =>
   [characterText.value.trim(), content.value.trim()].filter(Boolean).join(', '),
 )
 const running = ref(false)
+const analyzing = ref(false)
 const actionBusy = ref(false)
 const modelsOpen = ref(false)
 const modelOperation = computed(() =>
@@ -197,7 +149,9 @@ const notices = computed(() =>
   (result.value?.warnings ?? [])
     .filter((warning) => !warning.startsWith('画师候选'))
     .map((warning) =>
-      warning.startsWith('检测到多个人物') ? '多个人物：请手动分配角色标签。' : warning,
+      warning.startsWith('检测到多个人物')
+        ? '检测到多个人物，角色归属请以完整提示词为准。'
+        : warning,
     ),
 )
 watch(
@@ -210,6 +164,8 @@ watch(
 )
 const busy = computed(
   () =>
+    analyzing.value ||
+    !!fullPrompt.value?.running ||
     running.value ||
     match.state.running ||
     trialsState.running ||
@@ -224,10 +180,7 @@ const recognitionMessage = computed(() => {
     return '正在检查本地模型…'
   }
   if (image.value && !selectedReady.value) {
-    return '请先准备所选模型，再点击「开始识别」'
-  }
-  if (modelsChanged.value) {
-    return '模型选择已更改；当前仍为上次结果，点击「重新识别」更新'
+    return '请先准备所选模型，再点击「开始反推」'
   }
   if (result.value) {
     return `已识别 ${filteredTags.value.length} 个标签 · ${result.value.seconds.toFixed(1)} 秒`
@@ -239,7 +192,7 @@ const emptyTitle = computed(() => {
   if (running.value) {
     return '正在识别参考图…'
   }
-  return image.value ? '准备好了，开始识别吧' : '放入一张参考图'
+  return image.value ? '准备好了，开始反推吧' : '放入一张参考图'
 })
 const emptyHint = computed(() => {
   if (running.value) {
@@ -294,9 +247,6 @@ function select(file?: File) {
   selectedArtists.value = []
   characterText.value = ''
   characters.value = []
-  croppedResult.value = undefined
-  cropEnabled.value = false
-  hasCrop.value = false
   error.value = ''
   clearTrials()
 }
@@ -329,8 +279,43 @@ function picked(event: Event) {
   select(input.files?.[0])
   input.value = ''
 }
-async function analyze() {
-  if (!image.value || busy.value || !selectedReady.value) {
+async function analyze(context?: FrontendContext) {
+  if (!image.value || busy.value || !fullPrompt.value) {
+    throw new Error('请先选择参考图并等待当前任务完成')
+  }
+  analyzing.value = true
+  cancelRequested.value = false
+  error.value = ''
+  const abort = () => {
+    void cancelAnalysis().catch(reportError)
+  }
+  context?.signal.addEventListener('abort', abort, { once: true })
+  try {
+    // 两路独立开始：画师结果不必等识图接口，也不会被其失败吞掉。
+    const outcomes = await Promise.allSettled([
+      fullPrompt.value.compose(context?.actionId),
+      analyzeLocal(),
+    ])
+    if (!selectedReady.value && !cancelRequested.value) {
+      error.value = '完整提示词可正常反推；画师参考需要先在识别设置中准备本地模型。'
+    }
+    if (outcomes[0].status === 'rejected' && context) {
+      throw outcomes[0].reason
+    }
+  } finally {
+    analyzing.value = false
+    context?.signal.removeEventListener('abort', abort)
+  }
+}
+function startAnalysis() {
+  void analyze().catch(reportError)
+}
+async function cancelAnalysis() {
+  cancelRequested.value = true
+  await Promise.all([fullPrompt.value?.cancel(), running.value ? manage('cancel') : undefined])
+}
+async function analyzeLocal() {
+  if (!image.value || !selectedReady.value) {
     return
   }
   error.value = ''
@@ -340,7 +325,6 @@ async function analyze() {
   result.value = undefined
   content.value = ''
   selectedArtists.value = []
-  croppedResult.value = undefined
   characterText.value = ''
   characters.value = []
   try {
@@ -350,7 +334,6 @@ async function analyze() {
     }
     const selectedModels = [...selection.value]
     result.value = await window.api.reverseAnalyze(bytes, selectedModels)
-    analyzedModels.value = selectedModels.sort().join(',')
     content.value = filteredTags.value.map((tag) => tag.name).join(', ')
     match.reset()
     showEstimate.value = false
@@ -375,28 +358,6 @@ async function analyze() {
     await refresh()
   }
 }
-async function analyzeCrop() {
-  if (!reference.value || !hasCrop.value || busy.value || !cropReady.value) {
-    return
-  }
-  error.value = ''
-  running.value = true
-  cancelRequested.value = false
-  croppedResult.value = undefined
-  try {
-    const bytes = await reference.value.bytes()
-    if (cancelRequested.value) {
-      throw new Error('已取消识别')
-    }
-    croppedResult.value = await window.api.reverseAnalyze(bytes, [...cropModels.value])
-    createRoleFromCrop(croppedResult.value)
-  } catch (e) {
-    error.value = cleanErr(e)
-  } finally {
-    running.value = false
-    await refresh()
-  }
-}
 /** 达到阈值的全图角色候选 */
 const characterCandidates = computed(() =>
   (result.value?.characters ?? [])
@@ -413,66 +374,6 @@ const multiPerson = computed(
           /^(?:[2-6]\+?(?:girls|boys)|multiple (?:girls|boys))$/.test(tag.name),
       )),
 )
-/**
- * 框选一个人物识别后，直接新建一个角色：角色名 + 选区外观标签（去掉人数类标签），
- * 同名角色标签从主提示词里移走；清掉选区，继续框下一个人。
- */
-function createRoleFromCrop(cropped: ReverseResult) {
-  const names = cropped.characters
-    .filter((tag) => tag.score >= activeCharacterThreshold.value)
-    .map((tag) => tag.name)
-  const looks = cropped.tags
-    .filter(
-      (tag) =>
-        tag.score >= threshold.value &&
-        !/^(?:\d\+?(?:girls?|boys?)|solo|multiple .*)$/.test(tag.name),
-    )
-    .map((tag) => tag.name)
-  if (!names.length && !looks.length) {
-    error.value = '选区里没有识别到可用的标签，可以把人物框得更完整一些再试'
-    return
-  }
-  const existing = characters.value.findIndex((role) =>
-    splitTags(role.prompt).some((token) => names.includes(token)),
-  )
-  if (existing < 0 && characters.value.length >= 6) {
-    error.value = '最多 6 个角色，请先删除不需要的角色'
-    return
-  }
-  if (existing >= 0) {
-    characters.value = characters.value.map((role, index) =>
-      index === existing
-        ? {
-            ...role,
-            prompt: [...new Set([...splitTags(role.prompt), ...names, ...looks])].join(', '),
-          }
-        : role,
-    )
-  } else {
-    const prompt = [...new Set([...names, ...looks])].join(', ')
-    characters.value = [...characters.value, { prompt, negative: '', position: '' }]
-  }
-  if (names.length) {
-    characterText.value = splitTags(characterText.value)
-      .filter((name) => !names.includes(name))
-      .join(', ')
-  }
-  reference.value?.clear()
-  hasCrop.value = false
-  toast(
-    existing >= 0
-      ? `已把外观补进角色 ${existing + 1}，可以继续框选下一个人物`
-      : `已新建角色 ${characters.value.length}，可以继续框选下一个人物`,
-  )
-}
-/** 进入框选：参考图下方出现框选工具，完成后点「完成」退出 */
-function startCharacterSplit() {
-  cropEnabled.value = true
-}
-function cropSelected(selected: boolean) {
-  hasCrop.value = selected
-  croppedResult.value = undefined
-}
 function openTrials() {
   stage.value = 'recognition'
 }
@@ -607,6 +508,9 @@ function toggleEstimate() {
   showEstimate.value = !showEstimate.value
 }
 function buildCandidate(style: string) {
+  if (fullPrompt.value?.hasDraft) {
+    return { style, request: fullPrompt.value.request(style) }
+  }
   const version = settingsState.settings?.naiVersion ?? 'v4.5'
   return {
     style,
@@ -623,12 +527,6 @@ function retryTrial(trial: ReverseTrial) {
   if (!busy.value) {
     match.retry(trial).catch(reportError)
   }
-}
-function clearCrop() {
-  reference.value?.clear()
-  hasCrop.value = false
-  croppedResult.value = undefined
-  cropEnabled.value = false
 }
 function toggleArtist(name: string) {
   if (busy.value) {
@@ -652,7 +550,46 @@ function prepareUpdate() {
     throw new Error('请先停止图片识别或组合试图，再重启更新')
   }
 }
-defineExpose({ prepareUpdate })
+async function frontendAction(input: FrontendRequest, context: FrontendContext) {
+  prepareUpdate()
+  stage.value = 'recognition'
+  if (input.action === 'reverse-load') {
+    if (image.value) {
+      throw new Error('反推页已有参考图，请先由用户保存草稿并更换图片；未覆盖现有内容')
+    }
+    if (!input.image) {
+      throw new Error('请选择图库图片')
+    }
+    await context.step('载入反推参考图')
+    const bytes = await window.api.naiReadImage(input.image.name)
+    context.signal.throwIfAborted()
+    select(new File([new Uint8Array(bytes)], input.image.name, { type: 'image/png' }))
+    await nextTick()
+  } else if (input.action === 'reverse-compose') {
+    await context.step('反推画师参考与完整提示词')
+    await analyze(context)
+  } else {
+    if (!fullPrompt.value) {
+      throw new Error('完整反推编辑器尚未就绪')
+    }
+    await fullPrompt.value.frontendAction(input, context)
+  }
+}
+defineExpose({
+  prepareUpdate,
+  frontendAction,
+  desktopState: () => {
+    const state = fullPrompt.value?.desktopState()
+    return state
+      ? {
+          ...state,
+          localResult: result.value ?? null,
+          localError: error.value,
+          running: busy.value,
+        }
+      : undefined
+  },
+})
 
 async function source(url: string) {
   try {
@@ -684,7 +621,7 @@ async function source(url: string) {
           :disabled="busy"
           @click="stage = 'recognition'"
         >
-          1 · 识别与提示词
+          反推结果
         </button>
         <button
           :class="{ on: stage === 'trials' }"
@@ -692,7 +629,7 @@ async function source(url: string) {
           :disabled="!result || !matchRounds.length"
           @click="startTrials"
         >
-          2 · 匹配画风
+          画风对比
         </button>
       </nav>
       <div
@@ -781,40 +718,13 @@ async function source(url: string) {
           >
         </div>
         <ReverseReference
-          ref="reference"
           :url="imageUrl"
           :file="image"
+          :crop-enabled="false"
           :disabled="busy || modelsOpen || stage !== 'recognition' || shellState.tab !== 'reverse'"
-          :crop-enabled="cropEnabled && stage === 'recognition'"
           @choose="picker?.click()"
           @file="select"
-          @selected="cropSelected"
         />
-        <Transition name="popover-up">
-          <div
-            v-if="image && stage === 'recognition' && (cropEnabled || hasCrop)"
-            class="reverse-crop-tools"
-          >
-            <button
-              class="btn small primary"
-              :disabled="busy || !hasCrop || !cropReady"
-              @click="analyzeCrop"
-            >
-              识别并新建角色
-            </button>
-            <button
-              class="btn small"
-              :disabled="busy"
-              @click="clearCrop"
-            >
-              完成
-            </button>
-            <span v-if="!cropReady">{{
-              cropModels.length ? '请下载所选的角色模型' : '请勾选内容 / 角色或 PixAI 角色'
-            }}</span>
-            <span v-else-if="!hasCrop">在图上拖动，框住一个人物</span>
-          </div>
-        </Transition>
       </section>
       <SplitHandle
         v-show="stage === 'recognition'"
@@ -830,117 +740,127 @@ async function source(url: string) {
         v-show="stage === 'recognition'"
         class="reverse-adjustments"
       >
-        <div
-          v-show="stage === 'recognition'"
-          class="reverse-options"
-        >
-          <label
-            v-for="option in [
-              ['wd', '内容 / 角色'],
-              ['k2', 'K2 画师'],
-              ['k3', 'K3 画师 / 评分'],
-              ['pixai', 'PixAI 角色'],
-            ] as const"
-            :key="option[0]"
-          >
-            <input
-              v-model="selection"
-              type="checkbox"
-              :value="option[0]"
-              :disabled="busy || (selection.length === 1 && selection.includes(option[0]))"
-            />{{ option[1] }}
-          </label>
+        <div class="reverse-analysis-toolbar">
+          <strong>图片反推</strong>
+          <span class="reverse-analysis-hint">画师参考 · 完整提示词</span>
           <button
-            class="btn small ghost reverse-model-toggle"
-            :disabled="trialsState.running"
-            aria-label="模型管理"
-            :title="selectedReady ? '本地模型已就绪' : '管理本地模型'"
-            @click="modelsOpen = true"
-          >
-            <span
-              class="model-dot"
-              :class="{ ready: selectedReady }"
-            ></span
-            >模型<Icon
-              name="chip"
-              :size="14"
-            />
-          </button>
-          <button
-            v-if="result && !running"
-            class="btn small reverse-rerun"
-            :class="{ attention: modelsChanged }"
-            :disabled="!image || !selectedReady || busy"
-            :title="modelsChanged ? '识别模型已更改，当前仍为上次结果' : '用所选模型重新识别'"
-            @click="analyze"
-          >
-            <Icon
-              name="refresh"
-              :size="13"
-            />重新识别
-          </button>
-        </div>
-        <div
-          v-if="stage === 'recognition' && status && !selectedReady && !modelOperation"
-          class="reverse-setup"
-        >
-          <div class="reverse-setup-heading">
-            <div>
-              <strong
-                >还需要 {{ missingModels.length }} 个本地模型 · 待下载
-                {{ size(missingBytes) }}</strong
-              >
-              <p>
-                {{
-                  image
-                    ? '参考图已保留，模型就绪后点击「开始识别」。'
-                    : '首次使用需下载所选模型，之后可离线识别。'
-                }}
-              </p>
-            </div>
-            <button
-              class="btn small primary"
-              :disabled="busy"
-              @click="manage('install')"
-            >
-              下载并启用
-            </button>
-          </div>
-          <ul class="reverse-missing-models">
-            <li
-              v-for="model in missingModels"
-              :key="model.id"
-            >
-              <strong>{{ model.name }}</strong>
-              <span>{{ model.purpose }}</span>
-              <span
-                >{{ model.partial ? '待补全' : '待下载' }} · {{ size(model.missingBytes) }}</span
-              >
-            </li>
-          </ul>
-        </div>
-        <div
-          v-if="modelOperation && status"
-          class="reverse-download"
-        >
-          <template v-if="status.totalBytes > 0">
-            <progress
-              :value="progress"
-              max="100"
-              aria-label="本次模型传输进度"
-            /><span
-              >本次传输 {{ size(status.completedBytes) }} / {{ size(status.totalBytes) }}</span
-            >
-          </template>
-          <span v-else>正在检查本地文件，确认本次需要下载或导入的大小…</span>
-          <button
+            v-if="analyzing || running || fullPrompt?.running"
             class="btn small"
             :disabled="cancelRequested"
-            @click="manage('cancel')"
+            @click="cancelAnalysis().catch(reportError)"
           >
-            取消下载
+            {{ cancelRequested ? '正在停止…' : '停止' }}
+          </button>
+          <button
+            v-else
+            class="btn small primary"
+            :disabled="!image || busy"
+            @click="startAnalysis"
+          >
+            {{ result || fullPrompt?.hasDraft ? '重新反推' : '开始反推' }}
           </button>
         </div>
+        <details class="reverse-settings">
+          <summary>识别设置</summary>
+          <div
+            v-show="stage === 'recognition'"
+            class="reverse-options"
+          >
+            <label
+              v-for="option in [
+                ['wd', '内容 / 角色'],
+                ['k2', 'K2 画师'],
+                ['k3', 'K3 画师 / 评分'],
+                ['pixai', 'PixAI 角色'],
+              ] as const"
+              :key="option[0]"
+            >
+              <input
+                v-model="selection"
+                type="checkbox"
+                :value="option[0]"
+                :disabled="busy || (selection.length === 1 && selection.includes(option[0]))"
+              />{{ option[1] }}
+            </label>
+            <button
+              class="btn small ghost reverse-model-toggle"
+              :disabled="trialsState.running"
+              aria-label="模型管理"
+              :title="selectedReady ? '本地模型已就绪' : '管理本地模型'"
+              @click="modelsOpen = true"
+            >
+              <span
+                class="model-dot"
+                :class="{ ready: selectedReady }"
+              ></span
+              >模型<Icon
+                name="chip"
+                :size="14"
+              />
+            </button>
+          </div>
+          <div
+            v-if="stage === 'recognition' && status && !selectedReady && !modelOperation"
+            class="reverse-setup"
+          >
+            <div class="reverse-setup-heading">
+              <div>
+                <strong
+                  >还需要 {{ missingModels.length }} 个本地模型 · 待下载
+                  {{ size(missingBytes) }}</strong
+                >
+                <p>
+                  {{
+                    image
+                      ? '参考图已保留，模型就绪后点击「开始反推」。'
+                      : '首次使用需下载所选模型，之后可离线识别。'
+                  }}
+                </p>
+              </div>
+              <button
+                class="btn small primary"
+                :disabled="busy"
+                @click="manage('install')"
+              >
+                下载并启用
+              </button>
+            </div>
+            <ul class="reverse-missing-models">
+              <li
+                v-for="model in missingModels"
+                :key="model.id"
+              >
+                <strong>{{ model.name }}</strong>
+                <span>{{ model.purpose }}</span>
+                <span
+                  >{{ model.partial ? '待补全' : '待下载' }} · {{ size(model.missingBytes) }}</span
+                >
+              </li>
+            </ul>
+          </div>
+          <div
+            v-if="modelOperation && status"
+            class="reverse-download"
+          >
+            <template v-if="status.totalBytes > 0">
+              <progress
+                :value="progress"
+                max="100"
+                aria-label="本次模型传输进度"
+              /><span
+                >本次传输 {{ size(status.completedBytes) }} / {{ size(status.totalBytes) }}</span
+              >
+            </template>
+            <span v-else>正在检查本地文件，确认本次需要下载或导入的大小…</span>
+            <button
+              class="btn small"
+              :disabled="cancelRequested"
+              @click="manage('cancel')"
+            >
+              取消下载
+            </button>
+          </div>
+        </details>
         <p
           v-if="error || status?.phase === 'error'"
           class="reverse-error"
@@ -948,105 +868,156 @@ async function source(url: string) {
         >
           {{ error || status?.message }}
         </p>
-
         <div
-          v-if="!result || running"
+          v-if="!result && !fullPrompt?.hasDraft && !analyzing && !fullPrompt?.running"
           class="reverse-recognition-empty"
-          role="status"
-          :aria-busy="running"
         >
           <Mascot
             mood="search"
-            motion="loop"
-            :size="running ? 150 : 136"
+            :size="100"
           />
           <strong>{{ emptyTitle }}</strong>
-          <p v-if="emptyHint">{{ emptyHint }}</p>
-          <div
-            v-if="running"
-            class="recognition-dots"
-            aria-hidden="true"
-          >
-            <i></i><i></i><i></i>
-          </div>
-          <button
-            v-if="running"
-            class="btn"
-            :disabled="cancelRequested"
-            @click="manage('cancel')"
-          >
-            {{ cancelRequested ? '正在取消…' : '取消识别' }}
-          </button>
-          <button
-            v-else-if="image"
-            class="btn primary reverse-start"
-            :disabled="!selectedReady || busy"
-            @click="analyze"
-          >
-            <Icon
-              name="reverse"
-              :size="16"
-            />开始识别
-          </button>
-        </div>
-        <div
-          v-show="!!result && !running"
-          class="reverse-tabs-row"
-        >
-          <strong class="reverse-tabs-title">识别结果</strong>
-          <span
-            v-if="!selectedCount"
-            class="reverse-trial-hint"
-            >先在推荐画师里选几位</span
-          >
-          <button
-            class="btn reverse-run-trials"
-            :disabled="!canCompare"
-            :title="compareTitle"
-            @click="startCompareClick"
-          >
-            <Icon
-              name="compare"
-              :size="14"
-            />对比画师 · {{ Math.min(selectedCount, COMPARE_MAX) }} 张
-          </button>
-          <button
-            class="btn primary reverse-run-trials"
-            :disabled="!canTune"
-            :title="tuneTitle"
-            @click="startTuneClick"
-          >
-            <Icon
-              name="sliders"
-              :size="14"
-            />调优比例 · 最多 {{ TUNE_MAX_IMAGES }} 张
-          </button>
+          <p>{{ image ? '一次反推画师参考、主提示词、负面词与角色位置' : emptyHint }}</p>
+          <span v-if="image">完整提示词使用设置中的 AI 识图接口</span>
         </div>
         <section
-          v-show="!!result && !running"
-          class="reverse-output"
-          :data-ready="!!result"
-          aria-label="反推结果"
+          v-if="running || result"
+          class="reverse-style-panel"
+          aria-label="画师参考"
         >
-          <div class="reverse-content-panel">
+          <div class="reverse-panel-head">
+            <span>画师参考</span
+            ><span class="reverse-meta">{{ running ? '正在识别…' : '风格相似度参考' }}</span>
+          </div>
+          <section
+            v-if="mixParts.length"
+            class="reverse-mix"
+            aria-label="混合组成"
+          >
+            <header>
+              <strong>混合组成</strong>
+              <span
+                class="reverse-mix-kind"
+                :title="
+                  usingTuned
+                    ? '比例来自「调优比例」里最像的结果，再次调优从这组继续'
+                    : '比例按画风模型的概率换算，表示风格接近程度，不是原作者判定'
+                "
+                >{{ mixKindLabel }}</span
+              >
+              <button
+                v-if="tunedParts"
+                class="reverse-mix-switch"
+                @click="toggleEstimate"
+              >
+                {{ usingTuned ? '看推测比例' : '看调优结果' }}
+              </button>
+              <button
+                v-if="customMembers"
+                class="reverse-mix-switch"
+                @click="restoreRecommended"
+              >
+                恢复推荐
+              </button>
+            </header>
+            <div
+              class="reverse-mix-bar"
+              aria-hidden="true"
+            >
+              <span
+                v-for="part in mixShares"
+                :key="part.name"
+                :style="{ flexGrow: Math.max(part.share, 1), background: part.color }"
+              ></span>
+            </div>
+            <ul class="reverse-mix-legend">
+              <li
+                v-for="part in mixShares"
+                :key="part.name"
+              >
+                <i :style="{ background: part.color }"></i
+                ><span :title="part.name">{{ part.name }}</span
+                ><b>{{ part.share }}%</b><code title="提示词权重">{{ part.weight }}</code>
+              </li>
+            </ul>
+          </section>
+          <p
+            v-if="result && !mixParts.length"
+            class="reverse-notice"
+          >
+            {{
+              selection.some((model) => model === 'k2' || model === 'k3')
+                ? '没有得到可信的画师候选，可以先使用完整提示词。'
+                : '尚未启用画师模型，请在识别设置中勾选 K2 或 K3。'
+            }}
+          </p>
+          <div
+            v-if="result"
+            class="reverse-candidates"
+          >
+            <ArtistRecommendations
+              v-model:threshold="artistThreshold"
+              :result="result"
+              :selected="selectedArtists"
+              :members="members"
+              :busy="busy"
+              :running="running"
+              @toggle="toggleArtist"
+              @member="toggleMember"
+            />
+            <div
+              v-show="!!result && !running"
+              class="reverse-tabs-row"
+            >
+              <strong class="reverse-tabs-title">识别结果</strong>
+              <span
+                v-if="!selectedCount"
+                class="reverse-trial-hint"
+                >先在推荐画师里选几位</span
+              >
+              <button
+                class="btn reverse-run-trials"
+                :disabled="!canCompare"
+                :title="compareTitle"
+                @click="startCompareClick"
+              >
+                <Icon
+                  name="compare"
+                  :size="14"
+                />对比画师 · {{ Math.min(selectedCount, COMPARE_MAX) }} 张
+              </button>
+              <button
+                class="btn primary reverse-run-trials"
+                :disabled="!canTune"
+                :title="tuneTitle"
+                @click="startTuneClick"
+              >
+                <Icon
+                  name="sliders"
+                  :size="14"
+                />调优比例 · 最多 {{ TUNE_MAX_IMAGES }} 张
+              </button>
+            </div>
+          </div>
+        </section>
+        <ReversePrompt
+          ref="fullPrompt"
+          :file="image"
+          :disabled="busy"
+          :evidence="promptContent"
+          :artist-style="mixParts.map((part) => `${part.weight}::artist:${part.name}::`).join(', ')"
+          :tags="filteredTags.map((tag) => tag.name)"
+          :character-tags="characterCandidates"
+        >
+          <template #tags-heading>
             <div class="reverse-panel-head">
-              <span>画面内容</span
-              ><label
-                v-if="result?.tags.length"
-                class="reverse-threshold"
-                >阈值<input
-                  v-model.number="threshold"
-                  aria-label="基础标签阈值"
-                  type="number"
-                  min="0.05"
-                  max="1"
-                  step="0.05"
-                  :disabled="busy" /></label
-              ><span
+              <span>{{ result ? '画面标签分类' : '提示词标签分类' }}</span>
+              <span
                 v-if="result"
                 class="reverse-meta"
                 >{{ filteredTags.length }} 个标签 · {{ result.seconds.toFixed(1) }} 秒</span
-              ><button
+              >
+              <button
                 class="icon-btn sm"
                 :disabled="!content.trim()"
                 title="复制画面内容"
@@ -1059,13 +1030,8 @@ async function source(url: string) {
                 />
               </button>
             </div>
-            <ReverseTagBoard
-              v-model:content="content"
-              v-model:character-text="characterText"
-              :tags="filteredTags.map((tag) => tag.name)"
-              :character-tags="characterCandidates"
-              :busy="!result || busy"
-            />
+          </template>
+          <template #tags-notices>
             <p
               v-for="notice in notices"
               :key="notice"
@@ -1073,80 +1039,8 @@ async function source(url: string) {
             >
               {{ notice }}
             </p>
-          </div>
-          <ReverseCharacters
-            v-if="multiPerson || characters.length"
-            v-model:threshold="activeCharacterThreshold"
-            v-model:characters="characters"
-            :busy="busy"
-            :cropping="cropEnabled"
-            @crop="startCharacterSplit"
-          />
-          <div class="reverse-style-panel">
-            <section
-              v-if="mixParts.length"
-              class="reverse-mix"
-              aria-label="混合组成"
-            >
-              <header>
-                <strong>混合组成</strong>
-                <span
-                  class="reverse-mix-kind"
-                  :title="
-                    usingTuned
-                      ? '比例来自「调优比例」里最像的结果，再次调优从这组继续'
-                      : '比例按画风模型的概率换算，表示风格接近程度，不是原作者判定'
-                  "
-                  >{{ mixKindLabel }}</span
-                >
-                <button
-                  v-if="tunedParts"
-                  class="reverse-mix-switch"
-                  @click="toggleEstimate"
-                >
-                  {{ usingTuned ? '看推测比例' : '看调优结果' }}
-                </button>
-                <button
-                  v-if="customMembers"
-                  class="reverse-mix-switch"
-                  @click="restoreRecommended"
-                >
-                  恢复推荐
-                </button>
-              </header>
-              <div
-                class="reverse-mix-bar"
-                aria-hidden="true"
-              >
-                <span
-                  v-for="part in mixShares"
-                  :key="part.name"
-                  :style="{ flexGrow: Math.max(part.share, 1), background: part.color }"
-                ></span>
-              </div>
-              <ul class="reverse-mix-legend">
-                <li
-                  v-for="part in mixShares"
-                  :key="part.name"
-                >
-                  <i :style="{ background: part.color }"></i
-                  ><span :title="part.name">{{ part.name }}</span
-                  ><b>{{ part.share }}%</b><code title="提示词权重">{{ part.weight }}</code>
-                </li>
-              </ul>
-            </section>
-            <ArtistRecommendations
-              v-model:threshold="artistThreshold"
-              :result="result"
-              :selected="selectedArtists"
-              :members="members"
-              :busy="busy"
-              :running="running"
-              @toggle="toggleArtist"
-              @member="toggleMember"
-            />
-          </div>
-        </section>
+          </template>
+        </ReversePrompt>
       </section>
     </div>
     <ReverseModels
@@ -1163,6 +1057,60 @@ async function source(url: string) {
 </template>
 
 <style scoped>
+.reverse-local-text {
+  margin: 0;
+  padding: 12px;
+  color: var(--text2);
+  font: 12px/1.8 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.reverse-analysis-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+
+.reverse-analysis-toolbar .btn {
+  margin-left: auto;
+}
+
+.reverse-analysis-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.reverse-candidates {
+  padding: 0 12px 10px;
+}
+
+.reverse-settings::details-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.reverse-settings:not([open]) > :not(summary) {
+  display: none;
+}
+
+.reverse-settings > summary {
+  padding: 8px 0;
+  color: var(--text2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.reverse-local-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .reverse-view {
   position: relative;
   display: flex;

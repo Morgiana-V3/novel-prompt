@@ -48,6 +48,8 @@ export interface AnalysisResult {
 }
 
 export interface AiOptimizeRequest {
+  /** 图片反推专用：只接受 PNG/JPEG/WebP data URL，必须实际识图，不能降级为纯文本。 */
+  referenceImage?: string
   /** 未传入时不假定预设状态，兼容既有外部调用。 */
   promptPresets?: { qualityTags: boolean; qualityMode?: 'standard' | 'light'; ucPreset: UcPreset }
   mode: 'optimize' | 'semantic'
@@ -121,6 +123,8 @@ export interface EvidenceInfo {
 }
 
 export interface AiOptimizeResult {
+  /** 未修复的结构问题；调用方应展示并阻止无效位置被静默忽略。 */
+  warnings?: string[]
   /** 绑定最终稿、需求、模型/预设、Skill 和证据的复查指纹。 */
   reviewKey?: string
   /** 本轮沿用已采纳稿，仅本地复查，未再次请求模型。 */

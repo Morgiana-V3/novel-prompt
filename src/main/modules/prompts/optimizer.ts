@@ -14,7 +14,8 @@ import type {
   ChangeScope,
   EvidenceInfo,
 } from '../../../shared/prompts/types'
-import { extractJson, type ChatMessage } from '../../providers/chat/client'
+import { extractJson, type ChatInputMessage } from '../../providers/chat/client'
+import { reverseReference, REVERSE_PROMPT } from './reverse-reference'
 import { composeSkills } from '../skills/service'
 import { getSettings } from '../settings/service'
 import { analyzePrompt } from './analyzer'
@@ -226,6 +227,22 @@ function structureIssues(req: AiOptimizeRequest, result: AiOptimizeResult): stri
   if (chars.length > limit) {
     out.push(`角色数 ${chars.length} 超过当前模型上限 ${limit}`)
   }
+  if (req.referenceImage) {
+    // Only enforce evidence present in the model's own description, never invent people.
+    const people = [
+      ...result.positive.matchAll(/(?:^|[,\n])\s*(\d+)\+?(?:girls?|boys?|others?)\s*(?=,|$)/gi),
+    ].reduce((total, match) => total + Number(match[1]), 0)
+    if (people > 0 && chars.length < Math.min(people, limit)) {
+      out.push(
+        `图片反推已描述 ${people} 个人物，却只提供 ${chars.length} 条角色提示词；请按参考图补全每位人物的可见外观、服装、动作及位置，多格图按出场单元分配。不要通过删除人数标签掩盖遗漏。`,
+      )
+    }
+    chars.forEach((character, index) => {
+      if (!character.position?.trim()) {
+        out.push(`图片反推角色 ${index + 1} 缺少位置；请依据参考图给出目标模型支持的位置引导`)
+      }
+    })
+  }
   out.push(...positionProblems(chars, version))
   out.push(...regionIssues(req, result))
   const taste = result.changes.filter(
@@ -421,6 +438,10 @@ export async function optimizePrompt(
   onStep: (text: string) => void,
   signal?: AbortSignal,
 ): Promise<AiOptimizeResult> {
+  const reference = req.referenceImage ? await reverseReference(req.referenceImage) : undefined
+  if (reference && req.mode !== 'semantic') {
+    throw new Error('图片反推必须使用语义生成模式')
+  }
   const sections = buildSections(req)
   const rules = precheck(req, sections)
   const ev = await gatherEvidence(sections, onStep, signal)
@@ -465,9 +486,13 @@ export async function optimizePrompt(
       reused: true,
     }
   }
-  const messages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt(req.version, skills.text) },
-    { role: 'user', content: userPrompt(req, rules, dataIssues, ev.block) },
+  const prompt = userPrompt(req, rules, dataIssues, ev.block)
+  const messages: ChatInputMessage[] = [
+    {
+      role: 'system',
+      content: systemPrompt(req.version, skills.text) + (reference ? REVERSE_PROMPT : ''),
+    },
+    { role: 'user', content: reference ? [{ type: 'text', text: prompt }, reference] : prompt },
   ]
   const log: ToolLog = {
     related: new Set(ev.info.related),
@@ -495,6 +520,7 @@ export async function optimizePrompt(
     onStep(forced ? 'AI 正在整理最终结果…' : 'AI 思考中…')
     // 始终携带 tools：DeepSeek 思考模式下带 tools 的多轮对话需要完整回传 reasoning_content
     const msg = await chat(messages, {
+      requireVision: !!reference,
       json: true,
       skillSnapshot: skills.snapshot,
       tools: TOOLS,
@@ -587,6 +613,7 @@ export async function optimizePrompt(
     stable.fidelity = fidelityIssues(req, stable)
   }
   result = stable
+  result.warnings = structureIssues(req, result)
   result.evidence = evidence()
   if (
     !result.invalid.length &&

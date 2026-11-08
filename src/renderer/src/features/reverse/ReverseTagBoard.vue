@@ -1,101 +1,40 @@
 <script setup lang="ts">
-/**
- * 识别结果的标签板：识别出的标签按类别排好、默认全部使用，
- * 识别错的、不想要的点一下划掉（再点恢复）。
- * 数据仍是原来的两段文字：画面内容（content）和主提示词里的角色标签（characterText）。
- */
+/** 原有的语义分组保持不变；标签只读，不改动反推结果。 */
 import { computed } from 'vue'
-import { TAG_GROUPS, tagGroup, type TagGroup } from './tag-groups'
+import { TAG_GROUPS, tagGroup } from './tag-groups'
 
 const props = defineProps<{
-  /** 达到阈值的画面标签（按分数排序） */
   tags: string[]
-  /** 达到阈值的角色候选 */
   characterTags: string[]
-  busy: boolean
 }>()
-const content = defineModel<string>('content', { required: true })
-const characterText = defineModel<string>('characterText', { required: true })
-
-function split(text: string) {
-  return text
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean)
-}
-function unique(values: string[]) {
-  return [...new Set(values)]
-}
-const contentTokens = computed(() => new Set(split(content.value)))
-const characterTokens = computed(() => new Set(split(characterText.value)))
-
-interface Chip {
-  name: string
-  on: boolean
-  manual: boolean
-}
-const characterChips = computed<Chip[]>(() => {
-  const recognized = new Set(props.characterTags)
-  return unique([...props.characterTags, ...characterTokens.value]).map((name) => ({
-    name,
-    on: characterTokens.value.has(name),
-    manual: !recognized.has(name),
-  }))
-})
+const characters = computed(() => [...new Set(props.characterTags)])
 const groups = computed(() => {
-  const recognized = new Set(props.tags)
-  const chips: Chip[] = unique([...props.tags, ...contentTokens.value]).map((name) => ({
-    name,
-    on: contentTokens.value.has(name),
-    manual: !recognized.has(name),
-  }))
-  const byGroup = new Map<TagGroup, Chip[]>()
-  for (const chip of chips) {
-    const key = tagGroup(chip.name)
-    byGroup.set(key, [...(byGroup.get(key) ?? []), chip])
-  }
-  return TAG_GROUPS.filter((group) => byGroup.has(group.key)).map((group) => ({
+  const tags = [...new Set(props.tags)]
+  return TAG_GROUPS.map((group) => ({
     ...group,
-    chips: byGroup.get(group.key)!,
-  }))
+    tags: tags.filter((tag) => tagGroup(tag) === group.key),
+  })).filter((group) => group.tags.length)
 })
-
-function toggle(text: string, name: string, on: boolean) {
-  const tokens = split(text)
-  return (on ? tokens.filter((token) => token !== name) : [...tokens, name]).join(', ')
-}
-function toggleContent(chip: Chip) {
-  if (!props.busy) {
-    content.value = toggle(content.value, chip.name, chip.on)
-  }
-}
-function toggleCharacter(chip: Chip) {
-  if (!props.busy) {
-    characterText.value = toggle(characterText.value, chip.name, chip.on)
-  }
-}
 </script>
 
 <template>
-  <div class="tag-board">
+  <div
+    class="tag-board"
+    aria-label="画面标签分类"
+  >
     <section
-      v-if="characterChips.length"
+      v-if="characters.length"
       class="tag-group"
     >
       <h4>角色</h4>
       <div class="tag-chips">
-        <button
-          v-for="chip in characterChips"
-          :key="chip.name"
+        <span
+          v-for="tag in characters"
+          :key="tag"
           class="tag-chip character"
-          :class="{ off: !chip.on, manual: chip.manual }"
-          :disabled="busy"
-          :aria-pressed="chip.on"
-          :title="chip.on ? '点击划掉' : '点击恢复'"
-          @click="toggleCharacter(chip)"
+          :title="tag"
+          >{{ tag }}</span
         >
-          {{ chip.name }}
-        </button>
       </div>
     </section>
     <section
@@ -105,18 +44,13 @@ function toggleCharacter(chip: Chip) {
     >
       <h4>{{ group.label }}</h4>
       <div class="tag-chips">
-        <button
-          v-for="chip in group.chips"
-          :key="chip.name"
+        <span
+          v-for="tag in group.tags"
+          :key="tag"
           class="tag-chip"
-          :class="{ off: !chip.on, manual: chip.manual }"
-          :disabled="busy"
-          :aria-pressed="chip.on"
-          :title="chip.on ? '点击划掉' : '点击恢复'"
-          @click="toggleContent(chip)"
+          :title="tag"
+          >{{ tag }}</span
         >
-          {{ chip.name }}
-        </button>
       </div>
     </section>
   </div>
@@ -153,6 +87,7 @@ function toggleCharacter(chip: Chip) {
 }
 
 .tag-chip {
+  user-select: text;
   max-width: 100%;
   height: 26px;
   padding: 0 10px;
@@ -171,27 +106,9 @@ function toggleCharacter(chip: Chip) {
     opacity var(--dur-fast) var(--ease-out);
 }
 
-.tag-chip:hover:not(:disabled) {
-  border-color: var(--pink-line);
-}
-
 .tag-chip.character {
   border-color: var(--pink-line);
   color: var(--pink-deep);
   background: var(--pink-soft);
-}
-
-/* 手动补充的标签用虚线边框区分 */
-.tag-chip.manual {
-  border-style: dashed;
-}
-
-/* 划掉的标签：变灰加删除线，仍留在原位可恢复 */
-.tag-chip.off {
-  border-color: var(--line);
-  color: var(--muted);
-  background: var(--panel);
-  text-decoration: line-through;
-  opacity: 0.75;
 }
 </style>

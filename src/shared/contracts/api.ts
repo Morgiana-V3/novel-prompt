@@ -178,7 +178,7 @@ export interface Api {
   aiVisionTest: (provider: VisionProvider) => Promise<VisionTestResult>
   planInpaint: (req: AiInpaintRequest) => Promise<AiInpaintResult>
   cancelInpaintPlan: () => Promise<void>
-  optimize: (req: AiOptimizeRequest) => Promise<AiOptimizeResult>
+  optimize: (req: AiOptimizeRequest, actionId?: string) => Promise<AiOptimizeResult>
   preview: (req: AiPreviewRequest) => Promise<AiPreviewResult>
   skillsList: () => Promise<SkillConfigItem[]>
   skillsGet: (id: string) => Promise<SkillDoc | null>

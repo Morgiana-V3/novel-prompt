@@ -82,7 +82,17 @@ export function useFrontendActions(
       },
     }
     try {
-      if (request.action.startsWith('creation-ai-')) {
+      if (request.action.startsWith('reverse-')) {
+        if (workspaceView.value.desktopState()?.editing) {
+          throw new Error('请先保存或完成图片精修中的编辑')
+        }
+        shellState.tab = 'reverse'
+        await nextTick()
+        if (!host.reverseView.value) {
+          throw new Error('图片反推页面尚未就绪')
+        }
+        await host.reverseView.value.frontendAction(request, context)
+      } else if (request.action.startsWith('creation-ai-')) {
         if (workspaceView.value.desktopState()?.editing) {
           throw new Error('请先保存或完成图片精修中的编辑')
         }

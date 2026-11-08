@@ -31,6 +31,7 @@ export function createDesktopSnapshot(host: DesktopHost, frontend: Ref<DesktopSt
       tab: shellState.tab,
       creationPanel: creationPanel.value,
       creationAi: aiView.value?.desktopState(),
+      reverse: host.reverseView.value?.desktopState(),
       draft: {
         base: promptState.prompt,
         negative: promptState.negative,

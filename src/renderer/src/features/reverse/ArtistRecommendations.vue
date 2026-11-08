@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import IconSwap from '../../shared/ui/IconSwap.vue'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import type { ReverseResult } from '@shared/reverse/types'
 import { rankArtists } from '@shared/reverse/candidates'
 import Icon from '../../shared/ui/Icon.vue'
@@ -15,9 +15,8 @@ const props = defineProps<{
 }>()
 const threshold = defineModel<number>('threshold', { required: true })
 const emit = defineEmits<{ toggle: [name: string]; member: [name: string] }>()
-const expanded = ref(false)
 const recommendations = computed(() => (props.result ? rankArtists(props.result) : []))
-const visible = computed(() => recommendations.value.slice(0, expanded.value ? 10 : 5))
+const visible = computed(() => recommendations.value.slice(0, 10))
 const selected = (name: string) =>
   props.selected.some((item) => item.toLowerCase() === name.toLowerCase())
 const isMember = (name: string) =>
@@ -90,17 +89,6 @@ const isMember = (name: string) =>
           </button>
         </li>
       </ol>
-      <button
-        v-if="recommendations.length > 5"
-        class="more-artists"
-        @click="expanded = !expanded"
-      >
-        {{ expanded ? '收起候选' : '查看更多候选'
-        }}<Icon
-          name="chevron"
-          :size="11"
-        />
-      </button>
     </template>
     <p
       v-else
@@ -200,7 +188,8 @@ header span,
   padding: 0;
   margin: 0;
   display: grid;
-  gap: 4px;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  gap: 4px 12px;
 }
 
 .recommendation-item {

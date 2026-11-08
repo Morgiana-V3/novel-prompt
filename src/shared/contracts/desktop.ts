@@ -1,4 +1,5 @@
 import type { NaiGenParams, NaiVersion } from '../generation/types'
+import type { ReverseResult } from '../reverse/types'
 import type { NaiImage } from '../images/types'
 import type { AiChange, AiOptimizeResult, InpaintDraft } from '../prompts/types'
 import type { WorkspaceConfigPatch } from '../workspace/config'
@@ -21,6 +22,11 @@ export const APP_TABS = [
 ] as const
 export type AppTab = (typeof APP_TABS)[number]
 export type FrontendAction =
+  | 'reverse-load'
+  | 'reverse-compose'
+  | 'reverse-propose'
+  | 'reverse-adopt'
+  | 'reverse-transfer'
   | 'creation-ai-config'
   | 'creation-ai-propose'
   | 'creation-ai-review'
@@ -73,6 +79,7 @@ export interface FrontendRequest {
   fresh?: boolean
   change_ids?: string[]
   creation_proposal?: { draft: InpaintDraft; summary: string; changes: AiChange[] }
+  reverse_proposal?: { draft: InpaintDraft; summary: string }
 }
 export interface FrontendContext {
   actionId: string
@@ -81,6 +88,18 @@ export interface FrontendContext {
   step: (message: string) => Promise<void>
 }
 export interface DesktopState {
+  reverse?: {
+    reference: string
+    draft: InpaintDraft
+    proposal: AiOptimizeResult | null
+    version: NaiVersion
+    params: NaiGenParams
+    artist: string
+    running: boolean
+    error: string
+    localResult: ReverseResult | null
+    localError: string
+  }
   token: string
   tab: AppTab
   /** 生图创作当前分页（词条检查 / 智能优化 / 画面推测 / 图片预览）；旧页签 compare、ai、preview、generate 会导航到这里 */

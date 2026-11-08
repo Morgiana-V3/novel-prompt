@@ -14,6 +14,7 @@ export const promptsApi = {
   aiTranslate: (): Promise<DbStatus> => invoke('db:aiTranslate'),
   analyze: (text: string): Promise<AnalysisResult> => invoke('prompt:analyze', text),
   planInpaint: (req: AiInpaintRequest): Promise<AiInpaintResult> => invoke('ai:inpaint-plan', req),
-  optimize: (req: AiOptimizeRequest): Promise<AiOptimizeResult> => invoke('ai:optimize', req),
+  optimize: (req: AiOptimizeRequest, actionId?: string): Promise<AiOptimizeResult> =>
+    invoke('ai:optimize', req, actionId),
   preview: (req: AiPreviewRequest): Promise<AiPreviewResult> => invoke('ai:preview', req),
 }

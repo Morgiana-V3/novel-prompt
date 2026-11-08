@@ -49,6 +49,7 @@ ${AGENT_ENTRY}
 | 外部处理者 | set_workspace_agent、reply_workspace_request、cancel_workspace_request；对应 ui_* | 接管、回复、取消；分析来自你，不是内置 AI |
 | 前台工作台 | ui_open_workspace、ui_create_workspace、ui_set_workspace_input、ui_send_workspace_message、ui_view_workspace、ui_review_workspace | 在真实窗口中打开、填写、提交、切 tab、展示方案、审核和查看历史 |
 | 前台创作建议 | ui_configure_creation_ai、ui_propose_creation_edit、ui_review_creation_ai | 外部 Agent 填写要求、提交建议并逐项采纳/撤销；不调用内置 AI |
+| 完整图片反推 | ui_load_reverse_image、ui_compose_reverse_prompt、ui_propose_reverse_prompt、ui_adopt_reverse_prompt、ui_transfer_reverse_prompt | 载入参考图、同时识别画师与完整提示词；外部建议可审阅采纳，带入既有生图页。反推页不直接生图 |
 | 前台局部重绘 | ui_add_workspace_region、ui_update_workspace_region、ui_delete_workspace_region、ui_generate_workspace | 可视化创建、修改或删除选区批注，按当前稿生成整图或已有区域重绘 |
 | 后台独立生图/重绘 | nai_subscription、generate_image、prepare_inpaint、inpaint_image | 直接处理图片，仍调用 NovelAI；准备遮罩不等于生成，独立结果不自动成为工作台版本 |
 | 内置 AI 委托 | optimize_prompt、preview_prompt、plan_inpaint；internal 模式的 ui_send_workspace_message | 调用配置的内置 AI 并消耗其额度；用户要你自己做时不要用它们代替分析 |
@@ -87,6 +88,8 @@ ${AGENT_ENTRY}
 外部 Agent 创作建议：get_app_state → prompt_guide（按当前模型读取适用 Skill）→ validate_tags / analyze_prompt → ui_propose_creation_edit(creation_proposal:{draft,summary,changes}) → 读取 desktop.creationAi → ui_review_creation_ai。提交前读取最新 token，不自动采纳；source=external 标记来源，无需内置 AI Key 或调用权限。完整稿与原稿相同表示本轮无修改，不代表已验证生图质量。summary 应说明具体修改理由、已查证依据和实图证据；规则导致的实际限制须说明，不以“已读取规则”代替解释，未经验证的预期不能写成保证。
 
 生图创作建议的采纳：读取 desktop.creationAi 的 result、sent、changes 和过期状态，按授权 ui_review_creation_ai(decision:accept|undo,change_ids?)。不传 change_ids 表示全部；逐项选择使用当前 changes[].id。每步使用最新 token。采纳只改提示词；真实生图可用 ui_create_workspace(source:current) 承接当前稿，再配置参数、ui_generate_workspace 并 read_image 核验。
+
+完整图片反推：先 read_image 查看真实参考图，再 ui_load_reverse_image 载入空反推页（已有草稿时拒绝覆盖）。ui_compose_reverse_prompt 与界面开始反推相同，同时启动本地画师识别及配置的 AI 识图，模型跟随全局；内置识图结果直接成为可编辑 draft，不是外部 Agent 自主分析。外部 Agent 看图、读取 prompt_guide 并查词后可用 ui_propose_reverse_prompt 提交建议，再显式 ui_adopt_reverse_prompt。ui_transfer_reverse_prompt 将完整稿和可选画师串带入既有生图页，保留现有创作，不生成图片。后续生图须使用已有入口与授权。位置仅作区域引导，负面词是复现建议。
 
 ## C. 用户明确委托内置 AI
 前台打开会话 → ui_set_workspace_agent(mode:internal) → 填写/提交 → 查看回复 → 按授权采纳/生成。切回 internal 会取消待处理的外部需求，不要无意切换。后台 optimize_prompt/preview_prompt/plan_inpaint 也调用内置 AI，不代表由你完成了分析。

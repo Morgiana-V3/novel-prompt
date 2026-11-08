@@ -1,7 +1,7 @@
 import type { FrontendAction, FrontendRequest } from '../../../../shared/contracts/desktop'
 import type { InpaintDraft } from '../../../../shared/prompts/types'
 import { WORKSPACE_CONFIG_SCHEMA } from '../../../../shared/workspace/config'
-import { listImages } from '../../../modules/images/access'
+import { imageInfo } from '../../../modules/images/library'
 import { getSettings } from '../../../modules/settings/service'
 import { requireAgent } from '../../../modules/workspace/agent-sessions'
 import { readPage } from '../../../modules/workspace/repository'
@@ -56,7 +56,7 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
     gate?: () => string | null,
   ): McpTool {
     const guarded = !['open', 'create'].includes(action)
-    const creation = action.startsWith('creation-ai-')
+    const creation = action.startsWith('creation-ai-') || action.startsWith('reverse-')
     return {
       name,
       title: `前台 · ${label}`,
@@ -128,35 +128,105 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
         }
         const request = { ...argumentsRecord, action, label } as unknown as FrontendRequest
         request.agent_session = requireAgent().sessionId
-        if (action === 'create' && argumentsRecord.source === 'image') {
-          request.image = listImages().find((image) => image.name === argumentsRecord.image_name)
+        if (
+          (action === 'create' && argumentsRecord.source === 'image') ||
+          action === 'reverse-load'
+        ) {
+          request.image = imageInfo(String(argumentsRecord.image_name)) ?? undefined
           if (!request.image) {
             throw new Error('图库图片不存在')
           }
         }
-        return runFrontend(
-          action,
-          typeof argumentsRecord.id === 'string' ? argumentsRecord.id : undefined,
-          label,
-          signal,
-          report,
-          async (actionId, abort) => {
-            const cancel = () => desktop.cancelVisibleAction(actionId)
-            abort.addEventListener('abort', cancel, { once: true })
-            try {
-              report(`前台：${label}`)
-              return JSON.stringify(
-                await desktop.request('frontend', { ...request, actionId }, true, abort),
-              )
-            } finally {
-              abort.removeEventListener('abort', cancel)
-            }
-          },
-        )
+        let target = typeof argumentsRecord.id === 'string' ? argumentsRecord.id : undefined
+        if (action.startsWith('reverse-')) {
+          target = ''
+        }
+        return runFrontend(action, target, label, signal, report, async (actionId, abort) => {
+          const cancel = () => desktop.cancelVisibleAction(actionId)
+          abort.addEventListener('abort', cancel, { once: true })
+          try {
+            report(`前台：${label}`)
+            return JSON.stringify(
+              await desktop.request('frontend', { ...request, actionId }, true, abort),
+            )
+          } finally {
+            abort.removeEventListener('abort', cancel)
+          }
+        })
       },
     }
   }
   return [
+    tool(
+      'ui_load_reverse_image',
+      '载入反推参考图',
+      'reverse-load',
+      '将图库图片载入空的图片反推页；已有参考图或草稿时拒绝覆盖。',
+      { image_name: { type: 'string' } },
+      ['image_name'],
+      (input) => {
+        nonempty(input.image_name, '图库图片名')
+      },
+    ),
+    tool(
+      'ui_compose_reverse_prompt',
+      '反推画师与完整提示词',
+      'reverse-compose',
+      '同时运行所选本地模型与用户配置的识图模型，展示画师候选、分类标签和只读的完整提示词。跟随全局目标模型。会发送图片并消耗 AI 接口额度，不生图。',
+      {},
+      [],
+      () => {},
+      () => (getSettings().mcpAllowAi ? null : '请先开启允许 Agent 调用 AI'),
+    ),
+    tool(
+      'ui_adopt_reverse_prompt',
+      '采纳完整反推草稿',
+      'reverse-adopt',
+      '采纳当前已展示的反推方案，作为带入生图的结果。先检查 desktop.reverse.proposal。不会生图。',
+      {},
+      [],
+    ),
+    tool(
+      'ui_propose_reverse_prompt',
+      '展示外部 Agent 反推草稿',
+      'reverse-propose',
+      '外部 Agent 看过参考图后提交完整生图草稿供审阅，不调用内置 AI、不自动采纳。需要先读取图片和 prompt_guide，并自行校验标签。',
+      {
+        reverse_proposal: {
+          type: 'object',
+          required: ['draft', 'summary'],
+          properties: {
+            draft: {
+              type: 'object',
+              required: ['base', 'negative', 'characters'],
+              properties: {
+                base: { type: 'string' },
+                negative: { type: 'string' },
+                characters: CHARACTERS_SCHEMA,
+              },
+            },
+            summary: { type: 'string', minLength: 1, maxLength: 6000 },
+          },
+        },
+      },
+      ['reverse_proposal'],
+      (input) => {
+        const proposal = input.reverse_proposal as FrontendRequest['reverse_proposal']
+        if (!proposal) {
+          throw new Error('缺少完整反推草稿')
+        }
+        checkDraft(proposal.draft)
+        nonempty(proposal.summary, '反推依据与不确定性说明')
+      },
+    ),
+    tool(
+      'ui_transfer_reverse_prompt',
+      '将反推提示词带入生图',
+      'reverse-transfer',
+      '将已采纳的完整反推稿与推荐画师串带入现有生图页的新标签；保留已有创作，不会生成图片。',
+      {},
+      [],
+    ),
     tool(
       'ui_propose_creation_edit',
       '展示外部 Agent 创作建议',

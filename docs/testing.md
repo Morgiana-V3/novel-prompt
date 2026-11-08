@@ -249,3 +249,11 @@ Skill 目录包：构建后运行 `npm run skills:smoke`，或 `node scripts/che
 `pricing` 验证官方计费样例、强度与舍入、V5 多张额度区间、未知账户状态和放大分档边界；`operations:policy` 也验证弹窗预估数字与执行后余额、免费额度反馈，查询失败保持未知。计价依据见 [NovelAI 费用预估](novelai-pricing.md)。
 
 画师调试：`electron tests/e2e/artists-smoke.cjs` 使用隔离 profile 与假生图供应商，覆盖删除、原图/新图选择、画师串回退、蓝本原图与画师串基准、基准复用、V4.5/V5 草稿隔离、图鉴滚动加载/搜索/收藏/失败重试和宽窄布局。弹窗验证内层滚动、固定关闭按钮与底栏、真实遮罩点击关闭。蓝本选择验证非活动创作标签的明确选择、内容快照、返回来源标签和撤销，以及图库原图直接映射为基准、更换蓝本同步替换画师串、仅生成调整后的候选图、原图映射重启保留、原图与新图取舍、图片参数读取、缺失参数提示、切换图片时旧请求隔离、结果在新创作标签打开。`node tests/integration/artists-catalog-smoke.cjs` 验证公开图鉴的数据兼容、单画师筛选、缓存、资源路径和完整性。设置 `NP_TEST_RENDERER_URL` 可验证开发 renderer；`NP_TEST_ARTIST_PREVIEWS=1` 只读取真实公开图鉴并截图，不执行生图。
+
+## 完整反推的定向真实验收
+
+在当前开发实例检查 runtime 与加载构建，读取真实图库和原图后，通过 ui_load_reverse_image → ui_compose_reverse_prompt 核对同一次操作得到 desktop.reverse.localResult 和完整 draft；一条失败应保留另一条结果。界面不再出现独立模型选择、反推要求或完整提示词的生图参数/预览。模型直接跟随全局，反推过程中切换时不得采纳旧模型稿。未准备本地模型时仍可反推完整提示词并明确报告画师缺失。
+
+外部 Agent 亲自 read_image、读取 prompt_guide 并检查标签，根据真实画面提交 ui_propose_reverse_prompt → ui_adopt_reverse_prompt → ui_transfer_reverse_prompt（step_delay_ms=2000）。检查新生图标签携带完整主提示词、负面词、角色/位置和可选画师串，已有创作保留；transfer 不应新增生成任务或消耗生图额度。实际生图使用既有生图页及其共享执行链路，执行时保留真实 PNG、操作编号与 Anlas 变化。禁止用静态检查代替运行验收，不覆盖用户反推草稿。
+
+只读反推结果：使用已有真实结果检查主提示词、负面词、角色与位置为可选择复制的文本，不出现文本框、角色增删、位置编辑或本地标签切换。角色详情直接展示，画师候选和反推说明不需展开；只有识别设置与原始分数保留折叠，画师选择与带入生图继续可用。此项为展示验收，不追加 AI 反推或生图。

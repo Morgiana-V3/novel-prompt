@@ -273,7 +273,14 @@ const {
   stopFrontend,
   connectDesktop,
   markDesktopReady,
-} = useDesktopSession({ confirmation, creationPanel, workspaceView, generateView, aiView })
+} = useDesktopSession({
+  confirmation,
+  creationPanel,
+  workspaceView,
+  generateView,
+  aiView,
+  reverseView,
+})
 
 provide(prepareUpdateKey, async () => {
   await nextTick()

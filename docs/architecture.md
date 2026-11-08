@@ -153,86 +153,87 @@ DesktopCommand.type 包含 snapshot、capture-prepare、capture-end、navigate�
 
 按源码静态工具定义记录。最终目录由 buildTools、desktopTools、frontendTools 和会话管理工具合成；分组、权限、输入输出模式分别以 tool-groups、contract、output-schemas 和各工具定义为准。注册或迁移时核对完整目录与实际会话初始化结果。
 
-| 工具名                                                                          | 定义来源                                            |
-| ------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `add_workspace_region`                                                          | `src/main/adapters/mcp/tools/external-workspace.ts` |
-| `agent_guide`                                                                   | `src/main/adapters/mcp/tools/guides.ts`             |
-| `analyze_prompt`                                                                | `src/main/adapters/mcp/tools/prompts.ts`            |
-| `apply_app_prompt`                                                              | `src/main/adapters/mcp/tools/desktop.ts`            |
-| `apply_workspace_action`                                                        | `src/main/adapters/mcp/tools/desktop.ts`            |
-| `cancel_task`                                                                   | `src/main/adapters/mcp/tools/desktop.ts`            |
-| `cancel_workspace_request`                                                      | `src/main/adapters/mcp/tools/external-workspace.ts` |
-| `compare_workspace_versions`                                                    | `src/main/adapters/mcp/tools/external-workspace.ts` |
-| `configure_tools`                                                               | `src/main/adapters/mcp/server.ts`                   |
-| `create_skill`                                                                  | `src/main/adapters/mcp/tools/skills.ts`             |
-| `create_workspace`                                                              | `src/main/adapters/mcp/tools/desktop.ts`            |
-| `delete_image`                                                                  | `src/main/adapters/mcp/tools/management.ts`         |
-| `delete_favorite`                                                               | `src/main/adapters/mcp/tools/library.ts`            |
-| `delete_snippet`                                                                | `src/main/adapters/mcp/tools/library.ts`            |
-| `delete_skill`                                                                  | `src/main/adapters/mcp/tools/skills.ts`             |
-| `delete_workspace`                                                              | `src/main/adapters/mcp/tools/management.ts`         |
-| `delete_workspace_image`                                                        | `src/main/adapters/mcp/tools/management.ts`         |
-| `generate_image`                                                                | `src/main/adapters/mcp/tools/images.ts`             |
-| `generate_workspace`                                                            | `src/main/adapters/mcp/tools/desktop.ts`            |
-| `get_app_state`                                                                 | `src/main/adapters/mcp/tools/desktop.ts`            |
-| `get_favorite`                                                                  | `src/main/adapters/mcp/tools/library.ts`            |
-| `get_operation`                                                                 | `src/main/adapters/mcp/server.ts`                   |
-| `get_skill`                                                                     | `src/main/adapters/mcp/tools/skills.ts`             |
-| `get_workspace`                                                                 | `src/main/adapters/mcp/tools/desktop.ts`            |
-| `get_workspace_context`                                                         | `src/main/adapters/mcp/tools/external-workspace.ts` |
-| `inpaint_guide`                                                                 | `src/main/adapters/mcp/tools/inpaint.ts`            |
-| `inpaint_image`                                                                 | `src/main/adapters/mcp/tools/inpaint.ts`            |
-| `list_images`                                                                   | `src/main/adapters/mcp/tools/images.ts`             |
-| `list_favorites`、`list_snippets`                                               | `src/main/adapters/mcp/tools/library.ts`            |
-| `list_skills`                                                                   | `src/main/adapters/mcp/tools/skills.ts`             |
-| `list_tasks`                                                                    | `src/main/adapters/mcp/tools/desktop.ts`            |
-| `list_workspace_requests`                                                       | `src/main/adapters/mcp/tools/external-workspace.ts` |
-| `list_workspaces`                                                               | `src/main/adapters/mcp/tools/desktop.ts`            |
-| `nai_subscription`                                                              | `src/main/adapters/mcp/tools/images.ts`             |
-| `navigate_app`                                                                  | `src/main/adapters/mcp/tools/desktop.ts`            |
-| `optimize_prompt`                                                               | `src/main/adapters/mcp/tools/prompts.ts`            |
-| `plan_inpaint`                                                                  | `src/main/adapters/mcp/tools/inpaint.ts`            |
-| `prepare_inpaint`                                                               | `src/main/adapters/mcp/tools/inpaint.ts`            |
-| `preview_prompt`                                                                | `src/main/adapters/mcp/tools/prompts.ts`            |
-| `prompt_guide`                                                                  | `src/main/adapters/mcp/tools/prompts.ts`            |
-| `propose_workspace_edit`                                                        | `src/main/adapters/mcp/tools/desktop.ts`            |
-| `read_image`                                                                    | `src/main/adapters/mcp/tools/desktop.ts`            |
-| `read_image_prompt`                                                             | `src/main/adapters/mcp/tools/images.ts`             |
-| `related_tags`                                                                  | `src/main/adapters/mcp/tools/tags.ts`               |
-| `reply_workspace_request`                                                       | `src/main/adapters/mcp/tools/external-workspace.ts` |
-| `report_workspace_progress`                                                     | `src/main/adapters/mcp/tools/external-workspace.ts` |
-| `reverse_image`                                                                 | `src/main/adapters/mcp/tools/library.ts`            |
-| `run_workspace_image_tool`                                                      | `src/main/adapters/mcp/tools/desktop.ts`            |
-| `save_favorite`、`save_snippet`                                                 | `src/main/adapters/mcp/tools/library.ts`            |
-| `search_tags`                                                                   | `src/main/adapters/mcp/tools/tags.ts`               |
-| `set_skill_config`                                                              | `src/main/adapters/mcp/tools/skills.ts`             |
-| `set_workspace_agent`                                                           | `src/main/adapters/mcp/tools/external-workspace.ts` |
-| `submit_workspace_request`                                                      | `src/main/adapters/mcp/tools/external-workspace.ts` |
-| `tag_wiki`                                                                      | `src/main/adapters/mcp/tools/tags.ts`               |
-| `ui_add_workspace_region`                                                       | `src/main/adapters/mcp/tools/frontend.ts`           |
-| `ui_cancel_workspace_request`                                                   | `src/main/adapters/mcp/tools/frontend.ts`           |
-| `ui_capture_app`                                                                | `src/main/adapters/mcp/tools/desktop.ts`            |
-| `ui_configure_creation_ai`、`ui_propose_creation_edit`、`ui_review_creation_ai` | `src/main/adapters/mcp/tools/frontend.ts`           |
-| `ui_create_workspace`                                                           | `src/main/adapters/mcp/tools/frontend.ts`           |
-| `ui_delete_workspace`                                                           | `src/main/adapters/mcp/tools/frontend.ts`           |
-| `ui_delete_workspace_image`                                                     | `src/main/adapters/mcp/tools/frontend.ts`           |
-| `ui_delete_workspace_region`                                                    | `src/main/adapters/mcp/tools/frontend.ts`           |
-| `ui_edit_workspace_config`                                                      | `src/main/adapters/mcp/tools/frontend.ts`           |
-| `ui_generate_workspace`                                                         | `src/main/adapters/mcp/tools/frontend.ts`           |
-| `ui_open_workspace`                                                             | `src/main/adapters/mcp/tools/frontend.ts`           |
-| `ui_rename_workspace`                                                           | `src/main/adapters/mcp/tools/frontend.ts`           |
-| `ui_reply_workspace_request`                                                    | `src/main/adapters/mcp/tools/frontend.ts`           |
-| `ui_review_workspace`                                                           | `src/main/adapters/mcp/tools/frontend.ts`           |
-| `ui_send_workspace_message`                                                     | `src/main/adapters/mcp/tools/frontend.ts`           |
-| `ui_set_workspace_agent`                                                        | `src/main/adapters/mcp/tools/frontend.ts`           |
-| `ui_set_workspace_input`                                                        | `src/main/adapters/mcp/tools/frontend.ts`           |
-| `ui_update_workspace_region`                                                    | `src/main/adapters/mcp/tools/frontend.ts`           |
-| `ui_view_workspace`                                                             | `src/main/adapters/mcp/tools/frontend.ts`           |
-| `update_skill`                                                                  | `src/main/adapters/mcp/tools/skills.ts`             |
-| `update_favorite`                                                               | `src/main/adapters/mcp/tools/library.ts`            |
-| `update_workspace`                                                              | `src/main/adapters/mcp/tools/management.ts`         |
-| `update_workspace_region`                                                       | `src/main/adapters/mcp/tools/management.ts`         |
-| `validate_tags`                                                                 | `src/main/adapters/mcp/tools/tags.ts`               |
+| 工具名                                                                                                                                     | 定义来源                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
+| `add_workspace_region`                                                                                                                     | `src/main/adapters/mcp/tools/external-workspace.ts` |
+| `agent_guide`                                                                                                                              | `src/main/adapters/mcp/tools/guides.ts`             |
+| `analyze_prompt`                                                                                                                           | `src/main/adapters/mcp/tools/prompts.ts`            |
+| `apply_app_prompt`                                                                                                                         | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `apply_workspace_action`                                                                                                                   | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `cancel_task`                                                                                                                              | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `cancel_workspace_request`                                                                                                                 | `src/main/adapters/mcp/tools/external-workspace.ts` |
+| `compare_workspace_versions`                                                                                                               | `src/main/adapters/mcp/tools/external-workspace.ts` |
+| `configure_tools`                                                                                                                          | `src/main/adapters/mcp/server.ts`                   |
+| `create_skill`                                                                                                                             | `src/main/adapters/mcp/tools/skills.ts`             |
+| `create_workspace`                                                                                                                         | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `delete_image`                                                                                                                             | `src/main/adapters/mcp/tools/management.ts`         |
+| `delete_favorite`                                                                                                                          | `src/main/adapters/mcp/tools/library.ts`            |
+| `delete_snippet`                                                                                                                           | `src/main/adapters/mcp/tools/library.ts`            |
+| `delete_skill`                                                                                                                             | `src/main/adapters/mcp/tools/skills.ts`             |
+| `delete_workspace`                                                                                                                         | `src/main/adapters/mcp/tools/management.ts`         |
+| `delete_workspace_image`                                                                                                                   | `src/main/adapters/mcp/tools/management.ts`         |
+| `generate_image`                                                                                                                           | `src/main/adapters/mcp/tools/images.ts`             |
+| `generate_workspace`                                                                                                                       | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `get_app_state`                                                                                                                            | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `get_favorite`                                                                                                                             | `src/main/adapters/mcp/tools/library.ts`            |
+| `get_operation`                                                                                                                            | `src/main/adapters/mcp/server.ts`                   |
+| `get_skill`                                                                                                                                | `src/main/adapters/mcp/tools/skills.ts`             |
+| `get_workspace`                                                                                                                            | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `get_workspace_context`                                                                                                                    | `src/main/adapters/mcp/tools/external-workspace.ts` |
+| `inpaint_guide`                                                                                                                            | `src/main/adapters/mcp/tools/inpaint.ts`            |
+| `inpaint_image`                                                                                                                            | `src/main/adapters/mcp/tools/inpaint.ts`            |
+| `list_images`                                                                                                                              | `src/main/adapters/mcp/tools/images.ts`             |
+| `list_favorites`、`list_snippets`                                                                                                          | `src/main/adapters/mcp/tools/library.ts`            |
+| `list_skills`                                                                                                                              | `src/main/adapters/mcp/tools/skills.ts`             |
+| `list_tasks`                                                                                                                               | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `list_workspace_requests`                                                                                                                  | `src/main/adapters/mcp/tools/external-workspace.ts` |
+| `list_workspaces`                                                                                                                          | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `nai_subscription`                                                                                                                         | `src/main/adapters/mcp/tools/images.ts`             |
+| `navigate_app`                                                                                                                             | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `optimize_prompt`                                                                                                                          | `src/main/adapters/mcp/tools/prompts.ts`            |
+| `plan_inpaint`                                                                                                                             | `src/main/adapters/mcp/tools/inpaint.ts`            |
+| `prepare_inpaint`                                                                                                                          | `src/main/adapters/mcp/tools/inpaint.ts`            |
+| `preview_prompt`                                                                                                                           | `src/main/adapters/mcp/tools/prompts.ts`            |
+| `prompt_guide`                                                                                                                             | `src/main/adapters/mcp/tools/prompts.ts`            |
+| `propose_workspace_edit`                                                                                                                   | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `read_image`                                                                                                                               | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `read_image_prompt`                                                                                                                        | `src/main/adapters/mcp/tools/images.ts`             |
+| `related_tags`                                                                                                                             | `src/main/adapters/mcp/tools/tags.ts`               |
+| `reply_workspace_request`                                                                                                                  | `src/main/adapters/mcp/tools/external-workspace.ts` |
+| `report_workspace_progress`                                                                                                                | `src/main/adapters/mcp/tools/external-workspace.ts` |
+| `reverse_image`                                                                                                                            | `src/main/adapters/mcp/tools/library.ts`            |
+| `run_workspace_image_tool`                                                                                                                 | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `save_favorite`、`save_snippet`                                                                                                            | `src/main/adapters/mcp/tools/library.ts`            |
+| `search_tags`                                                                                                                              | `src/main/adapters/mcp/tools/tags.ts`               |
+| `set_skill_config`                                                                                                                         | `src/main/adapters/mcp/tools/skills.ts`             |
+| `set_workspace_agent`                                                                                                                      | `src/main/adapters/mcp/tools/external-workspace.ts` |
+| `submit_workspace_request`                                                                                                                 | `src/main/adapters/mcp/tools/external-workspace.ts` |
+| `tag_wiki`                                                                                                                                 | `src/main/adapters/mcp/tools/tags.ts`               |
+| `ui_add_workspace_region`                                                                                                                  | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_cancel_workspace_request`                                                                                                              | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_capture_app`                                                                                                                           | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `ui_configure_creation_ai`、`ui_propose_creation_edit`、`ui_review_creation_ai`                                                            | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_load_reverse_image`、`ui_compose_reverse_prompt`、`ui_propose_reverse_prompt`、`ui_adopt_reverse_prompt`、`ui_transfer_reverse_prompt` | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_create_workspace`                                                                                                                      | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_delete_workspace`                                                                                                                      | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_delete_workspace_image`                                                                                                                | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_delete_workspace_region`                                                                                                               | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_edit_workspace_config`                                                                                                                 | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_generate_workspace`                                                                                                                    | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_open_workspace`                                                                                                                        | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_rename_workspace`                                                                                                                      | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_reply_workspace_request`                                                                                                               | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_review_workspace`                                                                                                                      | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_send_workspace_message`                                                                                                                | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_set_workspace_agent`                                                                                                                   | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_set_workspace_input`                                                                                                                   | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_update_workspace_region`                                                                                                               | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_view_workspace`                                                                                                                        | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `update_skill`                                                                                                                             | `src/main/adapters/mcp/tools/skills.ts`             |
+| `update_favorite`                                                                                                                          | `src/main/adapters/mcp/tools/library.ts`            |
+| `update_workspace`                                                                                                                         | `src/main/adapters/mcp/tools/management.ts`         |
+| `update_workspace_region`                                                                                                                  | `src/main/adapters/mcp/tools/management.ts`         |
+| `validate_tags`                                                                                                                            | `src/main/adapters/mcp/tools/tags.ts`               |
 
 ## 代码职责定位
 
@@ -333,3 +334,13 @@ Skill 目录包由 modules/skills/package-files.ts 校验和整体写入；入�
 - 前端 `WorkspaceInputContext` 的“查看本轮输入”默认收起，从用户消息的冻结 `inputContext` 和同一消息的 `skillSnapshot` 展示原始任务、讨论图与修改底图、完整草稿/参数、区域、规则篇目及历史索引；回复通过 `requestId` 定位原请求。规则正文按冻结区段读取，缺失或不一致时明确提示，旧消息不拿当前状态补推。图片栏区分“已装配”和投递阶段，规则目录及历史索引不表示外部 Agent 已读取；决定状态冻结于提交时，链接仅定位原消息。
 - 外部 `get_workspace_context` 的 `inputContext` 默认仅小摘要，完整冻结输入按 `get_workspace(detail:full,message_ids)` 读取；`materials` 给出图片、预览、缺失规则及近期决定的补读入口。`rules_only` 不装配图片与完整历史。旧需求重建会标记来源，无法重建时明确说明。
 - 规则传输沿用篇目 digest，增加选择原因及选中、发送、复用、缺失的 UTF-16 字符数。显式 `skills_digests` 仅代表客户端声明正文仍在当前上下文；连接缓存仅证明曾投递。上下文丢失后使用空指纹表或 `skills_mode:full` 恢复，未发送且未持有的正文不能计为复用。既有用户 Skill 与优先级保持原样，本批不实施条件拆篇。
+
+## 完整图片反推
+
+`ReverseView.vue` 的单一反推动作并行启动本地画师/标签识别与完整提示词识图；一条失败不丢弃另一条结果。本地模型未就绪时仍可获取完整提示词，并明确提示画师参考缺失。默认展示画师组成和完整提示词，候选画师、画风对比入口、全部角色和反推说明直接展示，仅识别设置与原始模型分数保留折叠；角色、服装、环境等本地标签沿用原分类，在全局提示词上方默认展示且只读；本地结果缺失时从已有完整正向稿提取标签作为说明，不混入负面、自然语言或画面文字。
+
+`ReversePrompt.vue` 使用 ReversePromptResult 只读展示主提示词、负面词、角色和位置，只有画师选择可调整；本地标签与角色候选同样只读，编辑统一在带入后的生图页。目标模型直接读取全局 naiVersion，没有独立目标模型、要求输入框或生图参数面板。内置反推完成即展示只读结果；外部 Agent 建议先展示再显式采纳。模型在请求中切换时拒绝应用旧模型结果并保留原稿；模型约束不符时提示修改角色数/位置。带入生图通过 openTabForLoad → importGenerationRequest 保留已有创作，用现有生图页执行；反推页没有完整提示词专用生成队列或预览。画幅按参考图比例准备，步数等沿用现有生图参数，默认关闭额外质量词/UC 预设以避免排除文字、分格或像素画。画师串可选择是否包含。
+
+`ai:optimize` 的 AiOptimizeRequest 新增可选 referenceImage（静态 PNG/JPEG/WebP data URL，最多 25 MB），只允许 semantic 模式。主进程解码、去除元数据、等比限制到 2048 边长，再进入现有 Skill、标签工具及本地复查流程。requireVision 禁止纯文字降级；返回 warnings 公开未修复的结构问题。负面词是复现建议，位置不保证像素还原。
+
+前台 MCP 反推工具共享界面动作与 desktop.reverse 快照（包含 localResult/localError）；load 只允许空页；compose 受 mcpAllowAi 控制，执行与按钮相同的双路反推；transfer 只将稿件带入生图页，不生图、不调用供应商。expected_token 保护草稿；step_delay_ms 和取消使用现有前台操作链路。ai:optimize 的可选 actionId 使用一次性 claimFrontend 票据并标记任务 origin=agent。ui_propose_reverse_prompt 可在实际看图和查词后提交外部 Agent 草稿，明确标注来源和未运行内置 AI 复查，仍需显式采纳。

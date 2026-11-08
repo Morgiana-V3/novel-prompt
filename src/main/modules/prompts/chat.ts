@@ -17,6 +17,7 @@ import { modelVision, visionProvider } from '../../../shared/settings/vision'
  */
 export type VisionRoute = 'main' | 'vision' | 'text'
 interface RoutedChatOptions extends ChatOptions {
+  requireVision?: boolean
   /** Called after image removal/provider selection, before request serialization. */
   onRoute?: (route: VisionRoute | undefined) => void
 }
@@ -79,6 +80,11 @@ async function send(
     }
   }
   if (route === 'text') {
+    if (options.requireVision) {
+      throw new AiServiceError(
+        '完整图片反推需要识图模型，请在「设置 → AI 服务 → 模型接口」配置支持图片的模型',
+      )
+    }
     dropImages(messages)
     visionRoutes.set(messages, route)
     return dispatch()
@@ -98,6 +104,9 @@ async function send(
     if (vision) {
       visionRoutes.set(messages, 'vision')
       return dispatch(vision)
+    }
+    if (options.requireVision) {
+      throw new AiServiceError('当前模型不支持图片，未生成反推稿。请配置识图模型后重试')
     }
     visionRoutes.set(messages, 'text')
     dropImages(messages)
