@@ -1,8 +1,8 @@
 # NovelPrompt：agent 自助安装说明
 
-本文档写给 agent 阅读，用于在用户电脑上安装 NovelPrompt 并接入 MCP。**它只负责安装**：提示词怎么写、工具怎么用，接入后调用 MCP 工具 `prompt_guide` 获取（内容由 NovelPrompt 软件维护，用户可以在软件里修改）。
+本文档写给 agent 阅读，用于在用户电脑上安装 NovelPrompt 并接入 MCP。安装后先调用 `agent_guide` 了解能力与工作流；普通提示词创作再读 `prompt_guide`，图片反推不依赖创作 Skill。具体参数以当前 `tools/list` 为准。
 
-先确认是否真的需要安装：工具列表里已经有 `prompt_guide`、`analyze_prompt` 等 `novel-prompt` 的工具，就不需要安装，直接调用 `prompt_guide`。
+先确认是否真的需要安装：工具列表里已经有 `prompt_guide`、`analyze_prompt` 等 `novel-prompt` 的工具，就不需要安装，先调用 `agent_guide`。
 
 **仅支持 Windows 10 / 11 x64。** 其他系统告诉用户暂不支持，不要尝试。
 
@@ -82,7 +82,7 @@ Claude Code（`~/.claude.json` 的 `mcpServers`）、Cursor 等 JSON 格式：
 ## 4. 生效与验证
 
 1. 告诉用户**完全重启 agent**（MCP 配置只在启动时加载）。
-2. 重启后调用 `prompt_guide`，能返回使用说明和用户启用的提示词 Skill 即接入成功。之后写 NovelAI 提示词时按它执行；用户要求调整规则时，用 Skill 管理工具（`list_skills` / `create_skill` / `update_skill` / `set_skill_config` 等）修改。
+2. 重启后先调用 `agent_guide` 和 `get_app_state`，确认操作指南、运行模式和数据目录。普通提示词创作再读 `prompt_guide`；图片反推不依赖创作 Skill。工具能返回不代表生图等业务已经验收。用户要求调整规则时，用 Skill 管理工具（`list_skills` / `create_skill` / `update_skill` / `set_skill_config` 等）修改。
 3. 失败时依次检查：配置里的路径是否存在；是否用了便携版；用户是否移动过安装目录（移动后重新执行第 3 步）。
 
 ## 5. 可选：告诉用户还可以配置什么
@@ -162,9 +162,9 @@ npm install; npm run build
 
 两种模式的生成均受「允许生图」权限约束。内置模式提交讨论受「允许调用 AI」权限约束；外部接管模式只保存需求，不调用内置模型，不要求 DeepSeek Key。填写、查看、绘制批注不调用 AI。前台生成仍需用户授权、`confirm: true` 和免费条件检查。
 
-当前前台覆盖 AI 工作台及其区域重绘。选区支持一个区域内多个矩形，不支持任意笔刷轨迹或所有弹窗自动化；其他页面保留已有导航与共享提示词接口。前台与后台工具可同时安装，由 Agent 按用户要求选择，不需要全局模式开关。
+当前前台覆盖 AI 工作台及区域重绘、创作建议审阅与完整图片反推。画师图鉴与画师调试目前只有页面导航，没有选择来源或画师的专用 MCP 动作。选区支持一个区域内多个矩形，不支持任意笔刷轨迹或所有弹窗自动化；其他页面保留已有导航与共享提示词接口。前台与后台工具可同时安装，由 Agent 按用户要求选择，不需要全局模式开关。
 
-开发验证：`npm run desktop:smoke` 使用真实 stdio 代理及真实渲染界面验证两种模式、前台操作工具、外部 Agent 接管与回复、窗口截图与敏感字段遮盖、冲突保护、权限、取消以及重绘遮罩外像素保留；AI 和图片接口使用模拟数据。`npm run mcp:host-smoke` 验证真实应用冷启动、共享主进程和断线恢复。两者使用临时用户目录，不修改日常数据。
+开发验证：`npm run desktop:smoke`、`npm run mcp:host-smoke` 当前均为本机开发实例的只读核验，不验证冷启动、重连或生图。完整验收使用 `npm run check:full` 的真实服务灰度，并按 [测试说明](testing.md) 补上外部 Agent 实际看图、提交建议及前台执行。历史模拟与独立 profile 流程已停用。
 
 ## Agent 如何发现能力并选择执行方式
 
@@ -202,6 +202,14 @@ npm install; npm run build
 
 新记录保留每条方案的完整 before / after / 差异与处理状态；同版本的新建议使旧建议成为历史，旧的待采纳方案不可再次采纳。右侧点击某条方案会打开当时那条方案，建议页也可切换历史记录。旧版本已经删掉的方案正文无法恢复，仍显示旧版摘要。MCP 会话结果省略大遮罩和内部校验字段；完整本轮 Skill 从 `get_workspace_context` 读取。
 
+## 完整图片反推
+
+先用 read_image 查看真实参考图，再 ui_load_reverse_image 载入空反推页。ui_compose_reverse_prompt 先等待所选本地模型的标签与身份候选，再调用配置的识图接口；本地模型不可用时仍可继续 AI 反推。图片会发往配置的 AI 服务，产生接口用量；此动作不生图。
+
+反推不加载内置或用户创作 Skill。外部 Agent 可根据实际画面与标签查询结果，通过 ui_propose_reverse_prompt 提交全局、负面建议、角色及位置草稿，说明依据和不确定性，再显式 ui_adopt_reverse_prompt。反推页的完整结果只读，ui_transfer_reverse_prompt 将完整配置及可选画师串带入生图创作，保留已有标签；编辑和生成使用既有入口。需要 expected_token 的动作必须使用最新桌面状态。
+
+reverse_image 只做本地标签识别，不能替代完整提示词反推，也不恢复原始负面词、种子或作者。
+
 ## 项目维护、状态和增量读取
 
 - 后台 `update_workspace` 修改名称/目标或下一版配置；配置使用 `patch` 和已采用候选的 `version_id`，冻结的图片生成记录保持不变。
@@ -222,11 +230,17 @@ npm install; npm run build
 - 图片反推：`reverse_image` 接受图库 `image_name` 或本机图片绝对路径 `path`，用本地模型返回标签、角色与 Kaloscope 画师候选，不消耗额度；模型需先在「图片反推」页下载。与界面共用识别进程，界面正在识别时排队；在任务中心取消会停止识别。
 - 收藏与片段的改动会通知界面即时刷新星标和片段库。
 
-`npm run mcp:context-smoke` 使用独立临时数据验证规则目录与任务选篇、按篇变化、禁用/重排、强制补读、冻结快照、缓存隔离、摘要/详情、历史/候选分页、旧消息与候选更新及增量恢复。加 `-- --measure-dev` 可只读测量开发目录的现有项目返回大小；不迁移、不保存真实项目。字符数按单份业务 JSON 统计，不代表特定客户端实际计入模型的 token 数。
+`npm run mcp:context-smoke` 是已停用的历史入口，不再使用临时数据验收。当前规则目录、冻结输入与结果字段由 `check:full` 的真实调用核对；只读返回大小采样使用 `npm run mcp:performance-smoke`，但不能据此宣称分页、断线或编辑冲突都已通过。
 
 - 工具保留文本内容并返回对象形式的 `structuredContent`。普通文本报告在 `text` 字段，列表在 `items`。参数错误、权限关闭和执行错误提供 `error.code/message/retryable/nextAction`。取消任务的 `cancellation` 明确区分受理、正在停止、已结束与不存在。
 
 旧宿主须重新启动、MCP 客户端须重新连接才能读取更新后的工具清单。
+
+## 协议版本与兼容范围
+
+截至 2026-11-08，本应用实现基于 initialize / notifications/initialized 的 stdio MCP，支持 2025-11-25、2025-06-18、2025-03-26、2024-11-05；不支持远程 HTTP MCP。应用版本号与协议版本号不同。
+
+[官方 2026-07-28 协议](https://modelcontextprotocol.io/specification/2026-07-28/changelog) 已改为逐请求元数据、server/discover 和新的订阅机制。本应用未实现这些语义，不能仅在版本列表追加日期就宣称支持。支持旧版握手或兼容回退的客户端仍可连接；仅支持新协议的客户端不兼容。以真实连接结果为准，不保证所有 Agent 客户端。
 
 ## 按任务精简工具列表
 
@@ -264,7 +278,7 @@ npm install; npm run build
 
 记录与当前应用的数据目录绑定，跨 MCP 连接和软件重启可读。保留期为 7 天，最多 10000 条；单份结果超过 64 KiB 或结果缓存累计超过 8 MiB 时只保留执行摘要，不因此允许重放。结果中的 `resultOmitted` 表示需再读取对应业务对象。记录只保存参数指纹，不保存原始参数；结果保存在本地。查不到记录不保证操作从未执行，需确认是否连接错环境或记录已过期。文件无法读取或无法保存操作开始记录时，会在执行前拒绝写入，避免失去重复保护。
 
-`npm run mcp:recovery-smoke` 验证分组隔离、并发去重、失败/取消、断线、记录损坏和大结果；`npm run mcp:host-smoke` 进一步验证真实宿主退出后恢复结果与重复调用不会再次创建项目。测试使用独立临时数据，不访问真实 AI/生图服务。
+`npm run mcp:recovery-smoke` 是已停用的历史入口；当前 `mcp:host-smoke` 只做只读核验。尚未真实复测的宿主退出、断线重连和未知写入恢复须在发版报告中单独列明，不以旧夹具结果代替。
 
 ## 已有区域的前台操作
 
@@ -282,7 +296,7 @@ npm install; npm run build
 
 项目刚检出或构建尚未结束时，先运行 `npm run build`，完成后再启动或连接 MCP；开发调试使用 `npm run dev`。MCP 冷启动会检查主程序、预加载与页面文件，构建未齐时在连接期限内等待，不启动缺少入口的 Electron。超时会说明需要构建。重新构建主进程时保留原入口，避免清空目录造成短暂缺失。已运行宿主仍需完整退出后重开才能加载新主进程代码。
 
-`npm run mcp:launch-smoke` 检查文件缺失、构建中、已有宿主和安装版启动路径；前台回归还覆盖区域修改/删除、错误目标与超过自动保存间隔的取消。所有这些回归使用临时数据或模拟环境，不触碰真实项目。
+`npm run mcp:launch-smoke` 是已停用的历史入口。当前验收不另起临时宿主；文件缺失、冷启动与安装版 MCP 启动链路不包含在只读核验中。
 
 ### 工作台多区域讨论与重绘
 

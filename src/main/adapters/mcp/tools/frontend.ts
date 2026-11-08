@@ -172,7 +172,7 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
       'ui_compose_reverse_prompt',
       '反推画师与完整提示词',
       'reverse-compose',
-      '同时运行所选本地模型与用户配置的识图模型，展示画师候选、分类标签和只读的完整提示词。跟随全局目标模型。会发送图片并消耗 AI 接口额度，不生图。',
+      '先取得所选本地模型的标签和身份候选，再调用用户配置的识图模型，展示画师候选、分类标签和只读的完整提示词。本地模型未就绪或识别失败时仍可继续完整反推。跟随全局目标模型，不读取内置或用户创作 Skill。会发送图片并消耗 AI 接口额度，不生图。',
       {},
       [],
       () => {},
@@ -190,7 +190,7 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
       'ui_propose_reverse_prompt',
       '展示外部 Agent 反推草稿',
       'reverse-propose',
-      '外部 Agent 看过参考图后提交完整生图草稿供审阅，不调用内置 AI、不自动采纳。需要先读取图片和 prompt_guide，并自行校验标签。',
+      '外部 Agent 看过参考图后提交完整生图草稿供审阅，不调用内置 AI、不自动采纳。先读取图片并自行校验标签，依据画面填写全局、负面建议和带位置的角色提示词；反推不依赖 prompt_guide 或创作 Skill。summary 说明画面依据和不确定性，不声称恢复原始生成参数。',
       {
         reverse_proposal: {
           type: 'object',

@@ -1,6 +1,6 @@
 {
   "name": "novel-prompt",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "NovelAI 提示词创作 / 生图与图片精修桌面工具",
   "main": "./out/main/index.js",
   "author": "holyxie",

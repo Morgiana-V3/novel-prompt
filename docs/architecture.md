@@ -347,3 +347,11 @@ Skill 目录包由 modules/skills/package-files.ts 校验和整体写入；入�
 前台 MCP 反推工具共享界面动作与 desktop.reverse 快照（包含 localResult/localError）；load 只允许空页；compose 受 mcpAllowAi 控制，执行与按钮相同的本地识别及完整反推；transfer 只将稿件带入生图页，不生图、不调用供应商。expected_token 保护草稿；step_delay_ms 和取消使用现有前台操作链路。ai:optimize 的可选 actionId 使用一次性 claimFrontend 票据并标记任务 origin=agent。ui_propose_reverse_prompt 可在实际看图和查词后提交外部 Agent 草稿，明确标注来源和未运行内置 AI 复查，仍需显式采纳。
 
 画师组合、反推带入与画师调试统一使用 mixString 序列化数值权重，在名字与结束符之间保留空格，避免 anderson m0311 等数字结尾名字与 :: 组成意外权重。
+
+## 1.1.0 发版前架构审查（2026-11-08）
+
+现有 app / adapters / modules / providers / infrastructure 分层继续沿用。界面与 MCP 共用领域用例、任务队列、生成记录与持久化格式；前台 ui_* 复用页面动作，避免重复注册外层任务。图鉴按来源与模型隔离缓存，完整反推复用生成配置导入与新标签规则，不增加第二套生成服务。
+
+本轮修正 MCP 指南与工具描述：本地识别先于完整 AI 反推，结果只读，外部反推也不要求读取创作 Skill。普通创作和工作台仍使用当前/冻结规则。MCP 业务工具覆盖与协议版本分开评估：工具目录包含完整反推等新能力，但协议仅实现 SUPPORTED 中的旧版握手。2026-07-28 的无状态协议不能只改日期接入；连接内工具分组、Agent 归属、规则缓存与订阅都需要迁移设计。
+
+后续维护重点是 ReverseView.vue、ArtistStudio.vue、PageWorkspace.vue 等页面的操作编排职责，以及现有边界检查尚未覆盖的跨 feature 依赖。文件较大本身不作为发版阻塞，也不在临近发版时机械拆分。现有 NovelAI ZIP 与 NAX ZIP 处理器职责不同，后续若合并需保留各自输入校验及大小上限。检查、真实服务灰度、外部 Agent 交互和安装更新验证分别记录，不互相替代。
