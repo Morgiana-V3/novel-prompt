@@ -60,7 +60,7 @@ import { cancelTask } from '../../../shared/state/tasks'
 
 const props = defineProps<{
   workspace: PageWorkspace
-  /** 从生图创作「去精修」下拉进入时，项目打开后直接打开的工具 */
+  /** 从生图创作「去增强」下拉进入时，项目打开后直接打开的工具 */
   initialTool?: 'outpaint' | 'enhance' | 'upscale' | null
 }>()
 const inpaintEditor = ref<InstanceType<typeof InpaintEditor>>()
@@ -432,7 +432,7 @@ function inspectMask() {
   pane.value = 'canvas'
 }
 
-/** 扩图用对话框；放大、精修用按钮下方的轻量面板 */
+/** 扩图用对话框；放大、增强用按钮下方的轻量面板 */
 const openTool = ref<{
   kind: PageImageTool['kind']
   anchor: { left: number; bottom: number }
@@ -715,7 +715,7 @@ function updateConfigDraft(patch: Partial<PageEditorState>) {
   configOwner.value = null
   Object.assign(configDraft.value, patch)
 }
-/* ---------- 下一版配置：本版配置只读，修改都写进基于蓝本的下一版 ---------- */
+/* ---------- 下一版配置：本版配置只读，修改都写进基于底稿的下一版 ---------- */
 const tabsLocked = computed(() => editingPrompt.value && (!!operation.value || remoteBusy.value))
 const currentBaseline = computed(() => pageEditorBaseline(current.value))
 const nextChanges = computed(() => {
@@ -732,7 +732,7 @@ const nextChangesText = computed(() => {
     return ''
   }
   if (!nextChanges.value.count) {
-    return '与蓝本配置相同'
+    return '与底稿配置相同'
   }
   const parts = []
   if (nextChanges.value.prompt.length) {
@@ -797,7 +797,7 @@ function restoreBaseline() {
   }
   updateConfigDraft(baselinePatch(currentBaseline.value))
 }
-/** 从「本版配置」进入下一版：蓝本直接编辑；历史版本把它的配置载入下一版 */
+/** 从「本版配置」进入下一版：底稿直接编辑；历史版本把它的配置载入下一版 */
 async function editFromSnapshot() {
   const source = viewed.value
   const baseline = pageEditorBaseline(source)
@@ -884,7 +884,7 @@ async function beginConfigFromButton() {
             :title="
               editingPrompt
                 ? '保存配置并返回查看'
-                : '基于蓝本 ' + displayVersionLabel(current.label) + ' 编辑下一次生成的配置'
+                : '基于底稿 ' + displayVersionLabel(current.label) + ' 编辑下一次生成的配置'
             "
             @click="openNextConfig"
           >
@@ -1027,8 +1027,8 @@ async function beginConfigFromButton() {
             <b>下一次生成</b
             ><span
               class="muted small"
-              :title="'基于蓝本 ' + current.label"
-              >蓝本 {{ displayVersionLabel(current.label) }}</span
+              :title="'基于底稿 ' + current.label"
+              >底稿 {{ displayVersionLabel(current.label) }}</span
             >
             <span
               class="small pw-next-summary"
@@ -1055,14 +1055,14 @@ async function beginConfigFromButton() {
               v-if="currentBaseline"
               class="btn ghost small"
               :disabled="!!operation || remoteBusy || !nextChanges?.count"
-              title="把提示词和参数恢复为生成蓝本时使用的配置"
-              aria-label="恢复蓝本配置"
+              title="把提示词和参数恢复为生成底稿时使用的配置"
+              aria-label="恢复底稿配置"
               @click="restoreBaseline"
             >
               <Icon
                 name="reset"
                 :size="13"
-              /><span>恢复蓝本配置</span>
+              /><span>恢复底稿配置</span>
             </button>
             <button
               class="icon-btn sm"
@@ -1109,12 +1109,12 @@ async function beginConfigFromButton() {
               :disabled="busy || !historical || viewed.image?.missing"
               :title="
                 historical
-                  ? '设为创作蓝本，从这张图片继续修改和重绘'
+                  ? '设为创作底稿，从这张图片继续修改和重绘'
                   : '下一版配置与重绘基于这张图片'
               "
               @click="continueVersion(viewed.id)"
             >
-              {{ historical ? '设为蓝本' : '当前蓝本' }}
+              {{ historical ? '设为底稿' : '当前底稿' }}
             </button>
             <ThemeSelect
               v-if="pane === 'changes'"
@@ -1134,7 +1134,7 @@ async function beginConfigFromButton() {
               :disabled="busy"
               :title="
                 historical
-                  ? '把这一版的提示词和参数载入下一版配置（蓝本图片不变）'
+                  ? '把这一版的提示词和参数载入下一版配置（底稿图片不变）'
                   : '在本版配置的基础上编辑下一版'
               "
               @click="editFromSnapshot"
@@ -1789,7 +1789,7 @@ async function beginConfigFromButton() {
   min-width: 70px;
 }
 
-/* 与旁边「当前蓝本 / 设为蓝本」文字按钮的中文墨迹对齐 */
+/* 与旁边「当前底稿 / 设为底稿」文字按钮的中文墨迹对齐 */
 .pw-scope-actions > .icon-btn > .icon {
   transform: translateY(0.5px);
 }

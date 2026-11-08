@@ -4,7 +4,7 @@ import type { NaiVersion } from '@shared/generation/types'
 import { subscriptionState, refreshSubscription } from '../../generation/subscription'
 /**
  * 扩图：需要预览新画布并逐边调整，单独使用对话框。
- * 放大、精修参数较少，改用工具栏按钮下方的轻量面板（WorkspaceToolPopover）。
+ * 放大、增强参数较少，改用工具栏按钮下方的轻量面板（WorkspaceToolPopover）。
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { PageImageTool } from '@shared/workspace/model'
@@ -140,7 +140,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
                 :size="14"
             /></span>
             <h3>扩图</h3>
-            <span class="pill">当前蓝本 {{ width }}×{{ height }}</span>
+            <span class="pill">当前底稿 {{ width }}×{{ height }}</span>
             <button
               class="icon-btn sm ml-auto"
               title="关闭（Esc）"
@@ -164,7 +164,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
                 >
                   <img
                     :src="imageUrl"
-                    alt="当前蓝本"
+                    alt="当前底稿"
                     draggable="false"
                     :style="previewBox.inner"
                   />

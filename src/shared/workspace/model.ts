@@ -44,7 +44,7 @@ export interface PageVersion {
     sourceVersionId: string
     /** 生成时使用的可编辑配置（未拼入质量词/UC 预设），用于判断下一版改了什么；旧数据没有 */
     editor?: { model?: NaiVersion; draft: InpaintDraft; params: NaiGenParams }
-    /** 修图操作（放大、扩图、精修）产生的版本；普通生成与局部重绘没有此字段 */
+    /** 修图操作（放大、扩图、增强）产生的版本；普通生成与局部重绘没有此字段 */
     tool?: PageImageTool
     inpaint?: {
       mask: string
@@ -56,7 +56,7 @@ export interface PageVersion {
     }
   }
 }
-/** 基于当前蓝本图片的修图操作，对应 NovelAI 官方编辑器里的 Upscale、扩展画布与 Enhance。 */
+/** 基于当前底稿图片的修图操作，对应 NovelAI 官方编辑器里的 Upscale、扩展画布与 Enhance。 */
 export type PageImageTool =
   | { kind: 'upscale' }
   | { kind: 'outpaint'; left: number; right: number; top: number; bottom: number }
@@ -65,7 +65,7 @@ export type PageImageTool =
 export const PAGE_IMAGE_TOOL_NAMES: Record<PageImageTool['kind'], string> = {
   upscale: '放大 2×',
   outpaint: '扩图',
-  enhance: '精修',
+  enhance: '增强',
 }
 
 export function pageImageToolLabel(tool: PageImageTool): string {
@@ -81,12 +81,12 @@ export function pageImageToolLabel(tool: PageImageTool): string {
     return `扩图 · ${sides.join(' / ')}`
   }
   if (tool.kind === 'enhance') {
-    return `精修 · ${tool.scale}× · 强度 ${tool.strength}`
+    return `增强 · ${tool.scale}× · 强度 ${tool.strength}`
   }
   return PAGE_IMAGE_TOOL_NAMES.upscale
 }
 
-/** 扩图/精修后的目标尺寸（64 的倍数）；放大固定 2 倍，不受 64 对齐约束 */
+/** 扩图/增强后的目标尺寸（64 的倍数）；放大固定 2 倍，不受 64 对齐约束 */
 export function pageImageToolSize(
   tool: PageImageTool,
   width: number,
@@ -374,7 +374,7 @@ export interface PageEditorBaseline {
 }
 
 /**
- * 蓝本的「原配置」：生成时使用的可编辑配置，导入/起点版本使用 initial。
+ * 底稿的「原配置」：生成时使用的可编辑配置，导入/起点版本使用 initial。
  * 旧版本只保存了拼入质量词后的实际请求，无法可靠还原，返回 null。
  */
 export function pageEditorBaseline(version: PageVersion): PageEditorBaseline | null {
@@ -384,7 +384,7 @@ export function pageEditorBaseline(version: PageVersion): PageEditorBaseline | n
   return version.initial ?? null
 }
 
-/** 下一版配置相对蓝本原配置的修改：提示词逐段、参数逐项 */
+/** 下一版配置相对底稿原配置的修改：提示词逐段、参数逐项 */
 export function pageEditorChanges(
   baseline: PageEditorBaseline,
   editor: Pick<PageEditorState, 'model' | 'draft' | 'params'>,

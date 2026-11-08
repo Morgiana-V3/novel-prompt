@@ -24,7 +24,7 @@ const emit = defineEmits<{
   missing: [version: PageVersion]
   recover: []
   edit: []
-  /** anchor：触发按钮的位置，放大与精修的面板显示在按钮下方 */
+  /** anchor：触发按钮的位置，放大与增强的面板显示在按钮下方 */
   tool: [kind: PageImageTool['kind'], anchor: { left: number; bottom: number }]
 }>()
 const viewport = ref<InstanceType<typeof ImageViewport>>()
@@ -40,13 +40,13 @@ const emptyLabel = computed(() => {
 })
 const hasViewedImage = computed(() => !!props.viewed.image && !props.viewed.image.missing)
 
-/** 修改类工具只作用于创作蓝本；浏览历史候选时提示先设为蓝本 */
+/** 修改类工具只作用于创作底稿；浏览历史候选时提示先设为底稿 */
 const editBlockedReason = computed(() => {
   if (props.historical) {
-    return '先把这张图设为蓝本，再在它上面修改'
+    return '先把这张图设为底稿，再在它上面修改'
   }
   if (!props.current.image || props.current.image.missing) {
-    return '蓝本还没有可用图片'
+    return '底稿还没有可用图片'
   }
   return ''
 })
@@ -65,7 +65,7 @@ const editTools: ImageTool[] = [
     hint: '圈出区域写批注，交给 AI 讨论或直接局部重绘',
   },
   { key: 'outpaint', label: '扩图', icon: 'tool-outpaint', hint: '向四周扩展画布并补全新区域' },
-  { key: 'enhance', label: '精修', icon: 'tool-enhance', hint: '以当前图为起点重新采样，修复细节' },
+  { key: 'enhance', label: '增强', icon: 'tool-enhance', hint: '以当前图为起点重新采样，修复细节' },
   { key: 'upscale', label: '放大', icon: 'tool-upscale', hint: 'NovelAI 放大模型，宽高各 ×2' },
 ]
 

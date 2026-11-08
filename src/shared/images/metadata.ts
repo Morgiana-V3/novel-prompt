@@ -5,12 +5,18 @@ import type { ImageRecipe } from './types'
 /** Reject incomplete records instead of silently substituting the current draft. */
 export function validRecipe(value: unknown): value is ImageRecipe {
   const r = value as ImageRecipe | undefined
-  const q = r?.request
-  const p = q?.params
   return !!(
     r?.schema === 1 &&
     Number.isFinite(r.createdAt) &&
     ['generate', 'inpaint', 'legacy'].includes(r.sourceKind) &&
+    validRequest(r.request) &&
+    (r.base === undefined || validRequest(r.base))
+  )
+}
+
+function validRequest(q: ImageRecipe['request'] | undefined): boolean {
+  const p = q?.params
+  return !!(
     q &&
     p &&
     isNaiVersion(q.version) &&

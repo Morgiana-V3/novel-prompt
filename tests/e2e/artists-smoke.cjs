@@ -667,7 +667,7 @@ app.whenReady().then(async () => {
       0,
       'must not implicitly import the active tab',
     )
-    await click('选择蓝本')
+    await click('选择底稿')
     await click('创作标签')
     await js(
       `[...document.querySelectorAll('.blueprint-tabs button')].find(e=>e.textContent.includes('夜景')).click()`,
@@ -677,7 +677,7 @@ app.whenReady().then(async () => {
       join(artifacts, 'artist-blueprint-tabs.png'),
       (await win.webContents.capturePage()).toPNG(),
     )
-    await click('使用此蓝本')
+    await click('使用此底稿')
     assert.equal(
       await js(`document.querySelector('#creation-editor [aria-label="主提示词"]').value`),
       'ocean, sailboat',
@@ -724,14 +724,14 @@ app.whenReady().then(async () => {
     await click('编辑来源')
     await input('#creation-editor [aria-label="主提示词"]', creation.prompt + ', rain')
     await navigate()
-    await wait(`document.querySelector('.artist-content-update')?.textContent.includes('更新蓝本')`)
+    await wait(`document.querySelector('.artist-content-update')?.textContent.includes('更新底稿')`)
     const frozen = await js(`JSON.parse(localStorage.getItem('np-artist-studio-v1-v5'))`)
     assert.equal(
       frozen.context.base,
       '{red sky}, 1.2::city::',
       'editing creation must not silently change a comparison',
     )
-    await click('更新蓝本')
+    await click('更新底稿')
     assert.equal(await js(`document.querySelectorAll('.artist-generated').length`), 0)
     assert.equal(
       await js(`document.querySelector('[aria-label="rella 权重"]').value`),
@@ -780,11 +780,11 @@ app.whenReady().then(async () => {
       })),
     )
     await navigate()
-    await click('更换蓝本')
+    await click('更换底稿')
     await click('图库图片')
     await wait(`document.querySelectorAll('.blueprint-images button').length===3`)
     await js(
-      `document.querySelector('[aria-label="选择蓝本图片 slow.png"]').click();document.querySelector('[aria-label="选择蓝本图片 missing.png"]').click()`,
+      `document.querySelector('[aria-label="选择底稿图片 slow.png"]').click();document.querySelector('[aria-label="选择底稿图片 missing.png"]').click()`,
     )
     await pause(500)
     await wait(`document.querySelector('.blueprint-error')?.textContent.includes('未保存提示词')`)
@@ -793,14 +793,14 @@ app.whenReady().then(async () => {
       true,
       'a stale successful recipe must not replace the selected missing recipe',
     )
-    await js(`document.querySelector('[aria-label="选择蓝本图片 scene.png"]').click()`)
+    await js(`document.querySelector('[aria-label="选择底稿图片 scene.png"]').click()`)
     await wait(`!!document.querySelector('.blueprint-preview')`)
     await pause(200)
     writeFileSync(
       join(artifacts, 'artist-blueprint-gallery.png'),
       (await win.webContents.capturePage()).toPNG(),
     )
-    await click('使用此蓝本')
+    await click('使用此底稿')
     assert.ok(
       await js(`!document.querySelector('.artist-toolbar').textContent.includes('scene.png')`),
     )
@@ -817,7 +817,7 @@ app.whenReady().then(async () => {
     )
     assert.ok(
       await js(
-        `document.querySelector('.artist-comparison .artist-section-heading').textContent.includes('蓝本 V4.5')`,
+        `document.querySelector('.artist-comparison .artist-section-heading').textContent.includes('底稿 V4.5')`,
       ),
       'different source model is labeled explicitly',
     )

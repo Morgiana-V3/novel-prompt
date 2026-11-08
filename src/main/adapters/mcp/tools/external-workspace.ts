@@ -392,7 +392,7 @@ export function externalWorkspaceTools(desktop: DesktopBridge): McpTool[] {
       name: 'get_workspace_context',
       title: '读取外部 Agent 待处理上下文',
       description:
-        '读取待处理需求、完整提示词、参数、区域和冻结规则目录；默认只返回规则总则与最近 10 个候选。先读目录，再按 skills_task/skills_ids 补读本轮相关冻结正文；rules_only:true 只读规则。候选通过 version_limit/before_version_id 分页，当前蓝本信息始终单独提供。区域返回遮罩预览路径，可用 read_image 查看；历史另用 get_workspace。不会调用内置 AI、采纳或生成。',
+        '读取待处理需求、完整提示词、参数、区域和冻结规则目录；默认只返回规则总则与最近 10 个候选。先读目录，再按 skills_task/skills_ids 补读本轮相关冻结正文；rules_only:true 只读规则。候选通过 version_limit/before_version_id 分页，当前底稿信息始终单独提供。区域返回遮罩预览路径，可用 read_image 查看；历史另用 get_workspace。不会调用内置 AI、采纳或生成。',
       inputSchema: {
         type: 'object',
         properties: { id, ...SKILLS_READ_SCHEMA, ...CANDIDATE_PAGE_SCHEMA },

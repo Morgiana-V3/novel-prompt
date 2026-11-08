@@ -81,7 +81,7 @@ export interface NaiInpaintRequest extends NaiGenRequest {
   }
 }
 
-/** 图生图（精修 / 变体）：起点图片由主进程读取，不经渲染进程传输。 */
+/** 图生图（增强 / 变体）：起点图片由主进程读取，不经渲染进程传输。 */
 export interface NaiImg2ImgRequest extends NaiGenRequest {
   img2img: {
     /** 0.01～0.99，越高改动越大 */

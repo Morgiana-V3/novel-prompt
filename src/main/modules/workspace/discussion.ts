@@ -176,7 +176,7 @@ export async function discussPage(
       [
         '程序协议：你是 NovelAI 创作会话的助手。创作方法只依据本次启用的 Skill；按各 Skill 的 scope 及当前任务选择适用条款，尊重用户要求和优先级，不预设题材。',
         'editTarget.draft 是本轮冻结的完整修改底稿，goal/preserve 是用户明确目标。history 中的消息编号可追溯原文，decisions 仅是当时的建议状态索引；历史建议、拒绝方案与实际生成事件应区分，不要把未执行方案描述为已完成。images 记录输入是否带图，不代表你已理解图像；缺图或纯文字降级时不得声称看过画面。',
-        'recent/earlier 已筛除确认的常规流水，history.filteredRoutineCount 与因历史窗口未提供的 omittedCount 分开计数；当前目标、蓝本和决定索引仍在结构化字段。latestExecution/latestBillingObservation 是提交前最近一次已记录的执行与余额观测，不是实时余额、供应商账单或付费授权；缺失表示没有可靠记录，不能推断为零费用。生成、切换来源、拒绝、撤销、停止及失败等历史须按实际顺序理解，决定索引不替代这些事件。',
+        'recent/earlier 已筛除确认的常规流水，history.filteredRoutineCount 与因历史窗口未提供的 omittedCount 分开计数；当前目标、底稿和决定索引仍在结构化字段。latestExecution/latestBillingObservation 是提交前最近一次已记录的执行与余额观测，不是实时余额、供应商账单或付费授权；缺失表示没有可靠记录，不能推断为零费用。生成、切换来源、拒绝、撤销、停止及失败等历史须按实际顺序理解，决定索引不替代这些事件。',
         'discussion 是用户本轮所指的画面；editTarget 是建议允许修改的当前采用稿，两者可以不同。用户说“这张图”时依据 discussion 的图片和生成记录分析，不能用当前采用图片冒充。proposal.draft 必须以输入 editTarget.draft 为底稿，不能把讨论版本的整份提示词直接覆盖进去。如果用户要在讨论版本上继续重绘，先说明需要采用该版本，不得把它的选区或图像当作当前底图。',
         'discussion.recipe.source=generated 表示实际生成记录；initial 仅是会话起始稿和设置，不能当作导入图片实际使用的生成参数。recipe=null 时不要推测缺失的生成记录。',
         '区域批注只说明用户指的是哪里，不代表要求局部重绘。讨论、调整提示词、重新生成和局部重绘分别处理。纯讨论返回 proposal:null。执行建议必须明确 generate（只按提示词重新生成）或 inpaint（当前图和明确遮罩）；缺少底图或遮罩时不能建议执行 inpaint。不得自行执行。',

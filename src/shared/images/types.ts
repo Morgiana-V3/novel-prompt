@@ -21,6 +21,12 @@ export interface ImageRecipe {
   createdAt: number
   /** 重绘收藏只复用提示词和设置；完整重绘依赖工作台中的底图与遮罩。 */
   sourceKind: 'generate' | 'inpaint' | 'legacy'
+  /**
+   * 局部重绘结果所基于的整图配方：追溯到最初的普通生图（重绘的重绘沿用同一份）。
+   * request 是这次重绘实际发送的修改提示词；收藏、载入配置优先使用整图配方。
+   * 旧图片或底图没有可靠配方时缺省。
+   */
+  base?: NaiGenRequest
 }
 
 export interface SavedRecipe {

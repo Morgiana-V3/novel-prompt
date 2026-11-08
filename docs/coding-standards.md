@@ -20,9 +20,11 @@
 不接受：
 
 ```ts
-const w = readPage(id), v = pageCurrent(w)
+const w = readPage(id),
+  v = pageCurrent(w)
 if (!v) return
-const r = v.editor.regions.find(r => r.id === regionId); if (r) r.target = target
+const r = v.editor.regions.find((r) => r.id === regionId)
+if (r) r.target = target
 ```
 
 推荐：
@@ -35,9 +37,7 @@ if (!currentVersion) {
   return
 }
 
-const targetRegion = currentVersion.editor.regions.find(
-  (region) => region.id === regionId,
-)
+const targetRegion = currentVersion.editor.regions.find((region) => region.id === regionId)
 
 if (targetRegion) {
   targetRegion.target = target
@@ -68,11 +68,7 @@ if (targetRegion) {
 - 组件输入和事件保持明确，不向调用者暴露所有内部状态。
 
 ```vue
-<button
-  class="workspace-save-button"
-  :disabled="!canSaveDraft"
-  @click="saveDraft"
->
+<button class="workspace-save-button" :disabled="!canSaveDraft" @click="saveDraft">
   保存配置
 </button>
 ```
@@ -135,13 +131,13 @@ if (targetRegion) {
 
 R03 分别落实以下检查，不能用“格式化通过”代替可读性审查：
 
-| 手段 | 负责内容 | 状态 |
-| --- | --- | --- |
-| `.editorconfig` | 缩进、编码、换行、文件末尾换行 | 已配置；需编辑器支持，不是强制检查 |
-| Prettier | TS/JS/Vue/CSS/Less 的机械格式、100 字符目标行宽、Vue 多属性换行 | 已接入 |
+| 手段                  | 负责内容                                                             | 状态                               |
+| --------------------- | -------------------------------------------------------------------- | ---------------------------------- |
+| `.editorconfig`       | 缩进、编码、换行、文件末尾换行                                       | 已配置；需编辑器支持，不是强制检查 |
+| Prettier              | TS/JS/Vue/CSS/Less 的机械格式、100 字符目标行宽、Vue 多属性换行      | 已接入                             |
 | ESLint 与 TS/Vue 规则 | 分支花括号、一行语句数量、独立变量声明、嵌套三元、Promise 及类型边界 | 已接入；格式配置后重新启用结构规则 |
-| Stylelint | 样式有效性及约定约束；Less 试点时接入对应语法支持 | 已接入 CSS/Vue/Less；不排序声明 |
-| 人工/Agent 审查 | 名称是否表达业务、逻辑是否分段、模块职责、共享抽象是否合理 | 每批必查，不能仅凭变量长度判断 |
+| Stylelint             | 样式有效性及约定约束；Less 试点时接入对应语法支持                    | 已接入 CSS/Vue/Less；不排序声明    |
+| 人工/Agent 审查       | 名称是否表达业务、逻辑是否分段、模块职责、共享抽象是否合理           | 每批必查，不能仅凭变量长度判断     |
 
 提供明确区分的“只检查”和“自动修复”命令；检查覆盖 src、scripts、tests；样式检查覆盖全部 renderer CSS/Less/Vue。不得把未迁移文件的存量问题隐藏成全局关闭规则，也不得宣称尚未配置的检查已经生效。
 

@@ -85,14 +85,14 @@ export function buildOutpaintCanvas(source: Buffer, expansion: OutpaintExpansion
   }
 }
 
-/** 精修：按目标尺寸缩放原图（Lanczos），作为图生图的起点 */
+/** 增强：按目标尺寸缩放原图（Lanczos），作为图生图的起点 */
 export async function resizeForEnhance(
   source: Buffer,
   width: number,
   height: number,
 ): Promise<Buffer> {
   if (width * height > MAX_PIXELS) {
-    throw new Error(`精修后 ${width}×${height} 超过 4096×1024 总像素上限`)
+    throw new Error(`增强后 ${width}×${height} 超过 4096×1024 总像素上限`)
   }
   return sharp(source)
     .resize(width, height, { fit: 'fill', kernel: 'lanczos3' })

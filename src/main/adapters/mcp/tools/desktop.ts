@@ -64,7 +64,7 @@ function imageTool(argumentsRecord: Record<string, unknown>): PageImageTool {
   if (argumentsRecord.tool === 'enhance') {
     const scale = Number(argumentsRecord.scale ?? 1)
     if (scale !== 1 && scale !== 1.5) {
-      throw new Error('精修倍数只能是 1 或 1.5')
+      throw new Error('增强倍数只能是 1 或 1.5')
     }
     const unit = (value: unknown, fallback: number) => {
       const number = Number(value ?? fallback)
@@ -526,7 +526,7 @@ export function desktopTools(
       name: 'run_workspace_image_tool',
       title: '会话画布修图',
       description:
-        '对图片精修会话的当前蓝本执行修图：upscale 放大 2×；outpaint 四边扩图（left/right/top/bottom 像素）；enhance 精修（scale 1 或 1.5，strength 与 noise 0~1）。结果保存为新候选，不自动替换蓝本。扩图与精修使用会话当前草稿作为提示词。需用户生图授权、confirm:true 和开启允许生图；付费或费用未知时须由用户授权。',
+        '对图片精修会话的当前底稿执行修图：upscale 放大 2×；outpaint 四边扩图（left/right/top/bottom 像素）；enhance 增强（scale 1 或 1.5，strength 与 noise 0~1）。结果保存为新候选，不自动替换底稿。扩图与增强使用会话当前草稿作为提示词。需用户生图授权、confirm:true 和开启允许生图；付费或费用未知时须由用户授权。',
       inputSchema: {
         type: 'object',
         properties: {

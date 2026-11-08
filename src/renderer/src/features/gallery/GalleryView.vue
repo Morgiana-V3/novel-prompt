@@ -64,7 +64,7 @@ const createdAtLabel = computed(() =>
 )
 const deleteTitle = computed(() =>
   current.value?.storage === 'workspace'
-    ? '精修存档由创作项目管理，请在项目中删除'
+    ? '精修存档由精修项目管理，请在项目中删除'
     : '删除图片（移到系统回收站）',
 )
 let epoch = 0
@@ -220,7 +220,8 @@ async function reuse() {
     if (!openTabForLoad()) {
       return
     }
-    await importGenerationRequest(recipe.request, '图库载入')
+    // 局部重绘结果优先载入整图配方，而不是这次重绘的修改提示词
+    await importGenerationRequest(recipe.base ?? recipe.request, '图库载入')
     selectReferenceImage(image)
     shellState.tab = 'generate'
   })

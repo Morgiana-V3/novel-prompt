@@ -44,13 +44,13 @@ Test-Path $exe
 
 把 NovelPrompt 写进你自己的 MCP 配置（用户级）。它以 Node 模式运行 NovelPrompt.exe 本身，不需要另装 Node：
 
-| 字段 | 值 |
-|---|---|
-| 服务名 | `novel-prompt` |
-| 传输方式 | stdio |
-| `command` | `$exe` 的完整路径 |
-| `args` | `[ "<$exe 所在目录>\resources\mcp-proxy.cjs" ]` |
-| `env` | `{ "ELECTRON_RUN_AS_NODE": "1", "NOVELPROMPT_MCP_GROUPS": "all" }` |
+| 字段      | 值                                                                 |
+| --------- | ------------------------------------------------------------------ |
+| 服务名    | `novel-prompt`                                                     |
+| 传输方式  | stdio                                                              |
+| `command` | `$exe` 的完整路径                                                  |
+| `args`    | `[ "<$exe 所在目录>\resources\mcp-proxy.cjs" ]`                    |
+| `env`     | `{ "ELECTRON_RUN_AS_NODE": "1", "NOVELPROMPT_MCP_GROUPS": "all" }` |
 
 - 路径用第 1 / 2 步得到的实际路径，不要猜默认位置。
 - 写入前先把原配置文件备份为 `.bak`，只新增或覆盖 `novel-prompt` 这一项，其他内容不要动。
@@ -89,10 +89,10 @@ Claude Code（`~/.claude.json` 的 `mcpServers`）、Cursor 等 JSON 格式：
 
 以下设置都在 NovelPrompt 窗口的「设置」页，**请用户自己在界面里填写，不要直接编辑 `settings.json`，也不要让用户把 Token 发给你**：
 
-| 设置 | 用途 |
-|---|---|
-| NovelAI Persistent API Token | `nai_subscription`、`generate_image` 需要 |
-| Agent 接入 →「允许生图」 | 开启后才能调用 `generate_image`（默认关闭） |
+| 设置                                     | 用途                                                                        |
+| ---------------------------------------- | --------------------------------------------------------------------------- |
+| NovelAI Persistent API Token             | `nai_subscription`、`generate_image` 需要                                   |
+| Agent 接入 →「允许生图」                 | 开启后才能调用 `generate_image`（默认关闭）                                 |
 | DeepSeek API Key + 「允许调用 DeepSeek」 | `optimize_prompt` / `preview_prompt` 需要；agent 本身就是大模型，一般不需要 |
 
 不填这些也能使用查词、标签核对和整套检查等工具。
@@ -126,7 +126,7 @@ npm install; npm run build
 2. `navigate_app` 打开窗口或切换页面；`tab: "workspace"` 配合 `workspace_id` 打开指定会话。生图创作有多个相互独立的标签，`get_app_state.desktop.creationTabs` 列出 id、名称、是否当前与是否为空，`creation_tab_id` 切换到指定标签。
 3. 修改主提示词时，先读取状态，再把 `desktop.token` 作为 `apply_app_prompt.expected_token` 传入。期间用户已编辑则拒绝覆盖，成功写入会保留修改前历史。默认写入当前标签；`target: "new_tab"` 按软件的载入规则承接（当前标签为空则直接用，否则新开标签），`fresh_tab` 总是新开，`tab_title` 可命名新标签。
 4. 在工作台中用 `list_workspaces` / `get_workspace` 读取上下文，用 `propose_workspace_edit` 提交完整建议。建议会显示在界面中，用户可以查看、采纳；也可按用户指示调用 `apply_workspace_action` 采纳、拒绝、撤销或切换历史版本。写入必须使用最新 `revision`，遇到用户正在编辑时先等待。
-5. `generate_workspace` 根据已采纳稿生成新版本，也能使用已有区域重绘；`run_workspace_image_tool` 对当前蓝本执行放大（upscale）、扩图（outpaint）或精修（enhance），结果作为新候选。必须开启「允许生图」、取得用户授权并传 `confirm: true`；仍检查免费条件。`read_image` 将图库图片或选区预览作为 MCP 图片返回，客户端需要支持图像内容。
+5. `generate_workspace` 根据已采纳稿生成新版本，也能使用已有区域重绘；`run_workspace_image_tool` 对当前底稿执行放大（upscale）、扩图（outpaint）或精修（enhance），结果作为新候选。必须开启「允许生图」、取得用户授权并传 `confirm: true`；仍检查免费条件。`read_image` 将图库图片或选区预览作为 MCP 图片返回，客户端需要支持图像内容。
 6. `list_tasks` 和 `cancel_task` 与软件任务中心共用状态。Agent 任务有来源标记；生图取消等待当前图片保存，保留已完成结果。
 
 支持资源 `novelprompt://app/state` 的读取、订阅与变化通知，以及带 `progressToken` 的调用进度。**变化通知是否触发模型行动由外部客户端决定**：服务端支持通知不等于 Agent 会自动醒来。不支持订阅的客户端可在操作前调用 `get_app_state`。不需要为每次状态变化重新发送整套 Skill，`prompt_guide(detail: "summary")` 提供摘要和规则指纹，写提示词前仍应获取完整有效规则。
@@ -135,20 +135,20 @@ npm install; npm run build
 
 告诉 Agent「这次使用前台可视化模式，每一步在 NovelPrompt 中显示」。同一 MCP 服务提供以下 `ui_*` 工具，不需要电脑操作插件或鼠标模拟：
 
-| 工具 | 软件中可见的效果 |
-| --- | --- |
-| `ui_open_workspace` | 显示窗口并打开指定会话 |
-| `ui_create_workspace` | 显示新建表单，填入名称与来源，再创建会话 |
-| `ui_view_workspace` | 切换画布、当前提示词、修改对比、建议或历史 |
-| `ui_set_workspace_input` | 填入对话框，选择讨论区域及参考版本；尚不提交 |
-| `ui_send_workspace_message` | 提交当前输入；内置模式调用内置 AI，外部接管模式保存需求并等待外部 Agent 回复 |
-| `ui_set_workspace_agent` | 选择内置 AI 或绑定当前外部 Agent，显示处理者及连接状态 |
-| `ui_reply_workspace_request` | 展示外部 Agent 写回的回复和可选修改方案 |
-| `ui_cancel_workspace_request` | 取消待处理的外部需求，保留消息记录 |
-| `ui_add_workspace_region` | 打开选区编辑器，绘制矩形遮罩、填写批注并保存回工作台 |
-| `ui_review_workspace` | 展示建议后采纳、拒绝或撤销；也可从历史版本继续 |
-| `ui_generate_workspace` | 显示执行方式与遮罩，再生成或重绘，结果进入画布与历史 |
-| `ui_capture_app` | 返回当前应用窗口的真实截图及当时状态，用于查看实际显示效果 |
+| 工具                          | 软件中可见的效果                                                             |
+| ----------------------------- | ---------------------------------------------------------------------------- |
+| `ui_open_workspace`           | 显示窗口并打开指定会话                                                       |
+| `ui_create_workspace`         | 显示新建表单，填入名称与来源，再创建会话                                     |
+| `ui_view_workspace`           | 切换画布、当前提示词、修改对比、建议或历史                                   |
+| `ui_set_workspace_input`      | 填入对话框，选择讨论区域及参考版本；尚不提交                                 |
+| `ui_send_workspace_message`   | 提交当前输入；内置模式调用内置 AI，外部接管模式保存需求并等待外部 Agent 回复 |
+| `ui_set_workspace_agent`      | 选择内置 AI 或绑定当前外部 Agent，显示处理者及连接状态                       |
+| `ui_reply_workspace_request`  | 展示外部 Agent 写回的回复和可选修改方案                                      |
+| `ui_cancel_workspace_request` | 取消待处理的外部需求，保留消息记录                                           |
+| `ui_add_workspace_region`     | 打开选区编辑器，绘制矩形遮罩、填写批注并保存回工作台                         |
+| `ui_review_workspace`         | 展示建议后采纳、拒绝或撤销；也可从历史版本继续                               |
+| `ui_generate_workspace`       | 显示执行方式与遮罩，再生成或重绘，结果进入画布与历史                         |
+| `ui_capture_app`              | 返回当前应用窗口的真实截图及当时状态，用于查看实际显示效果                   |
 
 前台入口复用界面原有操作逻辑，并等待界面确认完成后返回状态。每次调用返回当前 `DesktopState`；后续操作传入其 `token`，或从 `get_app_state.desktop.token` 获取最新值。界面变化、用户正在编辑、另一前台操作仍在执行时会拒绝覆盖。不要并发调用前台工具，也不要在同一轮操作中混入后台写入工具。
 
@@ -165,7 +165,6 @@ npm install; npm run build
 当前前台覆盖 AI 工作台及其区域重绘。选区支持一个区域内多个矩形，不支持任意笔刷轨迹或所有弹窗自动化；其他页面保留已有导航与共享提示词接口。前台与后台工具可同时安装，由 Agent 按用户要求选择，不需要全局模式开关。
 
 开发验证：`npm run desktop:smoke` 使用真实 stdio 代理及真实渲染界面验证两种模式、前台操作工具、外部 Agent 接管与回复、窗口截图与敏感字段遮盖、冲突保护、权限、取消以及重绘遮罩外像素保留；AI 和图片接口使用模拟数据。`npm run mcp:host-smoke` 验证真实应用冷启动、共享主进程和断线恢复。两者使用临时用户目录，不修改日常数据。
-
 
 ## Agent 如何发现能力并选择执行方式
 
@@ -203,7 +202,6 @@ npm install; npm run build
 
 新记录保留每条方案的完整 before / after / 差异与处理状态；同版本的新建议使旧建议成为历史，旧的待采纳方案不可再次采纳。右侧点击某条方案会打开当时那条方案，建议页也可切换历史记录。旧版本已经删掉的方案正文无法恢复，仍显示旧版摘要。MCP 会话结果省略大遮罩和内部校验字段；完整本轮 Skill 从 `get_workspace_context` 读取。
 
-
 ## 项目维护、状态和增量读取
 
 - 后台 `update_workspace` 修改名称/目标或下一版配置；配置使用 `patch` 和已采用候选的 `version_id`，冻结的图片生成记录保持不变。
@@ -215,7 +213,7 @@ npm install; npm run build
 - `skills_digests` 是客户端实际保留的正文指纹表 `{id:digest}`，提供后取代连接缓存判断。只能从实际读取的 `sections` 建立，不能把整个目录当成已读。`skills_mode:metadata` 只读目录、不记为已读；`full` 强制重读所选篇目（全部正文需配合 `skills_task:all`）。上下文压缩或回复丢失后用此方式恢复。每个连接独立缓存，不能将另一个 Agent 的读取视为自己已读。
 - `rules_only:true` 只返回项目、请求标识、模型和规则，省略图片/参数/候选；先读完整任务上下文，再按需补读正文。返回 `requestId` 改变时须重新读取任务上下文。冻结文件保存一份原文及分段索引，不复制多份正文；没有索引的已保存冻结文档保持原文完整读取，不推测分界或拿今天的设置替换。
 - `get_workspace` 默认返回最近 10 个候选摘要和最近 5 条消息摘要，每条正文最多 400 字符并标记 `textTruncated`。`detail:full` 返回完整内容（仍分页），`message_ids` / `version_ids` 可精确取得特定消息/候选的全文；精确读取返回 `partial:true`，不夹带无关历史或其他候选。后台修改接口也返回摘要，避免每次写入重发历史。
-- 候选通过 `version_limit`（默认 10、最多 100）、`before_version_id` 分页；`get_workspace` 返回 `versionsPage`，`get_workspace_context` 返回 `candidatesPage`。游标是 `nextBeforeVersionId`，翻页带 `history_revision`。当前蓝本 id 和任务当前稿始终单独返回，候选页只描述该页；上下文中的 `groups` 也仅列本页 id，用 `partial/totalCandidates` 标记未读部分。
+- 候选通过 `version_limit`（默认 10、最多 100）、`before_version_id` 分页；`get_workspace` 返回 `versionsPage`，`get_workspace_context` 返回 `candidatesPage`。游标是 `nextBeforeVersionId`，翻页带 `history_revision`。当前底稿 id 和任务当前稿始终单独返回，候选页只描述该页；上下文中的 `groups` 也仅列本页 id，用 `partial/totalCandidates` 标记未读部分。
 - 历史页使用 `message_limit`（1～100）、`before_message_id`，翻页必须附上一页的 `history.revision` 作为 `history_revision`；变化时拒绝混合分页。默认摘要省略方案前后稿、历史生成参数和规则正文，原始项目文件保持完整。
 - `since_revision` 比较本连接最近缓存的对应 `detail` 快照。未变返回 `notModified`；变化返回 `delta:true`、新增/变更的消息和候选，以及删除 id 列表。旧消息的采纳/撤销、旧候选配置变化也会被发现。按 id 合并，摘要/全文分别缓存；增量需要翻页时保持原 `since_revision`，携带当前 `history_revision`，读完消息与候选两类增量的所有页后再推进本地版本。单独翻页时另一列表不重复返回，分页信息的 `included:false` 表示未读取，不能理解为空集合。重新连接、首次请求某种 detail 或基线超过最近 32 个快照时，返回 `resetRequired:true` 和当前分页快照，须重建缓存。切勿把分页/局部详情中缺失的条目当成删除。
 - `list_images` 支持 `storage`、`collection_id`、`query`、`limit`、`before_name`，返回 `items/collections/hasMore/nextBeforeName`；`generate_image` 可用 `collection_id` 指定保存到哪个图集。
@@ -225,6 +223,7 @@ npm install; npm run build
 - 收藏与片段的改动会通知界面即时刷新星标和片段库。
 
 `npm run mcp:context-smoke` 使用独立临时数据验证规则目录与任务选篇、按篇变化、禁用/重排、强制补读、冻结快照、缓存隔离、摘要/详情、历史/候选分页、旧消息与候选更新及增量恢复。加 `-- --measure-dev` 可只读测量开发目录的现有项目返回大小；不迁移、不保存真实项目。字符数按单份业务 JSON 统计，不代表特定客户端实际计入模型的 token 数。
+
 - 工具保留文本内容并返回对象形式的 `structuredContent`。普通文本报告在 `text` 字段，列表在 `items`。参数错误、权限关闭和执行错误提供 `error.code/message/retryable/nextAction`。取消任务的 `cancellation` 明确区分受理、正在停止、已结束与不存在。
 
 旧宿主须重新启动、MCP 客户端须重新连接才能读取更新后的工具清单。
@@ -250,7 +249,7 @@ npm install; npm run build
 
 如果只是 Agent 断线、应用窗口仍在，尚未保存的配置草稿会保留。`connection.workspace.editor.canResume:true` 时，核对 `desktop.workspace.config` 后可调用 `ui_edit_workspace_config(config_action:resume)` 接续草稿，再明确保存或取消。接续不会改变内容、保存或生成；用户手动编辑和其他在线 Agent 的编辑不可接续。主进程退出后的未保存表单不保证保留。
 
-`connection.workspace.execution.sourceVersionId` 是接下来生成或重绘的蓝本，`viewedVersionId` 是当前查看对象，两者可能不同。
+`connection.workspace.execution.sourceVersionId` 是接下来生成或重绘的底稿，`viewedVersionId` 是当前查看对象，两者可能不同。
 
 ## 超时后查询结果，避免重复执行
 
@@ -266,7 +265,6 @@ npm install; npm run build
 记录与当前应用的数据目录绑定，跨 MCP 连接和软件重启可读。保留期为 7 天，最多 10000 条；单份结果超过 64 KiB 或结果缓存累计超过 8 MiB 时只保留执行摘要，不因此允许重放。结果中的 `resultOmitted` 表示需再读取对应业务对象。记录只保存参数指纹，不保存原始参数；结果保存在本地。查不到记录不保证操作从未执行，需确认是否连接错环境或记录已过期。文件无法读取或无法保存操作开始记录时，会在执行前拒绝写入，避免失去重复保护。
 
 `npm run mcp:recovery-smoke` 验证分组隔离、并发去重、失败/取消、断线、记录损坏和大结果；`npm run mcp:host-smoke` 进一步验证真实宿主退出后恢复结果与重复调用不会再次创建项目。测试使用独立临时数据，不访问真实 AI/生图服务。
-
 
 ## 已有区域的前台操作
 

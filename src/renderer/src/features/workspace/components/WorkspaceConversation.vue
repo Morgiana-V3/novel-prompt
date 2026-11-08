@@ -215,7 +215,7 @@ defineExpose({
       >
     </div>
     <div class="pw-context">
-      <span class="pw-context-dot"></span>当前蓝本 <b>{{ displayVersionLabel(current.label) }}</b
+      <span class="pw-context-dot"></span>当前底稿 <b>{{ displayVersionLabel(current.label) }}</b
       ><button
         v-if="historical"
         :disabled="busy"
@@ -440,7 +440,7 @@ defineExpose({
         >
         <span v-if="discussionContext.versionId !== discussionContext.editVersionId"
           >建议修改 <b>{{ discussionContext.editLabel }}</b
-          >；要修改这张图，请先设为蓝本</span
+          >；要修改这张图，请先设为底稿</span
         >
       </div>
       <div

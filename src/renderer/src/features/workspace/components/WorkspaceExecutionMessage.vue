@@ -34,7 +34,7 @@ const kindLabels: Record<PageExecutionEvent['kind'], string> = {
   inpaint: '局部重绘',
   upscale: '放大',
   outpaint: '扩图',
-  enhance: '精修',
+  enhance: '增强',
 }
 const title = computed(() => {
   const event = execution.value
@@ -129,7 +129,7 @@ const billingText = computed(() => {
         >
           查看 {{ label(primaryResultId) }}
         </button>
-        <small v-if="primaryResultId === adoptedVersionId">当前蓝本</small>
+        <small v-if="primaryResultId === adoptedVersionId">当前底稿</small>
         <small v-else-if="!primaryVersion">结果版本已不可用</small>
       </div>
     </div>
@@ -163,7 +163,7 @@ const billingText = computed(() => {
           </button>
         </p>
         <p>
-          执行后蓝本：<button
+          执行后底稿：<button
             :disabled="editingPrompt || !versionsById.has(execution.adoptedVersionId)"
             @click="emit('view', execution.adoptedVersionId)"
           >

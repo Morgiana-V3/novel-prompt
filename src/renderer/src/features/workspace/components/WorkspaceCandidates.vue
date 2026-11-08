@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import Icon from '../../../shared/ui/Icon.vue'
-import { FavoriteButton } from '../../favorites/public'
 import type { PageWorkspace } from '@shared/workspace/model'
 import type { useVersionBrowser } from '../use-version-browser'
 defineProps<{
@@ -61,7 +60,7 @@ const emit = defineEmits<{
           ><span
             v-if="versionItem.id === current.id"
             class="pw-current"
-            >当前蓝本</span
+            >当前底稿</span
           ><span
             v-else-if="versionItem.id === viewed.id"
             class="muted"
@@ -82,11 +81,6 @@ const emit = defineEmits<{
           :size="14"
         />
       </button>
-      <FavoriteButton
-        v-if="versionItem.image && !versionItem.image.missing"
-        :image="versionItem.image"
-        class="candidate-favorite"
-      />
       <Transition name="popover">
         <div
           v-if="clearingImage === versionItem.id"
@@ -125,22 +119,6 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
-.pw-candidate :deep(.candidate-favorite) {
-  position: absolute;
-  left: 10px;
-  top: 10px;
-  background: var(--bg);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--dur-fast) var(--ease-out);
-}
-
-.pw-candidate:hover :deep(.candidate-favorite),
-.pw-candidate:focus-within :deep(.candidate-favorite) {
-  opacity: 1;
-  pointer-events: auto;
-}
-
 .pw-candidate-list {
   position: absolute;
   top: 100%;
@@ -331,8 +309,7 @@ const emit = defineEmits<{
 }
 
 @media (hover: none) {
-  .pw-candidate-delete,
-  .pw-candidate :deep(.candidate-favorite) {
+  .pw-candidate-delete {
     opacity: 1;
     pointer-events: auto;
   }

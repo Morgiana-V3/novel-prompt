@@ -49,6 +49,6 @@ export function adoptVersion(
     workspace.model =
       next.editor.model ?? next.generated?.model ?? next.initial?.model ?? workspace.model
     workspace.execution = { kind: 'generate', regionId: null }
-    pageEvent(workspace, `创作蓝本切换为「${next.label}」。之后从此版本继续，其他结果保留为历史。`)
+    pageEvent(workspace, `创作底稿切换为「${next.label}」。之后从此版本继续，其他结果保留为历史。`)
   }
 }

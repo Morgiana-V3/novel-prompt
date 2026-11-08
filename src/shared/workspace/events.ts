@@ -146,14 +146,14 @@ export function pageEventMetadata(message: PageMessage): PageEventMetadata | nul
     return legacy('error', 'error')
   }
   if (
-    /^从「[^「」\r\n]+」(?:按提示词生成|局部重绘 [^。\r\n]+|放大 2×|扩图 · [^。\r\n]+|精修 · [^。\r\n]+)，得到「方案 V\d+ · 候选 \d+」。(?:首张结果已设为创作蓝本。|已保存，当前蓝本未改变。)$/.test(
+    /^从「[^「」\r\n]+」(?:按提示词生成|局部重绘 [^。\r\n]+|放大 2×|扩图 · [^。\r\n]+|(?:精修|增强) · [^。\r\n]+)，得到「方案 V\d+ · 候选 \d+」。(?:首张结果已设为创作(?:蓝本|底稿)。|已保存，当前(?:蓝本|底稿)未改变。)$/.test(
       message.text,
     )
   ) {
     return legacy('execution')
   }
   if (
-    /^(?:本次重绘|放大 2×|扩图 · [^\r\n]+|精修 · [^\r\n]+)未完成：[\s\S]+。当前版本未替换。$/.test(
+    /^(?:本次重绘|放大 2×|扩图 · [^\r\n]+|(?:精修|增强) · [^\r\n]+)未完成：[\s\S]+。当前版本未替换。$/.test(
       message.text,
     ) ||
     /^本轮未完成：[\s\S]+$/.test(message.text)
@@ -178,7 +178,9 @@ export function pageEventMetadata(message: PageMessage): PageEventMetadata | nul
     return legacy('agent')
   }
   if (
-    /^创作蓝本切换为「[^「」\r\n]+」。之后从此版本继续，其他结果保留为历史。$/.test(message.text) ||
+    /^创作(?:蓝本|底稿)切换为「[^「」\r\n]+」。之后从此版本继续，其他结果保留为历史。$/.test(
+      message.text,
+    ) ||
     /^已恢复「[^「」\r\n]+」的原始图片。$/.test(message.text)
   ) {
     return legacy('version')

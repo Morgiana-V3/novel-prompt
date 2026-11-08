@@ -357,6 +357,7 @@ const namedSchemas: Record<string, Schema> = {
       ...favoriteFields,
       sourceKind: str,
       request: objectSchema,
+      baseRequest: nullable(objectSchema),
       imagePath: nullable(str),
       sourceImage: nullable(str),
     },

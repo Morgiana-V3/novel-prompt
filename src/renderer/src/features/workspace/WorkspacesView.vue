@@ -434,7 +434,7 @@ async function close() {
       <header>
         <div>
           <h1>
-            创作项目 <span class="pill"><AnimatedNumber :value="sessions.length" /></span>
+            精修项目 <span class="pill"><AnimatedNumber :value="sessions.length" /></span>
           </h1>
         </div>
         <div class="row">
@@ -584,7 +584,7 @@ async function close() {
     <dialog
       ref="projectDialog"
       class="project-dialog"
-      aria-label="创作项目管理"
+      aria-label="精修项目管理"
       @cancel.prevent="dismissDialog"
       @pointerdown="projectBackdrop.onPointerdown"
       @click="projectBackdrop.onClick"

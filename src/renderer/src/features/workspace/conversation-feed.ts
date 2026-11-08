@@ -71,7 +71,7 @@ export function workspaceActivityLabel(event: PageEventMetadata): string {
       proposal: '方案决定',
       goal: '目标与保留要求',
       agent: 'Agent 变更',
-      version: '蓝本变更',
+      version: '底稿变更',
       state: '工作台记录',
       execution: '执行记录',
       error: '异常记录',

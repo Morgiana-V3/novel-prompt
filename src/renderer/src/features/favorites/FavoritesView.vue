@@ -60,7 +60,13 @@ const filtered = computed(() =>
     group.items.some(
       (item) =>
         (!tag.value || item.tags.includes(tag.value)) &&
-        [item.name, item.note, ...item.tags, sectionText(item.recipe.request)]
+        [
+          item.name,
+          item.note,
+          ...item.tags,
+          sectionText(item.recipe.request),
+          item.recipe.base ? sectionText(item.recipe.base) : '',
+        ]
           .join(' ')
           .toLowerCase()
           .includes(query.value.trim().toLowerCase()),
@@ -127,7 +133,13 @@ const variantOptions = computed(() =>
     label: `${index + 1} / ${all.length} · 种子 ${item.recipe.request.params.seed ?? '随机'}`,
   })),
 )
-const request = computed(() => selected.value?.recipe.request)
+/** 局部重绘收藏优先展示和载入整图配方；这次重绘的修改提示词另外列出 */
+const request = computed(() => selected.value?.recipe.base ?? selected.value?.recipe.request)
+const inpaintEdit = computed(() =>
+  selected.value?.recipe.sourceKind === 'inpaint' && selected.value.recipe.base
+    ? selected.value.recipe.request
+    : null,
+)
 /** 图例里显示「角色 N · 首个词条」，便于和提示词对应 */
 function roleLabel(prompt: string, index: number) {
   const firstTag = prompt.split(/[,\n]/)[0]?.trim() ?? ''
@@ -732,7 +744,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               <Icon
                 name="warn"
                 :size="13"
-              />来自局部重绘：可复用提示词与参数；完整重绘还需要原底图和遮罩。
+              />{{
+                inpaintEdit
+                  ? '来自局部重绘：下面是整图提示词，载入配置使用整图配方；这次重绘的修改见最下方。'
+                  : '来自局部重绘：缺少整图配方，下面是这次重绘发送的提示词。'
+              }}
             </p>
             <section class="favorite-block">
               <h3>
@@ -782,6 +798,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               </dl>
               <p class="muted small">收藏于 {{ createdAt }}</p>
             </section>
+            <details
+              v-if="inpaintEdit"
+              class="favorite-block favorite-edit"
+            >
+              <summary class="disclosure">这次重绘的修改</summary>
+              <pre :class="{ empty: !inpaintEdit.base }">{{ inpaintEdit.base || '未填写' }}</pre>
+              <template
+                v-for="(character, index) in inpaintEdit.characters"
+                :key="index"
+              >
+                <h4>角色 {{ index + 1 }}</h4>
+                <pre>{{ character.prompt }}</pre>
+              </template>
+            </details>
           </div>
           <PositionCompareDialog
             v-if="layoutOpen"
@@ -997,7 +1027,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   flex: 1;
   min-height: 0;
 
-  /* 滚动区延伸到页面右缘与底边，滚动条贴边，与图集、创作项目一致；4px 留给卡片悬停上浮与焦点环 */
+  /* 滚动区延伸到页面右缘与底边，滚动条贴边，与图集、精修项目一致；4px 留给卡片悬停上浮与焦点环 */
   padding: 4px calc(24px - var(--scrollbar-size)) 24px 4px;
   margin: -4px -24px -20px -4px;
 }
@@ -1362,6 +1392,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   border-radius: 12px;
   background: var(--panel);
   border: 1px solid var(--line);
+}
+
+.favorite-edit summary {
+  cursor: pointer;
+  color: var(--text2);
+  font-size: 12px;
+}
+
+.favorite-edit[open] summary {
+  margin-bottom: 8px;
 }
 
 .favorite-block.plain {

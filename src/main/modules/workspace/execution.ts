@@ -194,8 +194,8 @@ export async function renderPage(
     }
     const action = regions.length ? `局部重绘 ${regionLabel}` : '按提示词生成'
     const completion = versionIds.length
-      ? `已保存 ${versionIds.length} 张候选。${workspace.currentVersionId !== version.id ? '首张结果已设为创作蓝本。' : '当前蓝本未改变。'}`
-      : '没有保存新候选，当前蓝本未改变。'
+      ? `已保存 ${versionIds.length} 张候选。${workspace.currentVersionId !== version.id ? '首张结果已设为创作底稿。' : '当前底稿未改变。'}`
+      : '没有保存新候选，当前底稿未改变。'
     pageExecutionEvent(
       workspace,
       `从「${version.label}」${action}，${completion}${errorText ? `未完成：${errorText}` : ''}`,

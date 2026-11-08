@@ -4,8 +4,8 @@ import { reportError } from '../../../shared/lib/notifications'
 import type { NaiVersion } from '@shared/generation/types'
 import { subscriptionState, refreshSubscription } from '../../generation/subscription'
 /**
- * 放大、精修的轻量确认面板：锚定在工具栏按钮下方，参数少的操作不打开整页对话框。
- * 放大只确认尺寸与花费；精修多出倍数、强度、噪声三个设置。
+ * 放大、增强的轻量确认面板：锚定在工具栏按钮下方，参数少的操作不打开整页对话框。
+ * 放大只确认尺寸与花费；增强多出倍数、强度、噪声三个设置。
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { PageImageTool } from '@shared/workspace/model'
@@ -57,7 +57,7 @@ const costNote = computed(() =>
     subscriptionState.error ? undefined : subscriptionState.subscription,
   ),
 )
-const title = computed(() => (props.kind === 'enhance' ? '精修' : '放大 2×'))
+const title = computed(() => (props.kind === 'enhance' ? '增强' : '放大 2×'))
 const hint = computed(() =>
   props.kind === 'enhance'
     ? '以当前图为起点重新采样，修复细节与噪点；强度越高改动越大。'
@@ -192,7 +192,7 @@ onBeforeUnmount(() => {
           :disabled="disabled || !!blockedReason"
           @click="run"
         >
-          {{ kind === 'enhance' ? '精修' : '放大' }}
+          {{ kind === 'enhance' ? '增强' : '放大' }}
         </button>
       </div>
     </div>

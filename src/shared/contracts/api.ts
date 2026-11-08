@@ -159,7 +159,7 @@ export interface Api {
     execution: PageExecution,
     actionId?: string,
   ) => Promise<PageWorkspace>
-  /** 在当前蓝本上放大、扩图或精修，结果保存为新候选 */
+  /** 在当前底稿上放大、扩图或增强，结果保存为新候选 */
   pagesImageTool: (id: string, revision: number, tool: PageImageTool) => Promise<PageWorkspace>
   setImagePreviewActive: (active: boolean) => Promise<void>
   dbStatus: () => Promise<DbStatus>

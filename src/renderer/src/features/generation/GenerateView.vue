@@ -25,7 +25,6 @@ import { resizeWithin } from '../../shared/lib/autosize'
 import { readPngPrompt } from '../prompts/public/import-export'
 import { type ImportedPrompt } from '@shared/prompts/import'
 import { rememberFavorite, revealFavorite } from '../favorites/public'
-import { FavoriteButton } from '../favorites/public'
 import type { NaiGenRequest } from '@shared/generation/types'
 import { saveSettings } from '../settings/state'
 import Icon from '../../shared/ui/Icon.vue'
@@ -515,13 +514,15 @@ async function readMeta(img: NaiImage): Promise<ImportedPrompt | null> {
   try {
     const recipe = await window.api.naiRecipe(img.name)
     if (recipe) {
+      // 局部重绘结果优先载入整图配方，而不是这次重绘的修改提示词
+      const request = recipe.base ?? recipe.request
       return {
-        request: recipe.request,
-        base: recipe.request.base,
-        negative: recipe.request.negative,
-        characters: recipe.request.characters,
-        width: recipe.request.params.width,
-        height: recipe.request.params.height,
+        request,
+        base: request.base,
+        negative: request.negative,
+        characters: request.characters,
+        width: request.params.width,
+        height: request.params.height,
         structured: true,
         fromMetadata: true,
       }
@@ -881,7 +882,6 @@ function openImageWorkspace(tool?: WorkspaceToolKind) {
                     :size="14"
                   />
                 </button>
-                <FavoriteButton :image="image" />
                 <button
                   class="icon-btn sm"
                   title="下载"

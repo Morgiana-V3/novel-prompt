@@ -45,7 +45,7 @@ const emit = defineEmits<{
         ><span
           v-if="group.adopted"
           class="pw-current"
-          >当前蓝本</span
+          >当前底稿</span
         ><small>{{ group.versions.filter((v) => v.image).length }} 张图片</small>
       </div>
     </button>

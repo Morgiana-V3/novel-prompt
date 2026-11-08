@@ -10,15 +10,15 @@ Electron 主进程是唯一应用宿主，窗口和 MCP 客户端共享服务、
 
 ## 领域入口与持久化
 
-| 领域 | 当前入口 | 数据与约束 |
-| --- | --- | --- |
-| 工作台 | main/modules/workspace/service.ts、discussion.ts、execution.ts | userData/data/page-workspaces/<UUID>.json，schema=2；读取现有 schema=1 的迁移逻辑保留。revision、编辑锁和讨论快照必须保留；删除移入 removed。 |
-| 生成 | main/modules/generation/service.ts、inpaint.ts；main/providers/novelai/ | 先校验额度，再逐张请求、合成和落库，最后核对两类 Anlas；取消等待当前图片保存，不重试未知写入。 |
-| 图片 | main/modules/images/library.ts；workspace/image-references.ts、image-cleanup.ts | userData/image-library 下 saved、temporary、workspaces；保留旧 images 读取。图片旁 JSON 记录 schema=1 的实际生成请求；共享引用阻止误删。 |
-| 规则 | main/modules/skills/service.ts | 安装包 skills 只读；userData/skills/user 保存单文件规则或含 SKILL.md 的目录包；设置保存选择，讨论记录冻结 snapshot。 |
-| 任务 | main/modules/tasks/task-manager.ts；main/adapters/ipc/tasks.ts | 内存状态；资源互斥、进度、取消模式、目标和 Agent 归属。IPC/MCP 不能各自另建生图队列。 |
-| 设置 | main/modules/settings/service.ts | userData/data/settings.json；原子写入、损坏隔离与备份恢复。 |
-| 收藏 | main/modules/images/recipes.ts | userData/data/recipes/<UUID>.json 与 recipes/images/<UUID>.png；收藏保存独立原图副本，删除收藏不影响来源图片。 |
+| 领域   | 当前入口                                                                        | 数据与约束                                                                                                                                    |
+| ------ | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 工作台 | main/modules/workspace/service.ts、discussion.ts、execution.ts                  | userData/data/page-workspaces/<UUID>.json，schema=2；读取现有 schema=1 的迁移逻辑保留。revision、编辑锁和讨论快照必须保留；删除移入 removed。 |
+| 生成   | main/modules/generation/service.ts、inpaint.ts；main/providers/novelai/         | 先校验额度，再逐张请求、合成和落库，最后核对两类 Anlas；取消等待当前图片保存，不重试未知写入。                                                |
+| 图片   | main/modules/images/library.ts；workspace/image-references.ts、image-cleanup.ts | userData/image-library 下 saved、temporary、workspaces；保留旧 images 读取。图片旁 JSON 记录 schema=1 的实际生成请求；共享引用阻止误删。      |
+| 规则   | main/modules/skills/service.ts                                                  | 安装包 skills 只读；userData/skills/user 保存单文件规则或含 SKILL.md 的目录包；设置保存选择，讨论记录冻结 snapshot。                          |
+| 任务   | main/modules/tasks/task-manager.ts；main/adapters/ipc/tasks.ts                  | 内存状态；资源互斥、进度、取消模式、目标和 Agent 归属。IPC/MCP 不能各自另建生图队列。                                                         |
+| 设置   | main/modules/settings/service.ts                                                | userData/data/settings.json；原子写入、损坏隔离与备份恢复。                                                                                   |
+| 收藏   | main/modules/images/recipes.ts                                                  | userData/data/recipes/<UUID>.json 与 recipes/images/<UUID>.png；收藏保存独立原图副本，删除收藏不影响来源图片。                                |
 
 ## 核心调用链
 
@@ -28,211 +28,211 @@ Electron 主进程是唯一应用宿主，窗口和 MCP 客户端共享服务、
 
 工作台消息的可选 `event` 使用 `shared/workspace/events.ts` 统一契约。一次生成或画布修图持久化一条 execution，记录来源、全部候选、执行时采用稿、完成/部分完成/失败及独立费用观测；`known` 仅表示余额差可观测，不是供应商逐请求账单。`unknown` 不得按零处理，`not-run` 仅用于尚未进入生成服务。MCP 摘要与桌面状态保留结构化 `latestExecution`，包含原消息编号和观测时间，不代表实时余额或再次消费授权。
 
-聊天主线展示用户需求、Agent 判断、方案及执行结果；正常费用放在结果详情，常规操作放在可展开记录，异常继续显式展示。旧消息只按严格的已知程序格式分类，不改写存储、不猜测其费用归属。任务面板的内存记录不能替代持久化执行记录。模型历史在截取窗口前筛掉可确认冗余的回执，并单记 `filteredRoutineCount`；失败、费用未知、候选、蓝本变更和关键决定继续保留。冻结输入记录最近执行与费用的历史观测，旧冻结输入不重算。
+聊天主线展示用户需求、Agent 判断、方案及执行结果；正常费用放在结果详情，常规操作放在可展开记录，异常继续显式展示。旧消息只按严格的已知程序格式分类，不改写存储、不猜测其费用归属。任务面板的内存记录不能替代持久化执行记录。模型历史在截取窗口前筛掉可确认冗余的回执，并单记 `filteredRoutineCount`；失败、费用未知、候选、底稿变更和关键决定继续保留。冻结输入记录最近执行与费用的历史观测，旧冻结输入不重算。
 
 ## IPC 注册清单
 
 参数、返回值和事件载荷的权威类型是 `src/shared/contracts/api.ts` 中的 Api、IpcContract、AppEvents 与 RendererMessages；桌面命令使用 `contracts/desktop.ts`。主进程 typed handle、preload bridge 和 renderer 依赖同一契约。领域模型位于 shared 对应目录。
 
-| 通道 | 注册来源 |
-| --- | --- |
-| `agents:list` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts` |
-| `ai:inpaint-plan-cancel` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/prompts/task-actions.ts` |
-| `ai:inpaint-plan` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/prompts/task-actions.ts` |
-| `ai:optimize` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/prompts/task-actions.ts` |
-| `ai:preview` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/prompts/task-actions.ts` |
-| `ai:vision-test` | `src/main/adapters/ipc/settings.ts` |
-| `clipboard:read` | `src/main/adapters/ipc/application.ts` |
-| `clipboard:write` | `src/main/adapters/ipc/application.ts` |
-| `collections:list`、`collections:create`、`collections:rename`、`collections:delete`、`collections:assign` | `src/main/adapters/ipc/images.ts` |
-| `confirmations:reply` | `src/main/adapters/ipc/settings.ts` → `src/main/adapters/desktop/confirmations.ts` |
-| `db:aiTranslate` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tags/task-actions.ts` |
-| `db:implications` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tags/task-actions.ts` |
-| `db:status` | `src/main/adapters/ipc/tags.ts` |
-| `db:update` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tags/task-actions.ts` |
-| `desktop:cancel-frontend` | `src/main/adapters/desktop/bridge.ts` |
-| `desktop:reply` | `src/main/adapters/desktop/bridge.ts` |
-| `desktop:state` | `src/main/adapters/desktop/bridge.ts` |
-| `images:cleanup-retry` | `src/main/adapters/ipc/images.ts` |
-| `images:cleanup-status` | `src/main/adapters/ipc/images.ts` |
-| `mcp:info` | `src/main/adapters/ipc/application.ts` |
-| `nai:cancel` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/generation/task-actions.ts` |
-| `nai:copyImage` | `src/main/adapters/ipc/images.ts` |
-| `nai:delete` | `src/main/adapters/ipc/images.ts` |
-| `nai:freeCheck` | `src/main/adapters/ipc/images.ts` |
-| `nai:generate` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/generation/task-actions.ts` |
-| `nai:inpaint` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/generation/task-actions.ts` |
-| `artists:catalog` | `src/main/adapters/ipc/images.ts` → `modules/artists/catalog.ts` → `providers/quicktagcloud.ts`（公开图鉴，只读、分页、按模型缓存） |
-| `nai:list` | `src/main/adapters/ipc/images.ts` |
-| `nai:readImage` | `src/main/adapters/ipc/images.ts` |
-| `nai:recipe` | `src/main/adapters/ipc/images.ts` |
-| `nai:retain` | `src/main/adapters/ipc/images.ts` |
-| `nai:reveal` | `src/main/adapters/ipc/images.ts` |
-| `nai:saveAs` | `src/main/adapters/ipc/images.ts` |
-| `nai:subscription` | `src/main/adapters/ipc/images.ts` |
-| `pages:agent` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts` |
-| `pages:cancel` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts` |
-| `pages:chat` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts` |
-| `pages:cleanup-removed-images` | `src/main/adapters/ipc/workspace.ts` |
-| `pages:clear-image` | `src/main/adapters/ipc/workspace.ts` |
-| `pages:create` | `src/main/adapters/ipc/workspace.ts` |
-| `pages:delete` | `src/main/adapters/ipc/workspace.ts` |
-| `pages:edit` | `src/main/adapters/ipc/workspace.ts` |
-| `pages:external-cancel` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts` |
-| `pages:external-reply` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts` |
-| `pages:generate` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts` |
-| `pages:image-tool` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts` |
-| `pages:import` | `src/main/adapters/ipc/workspace.ts` |
-| `pages:list` | `src/main/adapters/ipc/workspace.ts` |
-| `pages:read` | `src/main/adapters/ipc/workspace.ts` |
-| `pages:recover-image` | `src/main/adapters/ipc/workspace.ts` |
-| `pages:removed` | `src/main/adapters/ipc/workspace.ts` |
-| `pages:restore` | `src/main/adapters/ipc/workspace.ts` |
-| `prompt:analyze` | `src/main/adapters/ipc/tags.ts` |
-| `recipes:config` | `src/main/adapters/ipc/images.ts` |
-| `recipes:create` | `src/main/adapters/ipc/images.ts` |
-| `recipes:delete` | `src/main/adapters/ipc/images.ts` |
-| `recipes:export` | `src/main/adapters/ipc/images.ts` |
-| `recipes:list` | `src/main/adapters/ipc/images.ts` |
-| `recipes:update` | `src/main/adapters/ipc/images.ts` |
-| `recipes:workspace` | `src/main/adapters/ipc/images.ts` |
-| `reverse:status`、`reverse:install`、`reverse:import`、`reverse:cancel`、`reverse:remove`、`reverse:analyze`、`reverse:score` | `src/main/adapters/ipc/reverse.ts` |
-| `settings:get` | `src/main/adapters/ipc/settings.ts` |
-| `settings:save` | `src/main/adapters/ipc/settings.ts` |
-| `skills:core` | `src/main/adapters/ipc/skills.ts` |
-| `skills:create` | `src/main/adapters/ipc/skills.ts` |
-| `skills:delete` | `src/main/adapters/ipc/skills.ts` |
-| `skills:duplicate` | `src/main/adapters/ipc/skills.ts` |
-| `skills:get` | `src/main/adapters/ipc/skills.ts` |
-| `skills:import` | `src/main/adapters/ipc/skills.ts` |
-| `skills:import-directory`、`skills:export` | `src/main/adapters/ipc/skills.ts` |
-| `skills:list` | `src/main/adapters/ipc/skills.ts` |
-| `skills:reveal` | `src/main/adapters/ipc/skills.ts` |
-| `skills:setConfig` | `src/main/adapters/ipc/skills.ts` |
-| `skills:update` | `src/main/adapters/ipc/skills.ts` |
-| `snippets:list`、`snippets:save`、`snippets:delete` | `src/main/adapters/ipc/settings.ts` |
-| `statistics:get`、`statistics:clear` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tasks/task-actions.ts` |
-| `storage:info`、`storage:choose`、`storage:schedule`、`storage:cancel`、`storage:open` | `src/main/adapters/ipc/settings.ts` |
-| `tag:complete` | `src/main/adapters/ipc/tags.ts` |
-| `tag:search` | `src/main/adapters/ipc/tags.ts` |
-| `tag:setZh` | `src/main/adapters/ipc/tags.ts` |
-| `task:cancel` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tags/task-actions.ts` |
-| `tasks:cancel` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tasks/task-actions.ts` |
-| `tasks:clear` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tasks/task-actions.ts` |
-| `tasks:list` | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tasks/task-actions.ts` |
-| `update:check` | `src/main/adapters/ipc/updates.ts` |
-| `update:download` | `src/main/adapters/ipc/updates.ts` |
-| `update:install` | `src/main/adapters/ipc/updates.ts` |
-| `update:open` | `src/main/adapters/ipc/updates.ts` |
-| `update:state` | `src/main/adapters/ipc/updates.ts` |
-| `web:open` | `src/main/adapters/ipc/application.ts` |
-| `window:image-preview` | `src/main/adapters/ipc/application.ts` |
+| 通道                                                                                                                          | 注册来源                                                                                                                            |
+| ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `agents:list`                                                                                                                 | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts`                                                     |
+| `ai:inpaint-plan-cancel`                                                                                                      | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/prompts/task-actions.ts`                                                       |
+| `ai:inpaint-plan`                                                                                                             | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/prompts/task-actions.ts`                                                       |
+| `ai:optimize`                                                                                                                 | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/prompts/task-actions.ts`                                                       |
+| `ai:preview`                                                                                                                  | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/prompts/task-actions.ts`                                                       |
+| `ai:vision-test`                                                                                                              | `src/main/adapters/ipc/settings.ts`                                                                                                 |
+| `clipboard:read`                                                                                                              | `src/main/adapters/ipc/application.ts`                                                                                              |
+| `clipboard:write`                                                                                                             | `src/main/adapters/ipc/application.ts`                                                                                              |
+| `collections:list`、`collections:create`、`collections:rename`、`collections:delete`、`collections:assign`                    | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `confirmations:reply`                                                                                                         | `src/main/adapters/ipc/settings.ts` → `src/main/adapters/desktop/confirmations.ts`                                                  |
+| `db:aiTranslate`                                                                                                              | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tags/task-actions.ts`                                                          |
+| `db:implications`                                                                                                             | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tags/task-actions.ts`                                                          |
+| `db:status`                                                                                                                   | `src/main/adapters/ipc/tags.ts`                                                                                                     |
+| `db:update`                                                                                                                   | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tags/task-actions.ts`                                                          |
+| `desktop:cancel-frontend`                                                                                                     | `src/main/adapters/desktop/bridge.ts`                                                                                               |
+| `desktop:reply`                                                                                                               | `src/main/adapters/desktop/bridge.ts`                                                                                               |
+| `desktop:state`                                                                                                               | `src/main/adapters/desktop/bridge.ts`                                                                                               |
+| `images:cleanup-retry`                                                                                                        | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `images:cleanup-status`                                                                                                       | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `mcp:info`                                                                                                                    | `src/main/adapters/ipc/application.ts`                                                                                              |
+| `nai:cancel`                                                                                                                  | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/generation/task-actions.ts`                                                    |
+| `nai:copyImage`                                                                                                               | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `nai:delete`                                                                                                                  | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `nai:freeCheck`                                                                                                               | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `nai:generate`                                                                                                                | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/generation/task-actions.ts`                                                    |
+| `nai:inpaint`                                                                                                                 | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/generation/task-actions.ts`                                                    |
+| `artists:catalog`                                                                                                             | `src/main/adapters/ipc/images.ts` → `modules/artists/catalog.ts` → `providers/quicktagcloud.ts`（公开图鉴，只读、分页、按模型缓存） |
+| `nai:list`                                                                                                                    | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `nai:readImage`                                                                                                               | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `nai:recipe`                                                                                                                  | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `nai:retain`                                                                                                                  | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `nai:reveal`                                                                                                                  | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `nai:saveAs`                                                                                                                  | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `nai:subscription`                                                                                                            | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `pages:agent`                                                                                                                 | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts`                                                     |
+| `pages:cancel`                                                                                                                | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts`                                                     |
+| `pages:chat`                                                                                                                  | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts`                                                     |
+| `pages:cleanup-removed-images`                                                                                                | `src/main/adapters/ipc/workspace.ts`                                                                                                |
+| `pages:clear-image`                                                                                                           | `src/main/adapters/ipc/workspace.ts`                                                                                                |
+| `pages:create`                                                                                                                | `src/main/adapters/ipc/workspace.ts`                                                                                                |
+| `pages:delete`                                                                                                                | `src/main/adapters/ipc/workspace.ts`                                                                                                |
+| `pages:edit`                                                                                                                  | `src/main/adapters/ipc/workspace.ts`                                                                                                |
+| `pages:external-cancel`                                                                                                       | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts`                                                     |
+| `pages:external-reply`                                                                                                        | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts`                                                     |
+| `pages:generate`                                                                                                              | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts`                                                     |
+| `pages:image-tool`                                                                                                            | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts`                                                     |
+| `pages:import`                                                                                                                | `src/main/adapters/ipc/workspace.ts`                                                                                                |
+| `pages:list`                                                                                                                  | `src/main/adapters/ipc/workspace.ts`                                                                                                |
+| `pages:read`                                                                                                                  | `src/main/adapters/ipc/workspace.ts`                                                                                                |
+| `pages:recover-image`                                                                                                         | `src/main/adapters/ipc/workspace.ts`                                                                                                |
+| `pages:removed`                                                                                                               | `src/main/adapters/ipc/workspace.ts`                                                                                                |
+| `pages:restore`                                                                                                               | `src/main/adapters/ipc/workspace.ts`                                                                                                |
+| `prompt:analyze`                                                                                                              | `src/main/adapters/ipc/tags.ts`                                                                                                     |
+| `recipes:config`                                                                                                              | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `recipes:create`                                                                                                              | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `recipes:delete`                                                                                                              | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `recipes:export`                                                                                                              | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `recipes:list`                                                                                                                | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `recipes:update`                                                                                                              | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `recipes:workspace`                                                                                                           | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `reverse:status`、`reverse:install`、`reverse:import`、`reverse:cancel`、`reverse:remove`、`reverse:analyze`、`reverse:score` | `src/main/adapters/ipc/reverse.ts`                                                                                                  |
+| `settings:get`                                                                                                                | `src/main/adapters/ipc/settings.ts`                                                                                                 |
+| `settings:save`                                                                                                               | `src/main/adapters/ipc/settings.ts`                                                                                                 |
+| `skills:core`                                                                                                                 | `src/main/adapters/ipc/skills.ts`                                                                                                   |
+| `skills:create`                                                                                                               | `src/main/adapters/ipc/skills.ts`                                                                                                   |
+| `skills:delete`                                                                                                               | `src/main/adapters/ipc/skills.ts`                                                                                                   |
+| `skills:duplicate`                                                                                                            | `src/main/adapters/ipc/skills.ts`                                                                                                   |
+| `skills:get`                                                                                                                  | `src/main/adapters/ipc/skills.ts`                                                                                                   |
+| `skills:import`                                                                                                               | `src/main/adapters/ipc/skills.ts`                                                                                                   |
+| `skills:import-directory`、`skills:export`                                                                                    | `src/main/adapters/ipc/skills.ts`                                                                                                   |
+| `skills:list`                                                                                                                 | `src/main/adapters/ipc/skills.ts`                                                                                                   |
+| `skills:reveal`                                                                                                               | `src/main/adapters/ipc/skills.ts`                                                                                                   |
+| `skills:setConfig`                                                                                                            | `src/main/adapters/ipc/skills.ts`                                                                                                   |
+| `skills:update`                                                                                                               | `src/main/adapters/ipc/skills.ts`                                                                                                   |
+| `snippets:list`、`snippets:save`、`snippets:delete`                                                                           | `src/main/adapters/ipc/settings.ts`                                                                                                 |
+| `statistics:get`、`statistics:clear`                                                                                          | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tasks/task-actions.ts`                                                         |
+| `storage:info`、`storage:choose`、`storage:schedule`、`storage:cancel`、`storage:open`                                        | `src/main/adapters/ipc/settings.ts`                                                                                                 |
+| `tag:complete`                                                                                                                | `src/main/adapters/ipc/tags.ts`                                                                                                     |
+| `tag:search`                                                                                                                  | `src/main/adapters/ipc/tags.ts`                                                                                                     |
+| `tag:setZh`                                                                                                                   | `src/main/adapters/ipc/tags.ts`                                                                                                     |
+| `task:cancel`                                                                                                                 | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tags/task-actions.ts`                                                          |
+| `tasks:cancel`                                                                                                                | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tasks/task-actions.ts`                                                         |
+| `tasks:clear`                                                                                                                 | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tasks/task-actions.ts`                                                         |
+| `tasks:list`                                                                                                                  | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tasks/task-actions.ts`                                                         |
+| `update:check`                                                                                                                | `src/main/adapters/ipc/updates.ts`                                                                                                  |
+| `update:download`                                                                                                             | `src/main/adapters/ipc/updates.ts`                                                                                                  |
+| `update:install`                                                                                                              | `src/main/adapters/ipc/updates.ts`                                                                                                  |
+| `update:open`                                                                                                                 | `src/main/adapters/ipc/updates.ts`                                                                                                  |
+| `update:state`                                                                                                                | `src/main/adapters/ipc/updates.ts`                                                                                                  |
+| `web:open`                                                                                                                    | `src/main/adapters/ipc/application.ts`                                                                                              |
+| `window:image-preview`                                                                                                        | `src/main/adapters/ipc/application.ts`                                                                                              |
 
 ## 事件与窗口契约
 
 DesktopCommand.type 包含 snapshot、capture-prepare、capture-end、navigate、apply-prompt、workspace-lock、workspace-release、show-image、frontend。FrontendRequest.action 与 DesktopState 见 shared/contracts/desktop.ts；修改要同时核对主进程桥和渲染命令执行器。
 
-| 事件/桥接通道 | 来源 |
-| --- | --- |
-| `gallery:changed` | `src/preload/api/application.ts` |
-| `skills:changed` | `src/preload/api/application.ts` |
-| `tasks:changed` | `src/preload/api/application.ts` |
-| `agents:changed` | `src/preload/api/application.ts` |
+| 事件/桥接通道                                                    | 来源                             |
+| ---------------------------------------------------------------- | -------------------------------- |
+| `gallery:changed`                                                | `src/preload/api/application.ts` |
+| `skills:changed`                                                 | `src/preload/api/application.ts` |
+| `tasks:changed`                                                  | `src/preload/api/application.ts` |
+| `agents:changed`                                                 | `src/preload/api/application.ts` |
 | `confirmations:changed`、`favorites:changed`、`snippets:changed` | `src/preload/api/application.ts` |
-| `nai:step` | `src/preload/api/application.ts` |
-| `update:state` | `src/preload/api/application.ts` |
-| `progress` | `src/preload/api/application.ts` |
-| `ai:step` | `src/preload/api/application.ts` |
-| `desktop:state` | `src/preload/api/desktop.ts` |
-| `desktop:reply` | `src/preload/api/desktop.ts` |
-| `desktop:command` | `src/preload/api/desktop.ts` |
-| `desktop:cancel-frontend` | `src/preload/api/desktop.ts` |
-| `desktop:frontend-cancel` | `src/preload/api/desktop.ts` |
+| `nai:step`                                                       | `src/preload/api/application.ts` |
+| `update:state`                                                   | `src/preload/api/application.ts` |
+| `progress`                                                       | `src/preload/api/application.ts` |
+| `ai:step`                                                        | `src/preload/api/application.ts` |
+| `desktop:state`                                                  | `src/preload/api/desktop.ts`     |
+| `desktop:reply`                                                  | `src/preload/api/desktop.ts`     |
+| `desktop:command`                                                | `src/preload/api/desktop.ts`     |
+| `desktop:cancel-frontend`                                        | `src/preload/api/desktop.ts`     |
+| `desktop:frontend-cancel`                                        | `src/preload/api/desktop.ts`     |
 
 ## MCP 工具名称清单
 
 按源码静态工具定义记录。最终目录由 buildTools、desktopTools、frontendTools 和会话管理工具合成；分组、权限、输入输出模式分别以 tool-groups、contract、output-schemas 和各工具定义为准。注册或迁移时核对完整目录与实际会话初始化结果。
 
-| 工具名 | 定义来源 |
-| --- | --- |
-| `add_workspace_region` | `src/main/adapters/mcp/tools/external-workspace.ts` |
-| `agent_guide` | `src/main/adapters/mcp/tools/guides.ts` |
-| `analyze_prompt` | `src/main/adapters/mcp/tools/prompts.ts` |
-| `apply_app_prompt` | `src/main/adapters/mcp/tools/desktop.ts` |
-| `apply_workspace_action` | `src/main/adapters/mcp/tools/desktop.ts` |
-| `cancel_task` | `src/main/adapters/mcp/tools/desktop.ts` |
-| `cancel_workspace_request` | `src/main/adapters/mcp/tools/external-workspace.ts` |
-| `compare_workspace_versions` | `src/main/adapters/mcp/tools/external-workspace.ts` |
-| `configure_tools` | `src/main/adapters/mcp/server.ts` |
-| `create_skill` | `src/main/adapters/mcp/tools/skills.ts` |
-| `create_workspace` | `src/main/adapters/mcp/tools/desktop.ts` |
-| `delete_image` | `src/main/adapters/mcp/tools/management.ts` |
-| `delete_favorite` | `src/main/adapters/mcp/tools/library.ts` |
-| `delete_snippet` | `src/main/adapters/mcp/tools/library.ts` |
-| `delete_skill` | `src/main/adapters/mcp/tools/skills.ts` |
-| `delete_workspace` | `src/main/adapters/mcp/tools/management.ts` |
-| `delete_workspace_image` | `src/main/adapters/mcp/tools/management.ts` |
-| `generate_image` | `src/main/adapters/mcp/tools/images.ts` |
-| `generate_workspace` | `src/main/adapters/mcp/tools/desktop.ts` |
-| `get_app_state` | `src/main/adapters/mcp/tools/desktop.ts` |
-| `get_favorite` | `src/main/adapters/mcp/tools/library.ts` |
-| `get_operation` | `src/main/adapters/mcp/server.ts` |
-| `get_skill` | `src/main/adapters/mcp/tools/skills.ts` |
-| `get_workspace` | `src/main/adapters/mcp/tools/desktop.ts` |
-| `get_workspace_context` | `src/main/adapters/mcp/tools/external-workspace.ts` |
-| `inpaint_guide` | `src/main/adapters/mcp/tools/inpaint.ts` |
-| `inpaint_image` | `src/main/adapters/mcp/tools/inpaint.ts` |
-| `list_images` | `src/main/adapters/mcp/tools/images.ts` |
-| `list_favorites`、`list_snippets` | `src/main/adapters/mcp/tools/library.ts` |
-| `list_skills` | `src/main/adapters/mcp/tools/skills.ts` |
-| `list_tasks` | `src/main/adapters/mcp/tools/desktop.ts` |
-| `list_workspace_requests` | `src/main/adapters/mcp/tools/external-workspace.ts` |
-| `list_workspaces` | `src/main/adapters/mcp/tools/desktop.ts` |
-| `nai_subscription` | `src/main/adapters/mcp/tools/images.ts` |
-| `navigate_app` | `src/main/adapters/mcp/tools/desktop.ts` |
-| `optimize_prompt` | `src/main/adapters/mcp/tools/prompts.ts` |
-| `plan_inpaint` | `src/main/adapters/mcp/tools/inpaint.ts` |
-| `prepare_inpaint` | `src/main/adapters/mcp/tools/inpaint.ts` |
-| `preview_prompt` | `src/main/adapters/mcp/tools/prompts.ts` |
-| `prompt_guide` | `src/main/adapters/mcp/tools/prompts.ts` |
-| `propose_workspace_edit` | `src/main/adapters/mcp/tools/desktop.ts` |
-| `read_image` | `src/main/adapters/mcp/tools/desktop.ts` |
-| `read_image_prompt` | `src/main/adapters/mcp/tools/images.ts` |
-| `related_tags` | `src/main/adapters/mcp/tools/tags.ts` |
-| `reply_workspace_request` | `src/main/adapters/mcp/tools/external-workspace.ts` |
-| `report_workspace_progress` | `src/main/adapters/mcp/tools/external-workspace.ts` |
-| `reverse_image` | `src/main/adapters/mcp/tools/library.ts` |
-| `run_workspace_image_tool` | `src/main/adapters/mcp/tools/desktop.ts` |
-| `save_favorite`、`save_snippet` | `src/main/adapters/mcp/tools/library.ts` |
-| `search_tags` | `src/main/adapters/mcp/tools/tags.ts` |
-| `set_skill_config` | `src/main/adapters/mcp/tools/skills.ts` |
-| `set_workspace_agent` | `src/main/adapters/mcp/tools/external-workspace.ts` |
-| `submit_workspace_request` | `src/main/adapters/mcp/tools/external-workspace.ts` |
-| `tag_wiki` | `src/main/adapters/mcp/tools/tags.ts` |
-| `ui_add_workspace_region` | `src/main/adapters/mcp/tools/frontend.ts` |
-| `ui_cancel_workspace_request` | `src/main/adapters/mcp/tools/frontend.ts` |
-| `ui_capture_app` | `src/main/adapters/mcp/tools/desktop.ts` |
-| `ui_configure_creation_ai`、`ui_propose_creation_edit`、`ui_review_creation_ai` | `src/main/adapters/mcp/tools/frontend.ts` |
-| `ui_create_workspace` | `src/main/adapters/mcp/tools/frontend.ts` |
-| `ui_delete_workspace` | `src/main/adapters/mcp/tools/frontend.ts` |
-| `ui_delete_workspace_image` | `src/main/adapters/mcp/tools/frontend.ts` |
-| `ui_delete_workspace_region` | `src/main/adapters/mcp/tools/frontend.ts` |
-| `ui_edit_workspace_config` | `src/main/adapters/mcp/tools/frontend.ts` |
-| `ui_generate_workspace` | `src/main/adapters/mcp/tools/frontend.ts` |
-| `ui_open_workspace` | `src/main/adapters/mcp/tools/frontend.ts` |
-| `ui_rename_workspace` | `src/main/adapters/mcp/tools/frontend.ts` |
-| `ui_reply_workspace_request` | `src/main/adapters/mcp/tools/frontend.ts` |
-| `ui_review_workspace` | `src/main/adapters/mcp/tools/frontend.ts` |
-| `ui_send_workspace_message` | `src/main/adapters/mcp/tools/frontend.ts` |
-| `ui_set_workspace_agent` | `src/main/adapters/mcp/tools/frontend.ts` |
-| `ui_set_workspace_input` | `src/main/adapters/mcp/tools/frontend.ts` |
-| `ui_update_workspace_region` | `src/main/adapters/mcp/tools/frontend.ts` |
-| `ui_view_workspace` | `src/main/adapters/mcp/tools/frontend.ts` |
-| `update_skill` | `src/main/adapters/mcp/tools/skills.ts` |
-| `update_favorite` | `src/main/adapters/mcp/tools/library.ts` |
-| `update_workspace` | `src/main/adapters/mcp/tools/management.ts` |
-| `update_workspace_region` | `src/main/adapters/mcp/tools/management.ts` |
-| `validate_tags` | `src/main/adapters/mcp/tools/tags.ts` |
+| 工具名                                                                          | 定义来源                                            |
+| ------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `add_workspace_region`                                                          | `src/main/adapters/mcp/tools/external-workspace.ts` |
+| `agent_guide`                                                                   | `src/main/adapters/mcp/tools/guides.ts`             |
+| `analyze_prompt`                                                                | `src/main/adapters/mcp/tools/prompts.ts`            |
+| `apply_app_prompt`                                                              | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `apply_workspace_action`                                                        | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `cancel_task`                                                                   | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `cancel_workspace_request`                                                      | `src/main/adapters/mcp/tools/external-workspace.ts` |
+| `compare_workspace_versions`                                                    | `src/main/adapters/mcp/tools/external-workspace.ts` |
+| `configure_tools`                                                               | `src/main/adapters/mcp/server.ts`                   |
+| `create_skill`                                                                  | `src/main/adapters/mcp/tools/skills.ts`             |
+| `create_workspace`                                                              | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `delete_image`                                                                  | `src/main/adapters/mcp/tools/management.ts`         |
+| `delete_favorite`                                                               | `src/main/adapters/mcp/tools/library.ts`            |
+| `delete_snippet`                                                                | `src/main/adapters/mcp/tools/library.ts`            |
+| `delete_skill`                                                                  | `src/main/adapters/mcp/tools/skills.ts`             |
+| `delete_workspace`                                                              | `src/main/adapters/mcp/tools/management.ts`         |
+| `delete_workspace_image`                                                        | `src/main/adapters/mcp/tools/management.ts`         |
+| `generate_image`                                                                | `src/main/adapters/mcp/tools/images.ts`             |
+| `generate_workspace`                                                            | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `get_app_state`                                                                 | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `get_favorite`                                                                  | `src/main/adapters/mcp/tools/library.ts`            |
+| `get_operation`                                                                 | `src/main/adapters/mcp/server.ts`                   |
+| `get_skill`                                                                     | `src/main/adapters/mcp/tools/skills.ts`             |
+| `get_workspace`                                                                 | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `get_workspace_context`                                                         | `src/main/adapters/mcp/tools/external-workspace.ts` |
+| `inpaint_guide`                                                                 | `src/main/adapters/mcp/tools/inpaint.ts`            |
+| `inpaint_image`                                                                 | `src/main/adapters/mcp/tools/inpaint.ts`            |
+| `list_images`                                                                   | `src/main/adapters/mcp/tools/images.ts`             |
+| `list_favorites`、`list_snippets`                                               | `src/main/adapters/mcp/tools/library.ts`            |
+| `list_skills`                                                                   | `src/main/adapters/mcp/tools/skills.ts`             |
+| `list_tasks`                                                                    | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `list_workspace_requests`                                                       | `src/main/adapters/mcp/tools/external-workspace.ts` |
+| `list_workspaces`                                                               | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `nai_subscription`                                                              | `src/main/adapters/mcp/tools/images.ts`             |
+| `navigate_app`                                                                  | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `optimize_prompt`                                                               | `src/main/adapters/mcp/tools/prompts.ts`            |
+| `plan_inpaint`                                                                  | `src/main/adapters/mcp/tools/inpaint.ts`            |
+| `prepare_inpaint`                                                               | `src/main/adapters/mcp/tools/inpaint.ts`            |
+| `preview_prompt`                                                                | `src/main/adapters/mcp/tools/prompts.ts`            |
+| `prompt_guide`                                                                  | `src/main/adapters/mcp/tools/prompts.ts`            |
+| `propose_workspace_edit`                                                        | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `read_image`                                                                    | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `read_image_prompt`                                                             | `src/main/adapters/mcp/tools/images.ts`             |
+| `related_tags`                                                                  | `src/main/adapters/mcp/tools/tags.ts`               |
+| `reply_workspace_request`                                                       | `src/main/adapters/mcp/tools/external-workspace.ts` |
+| `report_workspace_progress`                                                     | `src/main/adapters/mcp/tools/external-workspace.ts` |
+| `reverse_image`                                                                 | `src/main/adapters/mcp/tools/library.ts`            |
+| `run_workspace_image_tool`                                                      | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `save_favorite`、`save_snippet`                                                 | `src/main/adapters/mcp/tools/library.ts`            |
+| `search_tags`                                                                   | `src/main/adapters/mcp/tools/tags.ts`               |
+| `set_skill_config`                                                              | `src/main/adapters/mcp/tools/skills.ts`             |
+| `set_workspace_agent`                                                           | `src/main/adapters/mcp/tools/external-workspace.ts` |
+| `submit_workspace_request`                                                      | `src/main/adapters/mcp/tools/external-workspace.ts` |
+| `tag_wiki`                                                                      | `src/main/adapters/mcp/tools/tags.ts`               |
+| `ui_add_workspace_region`                                                       | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_cancel_workspace_request`                                                   | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_capture_app`                                                                | `src/main/adapters/mcp/tools/desktop.ts`            |
+| `ui_configure_creation_ai`、`ui_propose_creation_edit`、`ui_review_creation_ai` | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_create_workspace`                                                           | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_delete_workspace`                                                           | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_delete_workspace_image`                                                     | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_delete_workspace_region`                                                    | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_edit_workspace_config`                                                      | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_generate_workspace`                                                         | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_open_workspace`                                                             | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_rename_workspace`                                                           | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_reply_workspace_request`                                                    | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_review_workspace`                                                           | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_send_workspace_message`                                                     | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_set_workspace_agent`                                                        | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_set_workspace_input`                                                        | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_update_workspace_region`                                                    | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_view_workspace`                                                             | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `update_skill`                                                                  | `src/main/adapters/mcp/tools/skills.ts`             |
+| `update_favorite`                                                               | `src/main/adapters/mcp/tools/library.ts`            |
+| `update_workspace`                                                              | `src/main/adapters/mcp/tools/management.ts`         |
+| `update_workspace_region`                                                       | `src/main/adapters/mcp/tools/management.ts`         |
+| `validate_tags`                                                                 | `src/main/adapters/mcp/tools/tags.ts`               |
 
 ## 代码职责定位
 
@@ -298,8 +298,8 @@ Skill 目录包由 modules/skills/package-files.ts 校验和整体写入；入�
 
 ## 画师调试与图鉴
 
-- `features/artists/studio.ts` 管理按模型隔离的草稿、画师串、蓝本和候选比较；`blueprints.ts` 从创作标签、图库配置构造独立快照。生成复用反推试图控制器和已有生成任务，不建立第二套供应商调用或费用策略。
-- `ArtistStudio.vue` 组合方案和结果，`ArtistBlueprintPicker.vue` 处理蓝本选择，`ArtistCatalog.vue` 处理图鉴浏览；图鉴通过 `modules/artists/catalog.ts` 校验、筛选、分页和缓存，`providers/quicktagcloud.ts` 负责公开资源下载及哈希校验。
+- `features/artists/studio.ts` 管理按模型隔离的草稿、画师串、底稿和候选比较；`blueprints.ts` 从创作标签、图库配置构造独立快照。生成复用反推试图控制器和已有生成任务，不建立第二套供应商调用或费用策略。
+- `ArtistStudio.vue` 组合方案和结果，`ArtistBlueprintPicker.vue` 处理底稿选择，`ArtistCatalog.vue` 处理图鉴浏览；图鉴通过 `modules/artists/catalog.ts` 校验、筛选、分页和缓存，`providers/quicktagcloud.ts` 负责公开资源下载及哈希校验。
 
 ## 2026-11-06 架构审查
 

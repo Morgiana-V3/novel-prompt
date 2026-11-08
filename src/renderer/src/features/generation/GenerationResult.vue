@@ -37,7 +37,7 @@ const emit = defineEmits<{
 /* ---------- 去精修：直接点新建精修项目；下拉选工具则项目打开后直接打开该工具 ---------- */
 const REFINE_TOOLS: { key: WorkspaceToolKind; label: string; icon: IconName }[] = [
   { key: 'outpaint', label: '扩图', icon: 'tool-outpaint' },
-  { key: 'enhance', label: '精修', icon: 'tool-enhance' },
+  { key: 'enhance', label: '增强', icon: 'tool-enhance' },
   { key: 'upscale', label: '放大', icon: 'tool-upscale' },
 ]
 const refineMenu = ref(false)
@@ -291,8 +291,8 @@ const deleteLabel = computed(() => {
           :class="{ on: refineMenu }"
           :disabled="running || inpaintBusy"
           :aria-expanded="refineMenu"
-          aria-label="选择精修工具"
-          title="新建项目后直接打开扩图、精修或放大"
+          aria-label="选择修图工具"
+          title="新建项目后直接打开扩图、增强或放大"
           @click="toggleRefineMenu"
         >
           <Icon

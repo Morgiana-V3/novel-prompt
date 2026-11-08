@@ -40,7 +40,7 @@ function checkTool(tool: PageImageTool): PageImageTool {
   }
   if (tool?.kind === 'enhance') {
     if (![1, 1.5].includes(tool.scale)) {
-      throw new Error('精修倍数只能是 1× 或 1.5×')
+      throw new Error('增强倍数只能是 1× 或 1.5×')
     }
     return { kind: 'enhance', scale: tool.scale, strength: tool.strength, noise: tool.noise }
   }
@@ -55,8 +55,8 @@ function nextGroupNumber(workspace: PageWorkspace) {
 }
 
 /**
- * 在当前蓝本上执行修图（放大 / 扩图 / 精修）。结果作为新的候选版本保存，
- * 与普通生成一样不会自动替换蓝本；首张没有图片的蓝本除外。
+ * 在当前底稿上执行修图（放大 / 扩图 / 增强）。结果作为新的候选版本保存，
+ * 与普通生成一样不会自动替换底稿；首张没有图片的底稿除外。
  */
 export async function runImageTool(
   id: string,
@@ -77,7 +77,7 @@ export async function runImageTool(
   const version = pageCurrent(workspace)
   const sourcePath = version.image ? imagePath(version.image.name) : null
   if (!version.image || !sourcePath) {
-    throw new Error('修图需要当前蓝本有可读取的图片')
+    throw new Error('修图需要当前底稿有可读取的图片')
   }
   if (workspace.versions.length >= 1000) {
     throw new Error('此工作区已保留 1000 张候选，请从选定图片新建工作区')
@@ -114,8 +114,8 @@ export async function runImageTool(
       errorText ||= '未知执行错误'
     }
     const completion = versionIds.length
-      ? `已保存 ${versionIds.length} 张候选，当前蓝本未改变。`
-      : '没有保存新候选，当前蓝本未改变。'
+      ? `已保存 ${versionIds.length} 张候选，当前底稿未改变。`
+      : '没有保存新候选，当前底稿未改变。'
     pageExecutionEvent(
       workspace,
       `从「${version.label}」${pageImageToolLabel(tool)}，${completion}${errorText ? `未完成：${errorText}` : ''}`,
@@ -160,11 +160,11 @@ async function executeTool(
   }
   const draft = structuredClone(version.editor.draft)
   if (!draft.base.trim() && !draft.characters.some((character) => character.prompt.trim())) {
-    throw new Error('扩图和精修需要提示词描述画面，请先在配置里填写提示词')
+    throw new Error('扩图和增强需要提示词描述画面，请先在配置里填写提示词')
   }
   const sourceSize = pngSize(sourceBytes)
   if (!sourceSize) {
-    throw new Error('蓝本图片不是有效 PNG')
+    throw new Error('底稿图片不是有效 PNG')
   }
   const size = pageImageToolSize(tool, sourceSize.width, sourceSize.height)
   const params = { ...version.editor.params, ...size }
@@ -219,7 +219,7 @@ function appendToolVersions(
     const draft = recipe
       ? { base: recipe.base, negative: recipe.negative, characters: recipe.characters }
       : structuredClone(version.editor.draft)
-    // 放大结果通常超出生成尺寸上限：下一版配置沿用原尺寸，扩图/精修沿用结果尺寸
+    // 放大结果通常超出生成尺寸上限：下一版配置沿用原尺寸，扩图/增强沿用结果尺寸
     const editorParams =
       tool.kind === 'upscale'
         ? { ...version.editor.params }

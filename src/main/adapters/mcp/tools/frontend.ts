@@ -418,7 +418,7 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
       'ui_view_workspace',
       '查看项目内容',
       'view',
-      '工作台在界面称为创作项目；pane=prompt 为完整生图配置（提示词与参数），changes 仅展示变化项，images 展示当前版本组的候选缩略图；选择查看不会采用，suggestions 是兼容入口：展开对话中对应方案，保持当前面板，focusedProposalId 返回定位的方案。所有面板跟随同一个查看版本。version_id 是候选 id，省略保留当前查看对象；只查看，不采用。changes 面板可传 compare_version_id 指定另一个候选作为参照，空字符串恢复生成来源；不改变查看或采用对象。',
+      '工作台在界面称为精修项目；pane=prompt 为完整生图配置（提示词与参数），changes 仅展示变化项，images 展示当前版本组的候选缩略图；选择查看不会采用，suggestions 是兼容入口：展开对话中对应方案，保持当前面板，focusedProposalId 返回定位的方案。所有面板跟随同一个查看版本。version_id 是候选 id，省略保留当前查看对象；只查看，不采用。changes 面板可传 compare_version_id 指定另一个候选作为参照，空字符串恢复生成来源；不改变查看或采用对象。',
       {
         pane: {
           type: 'string',

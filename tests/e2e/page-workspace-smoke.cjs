@@ -1287,7 +1287,7 @@ app.whenReady().then(async () => {
     assert.equal(ui.image, null)
     await shot('01-new-session.png')
     await click('.pw-rename', '通用创作会话测试')
-    await input('.pw-heading input', '很长的创作项目名称'.repeat(10))
+    await input('.pw-heading input', '很长的精修项目名称'.repeat(10))
     await run(
       `document.querySelector('.pw-heading input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`,
     )
@@ -1357,7 +1357,7 @@ app.whenReady().then(async () => {
     await pause(50)
     assert.equal(await chatWidth(), defaultChatWidth, 'double click restores the default width')
     assert.equal(await js(`localStorage.getItem('np-split:workspace-chat')`), null)
-    await click('.pw-rename', '很长的创作项目名称')
+    await click('.pw-rename', '很长的精修项目名称')
     await input('.pw-heading input', '通用创作会话测试')
     await run(
       `document.querySelector('.pw-heading input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`,
@@ -1615,7 +1615,7 @@ app.whenReady().then(async () => {
     await click('.pw-execution button', '执行重绘')
     await wait(`document.querySelector('.pw-scope-label')?.textContent.includes('版本 V2')`)
     assert.equal(pages.readPage(ui.id).currentVersionId, pages.readPage(ui.id).versions[1].id)
-    await click('.pw-scope-bar[data-historical="true"] button', '设为蓝本')
+    await click('.pw-scope-bar[data-historical="true"] button', '设为底稿')
     await wait(`!document.querySelector('.pw-scope-bar[data-historical="true"]')`)
     await run(`document.querySelector('.pw-thread .pw-proposal').open=true`)
     assert.ok(
@@ -1889,7 +1889,7 @@ app.whenReady().then(async () => {
     await shot('16-discussion-target.png')
     win.setSize(1440, 960)
     await pause(150)
-    await click('.pw-scope-bar[data-historical="true"] button', '设为蓝本')
+    await click('.pw-scope-bar[data-historical="true"] button', '设为底稿')
     await wait(`!document.querySelector('.pw-scope-bar[data-historical="true"]')`)
     await input('.pw-input-wrap textarea', '下次继续调整')
     await run(`document.querySelector('[aria-label="返回项目"]').click()`)
@@ -1972,7 +1972,7 @@ app.whenReady().then(async () => {
       'previewing another roll does not adopt it',
     )
     await shot('16-version-candidates.png')
-    await click('.pw-scope-bar[data-historical="true"] button', '设为蓝本')
+    await click('.pw-scope-bar[data-historical="true"] button', '设为底稿')
     await wait(`!document.querySelector('.pw-scope-bar[data-historical="true"]')`)
     assert.equal(pages.readPage(ui.id).currentVersionId, latestGroup.versions[0].id)
     assert.deepEqual(

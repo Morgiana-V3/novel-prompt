@@ -3,7 +3,6 @@ import { computed } from 'vue'
 import { pageConfigurationChanges, type PageWorkspace } from '@shared/workspace/model'
 import { reviewDrafts } from '../../prompts/public/review'
 import { PromptReview } from '../../prompts/public/review'
-import { FavoriteButton } from '../../favorites/public'
 import WorkspacePositions from './WorkspacePositions.vue'
 
 const props = defineProps<{ work: PageWorkspace; versionId: string; compareId: string }>()
@@ -95,10 +94,6 @@ const maskUrl = computed(() => {
           </div>
           <figcaption>
             对比对象{{ iteration.source ? ' · ' + name(iteration.source.id) : '' }}
-            <FavoriteButton
-              v-if="iteration.source?.image && !iteration.source.image.missing"
-              :image="iteration.source.image"
-            />
           </figcaption>
         </figure>
         <figure>
@@ -114,13 +109,7 @@ const maskUrl = computed(() => {
           >
             {{ iteration.version?.image ? '图片缺失 · 文字记录保留' : '暂无图片' }}
           </div>
-          <figcaption>
-            正在查看 · {{ name(versionId) }}
-            <FavoriteButton
-              v-if="iteration.version?.image && !iteration.version.image.missing"
-              :image="iteration.version.image"
-            />
-          </figcaption>
+          <figcaption>正在查看 · {{ name(versionId) }}</figcaption>
         </figure>
       </div>
       <p

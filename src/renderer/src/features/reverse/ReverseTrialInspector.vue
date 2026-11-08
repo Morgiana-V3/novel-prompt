@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { FavoriteButton } from '../favorites/public'
 import type { ReverseTrial } from './use-reverse-trials'
 import { importGenerationRequest } from '../prompts/public/import-export'
 import { openTabForLoad } from '../creation/public/navigation'
@@ -270,7 +269,6 @@ const styleLabel = computed(() => {
               :size="13"
             />换种子再试
           </button>
-          <FavoriteButton :image="trial.image" />
         </div>
       </section>
       <p
@@ -584,10 +582,6 @@ const styleLabel = computed(() => {
 
 .ti-link:disabled {
   color: var(--muted);
-}
-
-.ti-secondary :deep(.favorite-button) {
-  margin-left: auto;
 }
 
 .ti-details-entry {

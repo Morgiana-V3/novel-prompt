@@ -7,7 +7,7 @@ import { pageImageToolSize } from '@shared/workspace/model'
 export const FREE_PIXELS = 1024 * 1024
 /** 放大接口的输入上限 */
 export const UPSCALE_MAX_PIXELS = 3_145_728
-/** 扩图、精修结果与局部重绘共用的总像素上限 */
+/** 扩图、增强结果与局部重绘共用的总像素上限 */
 const MAX_RESULT_PIXELS = 4 * 1024 * 1024
 
 export interface ToolSource {

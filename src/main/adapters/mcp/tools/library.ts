@@ -96,7 +96,7 @@ function favoriteTools(): McpTool[] {
       name: 'get_favorite',
       title: '读取收藏配方',
       description:
-        '读取一条收藏的完整生成配置（提示词、角色、负面、模型与全部参数）及收藏原图路径。可把 request 交给 generate_image 复用，或用 apply_app_prompt 写入界面标签。',
+        '读取一条收藏的完整生成配置（提示词、角色、负面、模型与全部参数）及收藏原图路径。可把 request 交给 generate_image 复用，或用 apply_app_prompt 写入界面标签。局部重绘收藏的 request 是重绘修改提示词，baseRequest 是它所基于的整图配方（缺失时为 null），复用整图请用 baseRequest。',
       inputSchema: { type: 'object', properties: { id: FAVORITE_ID }, required: ['id'] },
       annotations: READ_ONLY,
       run: async (argumentsRecord) => {
@@ -105,6 +105,7 @@ function favoriteTools(): McpTool[] {
           ...summary(item),
           sourceKind: item.recipe.sourceKind,
           request: item.recipe.request,
+          baseRequest: item.recipe.base ?? null,
           imagePath: favoriteImagePath(item.id),
           sourceImage: item.sourceImage || null,
         })
