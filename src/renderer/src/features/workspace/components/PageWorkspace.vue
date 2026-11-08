@@ -58,7 +58,11 @@ import WorkspaceIterations from './WorkspaceIterations.vue'
 
 import { cancelTask } from '../../../shared/state/tasks'
 
-const props = defineProps<{ workspace: PageWorkspace }>()
+const props = defineProps<{
+  workspace: PageWorkspace
+  /** 从生图创作「去精修」下拉进入时，项目打开后直接打开的工具 */
+  initialTool?: 'outpaint' | 'enhance' | 'upscale' | null
+}>()
 const inpaintEditor = ref<InstanceType<typeof InpaintEditor>>()
 let frontendContext: FrontendContext | undefined
 const emit = defineEmits<{ close: []; updated: [] }>()
@@ -436,6 +440,18 @@ const openTool = ref<{
 function openImageTool(kind: PageImageTool['kind'], anchor: { left: number; bottom: number }) {
   openTool.value = openTool.value?.kind === kind ? null : { kind, anchor }
 }
+/** 等画布工具栏渲染出来再打开指定工具（面板锚定在对应按钮下方） */
+function openToolWhenReady(kind: PageImageTool['kind'], tries = 30) {
+  requestAnimationFrame(() => {
+    const button = document.querySelector<HTMLElement>(`.pw-tool[data-tool-key="${kind}"]`)
+    if (button && !button.hasAttribute('disabled')) {
+      const rect = button.getBoundingClientRect()
+      openImageTool(kind, { left: rect.left, bottom: rect.bottom })
+    } else if (tries > 0) {
+      openToolWhenReady(kind, tries - 1)
+    }
+  })
+}
 async function runToolFromPanel(tool: PageImageTool) {
   openTool.value = null
   await runImageTool(tool)
@@ -660,6 +676,9 @@ function key(event2: KeyboardEvent) {
   }
 }
 onMounted(() => {
+  if (props.initialTool) {
+    openToolWhenReady(props.initialTool)
+  }
   window.addEventListener('keydown', key)
   void scrollEnd().catch(reportError)
 })

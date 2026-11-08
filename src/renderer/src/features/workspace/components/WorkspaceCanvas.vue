@@ -122,6 +122,7 @@ defineExpose({ reset: () => viewport.value?.reset() })
         :key="tool.key"
         class="pw-tool"
         data-tool-trigger
+        :data-tool-key="tool.key"
         :aria-expanded="activeTool === tool.key"
         :disabled="busy || !!editBlockedReason"
         :title="toolTitle(tool)"

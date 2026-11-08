@@ -7,7 +7,7 @@ import { useGallery } from './use-gallery'
 
 import { reportError } from '../../shared/lib/notifications'
 import { promptState } from '../prompts/public/draft'
-import { imageState } from './state'
+import { imageState, type WorkspaceToolKind } from './state'
 import { refreshSubscription as refreshSub, subscriptionState } from './subscription'
 import { activeTask } from '../../shared/state/tasks'
 import { settingsState } from '../settings/state'
@@ -146,7 +146,6 @@ const {
   eligibleGallery,
   showGenerated,
   visibleGallery,
-  latestBatchTemporary,
   refreshGallery,
   pendingDelete,
   deleting,
@@ -569,10 +568,11 @@ function editImagePositions() {
   imageState.positionReference.visible = true
   posEditing.value = true
 }
-function openImageWorkspace() {
+function openImageWorkspace(tool?: WorkspaceToolKind) {
   if (!current.value) {
     return
   }
+  imageState.workspaceTool = tool ?? null
   imageState.workspaceImage = { ...current.value }
   shellState.tab = 'workspace'
 }
@@ -772,7 +772,6 @@ function openImageWorkspace() {
             :running="running"
             :inpaint-busy="inpaintBusy"
             :has-characters="!!promptState.characters.length"
-            :latest-batch-temporary="latestBatchTemporary"
             :pending-delete="pendingDelete"
             :deleting="deleting"
             :seed-fixed="seedFixed"

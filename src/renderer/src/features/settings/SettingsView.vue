@@ -38,7 +38,7 @@ const categories = [
   { id: 'tags', label: 'Tag 词库', icon: 'tag' },
   { id: 'services', label: 'AI 服务', icon: 'sparkle' },
   { id: 'statistics', label: '使用统计', icon: 'chart' },
-  { id: 'other', label: '存储与更新', icon: 'folder' },
+  { id: 'other', label: '通用', icon: 'folder' },
   { id: 'guide', label: '操作说明', icon: 'book' },
 ] as const
 const services = [

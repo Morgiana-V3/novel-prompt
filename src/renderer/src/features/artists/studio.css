@@ -82,7 +82,7 @@
   color: var(--pink-deep);
 }
 
-/* 两栏：画师串 · 效果对照；蓝本信息改由底栏按钮打开只读弹窗 */
+/* 两栏：画师串 · 效果对照；底稿信息改由底栏按钮打开只读弹窗 */
 .artist-studio-body {
   display: grid;
   flex: 1;
@@ -719,7 +719,7 @@
   background: var(--pink-soft);
 }
 
-/* ---------- 蓝本（只读弹窗） ---------- */
+/* ---------- 底稿（只读弹窗） ---------- */
 .artist-blueprint-dialog {
   width: min(560px, 92vw);
 }
@@ -743,7 +743,7 @@
   padding-top: 16px;
 }
 
-/* 底栏的蓝本入口：带一张小缩略图，一眼能认出当前蓝本 */
+/* 底栏的底稿入口：带一张小缩略图，一眼能认出当前底稿 */
 .artist-footer .artist-blueprint-entry {
   gap: 6px;
   padding-left: 4px;

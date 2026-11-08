@@ -58,7 +58,18 @@ export const imageState = reactive({
 
   /** 图片预览送入新建会话的图片，只暂存，不自动创建记录。 */
   workspaceImage: null as NaiImage | null,
+  /** 「去精修」下拉选的工具：项目打开后直接打开它，用一次即清空 */
+  workspaceTool: null as WorkspaceToolKind | null,
 })
+
+export type WorkspaceToolKind = 'outpaint' | 'enhance' | 'upscale'
+
+/** 取出并清空「去精修」要打开的工具 */
+export function takeWorkspaceTool(): WorkspaceToolKind | null {
+  const tool = imageState.workspaceTool
+  imageState.workspaceTool = null
+  return tool
+}
 
 export function setGenerationBusy(value: boolean): void {
   imageState.generating = value

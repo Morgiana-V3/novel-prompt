@@ -68,7 +68,7 @@ watch(
   },
   { immediate: true },
 )
-/** 带到画师调试：这次的内容、角色和画师作为蓝本，试图出的图直接作为基准图，不用重新生成 */
+/** 带到画师调试：这次的内容、角色和画师作为底稿，试图出的图直接作为基准图，不用重新生成 */
 function toArtistStudio() {
   const trial = props.trial
   if (!trial?.image || props.disabled) {
@@ -238,7 +238,7 @@ const styleLabel = computed(() => {
           <button
             class="btn primary"
             :disabled="disabled || actionBusy"
-            title="作为蓝本带到画师调试，继续调整画师与权重"
+            title="作为底稿带到画师调试，继续调整画师与权重"
             @click="toArtistStudio"
           >
             <Icon
@@ -611,7 +611,7 @@ const styleLabel = computed(() => {
   background: var(--pink-soft);
 }
 
-/* 完整提示词弹窗：与画师调试的「查看蓝本」一致 */
+/* 完整提示词弹窗：与画师调试的「查看底稿」一致 */
 .ti-dialog {
   flex-direction: column;
   width: min(600px, 92vw);

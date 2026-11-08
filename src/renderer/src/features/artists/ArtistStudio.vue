@@ -23,7 +23,7 @@ const studio = useArtistStudio()
 const { state, selected, busy, trials, persistenceError } = studio
 
 /*
- * 领取其他功能交来的蓝本（如图片反推试图结果的「带到画师调试」）：替换当前蓝本与画师串前留一份快照，
+ * 领取其他功能交来的底稿（如图片反推试图结果的「带到画师调试」）：替换当前底稿与画师串前留一份快照，
  * 提示里可一键撤销；正在生成时先不领取，结束后再接手。
  */
 function receiveBlueprint() {
@@ -34,7 +34,7 @@ function receiveBlueprint() {
   artistInbox.value = null
   const before = JSON.parse(JSON.stringify(state)) as typeof state
   studio.useBlueprint(blueprint)
-  toast(`已载入「${blueprint.title}」作为蓝本`, {
+  toast(`已载入「${blueprint.title}」作为底稿`, {
     label: '撤销',
     run: () => {
       if (!busy.value) {
@@ -139,7 +139,7 @@ watch(
 )
 onBeforeUnmount(() => document.removeEventListener('pointerdown', closeChangesOutside, true))
 
-/* ---------- 蓝本只读信息 ---------- */
+/* ---------- 底稿只读信息 ---------- */
 const blueprintImage = computed(
   () => studio.baselineReference.value?.image ?? baselineImage.value ?? undefined,
 )
@@ -208,7 +208,7 @@ function closeSeed() {
 const pasteBackdrop = backdropCloser(() => pasteDialog.value?.close())
 const seedBackdrop = backdropCloser(() => closeSeed())
 
-/* 蓝本信息不需要一直占位：底栏按钮打开只读弹窗查看 */
+/* 底稿信息不需要一直占位：底栏按钮打开只读弹窗查看 */
 const blueprintDialog = ref<HTMLDialogElement>()
 function openBlueprint() {
   blueprintDialog.value?.showModal()
@@ -429,7 +429,7 @@ function addFromCatalog(name: string) {
               studio.baselineReference.value &&
               studio.baselineReference.value.version !== state.context.version
             "
-            >蓝本 {{ studio.baselineReference.value.version.toUpperCase() }} · 当前
+            >底稿 {{ studio.baselineReference.value.version.toUpperCase() }} · 当前
             {{ state.context.version.toUpperCase() }}</span
           >
           <span v-else>同内容 · 同参数 · 同种子</span>
@@ -475,7 +475,7 @@ function addFromCatalog(name: string) {
             <header>
               <span class="artist-baseline-badge">基准</span
               ><strong>{{
-                studio.baselineReference.value?.origin === 'blueprint' ? '蓝本原图' : '当前基准'
+                studio.baselineReference.value?.origin === 'blueprint' ? '底稿原图' : '当前基准'
               }}</strong>
               <button
                 v-if="studio.canChoose.value"
@@ -574,8 +574,8 @@ function addFromCatalog(name: string) {
         >
         <span v-else-if="studio.sourceChanged.value">{{
           studio.sourceTab.value
-            ? '来源标签已修改，当前对照仍使用旧蓝本'
-            : '来源标签已关闭，可更换蓝本继续'
+            ? '来源标签已修改，当前对照仍使用旧底稿'
+            : '来源标签已关闭，可更换底稿继续'
         }}</span>
       </div>
 
@@ -586,12 +586,12 @@ function addFromCatalog(name: string) {
             :disabled="busy"
             @click="blueprints?.open()"
           >
-            {{ studio.hasContent.value ? '更换蓝本' : '选择蓝本' }}
+            {{ studio.hasContent.value ? '更换底稿' : '选择底稿' }}
           </button>
           <button
             v-if="studio.hasContent.value"
             class="btn artist-blueprint-entry"
-            title="查看蓝本的提示词与参数（只读）"
+            title="查看底稿的提示词与参数（只读）"
             @click="openBlueprint"
           >
             <img
@@ -603,7 +603,7 @@ function addFromCatalog(name: string) {
               v-else
               name="eye"
               :size="14"
-            />查看蓝本
+            />查看底稿
           </button>
           <button
             v-if="state.source === 'creation' && studio.sourceTab.value"
@@ -620,7 +620,7 @@ function addFromCatalog(name: string) {
             :disabled="busy"
             @click="studio.refreshSource"
           >
-            更新蓝本
+            更新底稿
           </button>
           <button
             class="btn"
@@ -644,11 +644,11 @@ function addFromCatalog(name: string) {
             :title="
               state.source === 'creation'
                 ? `应用到 ${studio.sourceTab.value?.title || state.sourceTitle}，可撤销`
-                : '将选定的画师串与蓝本内容在创作页打开'
+                : '将选定的画师串与底稿内容在生图创作打开'
             "
             @click="studio.applyToCreation"
           >
-            {{ state.source === 'creation' ? '带回来源标签' : '在创作页打开' }}
+            {{ state.source === 'creation' ? '带回来源标签' : '在生图创作打开' }}
           </button>
           <span
             v-if="studio.hasContent.value && studio.pendingCount.value && !trials.running"
@@ -729,9 +729,9 @@ function addFromCatalog(name: string) {
     >
       <header class="artist-dialog-heading">
         <h3 id="artist-blueprint-title">
-          蓝本<span
+          底稿<span
             class="artist-readonly"
-            title="蓝本内容只读；生成时会在主提示词前加入画师串"
+            title="底稿内容只读；生成时会在主提示词前加入画师串"
             ><Icon
               name="lock"
               :size="11"
@@ -740,7 +740,7 @@ function addFromCatalog(name: string) {
         </h3>
         <button
           class="icon-btn"
-          aria-label="关闭蓝本"
+          aria-label="关闭底稿"
           @click="closeBlueprint"
         >
           <Icon
@@ -755,11 +755,11 @@ function addFromCatalog(name: string) {
             <img
               v-if="blueprintImage"
               :src="blueprintImage.url"
-              alt="蓝本图片"
+              alt="底稿图片"
               draggable="false"
             />
             <div>
-              <strong :title="state.sourceTitle">{{ state.sourceTitle || '未命名蓝本' }}</strong>
+              <strong :title="state.sourceTitle">{{ state.sourceTitle || '未命名底稿' }}</strong>
               <div class="artist-blueprint-pills">
                 <span class="pill">{{ state.context.version.toUpperCase() }}</span>
                 <span class="pill"
@@ -838,13 +838,13 @@ function addFromCatalog(name: string) {
             name="image"
             :size="26"
           />
-          <span>选择蓝本后，这里显示生成时使用的提示词与参数</span>
+          <span>选择底稿后，这里显示生成时使用的提示词与参数</span>
           <button
             class="btn small"
             :disabled="busy"
             @click="changeBlueprint"
           >
-            选择蓝本
+            选择底稿
           </button>
         </div>
       </div>
@@ -854,7 +854,7 @@ function addFromCatalog(name: string) {
           :disabled="busy"
           @click="changeBlueprint"
         >
-          更换蓝本
+          更换底稿
         </button>
       </footer>
     </dialog>

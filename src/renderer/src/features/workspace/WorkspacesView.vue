@@ -4,7 +4,12 @@ import { detachLeaving } from '../../shared/lib/list-motion'
 import { backdropCloser, closeDialogThen } from '../../shared/lib/dialog-motion'
 import { reportError } from '../../shared/lib/notifications'
 import { promptState } from '../prompts/public/draft'
-import { imageState, clearWorkspaceImage } from '../generation/public'
+import {
+  imageState,
+  clearWorkspaceImage,
+  takeWorkspaceTool,
+  type WorkspaceToolKind,
+} from '../generation/public'
 import { settingsState } from '../settings/state'
 import { shellState } from '../../shared/state/shell'
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
@@ -28,6 +33,17 @@ const deleting = ref<string | null>(null)
 const start = ref('blank')
 const title = ref('')
 const selectedImage = ref<NaiImage | null>(null)
+/*
+ * 生图创作「去精修」下拉选的工具：只对这次送来图片新建的项目生效，
+ * 取消新建或切到别的项目都会清掉，避免之后误打开。
+ */
+const pendingTool = ref<WorkspaceToolKind | null>(null)
+const initialTool = ref<WorkspaceToolKind | null>(null)
+watch(current, (_next, previous) => {
+  if (previous) {
+    initialTool.value = null
+  }
+})
 const projectDialog = ref<HTMLDialogElement>()
 const frontendControl = inject<{ state: Ref<DesktopState['frontend']>; stop: () => void }>(
   'frontend-control',
@@ -44,6 +60,7 @@ function dismissDialog() {
     return
   }
   creating.value = false
+  pendingTool.value = null
   error.value = ''
 }
 const projectBackdrop = backdropCloser(() => dismissDialog())
@@ -209,6 +226,7 @@ watch(
       return
     }
     clearWorkspaceImage()
+    pendingTool.value = takeWorkspaceTool()
     if (busy.value) {
       error.value = '请等待当前操作完成，再选择项目图片。'
       return
@@ -283,6 +301,8 @@ async function create() {
         renameError = cleanErr(error2)
       }
     }
+    initialTool.value = start.value === 'gallery' ? pendingTool.value : null
+    pendingTool.value = null
     current.value = doc
     creating.value = false
     await refresh()
@@ -404,6 +424,7 @@ async function close() {
       ref="workspace"
       :key="current.id"
       :workspace="current"
+      :initial-tool="initialTool"
       @close="close"
     />
     <section

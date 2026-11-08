@@ -3,7 +3,7 @@ import {
   imageState as mutableImageState,
   generationParams as mutableGenerationParams,
 } from './state'
-export type { GenOnly } from './state'
+export type { GenOnly, WorkspaceToolKind } from './state'
 export const imageState = shallowReadonly(mutableImageState)
 export const generationParams = shallowReadonly(mutableGenerationParams)
 export {
@@ -12,6 +12,7 @@ export {
   selectReferenceImage,
   setPreviewImage,
   clearWorkspaceImage,
+  takeWorkspaceTool,
   applyGenerationParams,
   loadPreferences,
   setLoadKeepSeed,

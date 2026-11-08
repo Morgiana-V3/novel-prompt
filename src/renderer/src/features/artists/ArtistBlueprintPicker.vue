@@ -283,10 +283,10 @@ onBeforeUnmount(() => {
     @cancel.prevent="close"
   >
     <header>
-      <h3 id="blueprint-title">选择蓝本</h3>
+      <h3 id="blueprint-title">选择底稿</h3>
       <button
         class="icon-btn"
-        aria-label="关闭蓝本选择"
+        aria-label="关闭底稿选择"
         @click="close"
       >
         <Icon
@@ -295,7 +295,7 @@ onBeforeUnmount(() => {
         />
       </button>
     </header>
-    <nav aria-label="蓝本来源">
+    <nav aria-label="底稿来源">
       <button
         :aria-pressed="source === 'gallery'"
         @click="changeSource('gallery')"
@@ -324,7 +324,7 @@ onBeforeUnmount(() => {
           type="search"
           class="input"
           :placeholder="searchPlaceholder"
-          aria-label="搜索蓝本"
+          aria-label="搜索底稿"
         />
         <small
           v-if="indexing"
@@ -346,7 +346,7 @@ onBeforeUnmount(() => {
             v-for="image in visibleImages.slice(0, limit)"
             :key="image.name"
             :class="{ selected: selectedId === image.name }"
-            :aria-label="`选择蓝本图片 ${image.name}`"
+            :aria-label="`选择底稿图片 ${image.name}`"
             :aria-pressed="selectedId === image.name"
             @click="selectImage(image)"
           >
@@ -457,7 +457,7 @@ onBeforeUnmount(() => {
         :disabled="!selected || loading || busy"
         @click="useSelected"
       >
-        使用此蓝本
+        使用此底稿
       </button>
     </footer>
   </dialog>
