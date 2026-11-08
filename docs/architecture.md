@@ -62,7 +62,7 @@ Electron 主进程是唯一应用宿主，窗口和 MCP 客户端共享服务、
 | `nai:freeCheck`                                                                                                               | `src/main/adapters/ipc/images.ts`                                                                                                   |
 | `nai:generate`                                                                                                                | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/generation/task-actions.ts`                                                    |
 | `nai:inpaint`                                                                                                                 | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/generation/task-actions.ts`                                                    |
-| `artists:catalog`                                                                                                             | `src/main/adapters/ipc/images.ts` → `modules/artists/catalog.ts` → `providers/quicktagcloud.ts`（公开图鉴，只读、分页、按模型缓存） |
+| `artists:catalog`                                                                                                             | `src/main/adapters/ipc/images.ts` → `modules/artists/catalog.ts` → `providers/quicktagcloud.ts` / `providers/nax.ts`（默认法典，按来源与模型缓存） |
 | `nai:list`                                                                                                                    | `src/main/adapters/ipc/images.ts`                                                                                                   |
 | `nai:readImage`                                                                                                               | `src/main/adapters/ipc/images.ts`                                                                                                   |
 | `nai:recipe`                                                                                                                  | `src/main/adapters/ipc/images.ts`                                                                                                   |
@@ -300,7 +300,8 @@ Skill 目录包由 modules/skills/package-files.ts 校验和整体写入；入�
 ## 画师调试与图鉴
 
 - `features/artists/studio.ts` 管理按模型隔离的草稿、画师串、底稿和候选比较；`blueprints.ts` 从创作标签、图库配置构造独立快照。生成复用反推试图控制器和已有生成任务，不建立第二套供应商调用或费用策略。
-- `ArtistStudio.vue` 组合方案和结果，`ArtistBlueprintPicker.vue` 处理底稿选择，`ArtistCatalog.vue` 处理图鉴浏览；图鉴通过 `modules/artists/catalog.ts` 校验、筛选、分页和缓存，`providers/quicktagcloud.ts` 负责公开资源下载及哈希校验。
+- `ArtistStudio.vue` 组合方案和结果，`ArtistBlueprintPicker.vue` 处理底稿选择，`ArtistCatalog.vue` 处理图鉴浏览。图鉴默认法典，可切换 NAX；`ArtistCatalogQuery.source` 省略时兼容法典，响应标明来源。`modules/artists/catalog.ts` 按来源和模型校验、筛选、分页并缓存一小时，最多四组目录；切换来源重置分页并丢弃迟到响应，搜索条件、全局模型、画师收藏与画师串共用。
+- `providers/quicktagcloud.ts` 下载法典公开索引并校验 SHA-256；`providers/nax.ts` 下载公开 ZIP 索引并限制大小、校验 CRC，两个模型共用一次 NAX 导出下载。NAX 例图保留作者、CC BY 4.0 链接与索引日期，法典保留原来源说明，不混用许可及测试参数。两者均可跳转当前模型的原站，TAGs Gallery 仅提供外链。未收录的收藏不删除。原站公布的测试条件只作参考展示，不写入用户生图参数。
 
 ## 2026-11-06 架构审查
 

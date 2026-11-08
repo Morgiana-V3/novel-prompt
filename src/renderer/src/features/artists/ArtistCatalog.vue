@@ -5,8 +5,11 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { NaiVersion } from '@shared/generation/types'
 import {
   artistCatalogUrl,
+  artistCatalogConditions,
+  artistTagsGalleryUrl,
   artistNameKey,
   type ArtistCatalogPage,
+  type ArtistCatalogSource,
   type ArtistReference,
 } from '@shared/artists/catalog'
 import Icon from '../../shared/ui/Icon.vue'
@@ -22,6 +25,7 @@ defineEmits<{ add: [name: string]; favorite: [name: string] }>()
 const dialog = ref<HTMLDialogElement>()
 const opened = ref(false)
 const query = ref('')
+const source = ref<ArtistCatalogSource>('codex')
 const favoritesOnly = ref(false)
 const failed = ref<string[]>([])
 const enlargedArtist = ref<ArtistReference | null>(null)
@@ -32,6 +36,11 @@ const sentinel = ref<HTMLElement>()
 let observer: IntersectionObserver | undefined
 const loading = ref(false)
 const error = ref('')
+const conditions = computed(() =>
+  artistCatalogConditions(props.version, enlargedArtist.value?.name ?? ''),
+)
+const updatedDate = computed(() => data.value?.updated.slice(0, 10) || '未提供')
+const sourceName = computed(() => (source.value === 'codex' ? '法典' : 'NAX'))
 const pageCount = computed(() => Math.max(1, Math.ceil((data.value?.total ?? 0) / 24)))
 let serial = 0
 let timer: ReturnType<typeof setTimeout> | undefined
@@ -53,6 +62,7 @@ async function loadPage(reset = true) {
   enlargedArtist.value = null
   try {
     const result = await window.api.artistCatalog({
+      source: source.value,
       version: props.version,
       query: query.value,
       page: page.value + 1,
@@ -83,6 +93,7 @@ async function loadPage(reset = true) {
 watch(
   [
     query,
+    source,
     favoritesOnly,
     () => props.version,
     () => (favoritesOnly.value ? props.favorites.join('\n') : ''),
@@ -134,7 +145,16 @@ function onClose() {
   }, DIALOG_EXIT_MS)
 }
 function openSource() {
-  window.api.openWebUrl(artistCatalogUrl(props.version)).catch(reportError)
+  window.api.openWebUrl(artistCatalogUrl(props.version, source.value)).catch(reportError)
+}
+function openTagsGallery() {
+  window.api.openWebUrl(artistTagsGalleryUrl(props.version)).catch(reportError)
+}
+function openLicense() {
+  window.api.openWebUrl('https://creativecommons.org/licenses/by/4.0/').catch(reportError)
+}
+function openAuthor() {
+  window.api.openWebUrl('https://www.patreon.com/Zelest').catch(reportError)
 }
 function isSelected(name: string) {
   return props.selected.some((entry) => artistNameKey(entry) === artistNameKey(name))
@@ -251,12 +271,51 @@ defineExpose({ open })
             />图鉴收藏 {{ favorites.length }}
           </button>
         </div>
-        <button
-          class="catalog-link"
-          @click="openSource"
-        >
-          法典图鉴原站 ↗
-        </button>
+      </div>
+      <div
+        class="catalog-sources"
+        :inert="!!enlargedArtist"
+      >
+        <div class="catalog-source-picker">
+          <span>来源</span>
+          <div
+            class="catalog-scope"
+            role="group"
+            aria-label="图鉴来源"
+          >
+            <button
+              class="btn small"
+              :class="{ 'catalog-favorites-active': source === 'codex' }"
+              :aria-pressed="source === 'codex'"
+              @click="source = 'codex'"
+            >
+              法典
+            </button>
+            <button
+              class="btn small"
+              :class="{ 'catalog-favorites-active': source === 'nax' }"
+              :aria-pressed="source === 'nax'"
+              @click="source = 'nax'"
+            >
+              NAX
+            </button>
+          </div>
+          <span>{{ source === 'nax' ? '固定提示词例图' : '社区单画师例图' }}</span>
+        </div>
+        <nav aria-label="更多画师参考">
+          <button
+            class="catalog-link"
+            @click="openSource"
+          >
+            {{ sourceName }} 原站 ↗
+          </button>
+          <button
+            class="catalog-link"
+            @click="openTagsGallery"
+          >
+            TAGs ↗
+          </button>
+        </nav>
       </div>
       <div
         ref="scrollRoot"
@@ -341,7 +400,11 @@ defineExpose({ open })
           v-else-if="!loading && !error"
           class="catalog-empty"
         >
-          {{ favoritesOnly ? '没有匹配的收藏' : '没有找到对应的单画师例图' }}
+          {{
+            favoritesOnly
+              ? '当前模型图集中没有匹配的收藏，已有收藏仍保留'
+              : '当前模型图集中没有找到这位画师，可前往其他原站查看'
+          }}
         </div>
         <div
           v-if="loading"
@@ -379,8 +442,30 @@ defineExpose({ open })
         class="catalog-footer"
         :inert="!!enlargedArtist"
       >
-        <span>来源：法典图鉴 · 例图及内容归原作者</span
-        ><button
+        <div class="catalog-attribution">
+          <span v-if="source === 'nax'"
+            >NovelAI Tag Experiments ·
+            <button
+              class="catalog-link"
+              @click="openAuthor"
+            >
+              u/Carlyone
+            </button>
+            ·
+            <button
+              class="catalog-link"
+              @click="openLicense"
+            >
+              CC BY 4.0
+            </button></span
+          >
+          <span v-else>来源：法典图鉴 · 例图及内容归原作者</span>
+          <span v-if="source === 'nax'"
+            >原图按比例展示 · {{ data?.total ?? 0 }} 位画师 · 索引日期 {{ updatedDate }}</span
+          >
+          <span v-else>{{ data?.total ?? 0 }} 组参考图 · 不同例图的测试条件可能不同</span>
+        </div>
+        <button
           class="btn"
           @click="close"
         >
@@ -408,8 +493,40 @@ defineExpose({ open })
           referrerpolicy="no-referrer"
         />
         <strong>{{ enlargedArtist.title }}</strong>
-        <span>{{ enlargedArtist.source }}</span>
-        <code>{{ enlargedArtist.tags }}</code>
+        <div
+          v-if="source === 'nax'"
+          class="catalog-conditions"
+        >
+          <p>{{ enlargedArtist.source }} · 原站公布的测试条件</p>
+          <p>{{ conditions.settings }}</p>
+          <p>全局提示词</p>
+          <code>{{ conditions.prompt }}</code>
+          <p>角色提示词</p>
+          <code>{{ conditions.character }}</code>
+          <p>
+            例图由 AI 生成，仅供风格参考；实际效果取决于提示词与种子。<button
+              class="catalog-link"
+              @click="openSource"
+            >
+              查看原站 ↗
+            </button>
+          </p>
+        </div>
+        <div
+          v-else
+          class="catalog-conditions"
+        >
+          <p>{{ enlargedArtist.source }}</p>
+          <code>{{ enlargedArtist.tags }}</code>
+          <p>
+            例图仅供风格参考；具体测试条件请查看原站。<button
+              class="catalog-link"
+              @click="openSource"
+            >
+              查看法典原站 ↗
+            </button>
+          </p>
+        </div>
       </div>
     </template>
   </dialog>

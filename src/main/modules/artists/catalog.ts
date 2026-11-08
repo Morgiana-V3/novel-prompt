@@ -1,11 +1,13 @@
 import type {
   ArtistCatalogPage,
   ArtistCatalogQuery,
+  ArtistCatalogSource,
   ArtistReference,
 } from '../../../shared/artists/catalog'
-import { artistNameKey } from '../../../shared/artists/catalog'
+import { artistCatalogGallery, artistNameKey } from '../../../shared/artists/catalog'
 import { isNaiVersion, type NaiVersion } from '../../../shared/generation/types'
 import { parsePrompt } from '../../../shared/prompts/parser'
+import { fetchNaxCatalog } from '../../providers/nax'
 import { fetchArtistCodex } from '../../providers/quicktagcloud'
 
 interface CatalogData {
@@ -13,7 +15,7 @@ interface CatalogData {
   updated: string
 }
 
-const cache = new Map<NaiVersion, { expires: number; data: Promise<CatalogData> }>()
+const cache = new Map<string, { expires: number; data: Promise<CatalogData> }>()
 const PAGE_SIZE = 24
 
 function record(value: unknown): Record<string, unknown> {
@@ -59,16 +61,81 @@ export function normalizeArtistCodex(value: unknown, version: NaiVersion): Catal
   return { entries, updated: typeof data.version === 'string' ? data.version : '' }
 }
 
-function load(version: NaiVersion): Promise<CatalogData> {
-  const existing = cache.get(version)
+export function normalizeNaxCatalog(value: unknown, version: NaiVersion): CatalogData {
+  const data = record(value)
+  const galleryId = artistCatalogGallery(version)
+  const gallery = record(record(data.galleries)[galleryId])
+  if (!Array.isArray(gallery.tags) || gallery.version !== version) {
+    throw new Error(`NAX 图鉴没有有效的 ${version.toUpperCase()} 词条数据`)
+  }
+  const entries: ArtistReference[] = []
+  const names = new Set<string>()
+  for (const raw of gallery.tags) {
+    const entry = record(raw)
+    if (
+      typeof entry.tag !== 'string' ||
+      entry.tag.length > 200 ||
+      typeof entry.filename !== 'string' ||
+      entry.filename.length > 600
+    ) {
+      continue
+    }
+    const name = entry.tag.trim()
+    const tags = `artist:${name}`
+    const artists = parsePrompt(tags)
+    if (
+      artists.length !== 1 ||
+      artists[0].prefix !== 'artist:' ||
+      artists[0].core !== name ||
+      names.has(artistNameKey(name))
+    ) {
+      continue
+    }
+    const filename = entry.filename
+    if (
+      !/\.(webp|png|jpe?g)$/i.test(filename) ||
+      filename.includes('..') ||
+      /[\\/:\x00-\x1f]/.test(filename)
+    ) {
+      continue
+    }
+    names.add(artistNameKey(name))
+    entries.push({
+      id: `nax:${galleryId}:${name}`,
+      name,
+      title: name,
+      tags,
+      // Export filenames contain literal percent signs, as on NAX's own image links.
+      image: `https://cdn.zele.st/data/NAX/Images/${galleryId}/${encodeURIComponent(filename)}`,
+      source: `NAX · ${version.toUpperCase()} · 固定提示词例图`,
+    })
+  }
+  if (!entries.length) {
+    throw new Error('NAX 图鉴没有可用的画师例图')
+  }
+  entries.sort((left, right) => left.name.localeCompare(right.name, 'en'))
+  const metadata = record(data.metadata)
+  return {
+    entries,
+    updated: typeof metadata.generated_at === 'string' ? metadata.generated_at : '',
+  }
+}
+
+function load(version: NaiVersion, source: ArtistCatalogSource): Promise<CatalogData> {
+  // Only the two validated sources × two model versions can enter this cache.
+  const key = `${source}:${version}`
+  const existing = cache.get(key)
   if (existing && existing.expires > Date.now()) {
     return existing.data
   }
-  const data = fetchArtistCodex(version).then((value) => normalizeArtistCodex(value, version))
-  cache.set(version, { data, expires: Date.now() + 3600000 })
+  const data =
+    source === 'nax'
+      ? fetchNaxCatalog().then((value) => normalizeNaxCatalog(value, version))
+      : fetchArtistCodex(version).then((value) => normalizeArtistCodex(value, version))
+  cache.set(key, { data, expires: Date.now() + 3600000 })
   void data.catch(() => {
-    if (cache.get(version)?.data === data) {
-      cache.delete(version)
+    if (cache.get(key)?.data === data) {
+      cache.delete(key)
     }
   })
   return data
@@ -78,6 +145,7 @@ export async function queryArtistCatalog(input: ArtistCatalogQuery): Promise<Art
   if (
     !input ||
     !isNaiVersion(input.version) ||
+    (input.source !== undefined && input.source !== 'codex' && input.source !== 'nax') ||
     typeof input.query !== 'string' ||
     input.query.length > 200 ||
     !Number.isInteger(input.page) ||
@@ -93,7 +161,8 @@ export async function queryArtistCatalog(input: ArtistCatalogQuery): Promise<Art
   ) {
     throw new Error('无效的收藏筛选')
   }
-  const data = await load(input.version)
+  const source = input.source ?? 'codex'
+  const data = await load(input.version, source)
   const normalize = artistNameKey
   const search = normalize(input.query.trim())
   const favorites = input.favorites ? new Set(input.favorites.map(normalize)) : null
@@ -104,6 +173,7 @@ export async function queryArtistCatalog(input: ArtistCatalogQuery): Promise<Art
   )
   const page = Math.min(input.page, Math.max(1, Math.ceil(matches.length / PAGE_SIZE)))
   return {
+    source,
     entries: matches.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
     total: matches.length,
     page,
