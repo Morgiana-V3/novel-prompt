@@ -6,7 +6,7 @@ Windows NSIS 安装版在启动后和每 6 小时检查 GitHub Releases，发现
 
 ## 1.1.0 发布准备
 
-package.json 与 package-lock.json 同步准备为 1.1.0；CHANGELOG 的“待发布”在实际公开发布时再改为发布日期。创建标签和公开 Release 是后续发布动作，准备阶段不自动执行。
+package.json 与 package-lock.json 同步为 1.1.0，CHANGELOG 发布日期为 2026-11-08。用户已明确要求发布本版；以下保留准备与发布流程，实际验收范围见 [测试记录](testing.md)。
 
 - 对照 v1.0.0 审查新增功能、MCP 工具说明与使用文档；接口目录以 tools/list 与共享契约为准。
 - 完成当前开发实例的真实验收与外部 Agent 交互，记录未覆盖的图鉴点击、冷启动、安装升级和断线恢复等范围。不能把构建成功当成这些链路通过。

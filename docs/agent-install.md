@@ -25,7 +25,7 @@ $exe
 
 ## 2. 下载并安装（需要用户同意）
 
-**先征得用户同意**再下载安装（会从 GitHub 下载约 100 MB 的安装包并安装到用户目录）。
+**先征得用户同意**再下载安装（1.1.0 的安装包约 185 MiB，安装到用户目录）。
 
 ```powershell
 $rel = Invoke-RestMethod 'https://api.github.com/repos/Morgiana-V3/novel-prompt/releases/latest' -Headers @{ 'User-Agent' = 'novel-prompt-agent' }
