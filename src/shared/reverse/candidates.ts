@@ -75,3 +75,130 @@ export function styleSimilarity(a: number[], b: number[]): number {
   const dot = a.reduce((sum, value, i) => sum + (value / na) * (b[i] / nb), 0)
   return Math.max(-1, Math.min(1, dot))
 }
+
+export interface ArtistMixPart {
+  name: string
+  /** 合并后的接近程度（各模型概率的平均，模型没给出的记 0） */
+  probability: number
+  /** 在本组合里的占比，四舍五入到整数百分比，合计约 100 */
+  share: number
+  /** NovelAI 提示词权重；1 为正常强度 */
+  weight: number
+}
+
+export interface ArtistMix {
+  kind: 'single' | 'mix'
+  parts: ArtistMixPart[]
+}
+
+const MIX_MIN_RATIO = 0.25
+const MIX_MAX_PARTS = 4
+const MIX_WEIGHT_MIN = 0.3
+const MIX_WEIGHT_MAX = 1.6
+
+function roundWeight(value: number) {
+  return Math.round(Math.min(MIX_WEIGHT_MAX, Math.max(MIX_WEIGHT_MIN, value)) * 20) / 20
+}
+
+/**
+ * 估算画风组成：各画风模型的输出是各自的 softmax 概率，同一模型内可比、不同模型间不校准，
+ * 所以按模型取平均（没给出的记 0，奖励多个模型一致的候选）。
+ * 第一名明显领先时视为单一画风；否则取达到第一名 25% 的前 2～4 位，
+ * 按相对概率映射为 0.8～1.2 的权重。这只是风格接近程度的估算，不是原作者判定或真实比例。
+ */
+export function estimateArtistMix(result: Pick<ReverseResult, 'artists'>): ArtistMix | null {
+  const fused = new Map<string, { name: string; probability: number }>()
+  const models = new Set<string>()
+  for (const group of result.artists) {
+    if (models.has(group.model)) {
+      continue
+    }
+    models.add(group.model)
+    const seen = new Set<string>()
+    for (const tag of group.tags) {
+      const name = tag.name.replaceAll('_', ' ').trim().replace(/\s+/g, ' ')
+      const key = name.toLowerCase()
+      if (!name || seen.has(key) || !Number.isFinite(tag.score) || tag.score <= 0) {
+        continue
+      }
+      seen.add(key)
+      const entry = fused.get(key) ?? { name, probability: 0 }
+      entry.probability += tag.score
+      fused.set(key, entry)
+    }
+  }
+  if (!models.size) {
+    return null
+  }
+  const ranked = [...fused.values()]
+    .map((entry) => ({ ...entry, probability: entry.probability / models.size }))
+    .sort((a, b) => b.probability - a.probability || a.name.localeCompare(b.name, 'en'))
+  const top = ranked[0]
+  if (!top) {
+    return null
+  }
+  const second = ranked[1]?.probability ?? 0
+  if (top.probability >= 0.45 && second < top.probability * 0.35) {
+    return { kind: 'single', parts: [{ ...top, share: 100, weight: 1 }] }
+  }
+  const chosen = ranked
+    .filter((entry) => entry.probability >= top.probability * MIX_MIN_RATIO)
+    .slice(0, MIX_MAX_PARTS)
+  if (chosen.length < 2) {
+    return { kind: 'single', parts: [{ ...top, share: 100, weight: 1 }] }
+  }
+  const total = chosen.reduce((sum, entry) => sum + entry.probability, 0)
+  return {
+    kind: 'mix',
+    parts: chosen.map((entry) => ({
+      ...entry,
+      share: Math.round((entry.probability / total) * 100),
+      weight: roundWeight(0.8 + 0.4 * (entry.probability / top.probability)),
+    })),
+  }
+}
+
+/** 组合写成画师串；权重为 1 时不加权重语法 */
+export function mixString(parts: Pick<ArtistMixPart, 'name' | 'weight'>[]): string {
+  return parts
+    .map((part) =>
+      part.weight === 1 ? `artist:${part.name}` : `${part.weight}::artist:${part.name}::`,
+    )
+    .join(', ')
+}
+
+/**
+ * 围绕一个组合生成权重变体（自动优化每一轮的候选）：
+ * 逐位加强 / 减弱 step，限制在 0.3～1.6；多位画师时再试一次去掉最弱的一位。
+ * 结果去重且不含原组合，最多 limit 个。
+ */
+export function mixVariants(
+  parts: Pick<ArtistMixPart, 'name' | 'weight'>[],
+  step: number,
+  limit = 3,
+): Pick<ArtistMixPart, 'name' | 'weight'>[][] {
+  const base = mixString(parts)
+  const seen = new Set([base])
+  const variants: Pick<ArtistMixPart, 'name' | 'weight'>[][] = []
+  const push = (candidate: Pick<ArtistMixPart, 'name' | 'weight'>[]) => {
+    const key = mixString(candidate)
+    if (candidate.length && !seen.has(key)) {
+      seen.add(key)
+      variants.push(candidate)
+    }
+  }
+  const adjust = (index: number, delta: number) =>
+    parts.map((part, i) =>
+      i === index ? { ...part, weight: roundWeight(part.weight + delta) } : part,
+    )
+  for (const [index] of parts.entries()) {
+    push(adjust(index, step))
+  }
+  if (parts.length > 2) {
+    push(parts.slice(0, -1))
+  }
+  for (const [index] of parts.entries()) {
+    push(adjust(index, -step))
+  }
+  return variants.slice(0, limit)
+}

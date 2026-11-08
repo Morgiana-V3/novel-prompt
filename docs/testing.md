@@ -62,6 +62,7 @@ Agent 根据读到的内容与看到的画面自主判断问题，提出具体�
 - `contracts` 以 TypeScript AST 核对 IPC/事件共享契约、实际注册声明与架构文档。
 - 当前宿主的 `tools/list` 与架构文档双向核对，包含工厂注册的 MCP 工具，不靠工具名字正则猜测。
 - `tests:registration` 追踪真实 import/require 依赖，检查测试文件是否有入口或显式历史归属；新文件漏登记会失败。
+- `reverse:artist-mix` 是纯计算检查（quick / full 都会运行）：反推画风组成估算的概率融合、单一 / 混合判断、权重映射与自动优化变体生成；不调用模型、不生图，不能代替真实反推与试图验收。
 - `boundaries:check` 强制 creation / prompts / artists 等已整理模块的公共入口，拒绝从跨功能调用者直连内部实现及公共入口的通配转导出。
 
 ## 2026-11-06 当前开发实例验收记录

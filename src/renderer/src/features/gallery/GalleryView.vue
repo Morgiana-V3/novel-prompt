@@ -625,7 +625,7 @@ function step(delta: number) {
 .library-collections {
   width: 175px;
   flex-shrink: 0;
-  padding: 18px calc(12px - var(--scrollbar-size)) 18px 12px;
+  padding: 14px calc(12px - var(--scrollbar-size)) 18px 12px;
   border-right: 1px solid var(--line);
 }
 
@@ -687,8 +687,16 @@ function step(delta: number) {
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
-  padding: 16px 20px;
+  min-height: 52px;
+  padding: 8px 16px 8px 20px;
   border-bottom: 1px solid var(--line);
+}
+
+/* 顶栏控件压到 30px，顶栏不再占一大截高度 */
+.library-toolbar :deep(.theme-select) {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
 }
 
 .library-toolbar h2 {

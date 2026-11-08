@@ -258,7 +258,6 @@ defineExpose({ open })
           法典图鉴原站 ↗
         </button>
       </div>
-      <p class="catalog-model-note">社区单画师参考图 · 不同来源的测试条件不同</p>
       <div
         ref="scrollRoot"
         class="catalog-scroll"

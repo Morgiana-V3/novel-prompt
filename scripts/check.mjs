@@ -15,9 +15,9 @@ const output = join(tmpdir(), `novel-prompt-validation-${randomUUID()}`)
 mkdirSync(output, { recursive: true })
 let selected = process.argv.slice(2)
 if (mode === 'quick') {
-  selected = ['contracts', 'tests:registration', 'mcp:readonly']
+  selected = ['contracts', 'tests:registration', 'reverse:artist-mix', 'mcp:readonly']
 } else if (mode === 'full') {
-  selected = ['contracts', 'tests:registration', 'live']
+  selected = ['contracts', 'tests:registration', 'reverse:artist-mix', 'live']
 }
 for (const name of selected) {
   if (legacyCases[name] || legacyOptionalCases[name]) {

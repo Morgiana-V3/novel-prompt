@@ -345,7 +345,6 @@ function closePanel() {
               </article>
             </template>
           </div>
-          <div class="task-footnote">仅保留本次打开期间最近 20 条记录</div>
         </section>
       </Transition>
     </Teleport>

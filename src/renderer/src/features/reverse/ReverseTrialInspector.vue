@@ -7,13 +7,23 @@ import { openTabForLoad } from '../creation/public/navigation'
 import { selectReferenceImage } from '../generation/public'
 import { cleanErr } from '../../shared/lib/format'
 import { shellState } from '../../shared/state/shell'
+import { sendToArtistStudio } from '../artists/public/handoff'
+import { parsePrompt } from '@shared/prompts/parser'
+import Icon from '../../shared/ui/Icon.vue'
+import { reportError, toast } from '../../shared/lib/notifications'
+import { backdropCloser } from '../../shared/lib/dialog-motion'
 
 const props = defineProps<{
   index: number
+  /** 显示名称，如「第 2 轮 · 方案 3」；不传时为「方案 N」 */
+  title?: string
   stylePrompt?: string
   trial?: ReverseTrial
   disabled?: boolean
   status: string
+  /** 本轮按风格相似度的名次（1 为最像）与有分数的方案数 */
+  rank?: number
+  total?: number
 }>()
 const emit = defineEmits<{ retry: [] }>()
 const actionBusy = ref(false)
@@ -58,6 +68,70 @@ watch(
   },
   { immediate: true },
 )
+/** 带到画师调试：这次的内容、角色和画师作为蓝本，试图出的图直接作为基准图，不用重新生成 */
+function toArtistStudio() {
+  const trial = props.trial
+  if (!trial?.image || props.disabled) {
+    return
+  }
+  sendToArtistStudio({
+    kind: 'reverse',
+    id: trial.image.name,
+    title: `反推 · ${trial.style || '无画师对照'}`,
+    request: JSON.parse(JSON.stringify(trial.request)),
+    image: trial.image,
+  })
+}
+/** 画师串拆成「名字 × 权重」标签，比整串文字好读 */
+const artists = computed(() =>
+  parsePrompt(props.trial?.style ?? props.stylePrompt ?? '')
+    .filter((token) => token.prefix === 'artist:')
+    .map((token) => ({ name: token.core, weight: token.weight })),
+)
+/** 余弦相似度通常落在 0.4～1 之间，映射成进度条长度 */
+const scorePercent = computed(() => {
+  const score = props.trial?.score
+  return score === undefined ? 0 : Math.round(Math.min(1, Math.max(0, (score - 0.4) / 0.6)) * 100)
+})
+const displayTitle = computed(() => props.title ?? `方案 ${props.index + 1}`)
+const isBest = computed(() => props.rank === 1 && (props.total ?? 0) > 1)
+function copyStyle() {
+  const style = props.trial?.style ?? props.stylePrompt ?? ''
+  if (!style) {
+    return
+  }
+  window.api
+    .copy(style)
+    .then(() => toast('画师串已复制'))
+    .catch(reportError)
+}
+/* ---------- 完整提示词与参数：侧栏空间有限，改用弹窗查看 ---------- */
+const detailDialog = ref<HTMLDialogElement>()
+function openDetails() {
+  detailDialog.value?.showModal()
+}
+function closeDetails() {
+  detailDialog.value?.close()
+}
+const detailBackdrop = backdropCloser(() => closeDetails())
+function copyText(text: string) {
+  if (!text) {
+    return
+  }
+  window.api
+    .copy(text)
+    .then(() => toast('已复制'))
+    .catch(reportError)
+}
+function retain() {
+  act('retain').catch(reportError)
+}
+function adopt() {
+  act('adopt').catch(reportError)
+}
+function retry() {
+  emit('retry')
+}
 const styleLabel = computed(() => {
   const style = props.trial?.style ?? props.stylePrompt
   return style === undefined ? '识别后推荐画师组合' : style || '无画师对照'
@@ -67,110 +141,239 @@ const styleLabel = computed(() => {
 <template>
   <article
     class="reverse-trial-inspector"
-    :aria-label="`方案 ${index + 1} 信息`"
+    :aria-label="`${displayTitle} 信息`"
   >
-    <header>
-      <div>
-        <h3>方案 {{ index + 1 }}</h3>
-        <span>{{ status }}</span>
-      </div>
+    <header class="ti-head">
+      <h3>{{ displayTitle }}</h3>
+      <span
+        v-if="isBest"
+        class="ti-best"
+        >最佳配置</span
+      >
+      <span class="ti-status">{{ status }}</span>
     </header>
+
     <div class="inspector-body">
-      <span class="inspector-eyebrow">画师组合</span>
-      <span
-        class="preview-style"
-        :title="styleLabel"
-        >{{ styleLabel }}</span
-      >
-      <span
+      <section class="ti-section">
+        <h4>
+          画师
+          <button
+            class="icon-btn sm"
+            :disabled="!artists.length"
+            title="复制画师串"
+            aria-label="复制画师串"
+            @click="copyStyle"
+          >
+            <Icon
+              name="copy"
+              :size="13"
+            />
+          </button>
+        </h4>
+        <div
+          v-if="artists.length"
+          class="ti-artists"
+          :title="styleLabel"
+        >
+          <span
+            v-for="artist in artists"
+            :key="artist.name"
+            class="ti-artist"
+            ><span>{{ artist.name }}</span
+            ><b v-if="artist.weight !== 1">× {{ artist.weight }}</b></span
+          >
+        </div>
+        <p
+          v-else
+          class="ti-muted"
+        >
+          {{ styleLabel }}
+        </p>
+      </section>
+
+      <section
         v-if="trial?.score !== undefined"
-        title="仅辅助比较，不代表还原百分比"
-        >风格相似度 {{ trial.score.toFixed(3) }}</span
+        class="ti-section"
       >
-      <span
+        <h4
+          title="用 K3 模型分别提取参考图和这张图的画风特征，计算两者的余弦相似度；越接近 1 越像，仅供参考"
+        >
+          风格相似度
+        </h4>
+        <div class="ti-score">
+          <b>{{ trial.score.toFixed(3) }}</b>
+          <span v-if="rank && total && total > 1">全部 {{ total }} 张中第 {{ rank }}</span>
+        </div>
+        <div
+          class="ti-meter"
+          aria-hidden="true"
+        >
+          <i :style="{ width: `${scorePercent}%` }"></i>
+        </div>
+      </section>
+
+      <p
         v-if="trial?.error"
         class="preview-error"
-        >{{ trial.error }}</span
       >
-      <div
+        {{ trial.error }}
+      </p>
+
+      <section
         v-if="trial?.image"
-        class="preview-actions"
+        class="ti-actions"
       >
-        <button
-          class="btn small"
-          :disabled="disabled || actionBusy || retained"
-          @click="act('retain')"
-        >
-          {{ retained ? '已留存' : '留存' }}
-        </button>
-        <FavoriteButton :image="trial.image" />
-        <button
-          class="btn small"
-          :disabled="disabled || actionBusy"
-          @click="emit('retry')"
-        >
-          换种子再试
-        </button>
-        <button
-          class="btn small primary"
-          :disabled="disabled || actionBusy"
-          @click="act('adopt')"
-        >
-          采用配置
-        </button>
-      </div>
-      <span
+        <div class="ti-primary">
+          <button
+            class="btn"
+            :disabled="disabled || actionBusy"
+            title="在生图创作中打开这套配置"
+            @click="adopt"
+          >
+            <Icon
+              name="generate"
+              :size="14"
+            />生图创作
+          </button>
+          <button
+            class="btn primary"
+            :disabled="disabled || actionBusy"
+            title="作为蓝本带到画师调试，继续调整画师与权重"
+            @click="toArtistStudio"
+          >
+            <Icon
+              name="palette"
+              :size="14"
+            />画师调试
+          </button>
+        </div>
+        <div class="ti-secondary">
+          <button
+            class="ti-link"
+            :disabled="disabled || actionBusy || retained"
+            :title="retained ? '这张图已留存' : '留存到图库，不随临时文件清理'"
+            @click="retain"
+          >
+            <Icon
+              :name="retained ? 'check' : 'download'"
+              :size="13"
+            />{{ retained ? '已留存' : '留存' }}
+          </button>
+          <button
+            class="ti-link"
+            :disabled="disabled || actionBusy"
+            title="同样的画师与内容，换一个种子再出一张"
+            @click="retry"
+          >
+            <Icon
+              name="dice"
+              :size="13"
+            />换种子再试
+          </button>
+          <FavoriteButton :image="trial.image" />
+        </div>
+      </section>
+      <p
         v-if="actionError"
         class="preview-error"
         role="alert"
-        >{{ actionError }}</span
       >
-      <details
+        {{ actionError }}
+      </p>
+      <button
         v-if="trial?.request"
-        class="preview-details"
+        class="ti-details-entry"
+        @click="openDetails"
       >
-        <summary>查看完整提示词与参数</summary>
-        <p>
-          {{ trial.request.version.toUpperCase() }} · {{ trial.request.params.width }}×{{
-            trial.request.params.height
-          }}
-          · {{ trial.request.params.steps }} 步 · 种子 {{ trial.request.params.seed }}
-        </p>
-        <p>
-          Guidance {{ trial.request.params.scale }} · Rescale
-          {{ trial.request.params.cfgRescale }} · {{ trial.request.params.sampler }} ·
-          {{ trial.request.params.noiseSchedule }}
-        </p>
-        <p>
-          质量词{{ trial.request.params.qualityTags ? '开启' : '关闭' }} · UC
-          {{ trial.request.params.ucPreset }}
-        </p>
-        <section
-          class="prompt-card"
-          aria-label="主提示词"
+        <Icon
+          name="file"
+          :size="13"
+        />查看完整提示词与参数
+      </button>
+    </div>
+    <dialog
+      v-if="trial?.request"
+      ref="detailDialog"
+      class="ti-dialog"
+      :aria-label="`${displayTitle} 的完整提示词与参数`"
+      @pointerdown="detailBackdrop.onPointerdown"
+      @click="detailBackdrop.onClick"
+    >
+      <header>
+        <h3>{{ displayTitle }} · 完整提示词与参数</h3>
+        <button
+          class="icon-btn"
+          aria-label="关闭"
+          @click="closeDetails"
         >
-          <h4>主提示词</h4>
-          <p class="prompt-text">{{ trial.request.base || '无' }}</p>
+          <Icon
+            name="x"
+            :size="18"
+          />
+        </button>
+      </header>
+      <div class="ti-dialog-body">
+        <div class="ti-params">
+          <span>{{ trial.request.version.toUpperCase() }}</span>
+          <span>{{ trial.request.params.width }} × {{ trial.request.params.height }}</span>
+          <span>{{ trial.request.params.steps }} 步</span>
+          <span>种子 {{ trial.request.params.seed }}</span>
+          <span>Guidance {{ trial.request.params.scale }}</span>
+          <span>Rescale {{ trial.request.params.cfgRescale }}</span>
+          <span>{{ trial.request.params.sampler }}</span>
+          <span>{{ trial.request.params.noiseSchedule }}</span>
+          <span>质量词{{ trial.request.params.qualityTags ? '开启' : '关闭' }}</span>
+          <span>UC {{ trial.request.params.ucPreset }}</span>
+        </div>
+        <section class="ti-prompt">
+          <h4>
+            主提示词<button
+              class="icon-btn sm"
+              title="复制主提示词"
+              aria-label="复制主提示词"
+              @click="copyText(trial.request.base)"
+            >
+              <Icon
+                name="copy"
+                :size="13"
+              />
+            </button>
+          </h4>
+          <pre>{{ trial.request.base || '无' }}</pre>
         </section>
-        <section
-          class="prompt-card"
-          aria-label="负面提示词"
-        >
+        <section class="ti-prompt">
           <h4>负面提示词</h4>
-          <p class="prompt-text">{{ trial.request.negative || '无' }}</p>
+          <pre :class="{ empty: !trial.request.negative }">{{
+            trial.request.negative || '无'
+          }}</pre>
         </section>
-        <div
+        <section
           v-for="(character, roleIndex) in trial.request.characters"
           :key="roleIndex"
-          class="prompt-card"
+          class="ti-prompt"
         >
-          <h4>角色 {{ roleIndex + 1 }} · 位置 {{ character.position || '自动' }}</h4>
-          <p class="prompt-text">{{ character.prompt }}</p>
-          <h4>负面提示词</h4>
-          <p class="prompt-text">{{ character.negative || '无' }}</p>
-        </div>
-      </details>
-    </div>
+          <h4>
+            角色 {{ roleIndex + 1 }}<small>位置 {{ character.position || '自动' }}</small
+            ><button
+              class="icon-btn sm"
+              :title="`复制角色 ${roleIndex + 1}`"
+              :aria-label="`复制角色 ${roleIndex + 1}`"
+              @click="copyText(character.prompt)"
+            >
+              <Icon
+                name="copy"
+                :size="13"
+              />
+            </button>
+          </h4>
+          <pre>{{ character.prompt }}</pre>
+          <template v-if="character.negative">
+            <h4>角色负面</h4>
+            <pre>{{ character.negative }}</pre>
+          </template>
+        </section>
+      </div>
+    </dialog>
   </article>
 </template>
 
@@ -179,7 +382,7 @@ const styleLabel = computed(() => {
   height: 100%;
   min-width: 0;
   min-height: 0;
-  padding: 20px;
+  padding: 18px calc(18px - var(--scrollbar-size)) 18px 18px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
@@ -187,29 +390,33 @@ const styleLabel = computed(() => {
   font-size: 12px;
 }
 
-header {
-  margin-bottom: 22px;
-}
-
-header > div {
+.ti-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  margin-top: 8px;
+  white-space: nowrap;
+  margin-bottom: 16px;
 }
 
-h3 {
+.ti-head h3 {
+  min-width: 0;
   margin: 0;
-  font-size: 18px;
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
 }
 
-header > div > span {
-  color: var(--text2);
+.ti-best {
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: var(--pink-deep);
+  background: var(--pink-soft);
   font-size: 11px;
+  font-weight: 600;
 }
 
-.inspector-eyebrow {
+.ti-status {
+  margin-left: auto;
   color: var(--muted);
   font-size: 11px;
 }
@@ -217,104 +424,289 @@ header > div > span {
 .inspector-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
   overflow-wrap: anywhere;
-  line-height: 1.7;
+  line-height: 1.6;
 }
 
-.inspector-body small {
+.ti-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ti-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  margin: 0;
+  white-space: nowrap;
+  color: var(--text2);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.ti-section h4 small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 10.5px;
+  font-weight: 400;
 }
 
-.preview-style {
-  color: var(--text);
-  font-family: var(--mono);
+.ti-section h4 .icon-btn {
+  margin-left: auto;
+}
+
+.ti-artists {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ti-artist {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  font-size: 12px;
+}
+
+.ti-artist > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ti-artist b {
+  flex-shrink: 0;
+  color: var(--pink-deep);
+  font: 600 11px var(--mono);
+}
+
+.ti-muted {
+  margin: 0;
+  color: var(--muted);
+}
+
+.ti-score {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ti-score b {
+  font-size: 22px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.ti-score span {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.ti-meter {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--hover);
+}
+
+.ti-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--pink);
+  transition: width var(--dur-slow) var(--ease-glide);
 }
 
 .preview-error {
+  margin: 0;
   color: var(--bad);
 }
 
-/* 主操作独占第一行；第二行固定三列：留存 | 换种子再试 | 收藏星标，宽度对齐不再参差 */
-.preview-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-  align-items: center;
+/* 操作：两个去向并排等宽；留存 / 换种子 / 收藏是轻量的次要操作 */
+.ti-actions {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
-  padding: 12px 0;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
 }
 
-.preview-actions .btn {
+.ti-primary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ti-primary .btn {
   justify-content: center;
+  gap: 6px;
   min-width: 0;
+  padding-inline: 10px;
+  white-space: nowrap;
 }
 
-.preview-actions .primary {
-  grid-column: 1 / -1;
-  grid-row: 1;
-}
-
-.preview-actions :deep(.favorite-button) {
-  grid-column: 3;
-  grid-row: 2;
-}
-
-.preview-details {
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-}
-
-.preview-details summary {
-  display: inline-flex;
+.ti-secondary {
+  display: flex;
   align-items: center;
-  gap: 7px;
-  cursor: pointer;
+  gap: 4px;
+}
+
+.ti-link {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 8px;
   color: var(--text2);
-  list-style: none;
+  font-size: 12px;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
 }
 
-.preview-details summary::-webkit-details-marker {
-  display: none;
+.ti-link:hover:not(:disabled) {
+  color: var(--pink-deep);
+  background: var(--pink-soft);
 }
 
-/* 与全站一致的细箭头，展开时转向下 */
-.preview-details summary::before {
-  content: '';
-  width: 5px;
-  height: 5px;
-  border-right: 1.5px solid currentcolor;
-  border-bottom: 1.5px solid currentcolor;
-  transform: rotate(-45deg);
-  transition: transform var(--dur-base) var(--ease-out);
+.ti-link:disabled {
+  color: var(--muted);
 }
 
-.preview-details[open] > summary::before {
-  transform: rotate(45deg);
+.ti-secondary :deep(.favorite-button) {
+  margin-left: auto;
 }
 
-.preview-details p {
+.ti-details-entry {
+  display: inline-flex;
+  white-space: nowrap;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 8px;
   color: var(--text2);
+  font-size: 12px;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
 }
 
-.prompt-card {
-  padding: 12px 0;
-  border-top: 1px solid var(--line);
+.ti-details-entry:hover {
+  color: var(--pink-deep);
+  background: var(--pink-soft);
 }
 
-.prompt-card h4 {
-  margin: 0 0 8px;
-  color: var(--text2);
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.prompt-card .prompt-text {
-  margin: 0 0 10px;
+/* 完整提示词弹窗：与画师调试的「查看蓝本」一致 */
+.ti-dialog {
+  flex-direction: column;
+  width: min(600px, 92vw);
+  max-height: 85dvh;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line2);
+  border-radius: 16px;
+  background: var(--bg);
   color: var(--text);
-  font: 11px/1.8 var(--mono);
+  box-shadow: var(--shadow-modal);
+}
+
+/* flex-direction 写在基础类上，[open] 只负责显示：退场期间方向不失效 */
+.ti-dialog[open] {
+  display: flex;
+}
+
+.ti-dialog > header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ti-dialog > header h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.ti-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px calc(20px - var(--scrollbar-size)) 20px 20px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.ti-params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ti-params span {
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--text2);
+  background: var(--hover);
+  font-size: 11px;
+}
+
+.ti-prompt {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.ti-prompt h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  margin: 0 0 4px;
+  color: var(--text2);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.ti-prompt h4 small {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.ti-prompt h4 .icon-btn {
+  margin-left: auto;
+}
+
+.ti-prompt pre {
+  max-height: 240px;
+  margin: 0;
+  overflow: auto;
+  color: var(--text);
+  font: 11.5px/1.7 var(--mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;
+}
+
+.ti-prompt pre.empty {
+  color: var(--muted);
+  font-family: inherit;
 }
 </style>

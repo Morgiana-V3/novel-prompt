@@ -267,12 +267,6 @@ function executionRegions(recorded: PageInputContext): string {
           >
             常规操作记录 {{ context.history.filteredRoutineCount }} 条未纳入模型历史，原记录仍保留。
           </p>
-          <p
-            v-if="context.images.mode === 'external-reference'"
-            class="pw-input-note"
-          >
-            这里只记录可追溯范围，不代表外部 Agent 已读取这些历史正文。
-          </p>
           <details>
             <summary class="disclosure">查看记录的近期消息</summary>
             <ul class="pw-input-links">
@@ -325,7 +319,6 @@ function executionRegions(recorded: PageInputContext): string {
               </li>
             </ul>
           </details>
-          <p class="pw-input-note">以上范围与决定状态冻结于提交时；链接定位到聊天中的原记录。</p>
         </section>
         <details class="pw-input-identifiers">
           <summary class="disclosure">记录标识</summary>

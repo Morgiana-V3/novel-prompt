@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+/**
+ * 匹配画风的对比页：左参考图、右当前选中的结果；下方按轮次排列全部结果（不互相覆盖），
+ * 每轮按相似度排序，全场最像的标「最佳」并默认选中；右侧卡片是选中结果的配置与操作。
+ */
+import { computed, nextTick, ref, watch } from 'vue'
 import type { NaiImage } from '@shared/images/types'
 import type { ReverseTrial } from './use-reverse-trials'
+import type { MatchRound } from './use-style-match'
 import ReverseTrialInspector from './ReverseTrialInspector.vue'
 import ImageViewer from '../../shared/ui/ImageViewer.vue'
 import Icon from '../../shared/ui/Icon.vue'
@@ -9,67 +14,77 @@ import Icon from '../../shared/ui/Icon.vue'
 const props = defineProps<{
   referenceUrl: string
   referenceName: string
-  styles: string[]
-  trials: ReverseTrial[]
-  previous: ReverseTrial[]
+  rounds: MatchRound[]
   running: boolean
   disabled: boolean
   active: boolean
 }>()
 const emit = defineEmits<{ retry: [trial: ReverseTrial] }>()
-const round = ref<'current' | 'previous'>('current')
-const selectedIndex = ref(0)
 const viewer = ref<NaiImage>()
 const imageFailed = ref(false)
-const items = computed(() => {
-  const current = props.trials.length
-    ? props.trials.map((trial) => ({ trial, style: trial.style }))
-    : props.styles.map((style) => ({ trial: undefined, style }))
-  return [
-    ...current.map((item, index) => ({
-      ...item,
+const strip = ref<HTMLElement>()
+
+interface Item {
+  key: string
+  roundLabel: string
+  index: number
+  trial: ReverseTrial
+}
+/** 每轮一组；完成的轮次按相似度排序，进行中的保持出图顺序 */
+const groups = computed(() =>
+  props.rounds.map((round, roundIndex) => {
+    const items: Item[] = round.trials.map((trial, index) => ({
+      key: `${roundIndex}-${index}`,
+      roundLabel: round.label,
       index,
-      round: 'current',
-      key: `current-${index}`,
-    })),
-    ...props.previous.map((trial, index) => ({
       trial,
-      style: trial.style,
-      index,
-      round: 'previous',
-      key: `previous-${index}`,
-    })),
-  ]
-})
-const sortByScore = ref(false)
-const visibleItems = computed(() => {
-  const list = items.value.filter((item) => item.round === round.value)
-  return sortByScore.value && !props.running
-    ? list.sort(
-        (a, b) =>
-          (b.trial?.score ?? -Infinity) - (a.trial?.score ?? -Infinity) || a.index - b.index,
+    }))
+    if (!round.live) {
+      items.sort(
+        (a, b) => (b.trial.score ?? -Infinity) - (a.trial.score ?? -Infinity) || a.index - b.index,
       )
-    : list
-})
+    }
+    return { key: `round-${roundIndex}`, label: round.label, live: !!round.live, items }
+  }),
+)
+const items = computed(() => groups.value.flatMap((group) => group.items))
 const ranked = computed(() =>
   items.value
-    .filter((item) => item.round === round.value && Number.isFinite(item.trial?.score))
-    .sort((a, b) => b.trial!.score! - a.trial!.score! || a.index - b.index),
+    .filter((item) => Number.isFinite(item.trial.score))
+    .sort((a, b) => b.trial.score! - a.trial.score!),
 )
+const bestKey = computed(() => ranked.value[0]?.key)
+function rankOf(key: string) {
+  const index = ranked.value.findIndex((item) => item.key === key)
+  return index < 0 ? undefined : index + 1
+}
+function titleOf(item: Item) {
+  return `${item.roundLabel} · 方案 ${item.index + 1}`
+}
+
+/* 默认跟随全场最佳；用户手动点选后不再自动跳走，新一次匹配开始时恢复跟随 */
+const pickedKey = ref('')
 const selected = computed(
   () =>
-    visibleItems.value.find((item) => item.index === selectedIndex.value) ?? visibleItems.value[0],
+    items.value.find((item) => item.key === pickedKey.value) ??
+    items.value.find((item) => item.key === bestKey.value) ??
+    items.value.at(-1),
 )
-const completedCount = computed(() => visibleItems.value.filter((item) => item.trial?.image).length)
+function pick(key: string) {
+  pickedKey.value = key
+}
 watch(
-  () => props.trials,
-  () => {
-    round.value = 'current'
-    selectedIndex.value = 0
+  () => props.rounds.length,
+  async (length, previous) => {
+    if (length < (previous ?? 0) || length <= 1) {
+      pickedKey.value = ''
+    }
+    await nextTick()
+    strip.value?.scrollTo({ left: strip.value.scrollWidth, behavior: 'smooth' })
   },
 )
 watch(
-  () => selected.value?.trial?.image?.url,
+  () => selected.value?.trial.image?.url,
   () => {
     imageFailed.value = false
   },
@@ -82,10 +97,6 @@ watch(
     }
   },
 )
-function selectRound(value: 'current' | 'previous') {
-  round.value = value
-  selectedIndex.value = 0
-}
 function stateLabel(trial?: ReverseTrial) {
   if (trial?.state === 'generating') {
     return '生成中…'
@@ -102,12 +113,12 @@ function stateLabel(trial?: ReverseTrial) {
   return props.running ? '排队中' : '待生成'
 }
 function moveSelection(event: KeyboardEvent) {
-  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) || !items.value.length) {
     return
   }
   event.preventDefault()
-  const last = visibleItems.value.length - 1
-  let position = visibleItems.value.findIndex((item) => item.index === selectedIndex.value)
+  const last = items.value.length - 1
+  let position = items.value.findIndex((item) => item.key === selected.value?.key)
   if (event.key === 'Home') {
     position = 0
   } else if (event.key === 'End') {
@@ -116,21 +127,29 @@ function moveSelection(event: KeyboardEvent) {
     const direction = event.key === 'ArrowRight' ? 1 : -1
     position = (position + direction + last + 1) % (last + 1)
   }
-  selectedIndex.value = visibleItems.value[position]?.index ?? 0
-  const strip = event.currentTarget as HTMLElement
-  strip.querySelectorAll<HTMLButtonElement>('button')[position]?.focus()
+  pick(items.value[position].key)
+  strip.value?.querySelectorAll<HTMLButtonElement>('.trial-thumbnail')[position]?.focus()
 }
+const emptyLabel = computed(() => {
+  if (imageFailed.value) {
+    return '图片无法加载'
+  }
+  return selected.value ? stateLabel(selected.value.trial) : '点「匹配画风」开始出图'
+})
 function enlargeReference() {
   if (props.referenceUrl) {
     viewer.value = { name: props.referenceName, url: props.referenceUrl, createdAt: 0 }
   }
+}
+function enlargeSelected() {
+  viewer.value = selected.value?.trial.image
 }
 </script>
 
 <template>
   <section
     class="reverse-comparison"
-    aria-label="原图与当前方案对比"
+    aria-label="参考图与匹配结果对比"
   >
     <div class="comparison-main">
       <div class="comparison-images">
@@ -149,21 +168,18 @@ function enlargeReference() {
         </figure>
         <figure>
           <figcaption>
-            <strong
-              >{{ round === 'previous' ? '上一轮 · ' : '' }}方案
-              {{ (selected?.index ?? 0) + 1 }}</strong
-            >
-            <span role="status">{{ stateLabel(selected?.trial) }}</span>
+            <strong>{{ selected ? titleOf(selected) : '匹配结果' }}</strong>
+            <span role="status">{{ selected ? stateLabel(selected.trial) : '还没有结果' }}</span>
           </figcaption>
           <button
-            v-if="selected?.trial?.image && !imageFailed"
+            v-if="selected?.trial.image && !imageFailed"
             class="comparison-canvas"
-            aria-label="放大当前方案"
-            @click="viewer = selected.trial.image"
+            aria-label="放大当前结果"
+            @click="enlargeSelected"
           >
             <img
               :src="selected.trial.image.url"
-              :alt="`方案 ${selected.index + 1}`"
+              :alt="titleOf(selected)"
               @error="imageFailed = true"
             />
           </button>
@@ -173,103 +189,95 @@ function enlargeReference() {
             role="status"
           >
             <Icon
-              :name="selected?.trial?.state === 'error' ? 'warn' : 'image'"
+              :name="selected?.trial.state === 'error' ? 'warn' : 'image'"
               :size="32"
             />
-            <strong>{{ imageFailed ? '图片无法加载' : stateLabel(selected?.trial) }}</strong>
+            <strong>{{ emptyLabel }}</strong>
           </div>
         </figure>
       </div>
       <div class="comparison-filmstrip">
-        <div class="filmstrip-heading">
-          <div
-            class="round-switch"
-            aria-label="查看轮次"
-          >
-            <button
-              :class="{ active: round === 'current' }"
-              :aria-pressed="round === 'current'"
-              @click="selectRound('current')"
-            >
-              本轮方案
-            </button>
-            <button
-              v-if="previous.length"
-              :class="{ active: round === 'previous' }"
-              :aria-pressed="round === 'previous'"
-              @click="selectRound('previous')"
-            >
-              上一轮
-            </button>
-          </div>
-          <span>{{ completedCount }} / {{ visibleItems.length }} 已完成</span>
-          <button
-            v-if="ranked.length > 1"
-            class="score-sort"
-            :disabled="running"
-            :aria-pressed="sortByScore"
-            @click="sortByScore = !sortByScore"
-          >
-            {{ sortByScore ? '恢复生成顺序' : '按试图效果排序' }}
-          </button>
-        </div>
         <div
+          ref="strip"
           class="trial-thumbnails"
-          aria-label="选择对比方案"
+          aria-label="选择结果"
           @keydown="moveSelection"
         >
-          <button
-            v-for="item in visibleItems"
-            :key="item.key"
-            class="trial-thumbnail"
-            :class="{ selected: selected?.key === item.key }"
-            :aria-pressed="selected?.key === item.key"
-            :aria-label="`查看${round === 'previous' ? '上一轮' : '本轮'}方案 ${item.index + 1}`"
-            @click="selectedIndex = item.index"
+          <template
+            v-for="group in groups"
+            :key="group.key"
           >
-            <span class="thumbnail-image">
-              <img
-                v-if="item.trial?.image"
-                :src="item.trial.image.url"
-                alt=""
-              />
-              <span v-else>{{ String(item.index + 1).padStart(2, '0') }}</span>
-            </span>
-            <span class="thumbnail-info">
-              <strong
-                >方案 {{ item.index + 1
-                }}<Icon
-                  v-if="selected?.key === item.key"
-                  name="check"
-                  :size="12"
-              /></strong>
-              <small>{{ stateLabel(item.trial) }}</small>
-              <small
-                v-if="item.trial?.score !== undefined"
-                title="本轮已评分图片的余弦相似度，不是还原百分比"
-                >{{ !running && ranked[0]?.key === item.key ? '本轮最接近 · ' : ''
-                }}{{ item.trial.score.toFixed(3) }}</small
-              >
-            </span>
-          </button>
+            <span
+              class="round-label"
+              :class="{ live: group.live }"
+              >{{ group.label }}</span
+            >
+            <button
+              v-for="item in group.items"
+              :key="item.key"
+              class="trial-thumbnail"
+              :class="{ selected: selected?.key === item.key }"
+              :aria-pressed="selected?.key === item.key"
+              :aria-label="`查看${titleOf(item)}`"
+              @click="pick(item.key)"
+            >
+              <span class="thumbnail-image">
+                <img
+                  v-if="item.trial.image"
+                  :src="item.trial.image.url"
+                  alt=""
+                />
+                <span v-else>{{ item.index + 1 }}</span>
+              </span>
+              <span class="thumbnail-info">
+                <strong
+                  >方案 {{ item.index + 1
+                  }}<span
+                    v-if="bestKey === item.key"
+                    class="thumbnail-best"
+                    >最佳</span
+                  ></strong
+                >
+                <small v-if="item.trial.score !== undefined"
+                  >相似度 {{ item.trial.score.toFixed(3) }}</small
+                >
+                <small v-else>{{ stateLabel(item.trial) }}</small>
+              </span>
+            </button>
+          </template>
+          <p
+            v-if="!groups.length"
+            class="filmstrip-empty"
+          >
+            匹配结果会按轮次排在这里
+          </p>
         </div>
       </div>
     </div>
     <aside
       class="comparison-inspector"
-      aria-label="当前方案信息与操作"
+      aria-label="选中结果的配置与操作"
     >
       <ReverseTrialInspector
         v-for="item in items"
         v-show="selected?.key === item.key"
         :key="item.key"
         :index="item.index"
-        :style-prompt="item.style"
+        :title="titleOf(item)"
+        :style-prompt="item.trial.style"
         :trial="item.trial"
         :status="stateLabel(item.trial)"
+        :rank="rankOf(item.key)"
+        :total="ranked.length"
         :disabled="disabled"
-        @retry="item.trial && emit('retry', item.trial)"
+        @retry="emit('retry', item.trial)"
       />
+      <p
+        v-if="!items.length"
+        class="inspector-empty"
+      >
+        还没有结果
+      </p>
     </aside>
     <ImageViewer
       v-if="viewer && active"
@@ -378,62 +386,27 @@ button.comparison-canvas {
 }
 
 .comparison-filmstrip {
-  flex: 0 0 144px;
+  flex: 0 0 112px;
   padding: 12px 14px;
   border-top: 1px solid var(--line);
 }
 
-.filmstrip-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.filmstrip-heading > span {
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.score-sort {
-  color: var(--pink-deep);
-  font-size: 11px;
-}
-
-.round-switch {
-  display: flex;
-  gap: 12px;
-}
-
-.round-switch button {
-  padding: 0 0 4px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 11px;
-}
-
-.round-switch button.active {
-  border-bottom-color: var(--pink-deep);
-  color: var(--text);
-}
-
 .trial-thumbnails {
   display: flex;
+  align-items: center;
   gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 5px;
+
+  /* 横向滚动条的高度始终预留：方案变多出现滚动条时，上方大图不会被挤动 */
+  overflow-x: scroll;
+  padding-bottom: 2px;
 }
 
 .trial-thumbnail {
   display: flex;
-  flex: 0 0 180px;
-  width: 180px;
+  flex: 0 0 150px;
+  width: 150px;
   min-width: 0;
-  max-width: 180px;
+  max-width: 150px;
   align-items: center;
   gap: 10px;
   height: 76px;
@@ -494,6 +467,49 @@ button.comparison-canvas {
 .thumbnail-info small {
   font-size: 10px;
   color: var(--muted);
+  white-space: nowrap;
+}
+
+/* 轮次标签：竖排在每组缩略图前，进行中的轮次带粉色 */
+.round-label {
+  flex-shrink: 0;
+  padding: 4px 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  writing-mode: vertical-rl;
+  letter-spacing: 1px;
+}
+
+.round-label:not(:first-child) {
+  margin-left: 8px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+
+.round-label.live {
+  color: var(--pink-deep);
+}
+
+.thumbnail-best {
+  padding: 0 6px;
+  border-radius: 999px;
+  color: var(--pink-deep);
+  background: var(--pink-soft);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.filmstrip-empty,
+.inspector-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.inspector-empty {
+  padding: 20px 18px;
 }
 
 .comparison-inspector {
@@ -532,10 +548,6 @@ button.comparison-canvas {
     flex-wrap: wrap;
     align-content: center;
     gap: 3px 6px;
-  }
-
-  .filmstrip-heading > span {
-    display: none;
   }
 }
 </style>

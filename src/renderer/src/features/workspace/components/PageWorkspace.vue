@@ -1401,12 +1401,6 @@ async function beginConfigFromButton() {
   transform: translateX(16px);
 }
 
-/* 拖动分隔条时宽度实时跟随，不走开合动画 */
-:global(body.split-resizing) .pw-ai-dock,
-:global(body.split-resizing) .pw-header {
-  transition: none;
-}
-
 .pw-ai-toggle {
   display: inline-flex;
   align-items: center;

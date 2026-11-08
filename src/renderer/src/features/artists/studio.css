@@ -82,12 +82,12 @@
   color: var(--pink-deep);
 }
 
-/* 三栏：画师串 · 效果对照 · 蓝本（只读） */
+/* 两栏：画师串 · 效果对照；蓝本信息改由底栏按钮打开只读弹窗 */
 .artist-studio-body {
   display: grid;
   flex: 1;
   min-height: 0;
-  grid-template-columns: 270px minmax(0, 1fr) 290px;
+  grid-template-columns: 270px minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   align-items: stretch;
   gap: 24px;
@@ -158,6 +158,18 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+/* 画师图鉴入口：常用，和滑杆上限放在同一栏右侧 */
+.artist-catalog-entry {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.artist-catalog-entry .btn {
+  gap: 5px;
 }
 
 .artist-range-settings input {
@@ -499,7 +511,7 @@
 @media (width <= 1350px) {
   .artist-studio-body {
     padding: 16px 20px;
-    grid-template-columns: 240px minmax(0, 1fr) 250px;
+    grid-template-columns: 240px minmax(0, 1fr);
     gap: 18px;
   }
 }
@@ -615,15 +627,58 @@
 }
 
 /* ---------- 效果对照：对照方式、变化标签、滑动对比 ---------- */
-.artist-compare-mode {
+
+/* 改动：标题栏右侧小按钮，点击展开浮层 */
+.artist-changes-anchor {
+  position: relative;
   flex-shrink: 0;
 }
 
+.artist-changes-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px 0 10px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  color: var(--pink-deep);
+  background: var(--pink-soft);
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.artist-changes-toggle:hover,
+.artist-changes-toggle.on {
+  background: color-mix(in srgb, var(--pink-deep) 12%, var(--pink-soft));
+}
+
+.artist-changes-toggle .icon {
+  transition: transform var(--dur-base) var(--ease-glide);
+}
+
+.artist-changes-toggle.on .icon {
+  transform: rotate(90deg);
+}
+
 .artist-changes {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 3;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin: -4px 0 12px;
+  width: max-content;
+  max-width: 320px;
+  max-height: 260px;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: var(--shadow-pop);
+  transform-origin: top right;
 }
 
 .artist-change {
@@ -664,108 +719,41 @@
   background: var(--pink-soft);
 }
 
-.artist-slider-stage {
-  position: relative;
-  display: grid;
-  flex: 1;
-  min-height: 0;
-  place-items: center;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: repeating-conic-gradient(#f6f6f8 0% 25%, #fff 0% 50%) 50% / 20px 20px;
-  cursor: ew-resize;
-  touch-action: none;
-  animation: fade-in var(--dur-base) var(--ease-out);
+/* ---------- 蓝本（只读弹窗） ---------- */
+.artist-blueprint-dialog {
+  width: min(560px, 92vw);
 }
 
-.artist-slider-stage img {
-  grid-area: 1 / 1;
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  pointer-events: none;
+.artist-blueprint-dialog h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-/* 新图叠在基准图上，只露出分割线右侧 */
-.artist-slider-candidate {
-  clip-path: inset(0 0 0 var(--split));
+.artist-blueprint-dialog footer {
+  justify-content: flex-end;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
 }
 
-.artist-slider-handle {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: var(--split);
-  width: 2px;
-  margin-left: -1px;
-  background: #fff;
-  box-shadow: 0 0 0 1px rgb(20 20 30 / 18%);
-  pointer-events: none;
-}
-
-.artist-slider-handle i {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 28px;
-  height: 28px;
-  margin: -14px 0 0 -14px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: var(--shadow-pop);
-}
-
-.artist-slider-handle i::before,
-.artist-slider-handle i::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  width: 0;
-  height: 0;
-  margin-top: -4px;
-  border: 4px solid transparent;
-}
-
-.artist-slider-handle i::before {
-  left: 5px;
-  border-right-color: var(--text2);
-}
-
-.artist-slider-handle i::after {
-  right: 5px;
-  border-left-color: var(--text2);
-}
-
-.artist-slider-label {
-  position: absolute;
-  top: 12px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  font-size: 11px;
-  color: #fff;
-  background: rgb(20 20 28 / 55%);
-  backdrop-filter: blur(6px);
-  pointer-events: none;
-}
-
-.artist-slider-label.baseline {
-  left: 12px;
-}
-
-.artist-slider-label.candidate {
-  right: 12px;
-}
-
-/* ---------- 蓝本（只读） ---------- */
 .artist-blueprint {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-width: 0;
-  min-height: 0;
-  overflow: auto;
-  scrollbar-width: thin;
+  padding-top: 16px;
+}
+
+/* 底栏的蓝本入口：带一张小缩略图，一眼能认出当前蓝本 */
+.artist-footer .artist-blueprint-entry {
+  gap: 6px;
+  padding-left: 4px;
+}
+
+.artist-blueprint-entry img {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  object-fit: cover;
 }
 
 .artist-readonly {
@@ -778,10 +766,6 @@
   font-size: 10.5px;
   color: var(--text2);
   background: var(--hover);
-}
-
-.artist-blueprint .artist-section-heading {
-  margin-bottom: 4px;
 }
 
 .artist-blueprint-source {

@@ -75,8 +75,8 @@ nav {
 
 .nav-mark.animate {
   transition:
-    transform var(--dur-slow) var(--ease-out),
-    height var(--dur-slow) var(--ease-out);
+    transform var(--dur-nav) var(--ease-glide),
+    height var(--dur-nav) var(--ease-glide);
 }
 
 nav .nav-item {
@@ -100,7 +100,7 @@ nav.sliding .nav-item.active {
     background var(--dur-fast),
     color var(--dur-fast),
     box-shadow var(--dur-base),
-    transform var(--dur-slow) var(--bounce);
+    transform var(--dur-fast) var(--ease-out);
 }
 
 .nav-item:hover {
@@ -245,7 +245,7 @@ nav.sliding .nav-item.active {
  */
 .view,
 .sessions-view {
-  animation: page-in var(--dur-slow) var(--ease-glide);
+  animation: page-in var(--dur-nav) var(--ease-glide);
 }
 
 .view {

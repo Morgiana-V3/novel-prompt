@@ -155,10 +155,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
           </div>
 
           <div class="pit-body">
-            <p class="pit-description">
-              把画布向外扩展，用当前配置的提示词补全新区域；原图像素保持不变，只在边缘重绘一小圈以衔接。
-            </p>
-
             <div class="pit-main">
               <div class="pit-preview">
                 <div

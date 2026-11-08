@@ -1,3 +1,4 @@
+import type { Directive } from 'vue'
 import { tagCompletionLimit } from '@shared/settings/tag-completion'
 import { settingsState } from '../settings/state'
 import type { SearchHit, TagCategory } from '@shared/tags/types'
@@ -66,6 +67,32 @@ interface Token {
   text: string
 }
 
+type CompletionField = HTMLTextAreaElement | HTMLInputElement
+
+/**
+ * 单字段模式（如画师调试的“添加画师”输入框）：整个输入就是一个查询，
+ * 只在指定分类里搜索，不提供语法项和 / 快捷搜索；选中后填入名称并派发 tag-accept 事件。
+ */
+export interface TagCompleteOptions {
+  single?: boolean
+  category?: TagCategory
+}
+
+/** 单字段模式下的查询：从开头到光标的全部文字，去掉 artist: 前缀 */
+function singleToken(el: CompletionField): Token | null {
+  const caret = el.selectionStart ?? 0
+  if (caret !== el.selectionEnd || caret !== el.value.length) {
+    return null
+  }
+  const raw = el.value.slice(0, caret)
+  const lead = /^\s*(?:artist:\s*)?/i.exec(raw)?.[0].length ?? 0
+  const text = raw.slice(lead)
+  if (!text.trim() || (!ZH.test(text) && text.trim().length < 2)) {
+    return null
+  }
+  return { start: lead, end: caret, text }
+}
+
 /**
  * tag 之间的分隔：逗号、换行、|；NovelAI 允许标签与自然语言句子混写，
  * 句末标点后跟空格（. ! ? ; 及中文。！？；）也开始新的 tag；数值权重收尾的 :: 同理。
@@ -83,8 +110,8 @@ function tagStart(before: string): number {
 }
 
 /** 光标所在的 tag：从上一个分隔符到光标，跳过权重前缀和括号；光标必须在这个 tag 的末尾 */
-function automaticToken(el: HTMLTextAreaElement): Token | null {
-  const caret = el.selectionStart
+function automaticToken(el: CompletionField): Token | null {
+  const caret = el.selectionStart ?? 0
   if (caret !== el.selectionEnd) {
     return null
   }
@@ -117,7 +144,7 @@ function automaticToken(el: HTMLTextAreaElement): Token | null {
 }
 
 /** 用一个隐藏的镜像元素量出光标在页面上的位置 */
-function caretRect(el: HTMLTextAreaElement, position: number) {
+function caretRect(el: CompletionField, position: number) {
   const style = getComputedStyle(el)
   const mirror = document.createElement('div')
   for (const property of [
@@ -180,6 +207,9 @@ class Completion {
     if (this.el.readOnly) {
       return null
     }
+    if (this.options.single) {
+      return this.automatic ? singleToken(this.el) : null
+    }
     if (!session) {
       return this.automatic ? automaticToken(this.el) : null
     }
@@ -189,8 +219,8 @@ class Completion {
     if (
       !value.startsWith(session.prefix + '/') ||
       !value.endsWith(session.suffix) ||
-      selectionStart < start + 1 ||
-      selectionEnd > end ||
+      (selectionStart ?? 0) < start + 1 ||
+      (selectionEnd ?? 0) > end ||
       end < start + 1
     ) {
       return null
@@ -226,9 +256,13 @@ class Completion {
     this.onInput(new Event('input'))
   }
 
-  constructor(private el: HTMLTextAreaElement) {
+  constructor(
+    private el: CompletionField,
+    private options: TagCompleteOptions = {},
+  ) {
     el.addEventListener('input', this.onInput)
-    el.addEventListener('keydown', this.onKeydown, true)
+    // 输入框与文本域的联合类型无法匹配 keydown 重载，按通用监听器登记
+    el.addEventListener('keydown', this.onKeydown as EventListener, true)
     el.addEventListener('blur', this.onBlur)
     el.addEventListener('scroll', this.close)
     el.addEventListener('select', this.onSelection)
@@ -239,7 +273,7 @@ class Completion {
 
   dispose() {
     this.el.removeEventListener('input', this.onInput)
-    this.el.removeEventListener('keydown', this.onKeydown, true)
+    this.el.removeEventListener('keydown', this.onKeydown as EventListener, true)
     this.el.removeEventListener('blur', this.onBlur)
     this.el.removeEventListener('scroll', this.close)
     this.el.removeEventListener('select', this.onSelection)
@@ -260,8 +294,8 @@ class Completion {
       return
     }
     // Only an explicitly typed slash starts a session, never a pasted URL/path.
-    if (input.inputType === 'insertText' && input.data === '/') {
-      const caret = this.el.selectionStart
+    if (!this.options.single && input.inputType === 'insertText' && input.data === '/') {
+      const caret = this.el.selectionStart ?? 0
       const before = this.el.value.slice(0, caret - 1)
       if (this.el.value[caret - 1] === '/' && !/[^\s]*[:/\\][^\s]*$/.test(before)) {
         this.session = { prefix: before, suffix: this.el.value.slice(caret) }
@@ -292,12 +326,13 @@ class Completion {
     const prefixed = PREFIXED.exec(token.text.trim())
     const prefix = prefixed?.[1] ?? ''
     const query = (prefixed ? prefixed[2] : token.text).trim()
-    const syntax = prefixed ? [] : syntaxItems(query)
+    const syntax = prefixed || this.options.single ? [] : syntaxItems(query)
+    const category = this.options.category ?? PREFIX_CATEGORY[prefix.toLowerCase()]
     const limit = tagCompletionLimit(settingsState.settings?.tagCompletionLimit)
     let hits: SearchHit[] = []
     if (ZH.test(query) || query.trim().length >= 2) {
       try {
-        hits = await window.api.tagComplete(query, limit, PREFIX_CATEGORY[prefix.toLowerCase()])
+        hits = await window.api.tagComplete(query, limit, category)
       } catch {
         if (request === this.request && this.session) {
           this.token = token
@@ -410,6 +445,10 @@ class Completion {
     } finally {
       this.inserting = false
     }
+    // 单字段模式：通知使用方已选定（例如直接加入画师）
+    if (this.options.single) {
+      this.el.dispatchEvent(new CustomEvent('tag-accept', { detail: item.insert }))
+    }
   }
 
   private render() {
@@ -490,12 +529,12 @@ class Completion {
   }
 }
 
-const instances = new WeakMap<HTMLTextAreaElement, Completion>()
-export const vTagComplete = {
-  mounted(el: HTMLTextAreaElement) {
-    instances.set(el, new Completion(el))
+const instances = new WeakMap<CompletionField, Completion>()
+export const vTagComplete: Directive<CompletionField, TagCompleteOptions | undefined> = {
+  mounted(el, binding) {
+    instances.set(el, new Completion(el, binding.value ?? {}))
   },
-  unmounted(el: HTMLTextAreaElement) {
+  unmounted(el) {
     instances.get(el)?.dispose()
     instances.delete(el)
   },

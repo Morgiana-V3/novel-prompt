@@ -3,7 +3,7 @@ import type { NaiImage } from '@shared/images/types'
 import { creationSnapshots } from '../creation/public/navigation'
 
 export interface ArtistBlueprint {
-  kind: 'creation' | 'gallery' | 'favorite'
+  kind: 'creation' | 'gallery' | 'favorite' | 'reverse'
   id: string
   title: string
   request: NaiGenRequest

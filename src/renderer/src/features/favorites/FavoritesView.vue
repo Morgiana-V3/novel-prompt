@@ -822,9 +822,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         />
         <h2>{{ favorites.items.length ? '没有匹配的收藏' : '把喜欢的效果留在这里' }}</h2>
         <p v-if="favorites.items.length">换个关键词，或清除标签筛选再试试。</p>
-        <p v-else>
-          在图片预览、画师试图或图片精修中的图片上点击星标，即可保存原图和完整生成记录；也可以在生图创作的生成参数里点「收藏配置」，无需先出图。
-        </p>
+        <p v-else>在图片上点星标即可收藏</p>
         <div class="row">
           <button
             v-if="query || tag"
@@ -854,8 +852,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 18px 24px 20px;
-  gap: 12px;
+  padding: 12px 24px 20px;
+  gap: 8px;
   min-height: 0;
 }
 
@@ -911,8 +909,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   padding-left: 32px;
 }
 
+/* 顶栏控件压到 30px，和分段切换同高，顶栏不再占一大截高度 */
+
+/* 全局 input.input 有 36px 最小高度，这里提高一级权重覆盖 */
+.favorites-search input.input,
+.favorites-toolbar :deep(.favorites-tag-filter) {
+  height: 30px;
+  min-height: 30px;
+  border-radius: 8px;
+}
+
 .favorites-toolbar :deep(.favorites-tag-filter) {
   width: 140px;
+  padding: 0 10px;
 }
 
 .favorites-pane {

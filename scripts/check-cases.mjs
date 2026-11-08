@@ -2,6 +2,7 @@
 export const cases = {
   contracts: ['node', 'scripts/check-contracts.mjs', false],
   'tests:registration': ['node', 'scripts/check-test-registration.mjs', false],
+  'reverse:artist-mix': ['node', 'tests/unit/artist-mix-checks.cjs', false],
   'mcp:readonly': ['node', 'tests/live/live-smoke.mjs', false, ['--read-only']],
   live: ['node', 'tests/live/live-smoke.mjs', false],
   'mcp:performance': ['node', 'tests/live/live-performance.mjs', false],
@@ -16,6 +17,7 @@ export const legacyCases = {
     false,
   ],
   'tests:registration': ['node', 'scripts/check-test-registration.mjs', false],
+  'reverse:artist-mix': ['node', 'tests/unit/artist-mix-checks.cjs', false],
   'app:identity': ['electron', 'tests/integration/app-identity-smoke.cjs', false],
   pricing: ['node', 'tests/unit/novelai-pricing.cjs', false],
   'task:notifications': ['node', 'tests/unit/task-notifications.cjs', false],

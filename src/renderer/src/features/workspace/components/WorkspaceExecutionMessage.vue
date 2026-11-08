@@ -170,8 +170,12 @@ const billingText = computed(() => {
             {{ label(execution.adoptedVersionId) }}
           </button>
         </p>
-        <p v-if="billingText">{{ billingText }}</p>
-        <small v-if="billingText">费用为本次执行前后的余额观测，不是当前余额。</small>
+        <p
+          v-if="billingText"
+          title="费用为本次执行前后的余额观测，不是当前余额"
+        >
+          {{ billingText }}
+        </p>
       </template>
       <div
         v-if="resultIds.length > 1"

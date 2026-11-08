@@ -78,6 +78,24 @@ function apply(value: number | null) {
   }
 }
 
+/**
+ * 窗口缩放时按容器宽度收紧/恢复面板：同样不走过渡，
+ * 短暂标记 split-settling，样式生效两帧后移除。
+ */
+let settleFrame = 0
+function settle(value: number) {
+  const before = size.value
+  apply(value)
+  if (size.value === before) {
+    return
+  }
+  document.body.classList.add('split-settling')
+  cancelAnimationFrame(settleFrame)
+  settleFrame = requestAnimationFrame(() => {
+    settleFrame = requestAnimationFrame(() => document.body.classList.remove('split-settling'))
+  })
+}
+
 function save(value: number | null) {
   preferred = value
   if (value === null) {
@@ -176,7 +194,7 @@ onMounted(() => {
   if (parent) {
     observer = new ResizeObserver(() => {
       if (preferred !== null && !dragging.value) {
-        apply(preferred)
+        settle(preferred)
       }
     })
     observer.observe(parent)
@@ -186,6 +204,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   endDrag()
   observer?.disconnect()
+  cancelAnimationFrame(settleFrame)
+  document.body.classList.remove('split-settling')
   if (preferred !== null) {
     target()?.style.removeProperty(props.variable)
   }
@@ -222,6 +242,16 @@ body.split-resizing {
 body.split-resizing iframe,
 body.split-resizing img {
   pointer-events: none;
+}
+
+/*
+ * 拖拽（及窗口缩放时收紧面板）时宽度要实时跟随：暂停所有过渡（侧栏开合的 width、网格列宽等），
+ * 否则每一步都会被过渡拖慢成“追着跑”。松手后恢复，开合与双击复位仍有动画。
+ * 例外说明：需要 !important，各布局 scoped 的过渡规则权重更高；只在拖拽期间生效。
+ */
+body.split-resizing *,
+body.split-settling * {
+  transition: none !important;
 }
 </style>
 

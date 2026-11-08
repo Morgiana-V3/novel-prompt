@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { vSegIndicator } from '../../shared/lib/seg-indicator'
 import { useModelManager } from './use-model-manager'
-import { SnippetButton } from '../prompts/public/components'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ReverseModel, ReverseResult, ReverseStatus } from '@shared/reverse/types'
 import { shellState } from '../../shared/state/shell'
@@ -15,11 +14,12 @@ import Icon from '../../shared/ui/Icon.vue'
 import Mascot from '../../shared/ui/Mascot.vue'
 import ReverseModels from './ReverseModels.vue'
 import ReverseCharacters from './ReverseCharacters.vue'
+import ReverseTagBoard from './ReverseTagBoard.vue'
 import ReverseReference from './ReverseReference.vue'
-import ReverseTrials from './ReverseTrials.vue'
-import ArtistWeights from './ArtistWeights.vue'
 import ArtistRecommendations from './ArtistRecommendations.vue'
-import { removeStyleArtist, styleArtists } from './artist-weights'
+import { estimateArtistMix, rankArtists } from '@shared/reverse/candidates'
+import { COMPARE_MAX, TUNE_MAX_ROUNDS, TUNE_ROUND_SIZE, useStyleMatch } from './use-style-match'
+import { fusedProbabilities, memberWeights } from './mix-weights'
 import ReverseComparison from './ReverseComparison.vue'
 import { useReverseTrials, type ReverseTrial } from './use-reverse-trials'
 import { modelSize as size, summarizeReverseModels } from './model-summary'
@@ -50,20 +50,57 @@ watch(
   },
   { deep: true },
 )
-const pane = ref<'recognition' | 'characters' | 'trials'>('recognition')
 const stage = ref<'recognition' | 'trials'>('recognition')
 const analyzedModels = ref('')
 const modelsChanged = computed(
   () => !!result.value && analyzedModels.value !== [...selection.value].sort().join(','),
 )
-const previewStyles = ref<string[]>([])
+/*
+ * 推荐画师列表的勾选只用于「对比画师」（各单独出一张）；混合组成是另一份固定推荐，
+ * 默认就是推测组成，可在列表里把画师加入 / 移出组成，「调优比例」只调组成的比例。
+ */
+const selectedArtists = ref<string[]>([])
+const selectedCount = computed(() => selectedArtists.value.length)
+/** 调优要靠 K3 风格特征打分 */
+const tuneAvailable = computed(() => !!result.value?.style)
+const TUNE_MAX_IMAGES = TUNE_ROUND_SIZE * TUNE_MAX_ROUNDS
+const matchIdle = computed(() => !!result.value && !busy.value && !imageState.generating)
+const canCompare = computed(
+  () => matchIdle.value && selectedCount.value > 0 && selectedCount.value <= COMPARE_MAX,
+)
+const canTune = computed(() => matchIdle.value && tuneAvailable.value && mixParts.value.length >= 2)
+const compareTitle = computed(() => {
+  if (selectedCount.value > COMPARE_MAX) {
+    return `一次最多对比 ${COMPARE_MAX} 位画师`
+  }
+  if (!selectedCount.value) {
+    return '先在推荐画师里选几位'
+  }
+  return '勾选的画师各单独出一张，看哪位的画风最接近参考图'
+})
+const tuneTitle = computed(() => {
+  if (!tuneAvailable.value) {
+    return '需要勾选「K3 画师 / 评分」并重新识别'
+  }
+  if (mixParts.value.length < 2) {
+    return '混合组成至少要有 2 位画师才能调比例'
+  }
+  return `只调混合组成的比例：每轮 ${TUNE_ROUND_SIZE} 张，最多 ${TUNE_MAX_ROUNDS} 轮，不再变像就停`
+})
 const {
   state: trialsState,
   run: runTrials,
   stop: stopTrials,
   clear: clearTrials,
 } = useReverseTrials()
-const previewTrials = computed(() => trialsState.trials)
+/* 匹配画风：出图与 K3 打分复用试图流程（buildCandidate 为函数声明，提升可用） */
+const match = useStyleMatch({
+  trials: trialsState,
+  runCandidates: (candidates) => runTrials(candidates, result.value?.style),
+  buildCandidate,
+  stop: stopTrials,
+})
+const { rounds: matchRounds, best: matchBest, bestTune, imageCount: matchImages } = match
 const models = computed(() => summarizeReverseModels(status.value, selection.value))
 const missingModels = computed(() => models.value.filter((model) => !model.ready))
 const missingBytes = computed(() =>
@@ -84,10 +121,31 @@ watch(
   },
   { deep: true },
 )
-watch(threshold, () => {
-  if (result.value) {
-    content.value = filteredTags.value.map((t) => t.name).join(', ')
+function splitTags(text: string) {
+  return text
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+}
+/* 调阈值只增减识别出的标签：用户划掉的仍保持划掉，手动补充的保留 */
+watch(threshold, (next, previous) => {
+  if (!result.value) {
+    return
   }
+  const current = new Set(splitTags(content.value))
+  const recognized = new Set(result.value.tags.map((tag) => tag.name))
+  const struck = new Set(
+    result.value.tags
+      .filter((tag) => tag.score >= previous && !current.has(tag.name))
+      .map((tag) => tag.name),
+  )
+  const extras = [...current].filter((name) => !recognized.has(name))
+  content.value = [
+    ...result.value.tags
+      .filter((tag) => tag.score >= next && !struck.has(tag.name))
+      .map((tag) => tag.name),
+    ...extras,
+  ].join(', ')
 })
 const error = ref('')
 const image = ref<File>()
@@ -95,7 +153,6 @@ const imageUrl = ref('')
 const picker = ref<HTMLInputElement>()
 const result = ref<ReverseResult>()
 const content = ref('')
-const style = ref('')
 const characterText = ref('')
 const characters = ref<CharDraft[]>([])
 const croppedResult = ref<ReverseResult>()
@@ -154,6 +211,7 @@ watch(
 const busy = computed(
   () =>
     running.value ||
+    match.state.running ||
     trialsState.running ||
     actionBusy.value ||
     ['downloading', 'verifying', 'running'].includes(status.value?.phase ?? ''),
@@ -176,15 +234,22 @@ const recognitionMessage = computed(() => {
   }
   return ''
 })
-const recognitionLabel = computed(() => {
+/** 识别前 / 识别中，空白区域的标题与提示 */
+const emptyTitle = computed(() => {
   if (running.value) {
-    return '识别中…'
+    return '正在识别参考图…'
   }
-  return result.value ? '重新识别' : '开始识别'
+  return image.value ? '准备好了，开始识别吧' : '放入一张参考图'
 })
-const combined = computed(() =>
-  [style.value.trim(), promptContent.value.trim()].filter(Boolean).join(', '),
-)
+const emptyHint = computed(() => {
+  if (running.value) {
+    return status.value?.message || ''
+  }
+  if (!image.value) {
+    return '拖入、粘贴或点击左侧选择图片'
+  }
+  return recognitionMessage.value
+})
 const progress = computed(() =>
   status.value?.totalBytes
     ? Math.min(100, (status.value.completedBytes / status.value.totalBytes) * 100)
@@ -223,18 +288,16 @@ function select(file?: File) {
   URL.revokeObjectURL(imageUrl.value)
   image.value = file
   imageUrl.value = URL.createObjectURL(file)
-  pane.value = 'recognition'
   stage.value = 'recognition'
   result.value = undefined
   content.value = ''
-  style.value = ''
+  selectedArtists.value = []
   characterText.value = ''
   characters.value = []
   croppedResult.value = undefined
   cropEnabled.value = false
   hasCrop.value = false
   error.value = ''
-  previewStyles.value = []
   clearTrials()
 }
 function paste(event: ClipboardEvent) {
@@ -271,13 +334,12 @@ async function analyze() {
     return
   }
   error.value = ''
-  previewStyles.value = []
   clearTrials()
   running.value = true
   cancelRequested.value = false
   result.value = undefined
   content.value = ''
-  style.value = ''
+  selectedArtists.value = []
   croppedResult.value = undefined
   characterText.value = ''
   characters.value = []
@@ -290,6 +352,22 @@ async function analyze() {
     result.value = await window.api.reverseAnalyze(bytes, selectedModels)
     analyzedModels.value = selectedModels.sort().join(',')
     content.value = filteredTags.value.map((tag) => tag.name).join(', ')
+    match.reset()
+    showEstimate.value = false
+    customMembers.value = null
+    selectedArtists.value =
+      estimateArtistMix(result.value)?.parts.map((part) => part.name) ??
+      rankArtists(result.value)
+        .slice(0, 3)
+        .map((artist) => artist.name)
+    // 单人图：角色候选直接放进主提示词，不用再分配；多人图提示逐个框选拆分角色
+    if (multiPerson.value && characterCandidates.value.length >= 2) {
+      characters.value = characterCandidates.value
+        .slice(0, 6)
+        .map((name) => ({ prompt: name, negative: '', position: '' }))
+    } else {
+      characterText.value = characterCandidates.value.join(', ')
+    }
   } catch (e) {
     error.value = cleanErr(e)
   } finally {
@@ -311,7 +389,7 @@ async function analyzeCrop() {
       throw new Error('已取消识别')
     }
     croppedResult.value = await window.api.reverseAnalyze(bytes, [...cropModels.value])
-    pane.value = 'characters'
+    createRoleFromCrop(croppedResult.value)
   } catch (e) {
     error.value = cleanErr(e)
   } finally {
@@ -319,67 +397,232 @@ async function analyzeCrop() {
     await refresh()
   }
 }
+/** 达到阈值的全图角色候选 */
+const characterCandidates = computed(() =>
+  (result.value?.characters ?? [])
+    .filter((tag) => tag.score >= activeCharacterThreshold.value)
+    .map((tag) => tag.name),
+)
+const multiPerson = computed(
+  () =>
+    !!result.value &&
+    (result.value.warnings.some((warning) => warning.startsWith('检测到多个人物')) ||
+      result.value.tags.some(
+        (tag) =>
+          tag.score >= threshold.value &&
+          /^(?:[2-6]\+?(?:girls|boys)|multiple (?:girls|boys))$/.test(tag.name),
+      )),
+)
+/**
+ * 框选一个人物识别后，直接新建一个角色：角色名 + 选区外观标签（去掉人数类标签），
+ * 同名角色标签从主提示词里移走；清掉选区，继续框下一个人。
+ */
+function createRoleFromCrop(cropped: ReverseResult) {
+  const names = cropped.characters
+    .filter((tag) => tag.score >= activeCharacterThreshold.value)
+    .map((tag) => tag.name)
+  const looks = cropped.tags
+    .filter(
+      (tag) =>
+        tag.score >= threshold.value &&
+        !/^(?:\d\+?(?:girls?|boys?)|solo|multiple .*)$/.test(tag.name),
+    )
+    .map((tag) => tag.name)
+  if (!names.length && !looks.length) {
+    error.value = '选区里没有识别到可用的标签，可以把人物框得更完整一些再试'
+    return
+  }
+  const existing = characters.value.findIndex((role) =>
+    splitTags(role.prompt).some((token) => names.includes(token)),
+  )
+  if (existing < 0 && characters.value.length >= 6) {
+    error.value = '最多 6 个角色，请先删除不需要的角色'
+    return
+  }
+  if (existing >= 0) {
+    characters.value = characters.value.map((role, index) =>
+      index === existing
+        ? {
+            ...role,
+            prompt: [...new Set([...splitTags(role.prompt), ...names, ...looks])].join(', '),
+          }
+        : role,
+    )
+  } else {
+    const prompt = [...new Set([...names, ...looks])].join(', ')
+    characters.value = [...characters.value, { prompt, negative: '', position: '' }]
+  }
+  if (names.length) {
+    characterText.value = splitTags(characterText.value)
+      .filter((name) => !names.includes(name))
+      .join(', ')
+  }
+  reference.value?.clear()
+  hasCrop.value = false
+  toast(
+    existing >= 0
+      ? `已把外观补进角色 ${existing + 1}，可以继续框选下一个人物`
+      : `已新建角色 ${characters.value.length}，可以继续框选下一个人物`,
+  )
+}
+/** 进入框选：参考图下方出现框选工具，完成后点「完成」退出 */
+function startCharacterSplit() {
+  cropEnabled.value = true
+}
 function cropSelected(selected: boolean) {
   hasCrop.value = selected
   croppedResult.value = undefined
 }
-function openCharacters() {
-  pane.value = 'characters'
+function openTrials() {
   stage.value = 'recognition'
 }
-function openTrials() {
-  pane.value = 'trials'
-  stage.value = 'recognition'
+/** 对比画师：选中的画师各单独出一张 */
+async function startCompare() {
+  if (!canCompare.value) {
+    return
+  }
+  stage.value = 'trials'
+  await match.compare([...selectedArtists.value])
+}
+/** 调优比例：从当前混合组成出发逐轮试权重 */
+async function startTune() {
+  if (!canTune.value) {
+    return
+  }
+  stage.value = 'trials'
+  await match.tune(mixParts.value.map((part) => ({ name: part.name, weight: part.weight })))
+}
+function startCompareClick() {
+  startCompare().catch(reportError)
+}
+function startTuneClick() {
+  startTune().catch(reportError)
+}
+function cancelMatch() {
+  match.cancel().catch(reportError)
 }
 function startTrials() {
-  if (
-    result.value &&
-    !busy.value &&
-    previewStyles.value.length > 0 &&
-    previewStyles.value.length <= 6
-  ) {
+  if (result.value && matchRounds.value.length) {
     stage.value = 'trials'
   }
 }
-async function preview() {
-  if (stage.value !== 'trials' || busy.value || !result.value) {
-    return
+/** 对比页顶部唯一的进度：轮次 · 已出张数 · 最佳相似度 · 额度 */
+const matchStatus = computed(() => {
+  const parts = [match.state.message || '还没有开始匹配']
+  if (matchImages.value) {
+    parts.push(`已出 ${matchImages.value} 张`)
   }
-  const styles = previewStyles.value.map((value) => value.trim())
-  if (new Set(styles).size !== styles.length) {
-    trialsState.error = '选中的画师串有重复，请修改或取消勾选'
-    return
+  if (matchBest.value?.score !== undefined) {
+    parts.push(`最佳 ${matchBest.value.score.toFixed(3)}`)
   }
-  await runTrials(
-    styles.map((style) => ({
-      style,
-      request: {
-        base: [style, promptContent.value.trim()].filter(Boolean).join(', '),
-        negative: '',
-        characters: characters.value.map((role) => ({ ...role })),
-        version: settingsState.settings?.naiVersion ?? 'v4.5',
-        params: reverseTrialParams(settingsState.settings?.naiVersion ?? 'v4.5'),
-      },
-    })),
-    result.value.style,
+  if (match.state.spent) {
+    parts.push(`已用 ${match.state.spent} Anlas`)
+  }
+  return parts.join(' · ')
+})
+/* ---------- 推测组成 ---------- */
+const artistMix = computed(() => (result.value ? estimateArtistMix(result.value) : null))
+/*
+ * 混合组成 = 固定推荐：默认是推测组成（画师 + 按概率换算的比例），与列表勾选无关。
+ * 在推荐列表里加入 / 移出画师后，整组比例按所有成员的模型概率重新换算；
+ * 「比例调优」找到更像的比例后显示调优结果（成员一致时），可切回推测或恢复推荐。
+ */
+const showEstimate = ref(false)
+/** 用户改过的成员；null 表示使用推荐（推测组成） */
+const customMembers = ref<string[] | null>(null)
+const probabilities = computed(() =>
+  result.value ? fusedProbabilities(result.value) : new Map<string, number>(),
+)
+const members = computed(
+  () => customMembers.value ?? (artistMix.value?.parts ?? []).map((part) => part.name),
+)
+const sameMembers = (a: string[], b: string[]) =>
+  a.length === b.length && a.every((name) => b.includes(name))
+/** 调优结果只在成员与当前组成一致时适用 */
+const tunedParts = computed(() =>
+  bestTune.value &&
+  sameMembers(
+    bestTune.value.parts.map((part) => part.name),
+    members.value,
   )
+    ? bestTune.value.parts
+    : null,
+)
+const usingTuned = computed(() => !!tunedParts.value && !showEstimate.value)
+const mixKindLabel = computed(() => {
+  if (usingTuned.value && bestTune.value?.trial.score !== undefined) {
+    return `调优最佳 · 相似度 ${bestTune.value.trial.score.toFixed(3)}`
+  }
+  if (customMembers.value) {
+    return '已调整成员'
+  }
+  return artistMix.value?.kind === 'single' ? '推荐 · 接近单一画风' : '推荐 · 混合画风'
+})
+const MIX_COLORS = ['var(--pink)', '#f4a7c4', '#b9a4ef', '#94c4ee']
+const estimatedMembers = computed(() => {
+  if (!customMembers.value && artistMix.value) {
+    return artistMix.value.parts.map((part) => ({
+      name: part.name,
+      weight: part.weight,
+      share: part.share,
+    }))
+  }
+  return memberWeights(members.value, probabilities.value)
+})
+const mixParts = computed(() => {
+  if (!usingTuned.value) {
+    return estimatedMembers.value
+  }
+  const total = tunedParts.value!.reduce((sum, part) => sum + part.weight, 0) || 1
+  return tunedParts.value!.map((part) => ({
+    ...part,
+    share: Math.round((part.weight / total) * 100),
+  }))
+})
+const mixShares = computed(() =>
+  mixParts.value.map((part, index) => ({ ...part, color: MIX_COLORS[index % MIX_COLORS.length] })),
+)
+/** 在推荐列表里把画师加入 / 移出混合组成 */
+function toggleMember(name: string) {
+  if (busy.value) {
+    return
+  }
+  const key = name.toLowerCase()
+  const current = members.value
+  const next = current.some((item) => item.toLowerCase() === key)
+    ? current.filter((item) => item.toLowerCase() !== key)
+    : [...current, name]
+  if (next.length > 4) {
+    toast('混合组成最多 4 位画师')
+    return
+  }
+  const recommended = (artistMix.value?.parts ?? []).map((part) => part.name)
+  customMembers.value = sameMembers(next, recommended) ? null : next
 }
-async function retryTrial(trial: ReverseTrial) {
-  if (busy.value || !trial) {
-    return
+function restoreRecommended() {
+  customMembers.value = null
+  showEstimate.value = false
+}
+function toggleEstimate() {
+  showEstimate.value = !showEstimate.value
+}
+function buildCandidate(style: string) {
+  const version = settingsState.settings?.naiVersion ?? 'v4.5'
+  return {
+    style,
+    request: {
+      base: [style, promptContent.value.trim()].filter(Boolean).join(', '),
+      negative: '',
+      characters: characters.value.map((role) => ({ ...role })),
+      version,
+      params: reverseTrialParams(version),
+    },
   }
-  await runTrials(
-    [
-      {
-        style: trial.style,
-        request: {
-          ...trial.request,
-          params: { ...trial.request.params, seed: null },
-        },
-      },
-    ],
-    result.value?.style,
-  )
+}
+function retryTrial(trial: ReverseTrial) {
+  if (!busy.value) {
+    match.retry(trial).catch(reportError)
+  }
 }
 function clearCrop() {
   reference.value?.clear()
@@ -391,14 +634,10 @@ function toggleArtist(name: string) {
   if (busy.value) {
     return
   }
-  const matching = styleArtists(style.value).filter((artist) => artist.core === name)
-  if (matching.length) {
-    for (const artist of matching.reverse()) {
-      style.value = removeStyleArtist(style.value, artist.index)
-    }
-  } else {
-    style.value = [style.value.trim(), `artist:${name}`].filter(Boolean).join(', ')
-  }
+  const key = name.toLowerCase()
+  selectedArtists.value = selectedArtists.value.some((item) => item.toLowerCase() === key)
+    ? selectedArtists.value.filter((item) => item.toLowerCase() !== key)
+    : [...selectedArtists.value, name]
 }
 async function copy(text: string) {
   try {
@@ -435,29 +674,25 @@ async function source(url: string) {
   >
     <div class="reverse-topbar">
       <nav
-        class="reverse-steps"
+        v-seg-indicator
+        class="seg reverse-steps"
         aria-label="图片反推步骤"
       >
         <button
-          :class="{ active: stage === 'recognition' }"
+          :class="{ on: stage === 'recognition' }"
           :aria-current="stage === 'recognition' ? 'step' : undefined"
           :disabled="busy"
           @click="stage = 'recognition'"
         >
           1 · 识别与提示词
         </button>
-        <Icon
-          class="reverse-stage-arrow"
-          name="arrow"
-          :size="13"
-        />
         <button
-          :class="{ active: stage === 'trials' }"
+          :class="{ on: stage === 'trials' }"
           :aria-current="stage === 'trials' ? 'step' : undefined"
-          :disabled="busy || !result || !previewStyles.length || previewStyles.length > 6"
+          :disabled="!result || !matchRounds.length"
           @click="startTrials"
         >
-          2 · 试图与对比
+          2 · 匹配画风
         </button>
       </nav>
       <div
@@ -465,34 +700,44 @@ async function source(url: string) {
         class="reverse-execution"
       >
         <div class="reverse-preview-actions">
-          <button
-            class="btn small"
-            :disabled="!result || busy"
-            @click="openTrials"
+          <span
+            class="reverse-match-status"
+            role="status"
+            >{{ matchStatus }}</span
           >
-            调整组合
-          </button>
           <button
-            class="btn primary"
-            :disabled="
-              !result ||
-              busy ||
-              imageState.generating ||
-              !previewStyles.length ||
-              previewStyles.length > 6
-            "
-            @click="preview"
-          >
-            {{ trialsState.running ? '正在生成…' : `生成 ${previewStyles.length || 3} 张预览` }}
-          </button>
-          <button
-            v-if="trialsState.running"
+            v-if="match.state.running"
             class="btn"
             :disabled="trialsState.stopRequested"
-            @click="stopTrials"
+            @click="cancelMatch"
           >
-            {{ trialsState.stopRequested ? '正在停止…' : '停止试图' }}
+            {{ trialsState.stopRequested ? '正在停止…' : '停止' }}
           </button>
+          <template v-else>
+            <button
+              class="btn small"
+              :disabled="!result"
+              @click="openTrials"
+            >
+              调整画师
+            </button>
+            <button
+              class="btn"
+              :disabled="!canCompare"
+              :title="compareTitle"
+              @click="startCompareClick"
+            >
+              对比画师
+            </button>
+            <button
+              class="btn primary"
+              :disabled="!canTune"
+              :title="tuneTitle"
+              @click="startTuneClick"
+            >
+              调优比例
+            </button>
+          </template>
         </div>
         <p
           v-if="trialsState.error"
@@ -507,10 +752,8 @@ async function source(url: string) {
       v-show="stage === 'trials'"
       :reference-url="imageUrl"
       :reference-name="image?.name ?? ''"
-      :styles="previewStyles"
-      :trials="previewTrials"
-      :previous="trialsState.previous"
-      :running="trialsState.running"
+      :rounds="matchRounds"
+      :running="match.state.running"
       :disabled="busy || imageState.generating"
       :active="stage === 'trials' && shellState.tab === 'reverse'"
       @retry="retryTrial"
@@ -536,57 +779,42 @@ async function source(url: string) {
             :title="image.name"
             >{{ image.name }}</span
           >
-          <button
-            v-if="result"
-            class="btn small ghost"
-            :disabled="busy"
-            title="调整角色 / 框选人物"
-            @click="openCharacters"
-          >
-            角色
-          </button>
         </div>
         <ReverseReference
           ref="reference"
           :url="imageUrl"
           :file="image"
           :disabled="busy || modelsOpen || stage !== 'recognition' || shellState.tab !== 'reverse'"
-          :crop-enabled="cropEnabled && pane === 'characters' && stage === 'recognition'"
+          :crop-enabled="cropEnabled && stage === 'recognition'"
           @choose="picker?.click()"
           @file="select"
           @selected="cropSelected"
         />
-        <div
-          v-if="image && pane === 'characters' && stage === 'recognition'"
-          class="reverse-crop-tools"
-        >
-          <button
-            class="btn small"
-            :disabled="busy"
-            :aria-pressed="cropEnabled"
-            @click="cropEnabled = !cropEnabled"
+        <Transition name="popover-up">
+          <div
+            v-if="image && stage === 'recognition' && (cropEnabled || hasCrop)"
+            class="reverse-crop-tools"
           >
-            框选人物
-          </button>
-          <button
-            class="btn small"
-            :disabled="busy || !hasCrop || !cropReady"
-            @click="analyzeCrop"
-          >
-            识别选区
-          </button>
-          <button
-            class="btn small"
-            :disabled="busy || (!hasCrop && !croppedResult)"
-            @click="clearCrop"
-          >
-            返回全图
-          </button>
-          <span v-if="!cropReady">{{
-            cropModels.length ? '请下载所选的角色模型' : '请勾选内容 / 角色或 PixAI 角色'
-          }}</span>
-          <span v-else-if="cropEnabled && !hasCrop">在图上拖动框选</span>
-        </div>
+            <button
+              class="btn small primary"
+              :disabled="busy || !hasCrop || !cropReady"
+              @click="analyzeCrop"
+            >
+              识别并新建角色
+            </button>
+            <button
+              class="btn small"
+              :disabled="busy"
+              @click="clearCrop"
+            >
+              完成
+            </button>
+            <span v-if="!cropReady">{{
+              cropModels.length ? '请下载所选的角色模型' : '请勾选内容 / 角色或 PixAI 角色'
+            }}</span>
+            <span v-else-if="!hasCrop">在图上拖动，框住一个人物</span>
+          </div>
+        </Transition>
       </section>
       <SplitHandle
         v-show="stage === 'recognition'"
@@ -602,37 +830,6 @@ async function source(url: string) {
         v-show="stage === 'recognition'"
         class="reverse-adjustments"
       >
-        <div
-          v-if="image || running || actionBusy || modelOperation || recognitionMessage"
-          class="reverse-toolbar"
-        >
-          <button
-            v-if="image"
-            class="btn small primary reverse-run"
-            :disabled="!image || !selectedReady || busy"
-            @click="analyze"
-          >
-            <Icon
-              name="reverse"
-              :size="14"
-            />{{ recognitionLabel }}
-          </button>
-          <button
-            v-if="running || actionBusy || modelOperation"
-            class="btn small"
-            :disabled="cancelRequested"
-            @click="manage('cancel')"
-          >
-            {{ running || status?.phase === 'running' ? '取消识别' : '取消下载' }}
-          </button>
-          <span
-            v-if="recognitionMessage"
-            class="reverse-stage"
-            role="status"
-            >{{ recognitionMessage }}</span
-          >
-        </div>
-
         <div
           v-show="stage === 'recognition'"
           class="reverse-options"
@@ -668,6 +865,19 @@ async function source(url: string) {
               name="chip"
               :size="14"
             />
+          </button>
+          <button
+            v-if="result && !running"
+            class="btn small reverse-rerun"
+            :class="{ attention: modelsChanged }"
+            :disabled="!image || !selectedReady || busy"
+            :title="modelsChanged ? '识别模型已更改，当前仍为上次结果' : '用所选模型重新识别'"
+            @click="analyze"
+          >
+            <Icon
+              name="refresh"
+              :size="13"
+            />重新识别
           </button>
         </div>
         <div
@@ -723,6 +933,13 @@ async function source(url: string) {
             >
           </template>
           <span v-else>正在检查本地文件，确认本次需要下载或导入的大小…</span>
+          <button
+            class="btn small"
+            :disabled="cancelRequested"
+            @click="manage('cancel')"
+          >
+            取消下载
+          </button>
         </div>
         <p
           v-if="error || status?.phase === 'error'"
@@ -743,7 +960,8 @@ async function source(url: string) {
             motion="loop"
             :size="running ? 150 : 136"
           />
-          <strong>{{ running ? '正在识别参考图…' : '等待识别' }}</strong>
+          <strong>{{ emptyTitle }}</strong>
+          <p v-if="emptyHint">{{ emptyHint }}</p>
           <div
             v-if="running"
             class="recognition-dots"
@@ -751,41 +969,68 @@ async function source(url: string) {
           >
             <i></i><i></i><i></i>
           </div>
+          <button
+            v-if="running"
+            class="btn"
+            :disabled="cancelRequested"
+            @click="manage('cancel')"
+          >
+            {{ cancelRequested ? '正在取消…' : '取消识别' }}
+          </button>
+          <button
+            v-else-if="image"
+            class="btn primary reverse-start"
+            :disabled="!selectedReady || busy"
+            @click="analyze"
+          >
+            <Icon
+              name="reverse"
+              :size="16"
+            />开始识别
+          </button>
         </div>
         <div
           v-show="!!result && !running"
-          v-seg-indicator
-          class="seg reverse-adjustment-tabs"
+          class="reverse-tabs-row"
         >
-          <button
-            :class="{ on: pane === 'recognition' }"
-            @click="pane = 'recognition'"
+          <strong class="reverse-tabs-title">识别结果</strong>
+          <span
+            v-if="!selectedCount"
+            class="reverse-trial-hint"
+            >先在推荐画师里选几位</span
           >
-            识别结果
+          <button
+            class="btn reverse-run-trials"
+            :disabled="!canCompare"
+            :title="compareTitle"
+            @click="startCompareClick"
+          >
+            <Icon
+              name="compare"
+              :size="14"
+            />对比画师 · {{ Math.min(selectedCount, COMPARE_MAX) }} 张
           </button>
           <button
-            :class="{ on: pane === 'characters' }"
-            @click="pane = 'characters'"
+            class="btn primary reverse-run-trials"
+            :disabled="!canTune"
+            :title="tuneTitle"
+            @click="startTuneClick"
           >
-            角色识别
-          </button>
-          <button
-            :class="{ on: pane === 'trials' }"
-            :disabled="!result"
-            @click="pane = 'trials'"
-          >
-            画师组合
+            <Icon
+              name="sliders"
+              :size="14"
+            />调优比例 · 最多 {{ TUNE_MAX_IMAGES }} 张
           </button>
         </div>
         <section
-          v-show="!!result && !running && pane === 'recognition'"
+          v-show="!!result && !running"
           class="reverse-output"
           :data-ready="!!result"
           aria-label="反推结果"
         >
           <div class="reverse-content-panel">
             <div class="reverse-panel-head">
-              <label for="reverse-content">基础提示词</label
+              <span>画面内容</span
               ><label
                 v-if="result?.tags.length"
                 class="reverse-threshold"
@@ -804,8 +1049,8 @@ async function source(url: string) {
               ><button
                 class="icon-btn sm"
                 :disabled="!content.trim()"
-                title="复制基础词"
-                aria-label="复制基础词"
+                title="复制画面内容"
+                aria-label="复制画面内容"
                 @click="copy(content)"
               >
                 <Icon
@@ -814,14 +1059,12 @@ async function source(url: string) {
                 />
               </button>
             </div>
-            <SnippetButton :disabled="!result || busy" />
-            <textarea
-              id="reverse-content"
-              v-model="content"
-              :disabled="!result || busy"
-              rows="5"
-              placeholder="识别后显示基础提示词"
-              spellcheck="false"
+            <ReverseTagBoard
+              v-model:content="content"
+              v-model:character-text="characterText"
+              :tags="filteredTags.map((tag) => tag.name)"
+              :character-tags="characterCandidates"
+              :busy="!result || busy"
             />
             <p
               v-for="notice in notices"
@@ -831,99 +1074,79 @@ async function source(url: string) {
               {{ notice }}
             </p>
           </div>
+          <ReverseCharacters
+            v-if="multiPerson || characters.length"
+            v-model:threshold="activeCharacterThreshold"
+            v-model:characters="characters"
+            :busy="busy"
+            :cropping="cropEnabled"
+            @crop="startCharacterSplit"
+          />
           <div class="reverse-style-panel">
+            <section
+              v-if="mixParts.length"
+              class="reverse-mix"
+              aria-label="混合组成"
+            >
+              <header>
+                <strong>混合组成</strong>
+                <span
+                  class="reverse-mix-kind"
+                  :title="
+                    usingTuned
+                      ? '比例来自「调优比例」里最像的结果，再次调优从这组继续'
+                      : '比例按画风模型的概率换算，表示风格接近程度，不是原作者判定'
+                  "
+                  >{{ mixKindLabel }}</span
+                >
+                <button
+                  v-if="tunedParts"
+                  class="reverse-mix-switch"
+                  @click="toggleEstimate"
+                >
+                  {{ usingTuned ? '看推测比例' : '看调优结果' }}
+                </button>
+                <button
+                  v-if="customMembers"
+                  class="reverse-mix-switch"
+                  @click="restoreRecommended"
+                >
+                  恢复推荐
+                </button>
+              </header>
+              <div
+                class="reverse-mix-bar"
+                aria-hidden="true"
+              >
+                <span
+                  v-for="part in mixShares"
+                  :key="part.name"
+                  :style="{ flexGrow: Math.max(part.share, 1), background: part.color }"
+                ></span>
+              </div>
+              <ul class="reverse-mix-legend">
+                <li
+                  v-for="part in mixShares"
+                  :key="part.name"
+                >
+                  <i :style="{ background: part.color }"></i
+                  ><span :title="part.name">{{ part.name }}</span
+                  ><b>{{ part.share }}%</b><code title="提示词权重">{{ part.weight }}</code>
+                </li>
+              </ul>
+            </section>
             <ArtistRecommendations
               v-model:threshold="artistThreshold"
               :result="result"
-              :selected="styleArtists(style).map((artist) => artist.core)"
+              :selected="selectedArtists"
+              :members="members"
               :busy="busy"
               :running="running"
               @toggle="toggleArtist"
+              @member="toggleMember"
             />
-            <div class="reverse-style-editor">
-              <div class="reverse-panel-head">
-                <label for="reverse-style">画师串</label
-                ><button
-                  class="icon-btn sm"
-                  :disabled="!style || busy"
-                  title="清空画师串"
-                  aria-label="清空画师串"
-                  @click="style = ''"
-                >
-                  <Icon
-                    name="x"
-                    :size="14"
-                  /></button
-                ><button
-                  class="icon-btn sm"
-                  :disabled="!style.trim()"
-                  title="复制画师串"
-                  aria-label="复制画师串"
-                  @click="copy(style)"
-                >
-                  <Icon
-                    name="copy"
-                    :size="14"
-                  />
-                </button>
-              </div>
-              <ArtistWeights
-                v-model="style"
-                :disabled="!result || busy"
-              />
-              <SnippetButton :disabled="!result || busy" />
-              <textarea
-                id="reverse-style"
-                v-model="style"
-                :disabled="!result || busy"
-                rows="2"
-                placeholder="点击候选添加，可直接编辑"
-                spellcheck="false"
-              />
-            </div>
           </div>
-          <footer class="reverse-result-actions">
-            <button
-              class="btn small"
-              :disabled="!combined"
-              @click="copy(combined)"
-            >
-              复制组合
-            </button>
-          </footer>
         </section>
-        <ReverseCharacters
-          v-show="!!result && !running && pane === 'characters'"
-          v-model:threshold="activeCharacterThreshold"
-          v-model:base="characterText"
-          v-model:characters="characters"
-          :result="characterResult"
-          :cropped="!!croppedResult"
-          :busy="busy"
-          :general-threshold="threshold"
-        />
-        <ReverseTrials
-          v-if="result"
-          v-show="pane === 'trials'"
-          :key="imageUrl"
-          :result="result"
-          :style-prompt="style"
-          :disabled="busy"
-          @selection-change="previewStyles = $event"
-        />
-        <footer
-          v-if="result"
-          class="reverse-next-step"
-        >
-          <span>已选 {{ previewStyles.length }} 个方案</span>
-          <button
-            class="btn primary"
-            :disabled="busy || !result || !previewStyles.length || previewStyles.length > 6"
-            @click="startTrials"
-          >
-            去试图
-          </button>
-        </footer>
       </section>
     </div>
     <ReverseModels
@@ -948,22 +1171,14 @@ async function source(url: string) {
   height: 100%;
   min-height: 0;
   padding: 16px 20px;
-  overflow: hidden;
-  scrollbar-gutter: stable;
-}
 
-.reverse-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  flex-shrink: 0;
-  flex-wrap: wrap;
+  /* 页面本身不滚动（滚动在右栏内），不预留滚动条槽，左右边距一致 */
+  overflow: hidden;
 }
 
 .reverse-topbar {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-shrink: 0;
@@ -979,35 +1194,9 @@ async function source(url: string) {
 }
 
 .reverse-steps {
-  display: flex;
   flex-direction: row;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
   flex-shrink: 0;
-  color: var(--muted);
-}
-
-.reverse-steps button {
-  padding: 9px 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  color: var(--text2);
-  background: var(--bg);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.reverse-steps button.active {
-  border-color: var(--pink-line);
-  background: var(--pink-soft);
-  color: var(--pink-deep);
-  font-weight: 600;
-}
-
-.reverse-steps button:disabled {
-  cursor: default;
-  opacity: 0.55;
+  margin: 0;
 }
 
 .reverse-options {
@@ -1042,15 +1231,28 @@ async function source(url: string) {
   color: var(--text);
 }
 
-.reverse-stage {
-  font-size: 12px;
-  color: var(--text2);
-  min-width: 0;
-}
-
 .reverse-model-toggle {
   margin-left: auto;
   flex-shrink: 0;
+}
+
+.reverse-rerun {
+  flex-shrink: 0;
+  gap: 5px;
+}
+
+/* 识别模型改过、结果仍是旧的：提醒重新识别 */
+.reverse-rerun.attention {
+  border-color: var(--pink-line);
+  color: var(--pink-deep);
+  background: var(--pink-soft);
+}
+
+.reverse-start {
+  gap: 8px;
+  height: 40px;
+  padding: 0 22px;
+  font-size: 14px;
 }
 
 .model-dot {
@@ -1165,8 +1367,10 @@ progress {
   gap: 12px;
   overflow-y: auto;
   overscroll-behavior: contain;
+
+  /* 始终预留滚动条槽，右内边距减去槽宽，滚动条出现与否左右视觉一致、内容不挤动 */
   scrollbar-gutter: stable;
-  padding: 14px;
+  padding: 14px calc(14px - var(--scrollbar-size)) 14px 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
 }
@@ -1224,20 +1428,146 @@ progress {
   font-size: 11px;
 }
 
-.reverse-next-step {
+/* 分页栏：左侧分页，右侧固定「试图 N 张」，不用滚到底部 */
+.reverse-tabs-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: auto;
-  padding-top: 16px;
-  font-size: 12px;
-  color: var(--text2);
-  line-height: 1.6;
+  gap: 10px;
 }
 
-.reverse-next-step .btn {
+.reverse-tabs-title {
+  margin-right: auto;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.reverse-trial-hint {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.reverse-run-trials {
   flex-shrink: 0;
+  gap: 6px;
+}
+
+/* 推测组成：分段条 + 图例（名称 · 占比 · 权重） */
+.reverse-mix {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.reverse-mix header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.reverse-mix header strong {
+  font-size: 14px;
+}
+
+.reverse-mix-kind {
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: var(--pink-deep);
+  background: var(--pink-soft);
+  font-size: 11px;
+}
+
+.reverse-mix-kind + .reverse-mix-switch {
+  margin-left: auto;
+}
+
+.reverse-mix header small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.reverse-mix-bar {
+  display: flex;
+  gap: 2px;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+}
+
+.reverse-mix-bar span {
+  flex-basis: 0;
+  transition: flex-grow var(--dur-slow) var(--ease-glide);
+}
+
+.reverse-mix-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.reverse-mix-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.reverse-mix-legend i {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.reverse-mix-legend span {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reverse-mix-legend b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.reverse-mix-legend code {
+  color: var(--muted);
+  font: 11px var(--mono);
+}
+
+.reverse-mix-switch {
+  color: var(--pink-deep);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.reverse-mix-switch:hover {
+  text-decoration: underline;
+}
+
+.reverse-mix-included {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  color: var(--text2);
+  font-size: 12px;
+}
+
+.reverse-match-status {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text2);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .reverse-adjustment-tabs {
@@ -1256,6 +1586,7 @@ progress {
 }
 
 .reverse-input {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -1306,16 +1637,39 @@ progress {
   margin-left: 0 !important;
 }
 
+/*
+ * 角色识别的框选工具：浮在参考图底部，不另占一行，
+ * 切到「角色识别」时淡入、切走时淡出，参考图尺寸始终不变。
+ */
 .reverse-crop-tools {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  z-index: 2;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  justify-content: center;
+  gap: 6px;
   align-items: center;
-  padding: 10px;
-  border-top: 1px solid var(--line);
+  max-width: calc(100% - 28px);
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 92%);
+  box-shadow: var(--shadow-pop);
+  backdrop-filter: blur(8px);
+  translate: -50% 0;
+}
+
+/* 框选模式开启时按钮保持选中态 */
+.reverse-crop-tools .btn[aria-pressed='true'] {
+  border-color: var(--pink-line);
+  color: var(--pink-deep);
+  background: var(--pink-soft);
 }
 
 .reverse-crop-tools span {
+  padding: 0 6px;
   color: var(--text2);
   font-size: 11px;
 }
@@ -1357,10 +1711,6 @@ progress {
   color: var(--muted);
   opacity: 1;
   background: var(--bg);
-}
-
-#reverse-content {
-  min-height: 100px;
 }
 
 .reverse-style-panel {
@@ -1458,22 +1808,6 @@ progress {
   font-size: 12px;
 }
 
-.reverse-style-editor {
-  flex-shrink: 0;
-  border-top: 1px solid var(--line);
-}
-
-.reverse-style-editor .reverse-panel-head {
-  min-height: 32px;
-  border: 0;
-  padding-block: 3px;
-}
-
-#reverse-style {
-  min-height: 65px;
-  padding-top: 4px;
-}
-
 .reverse-notice {
   margin: 0;
   padding: 6px 12px;
@@ -1481,13 +1815,6 @@ progress {
   color: var(--alias);
   font-size: 11px;
   line-height: 1.5;
-}
-
-.reverse-result-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-shrink: 0;
 }
 
 .reverse-error {
@@ -1507,6 +1834,8 @@ progress {
 @media (width <= 1000px) {
   .reverse-view.is-recognition {
     overflow: auto;
+    scrollbar-gutter: stable;
+    padding-right: calc(12px - var(--scrollbar-size));
   }
 
   .reverse-workspace.is-recognition {

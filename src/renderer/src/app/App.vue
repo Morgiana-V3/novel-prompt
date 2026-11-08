@@ -220,7 +220,7 @@ watch(
 )
 
 /** 切页方向：在新视图显示前写入，page-in 动画据此从下方或上方滑入 */
-const PAGE_ENTER_OFFSET_PX = 10
+const PAGE_ENTER_OFFSET_PX = 6
 /** 生图创作的各分页（检查、优化、推测、预览）在侧栏里同属「生图创作」 */
 const SAME_PAGE_OFFSET_PX = 4
 function navIndex(tab: Tab): number {

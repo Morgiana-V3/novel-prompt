@@ -41,15 +41,21 @@ export function repairDevelopmentShortcut(): void {
   }
   try {
     const shortcut = shell.readShortcutLink(shortcutPath)
+    // 只处理带开发版应用身份的快捷方式：目标是当前 electron.exe，
+    // 或者项目目录搬迁后目标已不存在（否则 Windows 找不到图标，任务栏显示空白文档）。
+    const targetsCurrentExecutable =
+      resolve(shortcut.target).toLowerCase() === resolve(process.execPath).toLowerCase()
+    const targetMissing = !existsSync(shortcut.target)
     if (
       shortcut.appUserModelId !== appUserModelId() ||
-      resolve(shortcut.target).toLowerCase() !== resolve(process.execPath).toLowerCase()
+      (!targetsCurrentExecutable && !targetMissing)
     ) {
       return
     }
     const args = `"${app.getAppPath()}"`
     const description = 'NovelPrompt · 开发版'
     if (
+      targetsCurrentExecutable &&
       shortcut.icon === icon &&
       shortcut.iconIndex === 0 &&
       shortcut.args === args &&

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { backdropCloser } from '../../shared/lib/dialog-motion'
 import { detachLeaving } from '../../shared/lib/list-motion'
-import { computed, ref, watch } from 'vue'
-import { vSegIndicator } from '../../shared/lib/seg-indicator'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { copy as copyText } from '../../shared/lib/notifications'
 import Icon from '../../shared/ui/Icon.vue'
+import AnimatedNumber from '../../shared/ui/AnimatedNumber.vue'
 import RunButton from '../../shared/ui/RunButton.vue'
 import ImageViewer from '../../shared/ui/ImageViewer.vue'
 import { shellState } from '../../shared/state/shell'
@@ -13,9 +13,37 @@ import type { NaiImage } from '@shared/images/types'
 import { artistString, useArtistStudio } from './studio'
 import ArtistBlueprintPicker from './ArtistBlueprintPicker.vue'
 import ArtistCatalog from './ArtistCatalog.vue'
+import { vTagComplete, type TagCompleteOptions } from '../prompts/public/components'
+import { artistInbox } from './handoff'
+
+/** 添加画师输入框：沿用提示词的自动补全，但只在画师分类里搜索 */
+const ARTIST_COMPLETION: TagCompleteOptions = { single: true, category: 1 }
 
 const studio = useArtistStudio()
 const { state, selected, busy, trials, persistenceError } = studio
+
+/*
+ * 领取其他功能交来的蓝本（如图片反推试图结果的「带到画师调试」）：替换当前蓝本与画师串前留一份快照，
+ * 提示里可一键撤销；正在生成时先不领取，结束后再接手。
+ */
+function receiveBlueprint() {
+  const blueprint = artistInbox.value
+  if (!blueprint || busy.value) {
+    return
+  }
+  artistInbox.value = null
+  const before = JSON.parse(JSON.stringify(state)) as typeof state
+  studio.useBlueprint(blueprint)
+  toast(`已载入「${blueprint.title}」作为蓝本`, {
+    label: '撤销',
+    run: () => {
+      if (!busy.value) {
+        Object.assign(state, before)
+      }
+    },
+  })
+}
+watch([artistInbox, busy], receiveBlueprint, { immediate: true })
 /** 已出结果（成功或失败）的候选数，作为生成按钮的确定进度 */
 const finishedTrials = computed(
   () => trials.trials.filter((trial) => trial.state === 'done' || trial.state === 'error').length,
@@ -83,35 +111,33 @@ const changes = computed<ArtistChange[]>(() => {
   return changed
 })
 
-/* ---------- 对照方式：并排 / 滑动对比（记住上次选择） ---------- */
-const COMPARE_MODE_KEY = 'np-artist-compare-mode'
-const compareMode = ref<'side' | 'slider'>(
-  localStorage.getItem(COMPARE_MODE_KEY) === 'slider' ? 'slider' : 'side',
+/* ---------- 改动浮层：标题栏小按钮展开，点外部或再次点击收起 ---------- */
+const changesOpen = ref(false)
+const changesAnchor = ref<HTMLElement>()
+function toggleChanges() {
+  changesOpen.value = !changesOpen.value
+}
+function closeChangesOutside(event: PointerEvent) {
+  if (changesOpen.value && !changesAnchor.value?.contains(event.target as Node)) {
+    changesOpen.value = false
+  }
+}
+watch(changesOpen, (open) => {
+  if (open) {
+    document.addEventListener('pointerdown', closeChangesOutside, true)
+  } else {
+    document.removeEventListener('pointerdown', closeChangesOutside, true)
+  }
+})
+watch(
+  () => changes.value.length,
+  (count) => {
+    if (!count) {
+      changesOpen.value = false
+    }
+  },
 )
-watch(compareMode, (mode) => localStorage.setItem(COMPARE_MODE_KEY, mode))
-const canSlide = computed(() => !!baselineImage.value && !!candidateImage.value)
-const split = ref(50)
-const compareStage = ref<HTMLElement>()
-let dragging = false
-function updateSplit(event: PointerEvent) {
-  const rect = compareStage.value?.getBoundingClientRect()
-  if (rect && rect.width > 0) {
-    split.value = Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100))
-  }
-}
-function startSplitDrag(event: PointerEvent) {
-  dragging = true
-  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
-  updateSplit(event)
-}
-function moveSplitDrag(event: PointerEvent) {
-  if (dragging) {
-    updateSplit(event)
-  }
-}
-function endSplitDrag() {
-  dragging = false
-}
+onBeforeUnmount(() => document.removeEventListener('pointerdown', closeChangesOutside, true))
 
 /* ---------- 蓝本只读信息 ---------- */
 const blueprintImage = computed(
@@ -181,6 +207,20 @@ function closeSeed() {
 }
 const pasteBackdrop = backdropCloser(() => pasteDialog.value?.close())
 const seedBackdrop = backdropCloser(() => closeSeed())
+
+/* 蓝本信息不需要一直占位：底栏按钮打开只读弹窗查看 */
+const blueprintDialog = ref<HTMLDialogElement>()
+function openBlueprint() {
+  blueprintDialog.value?.showModal()
+}
+function closeBlueprint() {
+  blueprintDialog.value?.close()
+}
+function changeBlueprint() {
+  closeBlueprint()
+  blueprints.value?.open()
+}
+const blueprintBackdrop = backdropCloser(() => closeBlueprint())
 function addFromCatalog(name: string) {
   try {
     studio.addArtist(name)
@@ -197,28 +237,6 @@ function addFromCatalog(name: string) {
         <header class="artist-section-heading">
           <h3>画师串</h3>
           <div class="artist-heading-tools">
-            <button
-              class="icon-btn sm"
-              title="画师图鉴"
-              aria-label="打开画师图鉴"
-              @click="catalog?.open()"
-            >
-              <Icon
-                name="book"
-                :size="15"
-              />
-            </button>
-            <button
-              class="artist-favorite-count"
-              title="图鉴收藏"
-              aria-label="打开图鉴收藏"
-              @click="catalog?.open('favorites')"
-            >
-              <Icon
-                name="star"
-                :size="14"
-              />{{ state.favoriteArtists.length }}
-            </button>
             <button
               class="icon-btn sm"
               title="粘贴画师串"
@@ -251,6 +269,29 @@ function addFromCatalog(name: string) {
             title="所有画师共用此下限"
             >下限 {{ state.weightRange.min }}</span
           >
+          <div class="artist-catalog-entry">
+            <button
+              class="btn small"
+              title="打开画师图鉴，挑选画师加入"
+              @click="catalog?.open()"
+            >
+              <Icon
+                name="book"
+                :size="13"
+              />画师图鉴
+            </button>
+            <button
+              class="artist-favorite-count"
+              title="图鉴收藏"
+              aria-label="打开图鉴收藏"
+              @click="catalog?.open('favorites')"
+            >
+              <Icon
+                name="star"
+                :size="13"
+              />{{ state.favoriteArtists.length }}
+            </button>
+          </div>
         </div>
         <TransitionGroup
           tag="div"
@@ -322,9 +363,12 @@ function addFromCatalog(name: string) {
         >
           <input
             v-model="artistName"
+            v-tag-complete="ARTIST_COMPLETION"
             aria-label="添加画师"
-            placeholder="输入画师 tag，回车加入"
+            placeholder="输入画师名或中文，回车加入"
+            autocomplete="off"
             :disabled="busy"
+            @tag-accept="addArtist"
           />
           <button
             class="icon-btn"
@@ -390,73 +434,43 @@ function addFromCatalog(name: string) {
           >
           <span v-else>同内容 · 同参数 · 同种子</span>
           <div
-            v-seg-indicator
-            class="seg artist-compare-mode"
+            v-if="changes.length"
+            ref="changesAnchor"
+            class="artist-changes-anchor"
           >
             <button
-              :class="{ on: compareMode === 'side' }"
-              @click="compareMode = 'side'"
+              class="artist-changes-toggle"
+              :class="{ on: changesOpen }"
+              :aria-expanded="changesOpen"
+              title="查看相对基准的画师改动"
+              @click="toggleChanges"
             >
-              并排
+              改动 <AnimatedNumber :value="changes.length" /><Icon
+                name="chevron"
+                :size="12"
+              />
             </button>
-            <button
-              :class="{ on: compareMode === 'slider' }"
-              :title="canSlide ? '在同一画面上拖动分割线对比' : '基准与新图都生成后可用'"
-              @click="compareMode = 'slider'"
-            >
-              滑动对比
-            </button>
+            <Transition name="popover">
+              <TransitionGroup
+                v-if="changesOpen"
+                tag="div"
+                name="list"
+                class="artist-changes list-motion"
+                @before-leave="detachLeaving"
+              >
+                <span
+                  v-for="change in changes"
+                  :key="change.key"
+                  class="artist-change"
+                  :data-kind="change.kind"
+                  ><b>{{ change.name }}</b
+                  >{{ change.detail }}</span
+                >
+              </TransitionGroup>
+            </Transition>
           </div>
         </header>
-        <TransitionGroup
-          v-if="changes.length"
-          tag="div"
-          name="list"
-          class="artist-changes list-motion"
-          @before-leave="detachLeaving"
-        >
-          <span
-            v-for="change in changes"
-            :key="change.key"
-            class="artist-change"
-            :data-kind="change.kind"
-            ><b>{{ change.name }}</b
-            >{{ change.detail }}</span
-          >
-        </TransitionGroup>
-        <div
-          v-if="compareMode === 'slider' && canSlide"
-          ref="compareStage"
-          class="artist-slider-stage"
-          :style="{ '--split': `${split}%` }"
-          @pointerdown="startSplitDrag"
-          @pointermove="moveSplitDrag"
-          @pointerup="endSplitDrag"
-          @pointercancel="endSplitDrag"
-        >
-          <img
-            :src="baselineImage!.url"
-            alt="基准图"
-            draggable="false"
-          />
-          <img
-            class="artist-slider-candidate"
-            :src="candidateImage!.url"
-            alt="新图"
-            draggable="false"
-          />
-          <span class="artist-slider-label baseline">基准</span>
-          <span class="artist-slider-label candidate">新图</span>
-          <span
-            class="artist-slider-handle"
-            aria-hidden="true"
-            ><i></i
-          ></span>
-        </div>
-        <div
-          v-else
-          class="artist-image-pair"
-        >
+        <div class="artist-image-pair">
           <article class="artist-image-card">
             <header>
               <span class="artist-baseline-badge">基准</span
@@ -542,19 +556,200 @@ function addFromCatalog(name: string) {
           </article>
         </div>
       </section>
+    </div>
 
-      <aside class="artist-blueprint">
-        <header class="artist-section-heading">
-          <h3>蓝本</h3>
+    <footer
+      class="pane-foot artist-footer"
+      data-toast-avoid
+    >
+      <div
+        v-if="trials.error || persistenceError || studio.sourceChanged.value"
+        class="artist-run-status"
+        aria-live="polite"
+      >
+        <span
+          v-if="trials.error || persistenceError"
+          class="artist-error"
+          >{{ trials.error || persistenceError }}</span
+        >
+        <span v-else-if="studio.sourceChanged.value">{{
+          studio.sourceTab.value
+            ? '来源标签已修改，当前对照仍使用旧蓝本'
+            : '来源标签已关闭，可更换蓝本继续'
+        }}</span>
+      </div>
+
+      <div class="row run-bar artist-toolbar">
+        <div class="artist-content-source">
+          <button
+            class="btn"
+            :disabled="busy"
+            @click="blueprints?.open()"
+          >
+            {{ studio.hasContent.value ? '更换蓝本' : '选择蓝本' }}
+          </button>
+          <button
+            v-if="studio.hasContent.value"
+            class="btn artist-blueprint-entry"
+            title="查看蓝本的提示词与参数（只读）"
+            @click="openBlueprint"
+          >
+            <img
+              v-if="blueprintImage"
+              :src="blueprintImage.url"
+              alt=""
+              draggable="false"
+            /><Icon
+              v-else
+              name="eye"
+              :size="14"
+            />查看蓝本
+          </button>
+          <button
+            v-if="state.source === 'creation' && studio.sourceTab.value"
+            class="artist-text-button"
+            :disabled="busy"
+            :title="studio.sourceTab.value?.title"
+            @click="studio.editSource"
+          >
+            编辑来源
+          </button>
+          <button
+            v-if="studio.sourceChanged.value && studio.sourceTab.value"
+            class="artist-text-button artist-content-update"
+            :disabled="busy"
+            @click="studio.refreshSource"
+          >
+            更新蓝本
+          </button>
+          <button
+            class="btn"
+            :disabled="busy"
+            aria-label="调整固定种子"
+            @click="openSeed"
+          >
+            <Icon
+              name="lock"
+              :size="14"
+            />固定种子
+            <span class="artist-settings-summary">{{ state.context.params.seed }}</span>
+          </button>
+        </div>
+        <div class="run-actions artist-run-actions">
+          <button
+            class="btn"
+            :disabled="
+              busy || !baselineImage || studio.hasChanges.value || studio.sourceChanged.value
+            "
+            :title="
+              state.source === 'creation'
+                ? `应用到 ${studio.sourceTab.value?.title || state.sourceTitle}，可撤销`
+                : '将选定的画师串与蓝本内容在创作页打开'
+            "
+            @click="studio.applyToCreation"
+          >
+            {{ state.source === 'creation' ? '带回来源标签' : '在创作页打开' }}
+          </button>
           <span
+            v-if="studio.hasContent.value && studio.pendingCount.value && !trials.running"
+            class="artist-generation-count"
+            title="按账户额度计费"
+            >{{ studio.pendingCount.value }} 张</span
+          >
+          <RunButton
+            label="生成对照"
+            running-label="试图中"
+            :running="trials.running"
+            :stopping="trials.stopRequested"
+            :disabled="busy || !studio.hasContent.value || !studio.pendingCount.value"
+            :current="finishedTrials"
+            :total="trials.running ? trials.trials.length : undefined"
+            stop-title="当前这张完成后停止试图"
+            @run="studio.generate"
+            @stop="studio.stop"
+          />
+        </div>
+      </div>
+    </footer>
+
+    <dialog
+      ref="pasteDialog"
+      class="artist-dialog"
+      @pointerdown="pasteBackdrop.onPointerdown"
+      @click="pasteBackdrop.onClick"
+    >
+      <header class="artist-dialog-heading">
+        <h3>粘贴画师串</h3>
+        <button
+          class="icon-btn"
+          aria-label="关闭画师串输入"
+          @click="pasteDialog?.close()"
+        >
+          <Icon
+            name="x"
+            :size="18"
+          />
+        </button>
+      </header>
+      <div class="artist-dialog-body">
+        <textarea
+          v-model="pasted"
+          aria-label="画师串原文"
+          rows="7"
+          placeholder="0.8::artist:wlop::, 0.6::artist:rella::"
+        />
+        <p
+          v-if="pasteError"
+          class="artist-error"
+          role="alert"
+        >
+          {{ pasteError }}
+        </p>
+      </div>
+      <footer>
+        <button
+          class="btn"
+          @click="pasteDialog?.close()"
+        >
+          取消</button
+        ><button
+          class="btn primary"
+          @click="applyPaste"
+        >
+          替换当前画师串
+        </button>
+      </footer>
+    </dialog>
+    <dialog
+      ref="blueprintDialog"
+      class="artist-dialog artist-blueprint-dialog"
+      aria-labelledby="artist-blueprint-title"
+      @pointerdown="blueprintBackdrop.onPointerdown"
+      @click="blueprintBackdrop.onClick"
+    >
+      <header class="artist-dialog-heading">
+        <h3 id="artist-blueprint-title">
+          蓝本<span
             class="artist-readonly"
-            title="蓝本内容只读；生成时会在主提示词前加入左侧画师串"
+            title="蓝本内容只读；生成时会在主提示词前加入画师串"
             ><Icon
               name="lock"
               :size="11"
             />只读</span
           >
-        </header>
+        </h3>
+        <button
+          class="icon-btn"
+          aria-label="关闭蓝本"
+          @click="closeBlueprint"
+        >
+          <Icon
+            name="x"
+            :size="18"
+          />
+        </button>
+      </header>
+      <div class="artist-dialog-body artist-blueprint">
         <template v-if="studio.hasContent.value">
           <div class="artist-blueprint-source">
             <img
@@ -647,157 +842,19 @@ function addFromCatalog(name: string) {
           <button
             class="btn small"
             :disabled="busy"
-            @click="blueprints?.open()"
+            @click="changeBlueprint"
           >
             选择蓝本
           </button>
         </div>
-      </aside>
-    </div>
-
-    <footer
-      class="pane-foot artist-footer"
-      data-toast-avoid
-    >
-      <div
-        v-if="trials.error || persistenceError || studio.sourceChanged.value"
-        class="artist-run-status"
-        aria-live="polite"
-      >
-        <span
-          v-if="trials.error || persistenceError"
-          class="artist-error"
-          >{{ trials.error || persistenceError }}</span
-        >
-        <span v-else-if="studio.sourceChanged.value">{{
-          studio.sourceTab.value
-            ? '来源标签已修改，当前对照仍使用旧蓝本'
-            : '来源标签已关闭，可更换蓝本继续'
-        }}</span>
-      </div>
-
-      <div class="row run-bar artist-toolbar">
-        <div class="artist-content-source">
-          <button
-            class="btn"
-            :disabled="busy"
-            @click="blueprints?.open()"
-          >
-            {{ studio.hasContent.value ? '更换蓝本' : '选择蓝本' }}
-          </button>
-          <button
-            v-if="state.source === 'creation' && studio.sourceTab.value"
-            class="artist-text-button"
-            :disabled="busy"
-            :title="studio.sourceTab.value?.title"
-            @click="studio.editSource"
-          >
-            编辑来源
-          </button>
-          <button
-            v-if="studio.sourceChanged.value && studio.sourceTab.value"
-            class="artist-text-button artist-content-update"
-            :disabled="busy"
-            @click="studio.refreshSource"
-          >
-            更新蓝本
-          </button>
-          <button
-            class="btn"
-            :disabled="busy"
-            aria-label="调整固定种子"
-            @click="openSeed"
-          >
-            <Icon
-              name="lock"
-              :size="14"
-            />固定种子
-            <span class="artist-settings-summary">{{ state.context.params.seed }}</span>
-          </button>
-        </div>
-        <div class="run-actions artist-run-actions">
-          <button
-            class="btn"
-            :disabled="
-              busy || !baselineImage || studio.hasChanges.value || studio.sourceChanged.value
-            "
-            :title="
-              state.source === 'creation'
-                ? `应用到 ${studio.sourceTab.value?.title || state.sourceTitle}，可撤销`
-                : '将选定的画师串与蓝本内容在创作页打开'
-            "
-            @click="studio.applyToCreation"
-          >
-            {{ state.source === 'creation' ? '带回来源标签' : '在创作页打开' }}
-          </button>
-          <span
-            v-if="studio.hasContent.value && studio.pendingCount.value && !trials.running"
-            class="artist-generation-count"
-            title="按账户额度计费"
-            >{{ studio.pendingCount.value }} 张</span
-          >
-          <RunButton
-            label="生成对照"
-            running-label="试图中"
-            :running="trials.running"
-            :stopping="trials.stopRequested"
-            :disabled="busy || !studio.hasContent.value || !studio.pendingCount.value"
-            :current="finishedTrials"
-            :total="trials.running ? trials.trials.length : undefined"
-            stop-title="当前这张完成后停止试图"
-            @run="studio.generate"
-            @stop="studio.stop"
-          />
-        </div>
-      </div>
-    </footer>
-
-    <dialog
-      ref="pasteDialog"
-      class="artist-dialog"
-      @pointerdown="pasteBackdrop.onPointerdown"
-      @click="pasteBackdrop.onClick"
-    >
-      <header class="artist-dialog-heading">
-        <h3>粘贴画师串</h3>
-        <button
-          class="icon-btn"
-          aria-label="关闭画师串输入"
-          @click="pasteDialog?.close()"
-        >
-          <Icon
-            name="x"
-            :size="18"
-          />
-        </button>
-      </header>
-      <div class="artist-dialog-body">
-        <p>替换当前候选中的画师，支持数值权重和括号加权。</p>
-        <textarea
-          v-model="pasted"
-          aria-label="画师串原文"
-          rows="7"
-          placeholder="0.8::artist:wlop::, 0.6::artist:rella::"
-        />
-        <p
-          v-if="pasteError"
-          class="artist-error"
-          role="alert"
-        >
-          {{ pasteError }}
-        </p>
       </div>
       <footer>
         <button
           class="btn"
-          @click="pasteDialog?.close()"
+          :disabled="busy"
+          @click="changeBlueprint"
         >
-          取消</button
-        ><button
-          class="btn primary"
-          @click="applyPaste"
-        >
-          替换当前画师串
+          更换蓝本
         </button>
       </footer>
     </dialog>

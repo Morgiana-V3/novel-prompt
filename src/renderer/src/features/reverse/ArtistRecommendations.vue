@@ -8,22 +8,20 @@ import Icon from '../../shared/ui/Icon.vue'
 const props = defineProps<{
   result?: ReverseResult
   selected: string[]
+  /** 混合组成里的画师 */
+  members: string[]
   busy: boolean
   running: boolean
 }>()
 const threshold = defineModel<number>('threshold', { required: true })
-const emit = defineEmits<{ toggle: [name: string] }>()
+const emit = defineEmits<{ toggle: [name: string]; member: [name: string] }>()
 const expanded = ref(false)
 const recommendations = computed(() => (props.result ? rankArtists(props.result) : []))
 const visible = computed(() => recommendations.value.slice(0, expanded.value ? 10 : 5))
 const selected = (name: string) =>
   props.selected.some((item) => item.toLowerCase() === name.toLowerCase())
-const agreement = computed(() => {
-  const heads =
-    props.result?.artists.map((group) => group.tags[0]?.name.toLowerCase().replaceAll('_', ' ')) ??
-    []
-  return heads.length > 1 && new Set(heads).size > 1
-})
+const isMember = (name: string) =>
+  props.members.some((item) => item.toLowerCase() === name.toLowerCase())
 </script>
 
 <template>
@@ -32,48 +30,63 @@ const agreement = computed(() => {
     aria-label="推荐画师"
   >
     <header>
-      <div><strong>推荐画师</strong><span>先选画风，再用试图确认</span></div>
+      <div>
+        <strong title="勾选的画师用于「对比画师」；「组成」开关决定混合成员。详见设置里的操作说明"
+          >推荐画师</strong
+        >
+      </div>
       <span class="method-label">{{
         (result?.artists.length ?? 0) > 1 ? '综合推荐' : '单模型推荐'
       }}</span>
     </header>
     <template v-if="recommendations.length">
-      <p class="recommendation-note">
-        {{
-          agreement
-            ? '模型首选不同，建议对比前几位的试图效果。'
-            : '按候选排名整理，推荐顺序不代表相似百分比。'
-        }}
-      </p>
       <ol class="recommendation-list">
         <li
           v-for="(artist, index) in visible"
           :key="artist.name"
+          class="recommendation-item"
         >
           <button
             class="recommendation"
-            :class="{ selected: selected(artist.name), leading: index === 0 }"
+            :class="{ selected: selected(artist.name) }"
             :disabled="busy"
             :aria-pressed="selected(artist.name)"
+            :title="selected(artist.name) ? '已选，点击取消' : '点击选中，加入试图'"
             @click="emit('toggle', artist.name)"
           >
-            <span class="recommendation-rank">{{ String(index + 1).padStart(2, '0') }}</span>
-            <span class="recommendation-name"
-              ><strong>{{ artist.name }}</strong
-              ><small>{{
-                artist.sources.length > 1 ? '两个模型均推荐' : '单个模型推荐'
-              }}</small></span
+            <span class="recommendation-rank">{{ index + 1 }}</span>
+            <strong class="recommendation-name">{{ artist.name }}</strong>
+            <span
+              v-if="artist.sources.length > 1"
+              class="recommendation-both"
+              title="两个画风模型都推荐了这位画师"
+              >双模型</span
             >
             <span
-              v-if="index === 0"
-              class="recommendation-first"
-              >优先试试</span
-            >
-            <span class="recommendation-add"
-              ><IconSwap
-                :name="selected(artist.name) ? 'check' : 'plus'"
-                :size="14"
+              class="recommendation-check"
+              aria-hidden="true"
+              ><Icon
+                v-if="selected(artist.name)"
+                name="check"
+                :size="11"
             /></span>
+          </button>
+          <button
+            class="recommendation-member"
+            :class="{ on: isMember(artist.name) }"
+            :disabled="busy"
+            :aria-pressed="isMember(artist.name)"
+            :title="
+              isMember(artist.name)
+                ? '在混合组成里，点击移出'
+                : '加入混合组成，比例会按概率重新换算'
+            "
+            @click="emit('member', artist.name)"
+          >
+            <Icon
+              name="palette"
+              :size="12"
+            />组成
           </button>
         </li>
       </ol>
@@ -106,12 +119,10 @@ const agreement = computed(() => {
       class="recognition-details"
     >
       <summary class="disclosure">识别详情 <span>模型排名与原始分数</span></summary>
-      <p>
-        综合推荐按名次融合，偏重靠前候选；不直接平均模型分数。原始分数不代表相似百分比或提示词权重。
-      </p>
       <label
         >原始分数筛选<input
           v-model.number="threshold"
+          class="input sm"
           type="number"
           min="0"
           max="1"
@@ -172,7 +183,6 @@ header strong {
 }
 
 header span,
-.recommendation-note,
 .recommendation-empty {
   font-size: 11px;
   color: var(--muted);
@@ -185,93 +195,120 @@ header span,
   white-space: nowrap;
 }
 
-.recommendation-note {
-  margin: 10px 0 16px;
-  line-height: 1.7;
-}
-
 .recommendation-list {
   list-style: none;
   padding: 0;
   margin: 0;
   display: grid;
+  gap: 4px;
+}
+
+.recommendation-item {
+  display: flex;
+  align-items: center;
   gap: 6px;
+}
+
+/* 混合组成开关：粉色表示这位画师在组成里 */
+.recommendation-member {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+
+.recommendation-member:hover:not(:disabled) {
+  border-color: var(--pink-line);
+  color: var(--pink-deep);
+}
+
+.recommendation-member.on {
+  border-color: var(--pink-line);
+  color: var(--pink-deep);
+  background: var(--pink-soft);
 }
 
 .recommendation {
   display: flex;
+  flex: 1;
+  min-width: 0;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
-  padding: 12px;
+  height: 38px;
+  padding: 0 12px;
   border: 1px solid transparent;
   border-radius: 10px;
   text-align: left;
   color: var(--text2);
   transition:
-    background-color var(--dur-fast) ease,
-    border-color var(--dur-fast) ease;
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
 }
 
-.recommendation:hover {
+.recommendation:hover:not(:disabled) {
   background: var(--panel);
-}
-
-.recommendation.leading {
-  background: var(--panel);
-  border-color: var(--line);
 }
 
 .recommendation.selected {
-  border-color: var(--pink-line);
-  background: var(--pink-soft);
+  color: var(--text);
 }
 
 .recommendation-rank {
-  width: 20px;
+  width: 16px;
   color: var(--muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
 .recommendation-name {
-  display: flex;
   flex: 1;
   min-width: 0;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.recommendation-name strong {
+  overflow: hidden;
   font-size: 13px;
   font-weight: 550;
-  overflow-wrap: anywhere;
-}
-
-.recommendation-name small {
-  font-size: 10px;
-  color: var(--muted);
-}
-
-.recommendation-first {
-  font-size: 10px;
-  color: var(--pink-deep);
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.recommendation-add {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--bg);
+.recommendation-both {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--text2);
+  background: var(--hover);
+  font-size: 10px;
 }
 
-.selected .recommendation-add {
-  color: var(--pink-deep);
-  border-color: var(--pink-line);
+.recommendation-check {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--line2);
+  border-radius: 5px;
+  color: #fff;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.selected .recommendation-check {
+  border-color: var(--pink);
+  background: var(--pink);
 }
 
 .more-artists {
@@ -313,6 +350,18 @@ summary span {
 
 .recognition-details input {
   width: 80px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font: 12px var(--mono);
+  appearance: textfield;
+}
+
+/* 去掉浏览器自带的上下箭头，和其他阈值输入框一致 */
+.recognition-details input::-webkit-inner-spin-button,
+.recognition-details input::-webkit-outer-spin-button {
+  appearance: none;
 }
 
 .model-results {

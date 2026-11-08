@@ -30,7 +30,7 @@
 /* 侧栏切页：按导航方向从下方或上方轻滑入（--page-enter-y 由 App.vue 按前后顺序设置） */
 @keyframes page-in {
   from {
-    opacity: 0;
+    opacity: 0.3;
     transform: translateY(var(--page-enter-y, 6px));
   }
 
@@ -456,7 +456,7 @@ img[data-fade]:not(.img-ready) {
 :where(dialog[open]) {
   opacity: 1;
   transform: none;
-  animation: jelly-in var(--dur-jelly) both;
+  animation: jelly-in var(--dur-jelly) backwards;
 }
 
 :where(dialog)::backdrop {
@@ -503,7 +503,8 @@ img[data-fade]:not(.img-ready) {
 
 /* 面板挂载即果冻弹出；离场沿用快速缩小，与原生 dialog 一致 */
 .modal-panel {
-  animation: jelly-in var(--dur-jelly) both;
+  /* 只用 backwards：both 会在进场结束后一直锁住 transform，离场的缩小会被覆盖看不到 */
+  animation: jelly-in var(--dur-jelly) backwards;
 }
 
 .modal-leave-to .modal-panel {
