@@ -7,24 +7,35 @@ import { reportError, toast } from '../../shared/lib/notifications'
 import { shellState } from '../../shared/state/shell'
 import { imageState } from './state'
 import { DEFAULT_COLLECTION } from '@shared/images/collections'
-import { collections, galleryCollection } from '../gallery/collections-state'
-export function useGallery(last: Ref<NaiGenResult | null>) {
+import { collections } from '../gallery/collections-state'
+
+/**
+ * 图片预览只显示生图创作相关的最近 N 张（N 在设置里调整）：
+ * 图片精修的存档图不在这里；筛选先按图集和留存状态过滤，再取最近 N 张。
+ * 筛选是图片预览自己的，不影响图集管理；全部历史在图集管理查看。
+ */
+export function useGallery(last: Ref<NaiGenResult | null>, limit: () => number) {
   const gallery = ref<NaiImage[]>([])
 
-  const galleryFilter = ref('all')
+  const galleryFilter = ref<'all' | 'temporary' | 'saved'>('all')
+  const galleryCollection = ref('all')
   const galleryCollections = computed(() => [
     { value: 'all', label: '全部图集' },
     ...collections.value.map((collection) => ({ value: collection.id, label: collection.name })),
   ])
-
-  const visibleGallery = computed(() =>
-    gallery.value.filter(
-      (image) =>
-        (galleryCollection.value === 'all' ||
-          (image.collectionId || DEFAULT_COLLECTION) === galleryCollection.value) &&
-        (galleryFilter.value === 'all' || (image.storage || 'saved') === galleryFilter.value),
-    ),
+  /** 符合筛选的全部图片（新到旧），不含精修存档 */
+  const eligibleGallery = computed(() =>
+    [...gallery.value]
+      .filter(
+        (image) =>
+          image.storage !== 'workspace' &&
+          (galleryCollection.value === 'all' ||
+            (image.collectionId || DEFAULT_COLLECTION) === galleryCollection.value) &&
+          (galleryFilter.value === 'all' || (image.storage || 'saved') === galleryFilter.value),
+      )
+      .sort((a, b) => b.createdAt - a.createdAt),
   )
+  const visibleGallery = computed(() => eligibleGallery.value.slice(0, limit()))
 
   async function retain(images: NaiImage[]) {
     try {
@@ -55,23 +66,35 @@ export function useGallery(last: Ref<NaiGenResult | null>) {
 
   const lightbox = ref(false)
 
+  /** 当前图已被删除时改选最近的一张；较早的图（如从图集载入）不在最近列表里也照常显示 */
   function reconcileSelection() {
-    if (
-      current.value &&
-      !visibleGallery.value.some((image) => image.name === current.value!.name)
-    ) {
+    if (current.value && !gallery.value.some((image) => image.name === current.value!.name)) {
       current.value = visibleGallery.value[0] ?? null
       if (!current.value) {
         lightbox.value = false
       }
     }
   }
-  watch([galleryCollection, galleryFilter], reconcileSelection, { flush: 'sync' })
+  /** 改筛选时，当前图不在新列表里就选中列表第一张 */
+  watch(
+    [galleryCollection, galleryFilter],
+    () => {
+      if (
+        current.value &&
+        visibleGallery.value.length &&
+        !visibleGallery.value.some((image) => image.name === current.value!.name)
+      ) {
+        current.value = visibleGallery.value[0]
+      }
+    },
+    { flush: 'sync' },
+  )
 
+  /** 新生成的图：筛选挡住它时放开筛选，保证能看到 */
   function showGenerated(image: NaiImage) {
     const collectionId = image.collectionId || DEFAULT_COLLECTION
     if (galleryCollection.value !== 'all' && galleryCollection.value !== collectionId) {
-      galleryCollection.value = collectionId
+      galleryCollection.value = 'all'
     }
     if (galleryFilter.value !== 'all' && galleryFilter.value !== (image.storage || 'saved')) {
       galleryFilter.value = 'all'
@@ -169,10 +192,7 @@ export function useGallery(last: Ref<NaiGenResult | null>) {
     }
   }
   let unsubscribe: (() => void) | undefined
-  watch(
-    [() => current.value?.name, galleryCollection, galleryFilter, lightbox, () => shellState.tab],
-    resetDelete,
-  )
+  watch([() => current.value?.name, lightbox, () => shellState.tab], resetDelete)
   onMounted(() => {
     unsubscribe = window.api.onGalleryChanged(() => {
       void refreshGallery().catch(reportError)
@@ -189,6 +209,7 @@ export function useGallery(last: Ref<NaiGenResult | null>) {
     galleryFilter,
     galleryCollection,
     galleryCollections,
+    eligibleGallery,
     showGenerated,
     visibleGallery,
     latestBatchTemporary,

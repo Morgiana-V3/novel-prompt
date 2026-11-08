@@ -35,12 +35,13 @@ import GenerationParameters from './components/GenerationParameters.vue'
 import { PositionEditor } from '../prompts/public/components'
 import InpaintEditor from '../inpaint/components/InpaintEditor.vue'
 import ImageViewer from '../../shared/ui/ImageViewer.vue'
-import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 import { usePageShortcuts, runKeyLabel } from '../../shared/lib/shortcuts'
 import { usePagePresentation } from '../../shared/lib/page-presentation'
 import { useSettingsPopover } from './use-settings-popover'
 import { lockTabs, tabRef } from '../creation/public/session'
 import { openTabForLoad } from '../creation/public/navigation'
+import { previewPreferences } from '../settings/preview-preferences'
+import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 import { detachLeaving } from '../../shared/lib/list-motion'
 import { vFadeImg } from '../../shared/lib/fade-image'
 const { navigate, isActive } = usePagePresentation()
@@ -142,6 +143,7 @@ const {
   galleryFilter,
   galleryCollection,
   galleryCollections,
+  eligibleGallery,
   showGenerated,
   visibleGallery,
   latestBatchTemporary,
@@ -157,7 +159,97 @@ const {
   openFolder,
   retain,
   lightbox,
-} = useGallery(last)
+} = useGallery(last, () => previewPreferences.recentLimit)
+
+/*
+ * ---------- 预览卡片高度：拖动下方的分隔条调整，记在本机；双击或 Enter 恢复默认 ----------
+ * 未调整时随窗口高度变化（clamp 58vh），调整后固定为所选高度；切换图片时都不变。
+ */
+const PREVIEW_HEIGHT_KEY = 'np-preview-height'
+const previewHeight = ref<number | null>(Number(localStorage.getItem(PREVIEW_HEIGHT_KEY)) || null)
+let resizing = false
+let resizeStartY = 0
+let resizeStartHeight = 0
+function clampPreviewHeight(value: number) {
+  return Math.round(Math.min(window.innerHeight * 0.9, Math.max(240, value)))
+}
+function stageHeight(event: Event) {
+  const card = (event.currentTarget as HTMLElement).parentElement
+  return card?.querySelector<HTMLElement>('.viewer-stage')?.offsetHeight ?? 480
+}
+function savePreviewHeight() {
+  if (previewHeight.value) {
+    localStorage.setItem(PREVIEW_HEIGHT_KEY, String(previewHeight.value))
+  }
+}
+function startPreviewResize(event: PointerEvent) {
+  if (event.button !== 0) {
+    return
+  }
+  event.preventDefault()
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+  resizing = true
+  resizeStartY = event.clientY
+  resizeStartHeight = previewHeight.value ?? stageHeight(event)
+  document.body.classList.add('split-resizing')
+}
+function movePreviewResize(event: PointerEvent) {
+  if (resizing) {
+    previewHeight.value = clampPreviewHeight(resizeStartHeight + event.clientY - resizeStartY)
+  }
+}
+function endPreviewResize() {
+  if (!resizing) {
+    return
+  }
+  resizing = false
+  document.body.classList.remove('split-resizing')
+  savePreviewHeight()
+}
+function resetPreviewHeight() {
+  previewHeight.value = null
+  localStorage.removeItem(PREVIEW_HEIGHT_KEY)
+}
+function keyPreviewResize(event: KeyboardEvent) {
+  const step = event.shiftKey ? 96 : 24
+  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+    event.preventDefault()
+    const base = previewHeight.value ?? stageHeight(event)
+    previewHeight.value = clampPreviewHeight(base + (event.key === 'ArrowUp' ? -step : step))
+    savePreviewHeight()
+  } else if (event.key === 'Enter') {
+    resetPreviewHeight()
+  }
+}
+const previewStyle = computed(() =>
+  previewHeight.value ? { '--preview-stage-height': `${previewHeight.value}px` } : undefined,
+)
+onBeforeUnmount(() => {
+  if (resizing) {
+    document.body.classList.remove('split-resizing')
+  }
+})
+
+/*
+ * 大图查看器打开时，背后的结果卡片不跟着每次切图解码原图（按住方向键快速切会很卡），
+ * 关闭查看器时再同步到最后看的那张。
+ */
+const resultImage = ref<NaiImage | null>(current.value)
+watch(
+  [current, lightbox],
+  ([image, open]) => {
+    if (!open || !resultImage.value) {
+      resultImage.value = image
+    }
+  },
+  { flush: 'sync' },
+)
+
+/** 更早的图片在图集管理里看 */
+function openGalleryManager() {
+  shellState.tab = 'gallery'
+}
+
 const retentionSaving = ref(false)
 const savingRecipe = ref(false)
 const currentRecipe = computed<NaiGenRequest>(() => ({
@@ -625,7 +717,10 @@ function openImageWorkspace() {
       </section>
     </Teleport>
 
-    <section class="pane right scroll">
+    <section
+      class="pane right scroll"
+      :style="previewStyle"
+    >
       <div
         v-if="running && !current"
         class="empty"
@@ -663,41 +758,57 @@ function openImageWorkspace() {
       </div>
 
       <template v-else>
-        <p
-          v-if="last?.stopped"
-          class="muted small"
-        >
-          {{ last.stopped }} · {{ anlasOutcomeText(last) }}
-        </p>
+        <div>
+          <p
+            v-if="last?.stopped"
+            class="muted small"
+          >
+            {{ last.stopped }} · {{ anlasOutcomeText(last) }}
+          </p>
 
-        <GenerationResult
-          v-if="current"
-          :current="current"
-          :running="running"
-          :inpaint-busy="inpaintBusy"
-          :has-characters="!!promptState.characters.length"
-          :latest-batch-temporary="latestBatchTemporary"
-          :pending-delete="pendingDelete"
-          :deleting="deleting"
-          :seed-fixed="seedFixed"
-          :stale="currentIsStale"
-          :fresh="!!current && current.name === freshImage"
-          @seed="toggleSeed"
-          @load-prompt="loadFromImage"
-          @copy-image="copyImage"
-          @reveal="reveal"
-          @save="saveAs"
-          @lightbox="lightbox = true"
-          @retain="retain"
-          @remove="remove"
-          @inpaint="inpaintSource = $event"
-          @positions="editImagePositions"
-          @workspace="openImageWorkspace"
-        />
-
+          <GenerationResult
+            v-if="resultImage"
+            :current="resultImage"
+            :running="running"
+            :inpaint-busy="inpaintBusy"
+            :has-characters="!!promptState.characters.length"
+            :latest-batch-temporary="latestBatchTemporary"
+            :pending-delete="pendingDelete"
+            :deleting="deleting"
+            :seed-fixed="seedFixed"
+            :stale="currentIsStale"
+            :fresh="!!resultImage && resultImage.name === freshImage"
+            @seed="toggleSeed"
+            @load-prompt="loadFromImage"
+            @copy-image="copyImage"
+            @reveal="reveal"
+            @save="saveAs"
+            @lightbox="lightbox = true"
+            @retain="retain"
+            @remove="remove"
+            @inpaint="inpaintSource = $event"
+            @positions="editImagePositions"
+            @workspace="openImageWorkspace"
+          />
+          <div
+            v-if="resultImage"
+            class="preview-handle"
+            role="separator"
+            tabindex="0"
+            aria-orientation="horizontal"
+            aria-label="预览卡片高度"
+            title="上下拖动调整预览高度，双击恢复默认"
+            @pointerdown="startPreviewResize"
+            @pointermove="movePreviewResize"
+            @pointerup="endPreviewResize"
+            @pointercancel="endPreviewResize"
+            @dblclick="resetPreviewHeight"
+            @keydown="keyPreviewResize"
+          ></div>
+        </div>
         <div
           v-if="gallery.length"
-          class="group"
+          class="group preview-gallery"
         >
           <div class="group-head gallery-head">
             <span class="group-badge nl"
@@ -705,7 +816,7 @@ function openImageWorkspace() {
                 name="image"
                 :size="14"
             /></span>
-            <h3>图片</h3>
+            <h3>最近生成</h3>
             <ThemeSelect
               v-model="galleryCollection"
               :options="galleryCollections"
@@ -717,9 +828,8 @@ function openImageWorkspace() {
                 { value: 'all', label: '全部状态' },
                 { value: 'temporary', label: '临时未留存' },
                 { value: 'saved', label: '已留存' },
-                { value: 'workspace', label: '精修存档' },
               ]"
-              aria-label="图库筛选"
+              aria-label="留存状态"
             />
             <span class="group-count">{{ visibleGallery.length }}</span>
             <button
@@ -760,6 +870,18 @@ function openImageWorkspace() {
                 draggable="false"
               />
               <div class="thumb-actions">
+                <button
+                  class="icon-btn sm"
+                  title="载入提示词与参数"
+                  aria-label="载入提示词与参数"
+                  :disabled="running"
+                  @click.stop="loadFromImage(image)"
+                >
+                  <Icon
+                    name="import"
+                    :size="14"
+                  />
+                </button>
                 <FavoriteButton :image="image" />
                 <button
                   class="icon-btn sm"
@@ -797,6 +919,19 @@ function openImageWorkspace() {
               </div>
             </div>
           </TransitionGroup>
+          <button
+            class="gallery-more"
+            @click="openGalleryManager"
+          >
+            {{
+              eligibleGallery.length > visibleGallery.length
+                ? `更早的图片在图集管理 · 共 ${eligibleGallery.length} 张`
+                : '在图集管理查看全部图片'
+            }}<Icon
+              name="chevron"
+              :size="12"
+            />
+          </button>
         </div>
       </template>
     </section>
@@ -832,6 +967,85 @@ function openImageWorkspace() {
 </template>
 
 <style scoped>
+/*
+ * 预览窗口固定高度（随软件窗口高度变化，切换图片时不变）：
+ * 横图、竖图都在框内完整居中显示，切图时下方缩略图不会被顶上顶下。点击仍可打开大图查看器。
+ */
+.pane.right :deep(.viewer-stage) {
+  height: var(--preview-stage-height, clamp(320px, 58vh, 760px));
+  min-height: 0;
+  container-type: size;
+}
+
+.pane.right :deep(.viewer-stage img) {
+  max-height: calc(100cqh - 28px);
+}
+
+/* 预览卡片下方的高度分隔条 */
+.preview-handle {
+  position: relative;
+  height: 12px;
+  margin-top: 2px;
+  outline: none;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.preview-handle::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  width: 44px;
+  height: 3px;
+  margin-left: -22px;
+  border-radius: 999px;
+  background: var(--line2);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    width var(--dur-fast) var(--ease-out),
+    margin var(--dur-fast) var(--ease-out);
+}
+
+.preview-handle:hover::after,
+.preview-handle:focus-visible::after {
+  width: 64px;
+  margin-left: -32px;
+  background: var(--pink);
+}
+
+/* 往下滚动缩略图时，标题栏固定在顶部 */
+.preview-gallery > .gallery-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin-bottom: 4px;
+  padding-bottom: 8px;
+  background: var(--bg);
+}
+
+.gallery-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  margin-top: 16px;
+  padding: 10px;
+  border: 1px dashed var(--line2);
+  border-radius: 10px;
+  color: var(--text2);
+  font-size: 12px;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.gallery-more:hover {
+  border-color: var(--pink-line);
+  color: var(--pink-deep);
+}
+
 .pane.left.creation-generation {
   position: relative;
   display: grid;

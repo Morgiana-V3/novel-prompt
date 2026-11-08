@@ -439,9 +439,6 @@ defineExpose({ desktopState, frontendAction })
         >
           <summary class="request-summary">
             <span>{{ mode === 'optimize' ? '修改要求（可选）' : '画面描述' }}</span>
-            <span class="request-summary-text">{{
-              fresh ? '重新生成' : request.trim() || '未填写'
-            }}</span>
           </summary>
           <div class="composer short">
             <textarea
@@ -799,13 +796,8 @@ defineExpose({ desktopState, frontendAction })
   transform: rotate(90deg);
 }
 
-.request-summary-text {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--muted);
+.request-field .composer.short textarea {
+  min-height: calc(128px - 2lh);
 }
 
 .request-field[open] > .request-summary {

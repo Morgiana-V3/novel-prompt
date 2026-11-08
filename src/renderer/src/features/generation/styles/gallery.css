@@ -435,7 +435,6 @@ select.input:hover:not(:disabled) {
 }
 
 .thumb:hover .thumb-actions,
-.thumb.on .thumb-actions,
 .thumb:focus-within .thumb-actions,
 .thumb-actions:has(.danger-confirm) {
   opacity: 1;

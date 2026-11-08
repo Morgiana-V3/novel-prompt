@@ -23,6 +23,10 @@ export function createGenerationActions(context: TaskContext) {
         if (signal.aborted) {
           result.stopped ??= '已停止，已完成的图片已保留'
         }
+        // 新图片已写入图库：通知常驻的图集管理等视图刷新（与删除、MCP 生图一致）
+        if (result.images.length) {
+          send('gallery:changed', null)
+        }
         return result
       },
       { resource: 'generation', cancelMode: 'after-current' },

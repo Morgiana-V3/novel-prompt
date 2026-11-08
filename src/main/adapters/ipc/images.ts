@@ -77,7 +77,13 @@ export function registerImagesIpc(context: IpcContext): void {
   })
 
   handle('nai:retain', (_e, name: string) => {
-    return retainImage(name)
+    try {
+      return retainImage(name)
+    } finally {
+      // 留存状态变了：图集管理的「临时 / 已留存」筛选需要刷新
+      send('gallery:changed', null)
+      notifyAppChanged()
+    }
   })
 
   handle('nai:recipe', (_e, name: string) => {
