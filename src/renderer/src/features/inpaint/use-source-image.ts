@@ -57,12 +57,12 @@ export function useSourceImage(host: SourceImageHost) {
           settings.ucPreset = 'none'
           if (meta.request && !host.initialEditor()) {
             Object.assign(settings, meta.request.params, { count: 1 })
-            promptNote.value = '已读取原图提示词和生成参数。'
+            promptNote.value = ''
           } else {
-            promptNote.value = '已读取原图提示词。'
+            promptNote.value = ''
           }
         } catch {
-          promptNote.value = '原图没有可读取的提示词，已使用当前工作区内容，请核对后修改。'
+          promptNote.value = '这张图没有生成记录，已带入当前提示词，请核对后修改。'
         }
       }
       if (!host.isAlive()) {

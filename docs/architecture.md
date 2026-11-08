@@ -337,10 +337,12 @@ Skill 目录包由 modules/skills/package-files.ts 校验和整体写入；入�
 
 ## 完整图片反推
 
-`ReverseView.vue` 的单一反推动作并行启动本地画师/标签识别与完整提示词识图；一条失败不丢弃另一条结果。本地模型未就绪时仍可获取完整提示词，并明确提示画师参考缺失。默认展示画师组成和完整提示词，候选画师、画风对比入口、全部角色和反推说明直接展示，仅识别设置与原始模型分数保留折叠；角色、服装、环境等本地标签沿用原分类，在全局提示词上方默认展示且只读；本地结果缺失时从已有完整正向稿提取标签作为说明，不混入负面、自然语言或画面文字。
+`ReverseView.vue` 的单一反推动作先取得本地画师/标签识别结果，再把内容与角色身份候选交给完整提示词识图，按可见外观分配到各角色及重复出场条目。本地失败仍可继续识图，识图失败不丢弃已返回的本地结果。本地模型未就绪时仍可获取完整提示词，并明确提示画师参考缺失。默认展示画师组成和完整提示词，候选画师、画风对比入口、全部角色和反推说明直接展示，识别设置常驻显示，仅原始模型分数保留折叠；角色、服装、环境等本地标签沿用原分类，在全局提示词上方默认展示且只读；本地结果缺失时从已有完整正向稿提取标签作为说明，不混入负面、自然语言或画面文字。
 
 `ReversePrompt.vue` 使用 ReversePromptResult 只读展示主提示词、负面词、角色和位置，只有画师选择可调整；本地标签与角色候选同样只读，编辑统一在带入后的生图页。目标模型直接读取全局 naiVersion，没有独立目标模型、要求输入框或生图参数面板。内置反推完成即展示只读结果；外部 Agent 建议先展示再显式采纳。模型在请求中切换时拒绝应用旧模型结果并保留原稿；模型约束不符时提示修改角色数/位置。带入生图通过 openTabForLoad → importGenerationRequest 保留已有创作，用现有生图页执行；反推页没有完整提示词专用生成队列或预览。画幅按参考图比例准备，步数等沿用现有生图参数，默认关闭额外质量词/UC 预设以避免排除文字、分格或像素画。画师串可选择是否包含。
 
-`ai:optimize` 的 AiOptimizeRequest 新增可选 referenceImage（静态 PNG/JPEG/WebP data URL，最多 25 MB），只允许 semantic 模式。主进程解码、去除元数据、等比限制到 2048 边长，再进入现有 Skill、标签工具及本地复查流程。requireVision 禁止纯文字降级；返回 warnings 公开未修复的结构问题。负面词是复现建议，位置不保证像素还原。
+`ai:optimize` 的 AiOptimizeRequest 新增可选 referenceImage（静态 PNG/JPEG/WebP data URL，最多 25 MB），只允许 semantic 模式。主进程解码、去除元数据、等比限制到 2048 边长，使用固定识图任务与目标模型输出协议，保留标签工具及本地格式复查。图片反推不调用 composeSkills、不传 Skill 快照、不开放 read_skill_reference，也不复用文字优化的已采纳审查结果；创作 Skill 的启用、禁用和内容修改均不参与反推请求。普通文字智能优化继续使用原 Skill 流程。requireVision 禁止纯文字降级；返回 warnings 公开未修复的结构问题。负面词是复现建议，位置不保证像素还原。
 
-前台 MCP 反推工具共享界面动作与 desktop.reverse 快照（包含 localResult/localError）；load 只允许空页；compose 受 mcpAllowAi 控制，执行与按钮相同的双路反推；transfer 只将稿件带入生图页，不生图、不调用供应商。expected_token 保护草稿；step_delay_ms 和取消使用现有前台操作链路。ai:optimize 的可选 actionId 使用一次性 claimFrontend 票据并标记任务 origin=agent。ui_propose_reverse_prompt 可在实际看图和查词后提交外部 Agent 草稿，明确标注来源和未运行内置 AI 复查，仍需显式采纳。
+前台 MCP 反推工具共享界面动作与 desktop.reverse 快照（包含 localResult/localError）；load 只允许空页；compose 受 mcpAllowAi 控制，执行与按钮相同的本地识别及完整反推；transfer 只将稿件带入生图页，不生图、不调用供应商。expected_token 保护草稿；step_delay_ms 和取消使用现有前台操作链路。ai:optimize 的可选 actionId 使用一次性 claimFrontend 票据并标记任务 origin=agent。ui_propose_reverse_prompt 可在实际看图和查词后提交外部 Agent 草稿，明确标注来源和未运行内置 AI 复查，仍需显式采纳。
+
+画师组合、反推带入与画师调试统一使用 mixString 序列化数值权重，在名字与结束符之间保留空格，避免 anderson m0311 等数字结尾名字与 :: 组成意外权重。

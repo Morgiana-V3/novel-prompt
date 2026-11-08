@@ -64,8 +64,13 @@ function checkArtistMix() {
       { name: 'a', weight: 1.2 },
       { name: 'b', weight: 1 },
     ]),
-    '1.2::artist:a::, artist:b',
+    '1.2::artist:a ::, artist:b',
   )
+
+  // 真机回归：m0311 紧贴 :: 会被供应商当成数字权重，导致后续内容生成噪声。
+  const numericName = mixString([{ name: 'anderson m0311', weight: 0.9 }])
+  assert.equal(numericName, '0.9::artist:anderson m0311 ::')
+  assert.deepEqual(numericName.match(/-?\d+(?:\.\d+)?::/g), ['0.9::'])
 
   // 变体：逐位加强、去掉最弱、逐位减弱；去重、不含原组合、限制在 0.3～1.6
   const base = [
@@ -77,8 +82,8 @@ function checkArtistMix() {
   const strings = variants.map(mixString)
   assert.ok(!strings.includes(mixString(base)))
   assert.equal(new Set(strings).size, strings.length)
-  assert.equal(strings[0], '1.6::artist:a::, 0.9::artist:b::, 0.8::artist:c::')
-  assert.ok(strings.includes('1.5::artist:a::, 0.9::artist:b::'))
+  assert.equal(strings[0], '1.6::artist:a ::, 0.9::artist:b ::, 0.8::artist:c ::')
+  assert.ok(strings.includes('1.5::artist:a ::, 0.9::artist:b ::'))
   assert.ok(variants.flat().every((part) => part.weight >= 0.3 && part.weight <= 1.6))
   assert.equal(mixVariants(base, 0.15).length, 3)
   console.log('PASS artist mix estimation')

@@ -17,7 +17,7 @@ import Mascot from '../../shared/ui/Mascot.vue'
 import ReverseModels from './ReverseModels.vue'
 import ReverseReference from './ReverseReference.vue'
 import ArtistRecommendations from './ArtistRecommendations.vue'
-import { estimateArtistMix, rankArtists } from '@shared/reverse/candidates'
+import { estimateArtistMix, mixString, rankArtists } from '@shared/reverse/candidates'
 import { COMPARE_MAX, TUNE_MAX_ROUNDS, TUNE_ROUND_SIZE, useStyleMatch } from './use-style-match'
 import { fusedProbabilities, memberWeights } from './mix-weights'
 import ReverseComparison from './ReverseComparison.vue'
@@ -291,16 +291,17 @@ async function analyze(context?: FrontendContext) {
   }
   context?.signal.addEventListener('abort', abort, { once: true })
   try {
-    // 两路独立开始：画师结果不必等识图接口，也不会被其失败吞掉。
-    const outcomes = await Promise.allSettled([
-      fullPrompt.value.compose(context?.actionId),
-      analyzeLocal(),
-    ])
+    // 先取得身份候选，再交给识图模型按人物分配；本地失败仍可继续完整反推。
+    await analyzeLocal()
+    if (cancelRequested.value) {
+      return
+    }
+    await fullPrompt.value.compose(context?.actionId, {
+      tags: selectedReady.value ? filteredTags.value.map((tag) => tag.name) : [],
+      characters: selectedReady.value ? [...characterCandidates.value] : [],
+    })
     if (!selectedReady.value && !cancelRequested.value) {
       error.value = '完整提示词可正常反推；画师参考需要先在识别设置中准备本地模型。'
-    }
-    if (outcomes[0].status === 'rejected' && context) {
-      throw outcomes[0].reason
     }
   } finally {
     analyzing.value = false
@@ -343,7 +344,7 @@ async function analyzeLocal() {
       rankArtists(result.value)
         .slice(0, 3)
         .map((artist) => artist.name)
-    // 单人图：角色候选直接放进主提示词，不用再分配；多人图提示逐个框选拆分角色
+    // 保留本地识别独立使用时的底稿；完整反推另按参考图分配角色候选。
     if (multiPerson.value && characterCandidates.value.length >= 2) {
       characters.value = characterCandidates.value
         .slice(0, 6)
@@ -760,8 +761,11 @@ async function source(url: string) {
             {{ result || fullPrompt?.hasDraft ? '重新反推' : '开始反推' }}
           </button>
         </div>
-        <details class="reverse-settings">
-          <summary>识别设置</summary>
+        <section
+          class="reverse-settings"
+          aria-label="识别设置"
+        >
+          <h3 class="reverse-settings-title">识别设置</h3>
           <div
             v-show="stage === 'recognition'"
             class="reverse-options"
@@ -860,7 +864,7 @@ async function source(url: string) {
               取消下载
             </button>
           </div>
-        </details>
+        </section>
         <p
           v-if="error || status?.phase === 'error'"
           class="reverse-error"
@@ -1004,8 +1008,7 @@ async function source(url: string) {
           ref="fullPrompt"
           :file="image"
           :disabled="busy"
-          :evidence="promptContent"
-          :artist-style="mixParts.map((part) => `${part.weight}::artist:${part.name}::`).join(', ')"
+          :artist-style="mixString(mixParts)"
           :tags="filteredTags.map((tag) => tag.name)"
           :character-tags="characterCandidates"
         >
@@ -1088,21 +1091,18 @@ async function source(url: string) {
   padding: 0 12px 10px;
 }
 
-.reverse-settings::details-content {
+.reverse-settings {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.reverse-settings:not([open]) > :not(summary) {
-  display: none;
-}
-
-.reverse-settings > summary {
-  padding: 8px 0;
+.reverse-settings-title {
+  margin: 0;
+  padding-top: 8px;
   color: var(--text2);
   font-size: 12px;
-  cursor: pointer;
+  font-weight: normal;
 }
 
 .reverse-local-content {

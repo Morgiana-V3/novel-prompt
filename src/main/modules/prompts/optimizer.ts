@@ -15,7 +15,7 @@ import type {
   EvidenceInfo,
 } from '../../../shared/prompts/types'
 import { extractJson, type ChatInputMessage } from '../../providers/chat/client'
-import { reverseReference, REVERSE_PROMPT } from './reverse-reference'
+import { reverseReference, reverseSystemPrompt } from './reverse-reference'
 import { composeSkills } from '../skills/service'
 import { getSettings } from '../settings/service'
 import { analyzePrompt } from './analyzer'
@@ -147,9 +147,15 @@ function userPrompt(
   dataIssues: string[],
   evidenceBlock: string,
 ): string {
+  let task = req.mode === 'semantic' ? '将用户描述转换为提示词。' : '根据用户要求调整已有提示词。'
+  if (req.referenceImage) {
+    task = '根据实际参考图反推完整提示词。'
+  }
   return [
-    req.mode === 'semantic' ? '将用户描述转换为提示词。' : '根据用户要求调整已有提示词。',
-    '创作方法和内容组织依据本次启用的 Skill。按 Skill 的适用范围与优先级使用；没有规则覆盖时尊重用户原意，不自行强制特定画风、角色拆分或编排方式。',
+    task,
+    req.referenceImage
+      ? '仅依据参考图、候选证据与固定输出协议，不加载创作 Skill，不额外美化或补写画面内容。'
+      : '创作方法和内容组织依据本次启用的 Skill。按 Skill 的适用范围与优先级使用；没有规则覆盖时尊重用户原意，不自行强制特定画风、角色拆分或编排方式。',
     '使用提供的工具核实候选 tag，区分工具证据与推断。列出实际改动及其依据，不把可选建议当成已获用户同意的内容。',
     presetContext(req.version, req.promptPresets, req.prompt, req.negative),
     JSON.stringify({
@@ -447,10 +453,14 @@ export async function optimizePrompt(
   const ev = await gatherEvidence(sections, onStep, signal)
   const dataIssues = ev.issues.map((issue) => `- [${issue.where}] ${issue.text}`)
 
-  const skills = composeSkills('optimize', req.version)
+  // 图片反推与创作规则隔离：不加载 Skill 正文，也不向模型开放 Skill 资料读取。
+  const skills = reference ? undefined : composeSkills('optimize', req.version)
+  const system = reference
+    ? reverseSystemPrompt(req.version)
+    : systemPrompt(req.version, skills!.text)
   const settings = getSettings()
   const reviewContext = JSON.stringify([
-    skills.text,
+    system,
     ev.block,
     ev.info,
     settings.model,
@@ -458,6 +468,7 @@ export async function optimizePrompt(
     settings.reasoningEffort,
   ])
   if (
+    !reference &&
     !rules.length &&
     !dataIssues.length &&
     !ev.info.failed.length &&
@@ -490,7 +501,7 @@ export async function optimizePrompt(
   const messages: ChatInputMessage[] = [
     {
       role: 'system',
-      content: systemPrompt(req.version, skills.text) + (reference ? REVERSE_PROMPT : ''),
+      content: system,
     },
     { role: 'user', content: reference ? [{ type: 'text', text: prompt }, reference] : prompt },
   ]
@@ -522,7 +533,8 @@ export async function optimizePrompt(
     const msg = await chat(messages, {
       requireVision: !!reference,
       json: true,
-      skillSnapshot: skills.snapshot,
+      skillSnapshot: skills?.snapshot,
+      allowSkillReads: !reference,
       tools: TOOLS,
       temperature: 0.6,
       signal,

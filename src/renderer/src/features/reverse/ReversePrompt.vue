@@ -25,7 +25,6 @@ const props = withDefaults(
   defineProps<{
     file?: File
     disabled: boolean
-    evidence: string
     artistStyle: string
     tags?: string[]
     characterTags?: string[]
@@ -195,7 +194,10 @@ function readImage(file: File): Promise<string> {
   })
 }
 
-async function compose(actionId?: string) {
+async function compose(
+  actionId?: string,
+  evidence: { tags: string[]; characters: string[] } = { tags: [], characters: [] },
+) {
   if (!props.file || composing.value || activeTask('optimize')) {
     throw new Error('请先选择参考图并等待当前任务完成')
   }
@@ -217,7 +219,9 @@ async function compose(actionId?: string) {
         version: model,
         promptPresets: { qualityTags: params.value.qualityTags, ucPreset: params.value.ucPreset },
         referenceImage,
-        instruction: `根据参考图生成完整生图配置，保留画面内容、构图、角色关系和可读文字，推断合适的负面词与角色位置。不要猜测画师，画师参考由独立的本地模型提供。\n本地识别候选（可能错误）：${props.evidence || '无'}`,
+        instruction: `根据参考图生成完整生图配置，保留画面内容、构图、角色关系和可读文字，推断合适的负面词与角色位置。不要猜测画师，画师参考由独立的本地模型提供。
+本地识别候选（可能错误）：${JSON.stringify(evidence)}
+characters 是本地识别出的角色身份 tag 候选，不是已分配的人物顺序。结合参考图的外观、服装与道具判断每个候选对应谁；确认匹配的身份 tag 必须写入对应 characters[].prompt，不能仅在说明里提及或只保留外观。多格中同一角色每次出现都保留该身份 tag。不把所有身份混入全局或每个角色，不按候选列表顺序盲目分配；无法确认或与画面冲突的候选不强加，并在 assessment 说明。`,
       },
       actionId,
     )

@@ -48,10 +48,20 @@ export function proposeArtistStrings(result: ReverseResult): string[] {
     .map((candidate) => candidate.name)
   const singles = names.slice(0, 3).map((name) => `artist:${name}`)
   if (names.length > 1) {
-    singles.push(`1::artist:${names[0]}::, 0.7::artist:${names[1]}::`)
+    singles.push(
+      mixString([
+        { name: names[0], weight: 1 },
+        { name: names[1], weight: 0.7 },
+      ]),
+    )
   }
   if (names.length > 2) {
-    singles.push(`1::artist:${names[0]}::, 0.7::artist:${names[2]}::`)
+    singles.push(
+      mixString([
+        { name: names[0], weight: 1 },
+        { name: names[2], weight: 0.7 },
+      ]),
+    )
   }
   return singles
 }
@@ -162,7 +172,8 @@ export function estimateArtistMix(result: Pick<ReverseResult, 'artists'>): Artis
 export function mixString(parts: Pick<ArtistMixPart, 'name' | 'weight'>[]): string {
   return parts
     .map((part) =>
-      part.weight === 1 ? `artist:${part.name}` : `${part.weight}::artist:${part.name}::`,
+      // 数字结尾的名字必须与结束符隔开，否则 m0311:: 会被供应商识别为新权重。
+      part.weight === 1 ? `artist:${part.name}` : `${part.weight}::artist:${part.name} ::`,
     )
     .join(', ')
 }

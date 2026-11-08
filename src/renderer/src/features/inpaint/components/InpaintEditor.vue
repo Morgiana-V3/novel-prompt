@@ -74,18 +74,19 @@ const draft = reactive({
   characters: toDrafts(promptState.characters),
 })
 const settings = reactive({ ...props.params, count: 1, seed: null as number | null, strength: 1 })
-const cost = computed(() =>
-  estimateLabel(
-    estimateGeneration(
-      {
-        params: { ...settings, width: width.value, height: height.value },
-        version: version.value,
-        inpaint: { strength: settings.strength },
-      },
-      subscriptionState.error ? undefined : subscriptionState.subscription,
-    ),
+// 重绘沿用原图的步数与 Guidance、种子每次随机，界面只在可能扣费时提示费用。
+const estimate = computed(() =>
+  estimateGeneration(
+    {
+      params: { ...settings, width: width.value, height: height.value },
+      version: version.value,
+      inpaint: { strength: settings.strength },
+    },
+    subscriptionState.error ? undefined : subscriptionState.subscription,
   ),
 )
+const paid = computed(() => !estimate.value || estimate.value.maximum > 0)
+const costLabel = computed(() => estimateLabel(estimate.value))
 const tool = ref<'brush' | 'erase' | 'rect'>('brush')
 const brush = ref(48)
 const opacity = ref(45)
@@ -617,8 +618,7 @@ async function generate(batch = false) {
       width: width.value,
       height: height.value,
       count: 1,
-      seed:
-        settings.seed === null || (settings.seed as unknown) === '' ? null : Number(settings.seed),
+      seed: null,
     }
     const queue = (batch ? batchReady.value : [selected.value]).map((region) => ({
       label: regionLabel(region),
@@ -1261,10 +1261,13 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                 >
                   区域 {{ selected.label }} · 已采纳
                 </div>
-                <details class="ip-analysis-details">
-                  <summary class="disclosure">提示词来源</summary>
-                  {{ promptNote || '正在读取图片提示词…' }}
-                </details>
+                <div
+                  v-if="promptNote"
+                  class="ip-note"
+                  role="status"
+                >
+                  <Icon name="warn" />{{ promptNote }}
+                </div>
                 <fieldset :disabled="loading || running || analyzing">
                   <label
                     class="field-label"
@@ -1349,46 +1352,12 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
                       <span>保留原有细节</span><span>更大幅度重画</span>
                     </div>
                   </div>
-                  <div class="ip-param-grid">
-                    <label
-                      >模型<span
-                        class="input sm"
-                        :title="initialModel ? '当前工作台的模型' : '在侧边栏切换目标模型'"
-                        >{{ version.toUpperCase() }}</span
-                      ></label
-                    >
-                    <label
-                      >步数<input
-                        v-model.number="settings.steps"
-                        class="input sm"
-                        type="number"
-                        min="1"
-                        max="50"
-                    /></label>
-                    <label
-                      >Guidance<input
-                        v-model.number="settings.scale"
-                        class="input sm"
-                        type="number"
-                        min="0"
-                        max="10"
-                        step="0.1"
-                    /></label>
-                    <label
-                      >种子<input
-                        v-model.number="settings.seed"
-                        class="input sm"
-                        type="number"
-                        min="0"
-                        max="4294967295"
-                        placeholder="随机"
-                    /></label>
-                  </div>
                 </fieldset>
                 <span
+                  v-if="paid"
                   class="pill"
-                  title="提交前检查免费资格，可能扣费时需要确认"
-                  >{{ cost }} / 区域</span
+                  title="提交前检查免费资格，扣费前需要确认"
+                  >{{ costLabel }} / 区域</span
                 >
               </div>
               <div
@@ -1634,8 +1603,7 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
 }
 
 .ip-annotation-fields :deep(.theme-select),
-.ip-ai-section > label :deep(.theme-select),
-.ip-param-grid :deep(.theme-select) {
+.ip-ai-section > label :deep(.theme-select) {
   width: 100%;
   max-width: none;
 }
@@ -1878,20 +1846,6 @@ fieldset {
 .ip-scale-label {
   font-size: 11px;
   color: var(--muted);
-}
-
-.ip-param-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  font-size: 11.5px;
-  color: var(--text2);
-}
-
-.ip-param-grid .input {
-  display: block;
-  width: 100%;
-  margin-top: 5px;
 }
 
 .ip-status {

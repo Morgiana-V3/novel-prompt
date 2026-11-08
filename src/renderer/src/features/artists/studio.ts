@@ -1,6 +1,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { artistNameKey } from '@shared/artists/catalog'
 import { parsePrompt } from '@shared/prompts/parser'
+import { mixString } from '@shared/reverse/candidates'
 import { removePromptTokens } from '@shared/prompts/remove-tokens'
 import type { NaiGenRequest, NaiVersion } from '@shared/generation/types'
 import type { NaiImage } from '@shared/images/types'
@@ -40,10 +41,7 @@ const STORE_KEY = 'np-artist-studio-v1'
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value))
 
 export function artistString(artists: ArtistEntry[]): string {
-  return artists
-    .filter((artist) => artist.enabled)
-    .map((artist) => `${artist.weight}::artist:${artist.name}::`)
-    .join(', ')
+  return mixString(artists.filter((artist) => artist.enabled))
 }
 
 function initialState() {

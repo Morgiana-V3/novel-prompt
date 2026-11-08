@@ -145,7 +145,7 @@ export function useEditorPersistence(host: EditorPersistenceHost) {
     regions.value = restored.length ? restored : [makeRegion()]
     selectedId.value =
       regions.value.find((region) => region.id === props.initialRegionId)?.id ?? regions.value[0].id
-    promptNote.value = '已恢复当前版本的提示词、选区和批注。'
+    promptNote.value = ''
     renderMask()
     measureMask()
     panel.value = 'regions'
