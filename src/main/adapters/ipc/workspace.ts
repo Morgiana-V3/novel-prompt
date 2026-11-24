@@ -9,7 +9,12 @@ import {
 } from '../../modules/workspace/image-cleanup'
 import { listPages } from '../../modules/workspace/queries'
 import { listRemovedPages, readPage, restorePage } from '../../modules/workspace/repository'
-import { createPage, editPage, importPage } from '../../modules/workspace/service'
+import {
+  createPage,
+  editPage,
+  importDroppedPage,
+  importPage,
+} from '../../modules/workspace/service'
 import { recoverPageImage } from '../../modules/workspace/versions'
 import type { IpcContext } from './context'
 import { handle } from './handle'
@@ -127,6 +132,13 @@ export function registerWorkspaceIpc(context: IpcContext): void {
         : importPage(result.filePaths[0], params, model, draft)
     },
   )
+
+  handle('pages:import-dropped', async (_event, bytes, fileName, params, model, draft) => {
+    const workspace = await importDroppedPage(bytes, fileName, params, model, draft)
+    send('gallery:changed', null)
+    notifyAppChanged()
+    return workspace
+  })
 
   handle('pages:edit', (_e, id: string, revision: number, action: PageAction) => {
     return editPage(id, revision, action)

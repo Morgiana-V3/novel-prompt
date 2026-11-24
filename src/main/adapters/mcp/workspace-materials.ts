@@ -90,6 +90,11 @@ export function workspaceContextMaterials(
         versionId: reference.versionId,
         ...imageRead(reference.image),
       })),
+      attachments: (request?.attachments ?? []).map((attachment, index) => ({
+        ...attachment,
+        index: index + 1,
+        read: { tool: 'read_image', arguments: { name: attachment.imageName } },
+      })),
       regionPreviews: previews.map((region) => ({
         id: region.id,
         label: region.label,

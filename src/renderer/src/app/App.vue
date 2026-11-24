@@ -10,6 +10,14 @@ import { settingsState } from '../features/settings/state'
 import { tagState } from '../features/tags/state'
 import { shellState } from '../shared/state/shell'
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import { DEFAULT_COLLECTION } from '@shared/images/collections'
+import {
+  collections,
+  galleryCollection,
+  refreshCollections,
+} from '../features/gallery/collections-state'
+import ImageIntakeDialog from './components/ImageIntakeDialog.vue'
+import { useImageIntake } from './use-image-intake'
 import { refreshDb } from '../features/tags/state'
 import { loadSkills } from '../features/skills/state'
 import { saveSettings, checkUpdate, dismissUpdate, receiveUpdate } from '../features/settings/state'
@@ -17,7 +25,6 @@ import {
   importImagePrompt,
   flushWorkspace,
   refreshSnippets,
-  readPngPrompt,
 } from '../features/prompts/public/import-export'
 import { refreshFavorites } from '../features/favorites/public'
 import { openTabForLoad } from '../features/creation/public/navigation'
@@ -373,53 +380,55 @@ async function setVersion(modelVersion: NaiVersion) {
   }
 }
 
-/* ---------- 拖入原图，读取提示词与生成参数 ---------- */
-const dragDepth = ref(0)
-const hasFile = (event2: DragEvent) => !!event2.dataTransfer?.types.includes('Files')
-function onDragEnter(event2: DragEvent) {
-  if (shellState.tab === 'reverse') {
-    return
-  }
-  if (hasFile(event2)) {
-    dragDepth.value++
-  }
-}
-function onDragOver(event2: DragEvent) {
-  // 必须阻止默认行为，否则 Electron 会直接打开图片
-  if (hasFile(event2)) {
-    event2.preventDefault()
-  }
-}
-function onDragLeave(event2: DragEvent) {
-  if (hasFile(event2)) {
-    dragDepth.value = Math.max(0, dragDepth.value - 1)
-  }
-}
-async function onDrop(event2: DragEvent) {
-  if (shellState.tab === 'reverse') {
-    event2.preventDefault()
-    dragDepth.value = 0
-    return
-  }
-  if (!hasFile(event2)) {
-    return
-  }
-  event2.preventDefault()
-  dragDepth.value = 0
-  const file = event2.dataTransfer?.files?.[0]
-  if (!file) {
-    return
-  }
-  try {
-    const imported = await readPngPrompt(file)
-    // 拖入原图等同「载入配置」：当前标签有内容时新开标签承接
-    if (openTabForLoad()) {
-      await importImagePrompt(imported, '已读取原图')
+const {
+  dragging: imageDragging,
+  image: incomingImage,
+  busy: imageIntakeBusy,
+  error: imageIntakeError,
+  close: closeImageIntake,
+  choose: chooseImageUse,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+} = useImageIntake({
+  blocked: () => frontend.value?.status === 'running',
+  onOpen: () => void refreshCollections().catch(reportError),
+  decode: async (record) => {
+    if (!openTabForLoad()) {
+      throw new Error('当前无法载入配置，请完成手头操作或关闭一个创作标签')
     }
-  } catch (err) {
-    toast(cleanErr(err))
-  }
-}
+    await importImagePrompt(record, '已读取生成记录')
+    shellState.tab = 'creation'
+  },
+  reverse: (file) => {
+    if (!reverseView.value) {
+      throw new Error('反推页尚未就绪')
+    }
+    reverseView.value.loadDroppedImage(file)
+    shellState.tab = 'reverse'
+  },
+  workspace: async (file) => {
+    if (!workspaceView.value) {
+      throw new Error('精修页尚未就绪')
+    }
+    await workspaceView.value.importDroppedImage(file)
+    shellState.tab = 'workspace'
+    toast('已创建精修项目')
+  },
+  gallery: async (file, collection) => {
+    const saved = await window.api.imagesImport(
+      new Uint8Array(await file.arrayBuffer()),
+      collection,
+    )
+    toast('已保存到图库', {
+      label: '在图库查看',
+      run: () => {
+        galleryCollection.value = saved.collectionId ?? DEFAULT_COLLECTION
+        shellState.tab = 'gallery'
+      },
+    })
+  },
+})
 </script>
 
 <template>
@@ -437,9 +446,22 @@ async function onDrop(event2: DragEvent) {
     @confirm="replyConfirmation(true)"
     @cancel="replyConfirmation(false)"
   />
+  <ImageIntakeDialog
+    v-if="incomingImage"
+    :file-name="incomingImage.file.name"
+    :image-url="incomingImage.url"
+    :width="incomingImage.width"
+    :height="incomingImage.height"
+    :metadata="incomingImage.metadata"
+    :busy="imageIntakeBusy"
+    :error="imageIntakeError"
+    :collections="collections"
+    :default-collection-id="DEFAULT_COLLECTION"
+    @choose="chooseImageUse"
+    @cancel="closeImageIntake"
+  />
   <div
     class="layout"
-    @dragenter="onDragEnter"
     @dragover="onDragOver"
     @dragleave="onDragLeave"
     @drop="onDrop"
@@ -661,7 +683,7 @@ async function onDrop(event2: DragEvent) {
 
     <transition name="fade">
       <div
-        v-if="dragDepth > 0"
+        v-if="imageDragging"
         class="drop-overlay"
       >
         <div class="drop-card">
@@ -669,8 +691,7 @@ async function onDrop(event2: DragEvent) {
             name="import"
             :size="30"
           />
-          <b>松手加载图片配置</b>
-          <span>读取提示词和生成参数，可撤销</span>
+          <b>松手选择图片用途</b>
         </div>
       </div>
     </transition>

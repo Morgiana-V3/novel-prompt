@@ -6,12 +6,14 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { writeFileAtomic } from '../../infrastructure/atomic-file'
 import type { NaiGenParams, NaiSubscription, NaiVersion } from '../../../shared/generation/types'
+import { importReferenceImage } from '../../modules/generation/references'
 import { freeCheck } from '../../modules/generation/costs'
 import { getSubscription } from '../../modules/generation/service'
 import { imagePath, listImages } from '../../modules/images/access'
 import {
   clearTemporaryImages,
   imageLibraryDir,
+  importGalleryImage,
   imageBytesWithRecipe,
   readImageRecipe,
   retainImage,
@@ -38,6 +40,11 @@ export function registerImagesIpc(context: IpcContext): void {
     send('gallery:changed', null)
     notifyAppChanged()
   }
+  handle('images:import', async (_event, bytes, collectionId) => {
+    const image = await importGalleryImage(bytes, collectionId)
+    collectionsChanged()
+    return image
+  })
   handle('collections:list', () => imageCollections.list())
   handle('collections:create', (_e, name) => {
     const item = imageCollections.create(name)
@@ -72,6 +79,7 @@ export function registerImagesIpc(context: IpcContext): void {
     },
   )
 
+  handle('nai:import-reference', (_event, source) => importReferenceImage(source))
   handle('nai:list', () => {
     return listImages(10000)
   })

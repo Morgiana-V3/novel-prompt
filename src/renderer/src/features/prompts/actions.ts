@@ -4,7 +4,13 @@ import type { TagCategory } from '@shared/tags/types'
 import { watch } from 'vue'
 import { toast, reportError } from '../../shared/lib/notifications'
 import { settingsState, saveSettings } from '../settings/state'
-import { applyGenerationParams, generationParams, loadPreferences } from '../generation/public'
+import {
+  setCreationReferences,
+  referenceDraft,
+  applyGenerationParams,
+  generationParams,
+  loadPreferences,
+} from '../generation/public'
 import type { FieldRef, Persisted, Snapshot } from './state'
 import { DEFAULT_PARAMS, MAX_HISTORY, promptState, STORE_KEY, toDrafts } from './state'
 
@@ -294,6 +300,7 @@ export async function importGenerationRequest(
     content: current('导入前'),
     params: { ...promptState.params },
     generation: { ...generationParams },
+    preciseReferences: referenceDraft.images,
     version: settingsState.settings?.naiVersion ?? 'v4.5',
   }
   // Persist the model first: a failed save must not leave half an import applied.
@@ -305,6 +312,7 @@ export async function importGenerationRequest(
     ;(promptState.params as unknown as Record<string, unknown>)[field] = request.params[field]
   }
   applyGenerationParams(request.params)
+  setCreationReferences(request.params.preciseReferences)
   const undo = async () => {
     if (settingsState.settings?.naiVersion !== before.version) {
       await saveSettings({ naiVersion: before.version })
@@ -313,6 +321,7 @@ export async function importGenerationRequest(
     setContent(before.content)
     Object.assign(promptState.params, before.params)
     applyGenerationParams(before.generation)
+    setCreationReferences(before.preciseReferences)
     toast('已恢复导入前的提示词、模型和生成参数')
   }
   const seedNote = keepSeed || originalSeed === null ? '' : `（种子随机，原种子 ${originalSeed}）`

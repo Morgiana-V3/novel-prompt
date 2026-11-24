@@ -44,6 +44,7 @@ export function summarizeMessage(
     regionIds: message.regionIds,
     regions: message.regions,
     referenceIds: message.referenceIds,
+    attachments: message.attachments,
     requestId: message.requestId,
     externalRequest: message.externalRequest,
     error: message.error,

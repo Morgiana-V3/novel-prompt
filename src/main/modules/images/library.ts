@@ -25,6 +25,7 @@ import { writeFileAtomic } from '../../infrastructure/atomic-file'
 import { pngSize } from '../../providers/novelai/png-response'
 import { workspaceImageNames } from '../workspace/image-references'
 import { imageCollections } from './collections'
+import { importImageAsPng } from './import'
 
 type Storage = NonNullable<NaiImage['storage']>
 const uuid = /^[a-f0-9-]{36}$/
@@ -59,6 +60,12 @@ export function createImagePathResolver() {
   return (name: string): string | null => {
     if (typeof name !== 'string' || !safeName.test(name) || name.includes('..')) {
       return null
+    }
+    if (/^ref-[a-f0-9]{64}\.png$/.test(name)) {
+      const path = join(libraryRoot, 'references', name)
+      if (existsSync(path)) {
+        return path
+      }
     }
     const owner = /^ws-([a-f0-9-]{36})-/.exec(name)?.[1]
     if (owner && uuid.test(owner)) {
@@ -207,6 +214,52 @@ export function storeGeneratedImage(
   }
   return { ...imageInfo(name)!, contentHash: createHash('sha256').update(png).digest('hex') }
 }
+export async function importGalleryImage(
+  bytes: Uint8Array,
+  collectionId: string,
+): Promise<NaiImage> {
+  const png = await importImageAsPng(bytes)
+  if (typeof collectionId !== 'string' || imageCollections.resolve(collectionId) !== collectionId) {
+    throw new Error('图集不存在，请重新选择')
+  }
+  const checksum = createHash('sha256').update(collectionId).update('\0').update(png).digest('hex')
+  const directory = saved()
+  const prefix = 'import-' + checksum
+  const canonicalName = prefix + '.png'
+  for (const name of readdirSync(directory)) {
+    if (name !== canonicalName && !(name.startsWith(prefix + '-') && name.endsWith('.png'))) {
+      continue
+    }
+    const existing = imageInfo(name)
+    if (existing?.collectionId === collectionId) {
+      return existing
+    }
+  }
+  // Preserve copies whose collection changed since the original import.
+  const name = existsSync(join(directory, canonicalName))
+    ? prefix + '-' + randomUUID() + '.png'
+    : canonicalName
+  const destination = join(directory, name)
+  writeFileAtomic(destination, png)
+  try {
+    imageCollections.assign([name], collectionId)
+  } catch (error) {
+    unlinkSync(destination)
+    throw error
+  }
+  return imageInfo(name)!
+}
+
+/** Immutable reference copies survive gallery cleanup and workspace edits. */
+export function storeReferenceImage(png: Buffer): string {
+  const name = 'ref-' + createHash('sha256').update(png).digest('hex') + '.png'
+  const path = join(ensure(join(root(), 'references')), name)
+  if (!existsSync(path)) {
+    writeFileAtomic(path, png)
+  }
+  return name
+}
+
 export function retainImage(name: string): NaiImage {
   const image = imageInfo(name)
   const src = libraryImagePath(name)

@@ -1,3 +1,5 @@
+import { snapshotReferences } from '../../../../shared/generation/references'
+import { importReferenceImage } from '../../../modules/generation/references'
 import {
   patchWorkspaceConfig,
   WORKSPACE_CONFIG_SCHEMA,
@@ -62,7 +64,7 @@ export function managementTools(desktop: DesktopBridge): McpTool[] {
       },
       annotations: write,
       run: async (argumentsRecord) =>
-        desktop.withWorkspace(String(argumentsRecord.id), () => {
+        desktop.withWorkspace(String(argumentsRecord.id), async () => {
           let workspace = owned(String(argumentsRecord.id), argumentsRecord.revision)
           if (
             argumentsRecord.patch !== undefined &&
@@ -83,6 +85,15 @@ export function managementTools(desktop: DesktopBridge): McpTool[] {
               workspace.execution.kind === 'inpaint' || !!version.editor.regions.length,
               version.editor.model ?? workspace.model,
             )
+            if (
+              (argumentsRecord.patch as WorkspaceConfigPatch).params?.preciseReferences &&
+              editor.params.preciseReferences
+            ) {
+              editor.params.preciseReferences = await snapshotReferences(
+                editor.params.preciseReferences,
+                importReferenceImage,
+              )
+            }
             workspace = editPage(workspace.id, workspace.revision, {
               type: 'editor',
               versionId: version.id,

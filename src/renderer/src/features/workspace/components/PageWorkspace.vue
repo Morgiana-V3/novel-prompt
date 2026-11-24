@@ -105,25 +105,32 @@ async function recoverImage() {
     operation.value = ''
   }
 }
-const { regionId, selectedRegionIds, references, composer, discussionContext, reference } =
-  useDiscussionComposer(
-    work,
-    current,
-    discussionVersion,
-    () => pendingRequest.value,
-    label,
-    (message) => {
-      error.value = message
-    },
-    () => {
-      void saveSettings({ workspaceAiCollapsed: false })
-        .then(async () => {
-          await nextTick()
-          conversation.value?.focusComposer()
-        })
-        .catch(reportError)
-    },
-  )
+const {
+  regionId,
+  selectedRegionIds,
+  references,
+  attachments,
+  composer,
+  discussionContext,
+  reference,
+} = useDiscussionComposer(
+  work,
+  current,
+  discussionVersion,
+  () => pendingRequest.value,
+  label,
+  (message) => {
+    error.value = message
+  },
+  () => {
+    void saveSettings({ workspaceAiCollapsed: false })
+      .then(async () => {
+        await nextTick()
+        conversation.value?.focusComposer()
+      })
+      .catch(reportError)
+  },
+)
 
 const title = ref(work.value.title)
 const pane = ref<'canvas' | 'prompt' | 'changes' | 'images'>('canvas')
@@ -283,13 +290,16 @@ const { notesValue, savedNotes, mutate, flushNotes } = useWorkspaceAutosave(
   work,
   title,
   composer,
+  attachments,
   error,
-  () => busy.value,
+  () => actionBusy.value,
   () => emit('updated'),
 )
 
 let alive = true
-const busy = computed(() => !!operation.value || editingPrompt.value || remoteBusy.value)
+const importingAttachment = ref(false)
+const actionBusy = computed(() => !!operation.value || editingPrompt.value || remoteBusy.value)
+const busy = computed(() => importingAttachment.value || actionBusy.value)
 const actionContext = {
   work,
   operation,
@@ -305,6 +315,7 @@ const { pendingText, chatProgress, setAgentMode, cancelExternal, cancelChat, sen
     pendingRequest,
     discussionVersion,
     composer,
+    attachments,
     selectedRegionIds,
     references,
     savedNotes,
@@ -528,6 +539,7 @@ function desktopState() {
     pane: editingPrompt.value ? 'config-edit' : pane.value,
     editing: !!operation.value || editingPrompt.value || editing.value || renaming.value,
     composer: composer.value,
+    attachments: attachments.value.map((image) => ({ ...image })),
     config: {
       open: editingPrompt.value,
       sourceVersionId: current.value.id,
@@ -574,6 +586,7 @@ function desktopState() {
   }
 }
 const frontendAction = createWorkspaceCommands({
+  importingAttachment,
   configOwner,
   operation,
   remoteBusy,
@@ -596,6 +609,7 @@ const frontendAction = createWorkspaceCommands({
   historyOpen,
   compareVersionId,
   composer,
+  attachments,
   regionId,
   selectedRegionIds,
   references,
@@ -641,6 +655,7 @@ const { beginRemote, endRemote } = useRemoteWorkspace({
   work,
   title,
   composer,
+  attachments,
   savedNotes,
   viewedId,
   pane,
@@ -1269,6 +1284,8 @@ async function beginConfigFromButton() {
         <WorkspaceConversation
           ref="conversation"
           v-model:composer="composer"
+          v-model:attachments="attachments"
+          v-model:importing="importingAttachment"
           v-model:region-ids="selectedRegionIds"
           :work="work"
           :current="current"
@@ -1314,6 +1331,7 @@ async function beginConfigFromButton() {
       :image-url="current.image.url"
       :count="current.editor.params.count"
       :steps="current.editor.params.steps"
+      :precise-references="current.editor.params.preciseReferences"
       :model="work.model"
       :disabled="busy"
       @run="runImageTool"
@@ -1328,6 +1346,7 @@ async function beginConfigFromButton() {
       :height="current.image.height ?? current.editor.params.height"
       :count="current.editor.params.count"
       :steps="current.editor.params.steps"
+      :precise-references="current.editor.params.preciseReferences"
       :model="work.model"
       :disabled="busy"
       @run="runToolFromPanel"

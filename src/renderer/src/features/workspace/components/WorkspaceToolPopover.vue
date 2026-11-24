@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { PreciseReference } from '@shared/generation/references'
 import { vSegIndicator } from '../../../shared/lib/seg-indicator'
 import { reportError } from '../../../shared/lib/notifications'
 import type { NaiVersion } from '@shared/generation/types'
@@ -25,6 +26,7 @@ const props = defineProps<{
   width: number
   height: number
   count: number
+  preciseReferences?: PreciseReference[]
   steps: number
   model: NaiVersion
   disabled: boolean
@@ -45,6 +47,7 @@ const source = computed(() => ({
   width: props.width,
   height: props.height,
   count: props.kind === 'upscale' ? 1 : props.count,
+  preciseReferences: props.preciseReferences,
   steps: props.steps,
   version: props.model,
 }))

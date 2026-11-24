@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { REFERENCE_FEE } from '@shared/generation/references'
+import type { ChatAttachment } from '@shared/workspace/attachments'
+import { useChatAttachments } from '../use-chat-attachments'
+import ChatAttachmentList from './ChatAttachmentList.vue'
 import { displayVersionLabel } from '../labels'
 import { computed, nextTick, ref } from 'vue'
 import { regionIds as messageRegionIds } from '@shared/workspace/regions'
@@ -47,6 +51,22 @@ const props = defineProps<{
   planLabel: (execution?: PageExecution, versionId?: string) => string
 }>()
 const composer = defineModel<string>('composer', { required: true })
+const attachments = defineModel<ChatAttachment[]>('attachments', { required: true })
+const importing = defineModel<boolean>('importing', { required: true })
+const inputBlocked = computed(() => props.busy || !!props.pendingRequest)
+const intake = useChatAttachments(
+  attachments,
+  importing,
+  () => inputBlocked.value,
+  () => props.work.id,
+)
+const { fileInput, dragging, feedback } = intake
+const canSend = computed(
+  () =>
+    !inputBlocked.value &&
+    !importing.value &&
+    (!!composer.value.trim() || !!attachments.value.length),
+)
 const regionIds = defineModel<string[]>('regionIds', { required: true })
 const displayedRegionIds = computed({
   get: () => (props.pendingRequest ? messageRegionIds(props.pendingRequest) : regionIds.value),
@@ -168,7 +188,7 @@ async function focusMessage(id: string) {
 }
 
 function sendOnEnter(event: KeyboardEvent) {
-  if (!event.isComposing) {
+  if (!event.isComposing && canSend.value) {
     emit('send')
   }
 }
@@ -295,6 +315,10 @@ defineExpose({
             >
               {{ messageItem.text }}
             </div>
+            <ChatAttachmentList
+              v-if="messageItem.attachments?.length"
+              :images="messageItem.attachments"
+            />
             <WorkspaceInputContext
               v-if="messageItem.role === 'user'"
               :message="messageItem"
@@ -484,7 +508,34 @@ defineExpose({
         @change="emit('annotation')"
         @locate="emit('locate', $event)"
       />
-      <div class="pw-input-wrap">
+      <div
+        class="pw-input-wrap"
+        :class="{ dragging }"
+        @dragenter="intake.enter"
+        @dragover="intake.over"
+        @dragleave="intake.leave"
+        @drop="intake.drop"
+        @paste="intake.paste"
+      >
+        <ChatAttachmentList
+          v-if="attachments.length"
+          :images="attachments"
+          editable
+          :can-reference="work.model === 'v4.5'"
+          :disabled="inputBlocked"
+          @change="attachments = $event"
+        />
+        <small
+          v-if="attachments.some((image) => image.purpose !== 'discussion')"
+          class="attachment-note"
+          >采纳后用作生成参考，每张参考每张输出 +{{ REFERENCE_FEE }} Anlas</small
+        >
+        <small
+          v-if="feedback"
+          role="alert"
+          class="attachment-error"
+          >{{ feedback }}</small
+        >
         <textarea
           ref="input"
           v-model="composer"
@@ -495,21 +546,49 @@ defineExpose({
           :placeholder="
             regionIds.length
               ? '补充这些区域的共同要求、保留内容，或继续讨论…'
-              : '描述目标，或接着上次的结果继续说…'
+              : '描述目标，或拖入、粘贴图片…'
           "
           @keydown.enter.exact.prevent="sendOnEnter"
-        ></textarea
-        ><button
-          class="pw-send"
-          :disabled="busy || !composer.trim() || (external && !!pendingRequest)"
-          :title="external ? '保存需求，等待外部 Agent 回复' : '发送'"
-          @click="emit('send')"
-        >
-          <Icon
-            name="arrow"
-            :size="18"
+        ></textarea>
+        <div class="pw-compose-tools">
+          <input
+            ref="fileInput"
+            hidden
+            type="file"
+            multiple
+            accept="image/png,image/jpeg,image/webp"
+            @change="intake.pick"
           />
-        </button>
+          <button
+            class="pw-add-image"
+            type="button"
+            title="上传图片"
+            aria-label="上传聊天图片"
+            :disabled="inputBlocked || attachments.length >= 4"
+            @click="fileInput?.click()"
+          >
+            <Icon
+              name="plus"
+              :size="17"
+            />
+          </button>
+          <small
+            v-if="dragging || importing"
+            role="status"
+            >{{ dragging ? '松开添加图片' : '正在读取图片…' }}</small
+          >
+          <button
+            class="pw-send"
+            :disabled="!canSend"
+            :title="external ? '保存需求，等待外部 Agent 回复' : '发送'"
+            @click="emit('send')"
+          >
+            <Icon
+              name="arrow"
+              :size="18"
+            />
+          </button>
+        </div>
       </div>
     </div>
   </aside>
@@ -846,8 +925,8 @@ defineExpose({
   padding: 10px 10px 8px;
   background: var(--panel);
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
   transition:
     border-color var(--dur-base) var(--ease-out),
     box-shadow var(--dur-base) var(--ease-out),
@@ -874,7 +953,51 @@ defineExpose({
   line-height: 1.8;
 }
 
+.pw-input-wrap :deep(.chat-images) {
+  max-height: 155px;
+  overflow-y: auto;
+}
+
+.pw-input-wrap.dragging {
+  border-color: var(--pink);
+  background: var(--pink-soft);
+}
+
+.pw-compose-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pw-compose-tools small,
+.attachment-note {
+  font-size: 10px;
+  color: var(--text2);
+}
+
+.attachment-error {
+  color: var(--bad);
+  font-size: 11px;
+}
+
+.pw-add-image {
+  width: 29px;
+  height: 29px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--text2);
+  border: 1px solid var(--line2);
+  background: var(--bg);
+}
+
+.pw-add-image:hover:enabled {
+  color: var(--pink-deep);
+  border-color: var(--pink-line);
+}
+
 .pw-send {
+  margin-left: auto;
   width: 32px;
   height: 32px;
   border-radius: 11px;

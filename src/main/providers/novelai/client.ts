@@ -38,10 +38,25 @@ export async function generateOne(
   apiToken: string,
   signal?: AbortSignal,
   prepared?: PreparedSource,
+  referenceImages: string[] = [],
 ): Promise<Buffer> {
+  const body = requestBody(req, seed, prepared)
+  const refs = req.params.preciseReferences ?? []
+  if (refs.length) {
+    Object.assign(body.parameters as Record<string, unknown>, {
+      director_reference_images: referenceImages,
+      director_reference_descriptions: refs.map((ref) => ({
+        caption: { base_caption: ref.mode, char_captions: [] },
+        legacy_uc: false,
+      })),
+      director_reference_information_extracted: refs.map(() => 1),
+      director_reference_strength_values: refs.map((ref) => ref.strength),
+      director_reference_secondary_strength_values: refs.map((ref) => 1 - ref.fidelity),
+    })
+  }
   const res = await request(
     '/ai/generate-image',
-    { method: 'POST', body: JSON.stringify(requestBody(req, seed, prepared)) },
+    { method: 'POST', body: JSON.stringify(body) },
     'application/zip',
     apiToken,
     signal,

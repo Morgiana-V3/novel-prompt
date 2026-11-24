@@ -1,3 +1,4 @@
+import { validReferences, type PreciseReference } from '@shared/generation/references'
 import type { NaiGenParams } from '@shared/generation/types'
 import type { NaiImage } from '@shared/images/types'
 import { reactive, watch } from 'vue'
@@ -5,7 +6,7 @@ import { reactive, watch } from 'vue'
 /** 只属于生图的参数；画幅、质量词、UC 预设与画面推测共用（promptState.params） */
 export type GenOnly = Omit<
   NaiGenParams,
-  'width' | 'height' | 'qualityTags' | 'qualityMode' | 'ucPreset'
+  'width' | 'height' | 'qualityTags' | 'qualityMode' | 'ucPreset' | 'preciseReferences'
 >
 
 export const GEN_PARAMS_KEY = 'np-gen-params'
@@ -37,6 +38,19 @@ export function loadGenParams(): GenOnly {
 }
 
 /** Shared by every import entry point, including imports before the generation view opens. */
+function loadReferences(): PreciseReference[] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem('np-creation-references') ?? '[]')
+    return validReferences(value) ? value : []
+  } catch {
+    return []
+  }
+}
+export const referenceDraft = reactive({ images: loadReferences() })
+export function setCreationReferences(images: PreciseReference[] = []) {
+  referenceDraft.images = images.map((image) => ({ ...image }))
+  localStorage.setItem('np-creation-references', JSON.stringify(referenceDraft.images))
+}
 export const generationParams = reactive<GenOnly>(loadGenParams())
 watch(
   generationParams,

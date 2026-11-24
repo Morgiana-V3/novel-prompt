@@ -1,3 +1,4 @@
+import { checkReferences, REFERENCE_SCHEMA } from '../../../../shared/generation/references'
 import { NAI_SAMPLERS, NAI_NOISE_SCHEDULES } from '../../../../shared/generation/types'
 import { existsSync, readFileSync } from 'node:fs'
 import type {
@@ -84,6 +85,7 @@ export function createGenerateImageTool(): McpTool {
         },
         seed: { type: 'integer', description: '种子，不填随机；多张时依次 +1' },
         count: { type: 'integer', description: '张数 1~4，默认 1' },
+        precise_references: REFERENCE_SCHEMA,
         collection_id: {
           type: 'string',
           description: '保存到哪个图集（list_images 返回的 collections[].id），省略时为默认图集',
@@ -131,6 +133,10 @@ export function createGenerateImageTool(): McpTool {
         qualityTags: bool(argumentsRecord.quality_tags, true),
         qualityMode: argumentsRecord.quality_mode === 'light' ? 'light' : 'standard',
         ucPreset: ucPreset(argumentsRecord.uc_preset),
+      }
+      if (argumentsRecord.precise_references !== undefined) {
+        checkReferences(argumentsRecord.precise_references, version(argumentsRecord.version))
+        params.preciseReferences = argumentsRecord.precise_references
       }
       const generationResult = await generateImages(
         {

@@ -1,8 +1,9 @@
+import { REFERENCE_FEE } from './references'
 import type { NaiGenParams, NaiSubscription, NaiVersion } from './types'
 
 /** Official web client pricing, verified 2026-11-04; see docs/novelai-pricing.md. */
 export interface GenerationPriceInput {
-  params: Pick<NaiGenParams, 'width' | 'height' | 'steps' | 'count'>
+  params: Pick<NaiGenParams, 'width' | 'height' | 'steps' | 'count' | 'preciseReferences'>
   version: NaiVersion
   img2img?: { strength: number }
   inpaint?: { strength: number }
@@ -66,11 +67,15 @@ export function estimateGeneration(
   if (perImage === 0) {
     maximum = request.version === 'v5' ? paidPerImage * (count - 1) : 0
   }
+  const referenceFee = (request.params.preciseReferences?.length ?? 0) * REFERENCE_FEE
+  if (referenceFee && request.version !== 'v4.5') {
+    return undefined
+  }
   return {
-    paidPerImage,
-    perImage,
-    minimum: (perImage ?? 0) * count,
-    maximum,
+    paidPerImage: paidPerImage + referenceFee,
+    perImage: perImage === undefined ? undefined : perImage + referenceFee,
+    minimum: ((perImage ?? 0) + referenceFee) * count,
+    maximum: maximum + referenceFee * count,
   }
 }
 

@@ -1,3 +1,4 @@
+import type { ChatAttachment } from '@shared/workspace/attachments'
 import type { Ref } from 'vue'
 import { pageLatestProposal, type PageWorkspace } from '@shared/workspace/model'
 interface RemoteWorkspaceHost {
@@ -9,6 +10,7 @@ interface RemoteWorkspaceHost {
   work: Ref<PageWorkspace>
   title: Ref<string>
   composer: Ref<string>
+  attachments: Ref<ChatAttachment[]>
   savedNotes: Ref<string>
   viewedId: Ref<string>
   pane: Ref<'canvas' | 'prompt' | 'changes' | 'images'>
@@ -32,6 +34,7 @@ export function useRemoteWorkspace(host: RemoteWorkspaceHost) {
     work,
     title,
     composer,
+    attachments,
     savedNotes,
     viewedId,
     pane,
@@ -68,6 +71,7 @@ export function useRemoteWorkspace(host: RemoteWorkspaceHost) {
       work.value = await window.api.pagesRead(work.value.id)
       title.value = work.value.title
       composer.value = work.value.composer
+      attachments.value = work.value.composerAttachments ?? []
       savedNotes.value = JSON.stringify(notesValue())
       if (
         oldGenerated !== work.value.latestGeneratedVersionId &&

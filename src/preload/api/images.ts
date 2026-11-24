@@ -1,12 +1,14 @@
 import type { ArtistCatalogPage, ArtistCatalogQuery } from '../../shared/artists/catalog'
 import type { NaiGenRequest } from '../../shared/generation/types'
-import type { SavedRecipe } from '../../shared/images/types'
+import type { NaiImage, SavedRecipe } from '../../shared/images/types'
 import type { ImageCollection } from '../../shared/images/collections'
 import { invoke } from './bridge'
 
 export const imagesApi = {
   artistCatalog: (query: ArtistCatalogQuery): Promise<ArtistCatalogPage> =>
     invoke('artists:catalog', query),
+  imagesImport: (bytes: Uint8Array, collectionId: string): Promise<NaiImage> =>
+    invoke('images:import', bytes, collectionId),
   collectionsList: (): Promise<ImageCollection[]> => invoke('collections:list'),
   collectionsCreate: (name: string): Promise<ImageCollection> => invoke('collections:create', name),
   collectionsRename: (id: string, name: string): Promise<void> =>

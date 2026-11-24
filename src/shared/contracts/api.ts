@@ -54,6 +54,7 @@ export interface Api {
   artistCatalog: (query: ArtistCatalogQuery) => Promise<ArtistCatalogPage>
   replyConfirmation: (id: string, approved: boolean) => Promise<void>
   onConfirmations: (cb: (requests: ConfirmationRequest[]) => void) => () => void
+  imagesImport: (bytes: Uint8Array, collectionId: string) => Promise<NaiImage>
   collectionsList: () => Promise<ImageCollection[]>
   collectionsCreate: (name: string) => Promise<ImageCollection>
   collectionsRename: (id: string, name: string) => Promise<void>
@@ -110,6 +111,7 @@ export interface Api {
     patch: Pick<SavedRecipe, 'name' | 'note' | 'tags'>,
   ) => Promise<SavedRecipe>
   recipesDelete: (id: string) => Promise<void>
+  naiImportReference: (source: Uint8Array | string) => Promise<string>
   naiRetain: (name: string) => Promise<NaiImage>
   naiRecipe: (name: string) => Promise<ImageRecipe | null>
   agentConnections: () => Promise<PageAgentIdentity[]>
@@ -127,6 +129,13 @@ export interface Api {
     actionId: string,
   ) => Promise<PageWorkspace>
   pagesExternalCancel: (id: string, revision: number, actionId?: string) => Promise<PageWorkspace>
+  pagesImportDropped: (
+    bytes: Uint8Array,
+    fileName: string,
+    params: NaiGenParams,
+    model: NaiVersion,
+    draft: InpaintDraft,
+  ) => Promise<PageWorkspace>
   pagesImport: (
     params: NaiGenParams,
     model: NaiVersion,
@@ -228,6 +237,10 @@ export interface IpcContract {
     result: Awaited<ReturnType<Api['artistCatalog']>>
   }
   'confirmations:reply': { args: Parameters<Api['replyConfirmation']>; result: void }
+  'images:import': {
+    args: Parameters<Api['imagesImport']>
+    result: Awaited<ReturnType<Api['imagesImport']>>
+  }
   'collections:list': {
     args: Parameters<Api['collectionsList']>
     result: Awaited<ReturnType<Api['collectionsList']>>
@@ -317,6 +330,10 @@ export interface IpcContract {
     args: Parameters<Api['recipesDelete']>
     result: Awaited<ReturnType<Api['recipesDelete']>>
   }
+  'nai:import-reference': {
+    args: Parameters<Api['naiImportReference']>
+    result: Awaited<ReturnType<Api['naiImportReference']>>
+  }
   'nai:retain': {
     args: Parameters<Api['naiRetain']>
     result: Awaited<ReturnType<Api['naiRetain']>>
@@ -340,6 +357,10 @@ export interface IpcContract {
   'pages:external-cancel': {
     args: Parameters<Api['pagesExternalCancel']>
     result: Awaited<ReturnType<Api['pagesExternalCancel']>>
+  }
+  'pages:import-dropped': {
+    args: Parameters<Api['pagesImportDropped']>
+    result: Awaited<ReturnType<Api['pagesImportDropped']>>
   }
   'pages:import': {
     args: Parameters<Api['pagesImport']>

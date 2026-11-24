@@ -9,7 +9,8 @@ import { shellState } from '../../shared/state/shell'
 import { reportError, toast } from '../../shared/lib/notifications'
 import { cleanErr } from '../../shared/lib/format'
 import { type CharDraft } from '../prompts/public/draft'
-import { imageState } from '../generation/public'
+import { openTabForLoad } from '../creation/public/navigation'
+import { imageState, setCreationReferences } from '../generation/public'
 import { settingsState } from '../settings/state'
 import { reverseTrialParams } from './trial-defaults'
 import Icon from '../../shared/ui/Icon.vue'
@@ -121,6 +122,34 @@ watch(
 )
 const error = ref('')
 const image = ref<File>()
+const transferringReference = ref(false)
+async function useStyleReference() {
+  const file = image.value
+  if (!file || transferringReference.value) {
+    return
+  }
+  transferringReference.value = true
+  try {
+    if (file.size > 40 * 1024 * 1024) {
+      throw new Error('参考图不能超过 40 MB')
+    }
+    const imageName = await window.api.naiImportReference(new Uint8Array(await file.arrayBuffer()))
+    if (
+      file !== image.value ||
+      shellState.tab !== 'reverse' ||
+      !openTabForLoad('画风参考 · ' + file.name)
+    ) {
+      return
+    }
+    setCreationReferences([{ imageName, mode: 'style', strength: 1, fidelity: 1 }])
+    shellState.tab = 'generate'
+    toast('已带入画风参考')
+  } catch (cause) {
+    toast(cleanErr(cause))
+  } finally {
+    transferringReference.value = false
+  }
+}
 const imageUrl = ref('')
 const picker = ref<HTMLInputElement>()
 const result = ref<ReverseResult>()
@@ -227,6 +256,16 @@ onBeforeUnmount(() => {
   URL.revokeObjectURL(imageUrl.value)
 })
 
+function loadDroppedImage(file: File) {
+  if (busy.value) {
+    throw new Error('请等待反推页的当前任务完成')
+  }
+  if (result.value || fullPrompt.value?.hasDraft) {
+    throw new Error('反推页有现有结果。请先保存，或在反推页的图片区域直接更换参考图')
+  }
+  select(file)
+}
+
 function select(file?: File) {
   if (!file || busy.value) {
     return
@@ -267,11 +306,6 @@ function paste(event: ClipboardEvent) {
   if (file) {
     event.preventDefault()
     select(file)
-  }
-}
-function rejectDrop(event: DragEvent) {
-  if (event.dataTransfer?.types.includes('Files')) {
-    event.dataTransfer.dropEffect = 'none'
   }
 }
 function picked(event: Event) {
@@ -577,6 +611,7 @@ async function frontendAction(input: FrontendRequest, context: FrontendContext) 
   }
 }
 defineExpose({
+  loadDroppedImage,
   prepareUpdate,
   frontendAction,
   desktopState: () => {
@@ -605,10 +640,6 @@ async function source(url: string) {
   <section
     class="reverse-view"
     :class="{ 'is-recognition': stage === 'recognition' }"
-    @dragenter.stop.prevent
-    @dragover.stop.prevent="rejectDrop"
-    @dragleave.stop.prevent
-    @drop.stop.prevent
   >
     <div class="reverse-topbar">
       <nav
@@ -718,6 +749,14 @@ async function source(url: string) {
             >{{ image.name }}</span
           >
         </div>
+        <button
+          v-if="image"
+          class="btn small"
+          :disabled="busy || transferringReference"
+          @click="useStyleReference"
+        >
+          用作画风参考
+        </button>
         <ReverseReference
           :url="imageUrl"
           :file="image"

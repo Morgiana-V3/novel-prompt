@@ -171,6 +171,7 @@ async function frontendAction(request: FrontendRequest, ctx: FrontendContext) {
   }
 }
 defineExpose({
+  importDroppedImage,
   prepareUpdate,
   agentOpen,
   beginRemote,
@@ -245,6 +246,30 @@ watch(
     void refresh().catch(reportError)
   },
 )
+function initialParams(): NaiGenParams {
+  return { ...promptState.params, ...generationParams, count: 1, seed: null }
+}
+async function importDroppedImage(file: File) {
+  if (!(await prepareUpdate()) || busy.value) {
+    throw new Error('请先保存或完成当前精修项目的编辑')
+  }
+  busy.value = true
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer())
+    current.value = await window.api.pagesImportDropped(
+      bytes,
+      file.name,
+      initialParams(),
+      settingsState.settings?.naiVersion ?? 'v5',
+      { base: '', negative: '', characters: [] },
+    )
+    pendingTool.value = null
+    initialTool.value = null
+    await refresh()
+  } finally {
+    busy.value = false
+  }
+}
 async function create() {
   if (busy.value || (start.value === 'gallery' && !selectedImage.value)) {
     return
@@ -253,12 +278,7 @@ async function create() {
   error.value = ''
   try {
     // 沿用图片预览里的步数、Guidance、采样器等设置（种子随机、每次一张），不再悄悄换成默认值
-    const params: NaiGenParams = {
-      ...promptState.params,
-      ...generationParams,
-      count: 1,
-      seed: null,
-    }
+    const params = initialParams()
     const draft =
       start.value === 'current'
         ? {

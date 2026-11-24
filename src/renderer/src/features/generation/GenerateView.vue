@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { estimateGeneration, estimateLabel, anlasOutcomeText } from '@shared/generation/pricing'
+import PreciseReferences from './components/PreciseReferences.vue'
+import { referenceDraft, setCreationReferences } from './state'
 import GenerationResult from './GenerationResult.vue'
 import CollectionPicker from '../gallery/CollectionPicker.vue'
 import { generationCollection } from '../gallery/collections-state'
@@ -38,7 +40,7 @@ import { usePageShortcuts, runKeyLabel } from '../../shared/lib/shortcuts'
 import { usePagePresentation } from '../../shared/lib/page-presentation'
 import { useSettingsPopover } from './use-settings-popover'
 import { lockTabs, tabRef } from '../creation/public/session'
-import { openTabForLoad } from '../creation/public/navigation'
+import { creationTabs, openTabForLoad } from '../creation/public/navigation'
 import { previewPreferences } from '../settings/preview-preferences'
 import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 import { detachLeaving } from '../../shared/lib/list-motion'
@@ -51,6 +53,23 @@ const {
 } = useSettingsPopover()
 const sentRecipes = tabRef<Record<string, string>>('generate.sentRecipes', () => ({}))
 
+const referencePanel = ref(false)
+const referenceParams = computed(() =>
+  referenceDraft.images.length
+    ? { preciseReferences: referenceDraft.images.map((image) => ({ ...image })) }
+    : {},
+)
+function togglePanel(references: boolean) {
+  parametersOpen.value = !parametersOpen.value || referencePanel.value !== references
+  referencePanel.value = references
+}
+async function switchReferenceModel() {
+  try {
+    await saveSettings({ naiVersion: 'v4.5' })
+  } catch (cause) {
+    toast(cleanErr(cause))
+  }
+}
 const gen = generationParams
 const params = promptState.params
 
@@ -89,7 +108,10 @@ const feeStatus = computed(() => {
     }
   }
   const estimate = estimateGeneration(
-    { params: { ...gen, width: params.width, height: params.height }, version: version.value },
+    {
+      params: { ...gen, ...referenceParams.value, width: params.width, height: params.height },
+      version: version.value,
+    },
     subscriptionState.error ? undefined : sub.value,
   )
   return {
@@ -260,6 +282,7 @@ const currentRecipe = computed<NaiGenRequest>(() => ({
   params: {
     ...gen,
     ...params,
+    ...referenceParams.value,
     seed: gen.seed === null || (gen.seed as unknown) === '' ? null : Number(gen.seed),
   },
 }))
@@ -325,11 +348,18 @@ let checkedConfig = ''
  * 这时只在后台静默复核、结果到了再替换，避免左侧费用文案反复闪成「检查中」并带动整行宽度跳动。
  */
 watch(
-  () => [params.width, params.height, gen.steps, version.value, sub.value],
+  () => [
+    params.width,
+    params.height,
+    gen.steps,
+    version.value,
+    sub.value,
+    referenceDraft.images.length,
+  ],
   () => {
     clearTimeout(checkTimer)
     const epoch = ++checkEpoch
-    const config = `${params.width}x${params.height}:${gen.steps}:${version.value}`
+    const config = `${params.width}x${params.height}:${gen.steps}:${version.value}:${referenceDraft.images.length}`
     if (config !== checkedConfig) {
       checkedConfig = config
       check.value = null
@@ -338,7 +368,12 @@ watch(
     checkTimer = setTimeout(async () => {
       try {
         const result = await window.api.naiFreeCheck(
-          { width: params.width, height: params.height, steps: gen.steps } as NaiGenParams,
+          {
+            ...referenceParams.value,
+            width: params.width,
+            height: params.height,
+            steps: gen.steps,
+          } as NaiGenParams,
           version.value,
           sub.value ? { ...sub.value } : undefined,
         )
@@ -412,6 +447,10 @@ async function run() {
     error.value = '请先输入主提示词或角色提示词'
     return
   }
+  if (referenceDraft.images.length && version.value !== 'v4.5') {
+    error.value = '当前配置包含 V4.5 精确参考图。请在参考图面板切换模型或移除这些精确参考'
+    return
+  }
   navigate('generate')
   running.value = true
   parametersOpen.value = false
@@ -429,7 +468,7 @@ async function run() {
       characters: promptState.characters
         .filter((character) => character.prompt.trim())
         .map((character) => ({ ...character })),
-      params: { ...gen, ...params, seed },
+      params: { ...gen, ...params, ...referenceParams.value, seed },
       version: version.value,
     })
     last.value = generationResult
@@ -569,13 +608,17 @@ function editImagePositions() {
   imageState.positionReference.visible = true
   posEditing.value = true
 }
-function openImageWorkspace(tool?: WorkspaceToolKind) {
-  if (!current.value) {
+function openImageWorkspace(tool?: WorkspaceToolKind, image = current.value) {
+  if (!image) {
     return
   }
   imageState.workspaceTool = tool ?? null
-  imageState.workspaceImage = { ...current.value }
+  imageState.workspaceImage = { ...image }
   shellState.tab = 'workspace'
+}
+
+function openImageToImage(image: NaiImage) {
+  openImageWorkspace('enhance', image)
 }
 </script>
 
@@ -594,21 +637,30 @@ function openImageWorkspace(tool?: WorkspaceToolKind) {
         ref="settingsDock"
         class="pane left with-foot creation-generation"
       >
-        <button
-          ref="parametersTrigger"
-          class="icon-btn creation-parameters-toggle"
-          :aria-expanded="parametersOpen"
-          aria-haspopup="dialog"
-          aria-controls="creation-generation-settings"
-          title="生成设置"
-          aria-label="生成设置"
-          @click="parametersOpen = !parametersOpen"
-        >
-          <Icon
-            name="sliders"
-            :size="16"
-          />
-        </button>
+        <div class="generation-tool-buttons">
+          <button
+            ref="parametersTrigger"
+            class="icon-btn creation-parameters-toggle"
+            :aria-expanded="parametersOpen"
+            aria-haspopup="dialog"
+            aria-controls="creation-generation-settings"
+            title="生成设置"
+            aria-label="生成设置"
+            @click="togglePanel(false)"
+          >
+            <Icon
+              name="sliders"
+              :size="16"
+            />
+          </button>
+          <button
+            class="btn small"
+            :aria-expanded="parametersOpen && referencePanel"
+            @click="togglePanel(true)"
+          >
+            参考图{{ referenceDraft.images.length ? ' · ' + referenceDraft.images.length : '' }}
+          </button>
+        </div>
         <Transition name="popover-up">
           <div
             v-show="parametersOpen"
@@ -619,51 +671,66 @@ function openImageWorkspace(tool?: WorkspaceToolKind) {
             aria-label="生成设置"
             :data-generation-settings-open="parametersOpen ? '' : undefined"
           >
-            <div class="field-head gen-params-head">
-              <label class="field-label">生成参数</label>
-              <button
-                class="btn ghost small ml-auto"
-                :disabled="savingRecipe"
-                title="保存当前提示词、模型和全部生成参数，无需先出图"
-                @click="saveRecipe"
-              >
-                <Icon
-                  name="star"
-                  :size="14"
-                />收藏配置
-              </button>
-              <button
-                class="btn ghost small"
-                :disabled="running"
-                title="在收藏页挑选配置并载入"
-                @click="shellState.tab = 'favorites'"
-              >
-                <Icon
-                  name="star"
-                  :size="14"
-                />载入收藏
-              </button>
-              <button
-                class="btn ghost small"
-                :disabled="running || isDefault"
-                title="步数、Guidance、采样器、画幅等全部恢复默认"
-                @click="resetDefaults"
-              >
-                <Icon
-                  name="reset"
-                  :size="14"
-                />恢复默认
-              </button>
-            </div>
-            <GenerationParameters
-              prompt-presets-in-editor
-              expanded-sizes
-              :gen="gen"
-              :params="params"
+            <PreciseReferences
+              v-if="referencePanel"
+              :key="creationTabs.activeId"
+              :images="referenceDraft.images"
+              :model="version"
+              :current="current"
               :disabled="running"
-              @change-gen="updateGenerationOptions"
-              @change-params="updatePromptParameters"
+              can-switch
+              can-choose-base
+              @use-base="openImageToImage"
+              @change="setCreationReferences"
+              @switch-model="switchReferenceModel"
             />
+            <template v-else>
+              <div class="field-head gen-params-head">
+                <label class="field-label">生成参数</label>
+                <button
+                  class="btn ghost small ml-auto"
+                  :disabled="savingRecipe"
+                  title="保存当前提示词、模型和全部生成参数，无需先出图"
+                  @click="saveRecipe"
+                >
+                  <Icon
+                    name="star"
+                    :size="14"
+                  />收藏配置
+                </button>
+                <button
+                  class="btn ghost small"
+                  :disabled="running"
+                  title="在收藏页挑选配置并载入"
+                  @click="shellState.tab = 'favorites'"
+                >
+                  <Icon
+                    name="star"
+                    :size="14"
+                  />载入收藏
+                </button>
+                <button
+                  class="btn ghost small"
+                  :disabled="running || isDefault"
+                  title="步数、Guidance、采样器、画幅等全部恢复默认"
+                  @click="resetDefaults"
+                >
+                  <Icon
+                    name="reset"
+                    :size="14"
+                  />恢复默认
+                </button>
+              </div>
+              <GenerationParameters
+                prompt-presets-in-editor
+                expanded-sizes
+                :gen="gen"
+                :params="params"
+                :disabled="running"
+                @change-gen="updateGenerationOptions"
+                @change-params="updatePromptParameters"
+              />
+            </template>
           </div>
         </Transition>
 
@@ -957,7 +1024,7 @@ function openImageWorkspace(tool?: WorkspaceToolKind) {
     <InpaintEditor
       v-if="inpaintSource"
       :image="inpaintSource"
-      :params="{ ...gen, ...params }"
+      :params="{ ...gen, ...params, ...referenceParams }"
       @close="inpaintSource = null"
       @busy="inpaintBusy = $event"
       @generated="onInpaintGenerated"
@@ -1048,7 +1115,7 @@ function openImageWorkspace(tool?: WorkspaceToolKind) {
 .pane.left.creation-generation {
   position: relative;
   display: grid;
-  grid-template-columns: 30px minmax(64px, 1fr) auto max-content auto;
+  grid-template-columns: auto minmax(46px, 1fr) auto max-content auto;
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
@@ -1064,6 +1131,12 @@ function openImageWorkspace(tool?: WorkspaceToolKind) {
   border-top: 0;
   padding: 0;
   background: transparent;
+}
+
+.generation-tool-buttons {
+  display: flex;
+  align-items: center;
+  gap: 3px;
 }
 
 .creation-parameters-toggle {

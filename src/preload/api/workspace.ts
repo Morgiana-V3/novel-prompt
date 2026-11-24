@@ -36,6 +36,14 @@ export const workspaceApi = {
   ): Promise<PageWorkspace> => invoke('pages:external-reply', id, revision, response, actionId),
   pagesExternalCancel: (id: string, revision: number, actionId?: string): Promise<PageWorkspace> =>
     invoke('pages:external-cancel', id, revision, actionId),
+  pagesImportDropped: (
+    bytes: Uint8Array,
+    fileName: string,
+    params: NaiGenParams,
+    model: NaiVersion,
+    draft: InpaintDraft,
+  ): Promise<PageWorkspace> =>
+    invoke('pages:import-dropped', bytes, fileName, params, model, draft),
   pagesImport: (
     params: NaiGenParams,
     model: NaiVersion,

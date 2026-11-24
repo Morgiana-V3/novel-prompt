@@ -1,3 +1,5 @@
+import { validateAttachments } from '../../../shared/workspace/attachments'
+import { checkReferences } from '../../../shared/generation/references'
 import { regionIds } from '../../../shared/workspace/regions'
 import { isNaiVersion } from '../../../shared/generation/types'
 import { DEFAULT_COLLECTION } from '../../../shared/images/collections'
@@ -18,6 +20,7 @@ export function applyRecipe(
   }
   checkDraft(request, request.version)
   checkPageParams(request.params)
+  checkReferences(request.params.preciseReferences ?? [], request.version)
   workspace.model = request.version
   version.editor.model = request.version
   version.editor.draft = {
@@ -43,6 +46,10 @@ export function applyNotes(
   workspace.title = action.title.trim().slice(0, 100) || '未命名项目'
   workspace.goal = action.goal
   workspace.preserve = action.preserve
+  if (action.composerAttachments !== undefined) {
+    validateAttachments(action.composerAttachments)
+    workspace.composerAttachments = clone(action.composerAttachments)
+  }
   workspace.composer = action.composer
 }
 
@@ -56,6 +63,7 @@ export function applyEditor(
     throw new Error('编辑器对应的版本已切换')
   }
   const updated = clone(action.editor)
+  checkReferences(updated.params.preciseReferences ?? [], workspace.model)
   if (updated.draft.characters.length !== version.editor.draft.characters.length) {
     updated.regions.forEach((region) => {
       region.target = null

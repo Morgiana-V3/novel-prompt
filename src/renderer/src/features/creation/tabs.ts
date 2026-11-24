@@ -21,6 +21,8 @@ import {
 } from '../prompts/public/draft'
 import {
   applyGenerationParams,
+  referenceDraft,
+  setCreationReferences,
   DEFAULT_GEN,
   generationParams,
   imageState,
@@ -41,6 +43,7 @@ interface TabContent {
   characters: CharDraft[]
   params: WorkParams
   history: Snapshot[]
+  preciseReferences?: typeof referenceDraft.images
   gen: GenOnly
 }
 
@@ -156,6 +159,7 @@ function capture(): { content: TabContent; session: TabSession } {
       params: promptState.params,
       history: promptState.history,
       gen: generationParams,
+      preciseReferences: referenceDraft.images,
     }),
     session: {
       lastPreview: promptState.lastPreview,
@@ -177,6 +181,7 @@ function restore(content: TabContent, session: TabSession): void {
     focus: session.focus,
   })
   applyGenerationParams({ ...DEFAULT_GEN, ...content.gen })
+  setCreationReferences(content.preciseReferences)
   setPreviewImage(session.currentImage)
   for (const key of registry.keys()) {
     if (!session.view.has(key)) {
@@ -188,6 +193,7 @@ function restore(content: TabContent, session: TabSession): void {
 
 const hasContent = (content: TabContent) =>
   !!(
+    content.preciseReferences?.length ||
     content.prompt.trim() ||
     content.negative.trim() ||
     content.characters.some((character) => character.prompt.trim() || character.negative.trim())
@@ -406,6 +412,7 @@ export function tabSummaries(): { id: string; title: string; active: boolean; em
     empty: !hasContent(
       tab.content ?? {
         ...blankContent(),
+        preciseReferences: referenceDraft.images,
         prompt: promptState.prompt,
         negative: promptState.negative,
         characters: promptState.characters,

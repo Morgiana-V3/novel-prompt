@@ -1,3 +1,7 @@
+import {
+  attachmentReferenceNotice,
+  generationReferences,
+} from '../../../shared/workspace/attachments'
 import { regionIds, regionNotes, selectRegions } from '../../../shared/workspace/regions'
 import type { InpaintDraft } from '../../../shared/prompts/types'
 import type { PageAgentIdentity, PageExternalReply } from '../../../shared/workspace/model'
@@ -145,6 +149,11 @@ export function queueExternalRequest(
   ) {
     throw new Error('需求或引用版本无效')
   }
+  generationReferences(
+    version.editor.params.preciseReferences ?? [],
+    workspace.composerAttachments ?? [],
+    workspace.model,
+  )
   const selectedRegions = selectRegions(version, selection)
   const selectedIds = selectedRegions.map((region) => region.id)
   const regionId = selectedIds[0] ?? null
@@ -155,6 +164,7 @@ export function queueExternalRequest(
   message.regionId = regionId
   message.regionIds = selectedIds
   message.regions = regionNotes(selectedRegions)
+  message.attachments = structuredClone(workspace.composerAttachments ?? [])
   message.referenceIds = [...referenceIds]
   message.externalRequest = {
     status: 'pending',
@@ -165,6 +175,7 @@ export function queueExternalRequest(
   message.inputContext = buildPageInputContext(workspace, message, skills.snapshot)
   workspace.messages.push(message)
   workspace.composer = ''
+  workspace.composerAttachments = []
   return savePage(workspace)
 }
 
@@ -278,7 +289,9 @@ export function replyExternalRequest(
       regionId: request.regionId ?? null,
       regionIds: regionIds(request),
       title: proposal.title,
-      warning: proposal.warning,
+      warning: [proposal.warning, attachmentReferenceNotice(request.attachments)]
+        .filter(Boolean)
+        .join('\n'),
       changes: pageChanges(before, proposal.draft),
       status: 'pending',
       contextKey: pageContextKey(version, regionIds(request), workspace),

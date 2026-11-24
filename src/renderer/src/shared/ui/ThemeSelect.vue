@@ -8,6 +8,7 @@ const props = defineProps<{
   modelValue: T
   options: readonly { value: T; label: string; disabled?: boolean }[]
   disabled?: boolean
+  compact?: boolean
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: T] }>()
 const attrs = useAttrs()
@@ -45,7 +46,8 @@ async function open() {
   )
   const below = innerHeight - bounds.bottom - 14
   const above = bounds.top - safeTop - 14
-  const desired = Math.min(252, props.options.length * 34 + 12)
+  const rowHeight = props.compact ? 30 : 34
+  const desired = Math.min(252, props.options.length * rowHeight + 12)
   const upwards = below < desired && above > below
   const height = Math.max(0, Math.min(desired, upwards ? above : below))
   const metrics = document.createElement('canvas').getContext('2d')
@@ -53,9 +55,12 @@ async function open() {
   if (metrics) {
     metrics.font = `600 ${font.fontSize} ${font.fontFamily}`
   }
+  const optionPadding = props.compact ? 48 : 66
   const contentWidth =
-    Math.max(...props.options.map((option) => metrics?.measureText(option.label).width ?? 0)) + 66
-  const width = Math.min(Math.max(bounds.width, 150, contentWidth), innerWidth - 16)
+    Math.max(...props.options.map((option) => metrics?.measureText(option.label).width ?? 0)) +
+    optionPadding
+  const minWidth = props.compact ? 132 : 150
+  const width = Math.min(Math.max(bounds.width, minWidth, contentWidth), innerWidth - 16)
   position.value = {
     left: `${Math.max(8, Math.min(bounds.left, innerWidth - width - 8))}px`,
     top: `${upwards ? bounds.top - height - 6 : bounds.bottom + 6}px`,
@@ -164,8 +169,8 @@ onBeforeUnmount(() => {
     ref="trigger"
     v-bind="attrs"
     type="button"
-    class="input theme-select"
-    :class="{ expanded: opened }"
+    class="theme-select"
+    :class="{ input: !compact, 'theme-select-compact': compact, expanded: opened }"
     :disabled="disabled"
     role="combobox"
     aria-haspopup="listbox"
@@ -180,7 +185,7 @@ onBeforeUnmount(() => {
     ><Icon
       name="chevron"
       class="theme-select-caret"
-      :size="12"
+      :size="compact ? 10 : 12"
     />
   </button>
   <Teleport :to="portal">
@@ -189,6 +194,7 @@ onBeforeUnmount(() => {
         v-if="opened"
         ref="menu"
         class="theme-select-menu"
+        :class="{ 'theme-select-menu-compact': compact }"
         :style="position"
         @pointerdown.prevent
       >
@@ -234,8 +240,6 @@ onBeforeUnmount(() => {
 
 <style scoped lang="less">
 .theme-select.input {
-  display: inline-flex;
-  align-items: center;
   justify-content: space-between;
   gap: 12px;
   text-align: left;
@@ -243,6 +247,48 @@ onBeforeUnmount(() => {
   color: var(--text);
   font: inherit;
   font-size: 12.5px;
+}
+
+.theme-select {
+  display: inline-flex;
+  align-items: center;
+}
+
+.theme-select-compact {
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 24px;
+  max-width: 100%;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: var(--hover);
+  color: var(--text2);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.theme-select-compact:hover:enabled,
+.theme-select-compact.expanded {
+  background: var(--pink-soft);
+  color: var(--text);
+}
+
+.theme-select-compact:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--pink-deep);
+}
+
+.theme-select-compact:disabled {
+  background: transparent;
+}
+
+.theme-select-compact:disabled .theme-select-caret {
+  visibility: hidden;
 }
 
 .theme-select > span {
@@ -285,6 +331,17 @@ onBeforeUnmount(() => {
   border: 1px solid var(--pink-line);
   border-radius: 12px;
   box-shadow: var(--shadow-pop);
+}
+
+.theme-select-menu-compact {
+  border-color: var(--line2);
+  border-radius: 9px;
+}
+
+.theme-select-menu-compact .theme-select-option {
+  min-height: 30px;
+  padding: 5px 8px;
+  font-size: 12px;
 }
 
 .theme-select-options {

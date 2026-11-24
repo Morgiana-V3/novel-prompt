@@ -8,6 +8,7 @@ import type { InpaintDraft } from '../../../shared/prompts/types'
 import { pageCurrent, type PageAction, type PageWorkspace } from '../../../shared/workspace/model'
 import { pngSize } from '../../providers/novelai/png-response'
 import { imagePath } from '../images/access'
+import { importImageAsPng } from '../images/import'
 import {
   imageInfo,
   ownWorkspaceImage,
@@ -34,6 +35,7 @@ export async function createPage(
   params: NaiGenParams,
   model: NaiVersion,
   fallback: InpaintDraft,
+  title = '新项目',
 ): Promise<PageWorkspace> {
   if (!isNaiVersion(model)) {
     throw new Error('不支持的生图模型')
@@ -72,7 +74,7 @@ export async function createPage(
   const workspace: PageWorkspace = {
     schema: 2,
     id,
-    title: '新项目',
+    title,
     goal: '',
     preserve: '',
     model,
@@ -141,18 +143,41 @@ export async function importPage(
     throw new Error('请选择有效 PNG，最多 4096×1024 总像素')
   }
   PNG.sync.read(bytes)
+  return createPageFromPng(bytes, path, params, model, fallback)
+}
+
+export async function importDroppedPage(
+  bytes: Uint8Array,
+  fileName: string,
+  params: NaiGenParams,
+  model: NaiVersion,
+  fallback: InpaintDraft,
+): Promise<PageWorkspace> {
+  if (typeof fileName !== 'string' || !fileName.trim() || fileName.length > 1024) {
+    throw new Error('图片文件名无效')
+  }
+  const png = await importImageAsPng(bytes, 4 * 1024 * 1024)
+  return createPageFromPng(png, fileName, params, model, fallback)
+}
+
+async function createPageFromPng(
+  bytes: Buffer,
+  fileName: string,
+  params: NaiGenParams,
+  model: NaiVersion,
+  fallback: InpaintDraft,
+): Promise<PageWorkspace> {
   const staged = stageImportedImage(bytes)
-  let workspace: PageWorkspace
   try {
-    workspace = await createPage(staged.name, params, model, fallback)
+    const title =
+      basename(fileName)
+        .replace(/\.(?:png|jpe?g|webp)$/i, '')
+        .trim()
+        .slice(0, 100) || '未命名项目'
+    return await createPage(staged.name, params, model, fallback, title)
   } finally {
     staged.dispose()
   }
-  workspace.title =
-    basename(path)
-      .replace(/\.png$/i, '')
-      .slice(0, 100) || '未命名项目'
-  return savePage(workspace)
 }
 
 export function editPage(id: string, revision: number, action: PageAction): PageWorkspace {

@@ -176,7 +176,7 @@ export function externalWorkspaceTools(desktop: DesktopBridge): McpTool[] {
       run: async (argumentsRecord) =>
         desktop.withWorkspace(String(argumentsRecord.id), () => {
           const workspace = readPage(String(argumentsRecord.id))
-          if (workspace.composer.trim()) {
+          if (workspace.composer.trim() || workspace.composerAttachments?.length) {
             throw new Error('会话有未发送草稿，请先在界面处理，不能覆盖')
           }
           return JSON.stringify(
@@ -536,6 +536,7 @@ export function externalWorkspaceTools(desktop: DesktopBridge): McpTool[] {
             regions: version.editor.regions.map(({ mask: _mask, accepted: _accepted, ...r }) => r),
             preview,
             selectedRegions: regionPreviews,
+            attachments: request?.attachments ?? [],
             references: workspace.versions
               .filter((version2) => request?.referenceIds?.includes(version2.id))
               .map((version2) => ({

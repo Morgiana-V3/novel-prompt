@@ -1,3 +1,4 @@
+import type { PreciseReference } from './references'
 import type { NaiImage } from '../images/types'
 import type { AiCharacter } from '../prompts/types'
 
@@ -43,6 +44,7 @@ export function isNaiNoiseSchedule(value: unknown): value is NaiNoiseSchedule {
 }
 
 export interface NaiGenParams {
+  preciseReferences?: PreciseReference[]
   width: number
   height: number
   steps: number

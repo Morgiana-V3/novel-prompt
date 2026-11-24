@@ -1,3 +1,4 @@
+import type { ChatAttachment } from '@shared/workspace/attachments'
 import { computed, ref, type Ref } from 'vue'
 import type { PageMessage, PageVersion } from '@shared/workspace/model'
 import { taskIsActive } from '@shared/tasks/model'
@@ -11,6 +12,7 @@ interface DiscussionOptions {
   pendingRequest: Ref<PageMessage | undefined>
   discussionVersion: Ref<PageVersion>
   composer: Ref<string>
+  attachments: Ref<ChatAttachment[]>
   selectedRegionIds: Ref<string[]>
   references: Ref<string[]>
   savedNotes: Ref<string>
@@ -28,6 +30,7 @@ export function useDiscussionActions(context: WorkspaceActionContext, options: D
     pendingRequest,
     discussionVersion,
     composer,
+    attachments,
     selectedRegionIds,
     references,
     savedNotes,
@@ -98,15 +101,22 @@ export function useDiscussionActions(context: WorkspaceActionContext, options: D
   }
 
   async function send() {
-    if (isBusy() || !composer.value.trim() || (external.value && pendingRequest.value)) {
+    if (
+      isBusy() ||
+      (!composer.value.trim() && !attachments.value.length) ||
+      (external.value && pendingRequest.value)
+    ) {
       return
     }
     const discussionVersionId = discussionVersion.value.id
     errorMessage.value = ''
     operation.value = 'chat'
+    const originalText = composer.value
+    let persisted = false
     try {
       await flushNotes()
-      const text = composer.value
+      persisted = true
+      const text = composer.value.trim() || '请查看附图。'
       pendingText.value = text
       composer.value = ''
       await scrollEnd()
@@ -119,14 +129,20 @@ export function useDiscussionActions(context: WorkspaceActionContext, options: D
         frontendContext()?.actionId,
         discussionVersionId,
       )
+      attachments.value = []
       references.value = []
       savedNotes.value = JSON.stringify(notesValue())
       updated()
     } catch (error) {
       errorMessage.value = cleanErr(error)
+      composer.value = originalText
+      if (!persisted) {
+        return
+      }
       try {
         work.value = await window.api.pagesRead(work.value.id)
         composer.value = work.value.composer
+        attachments.value = work.value.composerAttachments ?? []
         savedNotes.value = JSON.stringify(notesValue())
       } catch {
         /* Preserve local state if reading also fails. */

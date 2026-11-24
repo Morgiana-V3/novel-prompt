@@ -1,3 +1,4 @@
+import { validReferences } from '../generation/references'
 import type { ImportedPrompt } from '../prompts/import'
 import { isNaiVersion, isNaiSampler, isNaiNoiseSchedule, isUcPreset } from '../generation/types'
 import type { ImageRecipe } from './types'
@@ -20,6 +21,7 @@ function validRequest(q: ImageRecipe['request'] | undefined): boolean {
     q &&
     p &&
     isNaiVersion(q.version) &&
+    (p.preciseReferences === undefined || validReferences(p.preciseReferences)) &&
     typeof q.base === 'string' &&
     typeof q.negative === 'string' &&
     Array.isArray(q.characters) &&

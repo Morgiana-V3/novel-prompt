@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { REFERENCE_LABELS } from '@shared/generation/references'
 import { computed, ref } from 'vue'
 import type { NaiImage } from '@shared/images/types'
 import type { NaiVersion } from '@shared/generation/types'
@@ -72,6 +73,28 @@ const positionReference = computed(() => {
         initial ? '项目起始稿与设置，不代表导入图片的实际生成参数' : '生成这张图时使用的配置'
       }}</span>
     </header>
+    <section
+      v-if="params.preciseReferences?.length"
+      class="record-block"
+    >
+      <h3>精确参考</h3>
+      <div
+        v-for="(reference, index) in params.preciseReferences"
+        :key="index"
+        class="row"
+      >
+        <img
+          width="48"
+          height="48"
+          style="object-fit: contain"
+          :src="'np-img://img/' + encodeURIComponent(reference.imageName)"
+          alt="参考图"
+        /><span
+          >{{ REFERENCE_LABELS[reference.mode] }} · 强度 {{ reference.strength }} · 还原度
+          {{ reference.fidelity }}</span
+        >
+      </div>
+    </section>
 
     <section class="record-block">
       <h3>

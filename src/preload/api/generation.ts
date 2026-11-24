@@ -11,6 +11,8 @@ import type { ImageRecipe, NaiImage } from '../../shared/images/types'
 import { invoke } from './bridge'
 
 export const generationApi = {
+  naiImportReference: (source: Uint8Array | string): Promise<string> =>
+    invoke('nai:import-reference', source),
   naiRetain: (name: string): Promise<NaiImage> => invoke('nai:retain', name),
   naiRecipe: (name: string): Promise<ImageRecipe | null> => invoke('nai:recipe', name),
   naiSubscription: (): Promise<NaiSubscription> => invoke('nai:subscription'),

@@ -265,6 +265,15 @@ try {
   client.notify('notifications/initialized')
   catalog = (await request('tools/list')).result.tools
   assertMcpCatalog(catalog)
+  const attachmentSchema = catalog.find((tool) => tool.name === 'ui_set_workspace_input')
+    ?.inputSchema.properties.attachments
+  assert.equal(attachmentSchema?.maxItems, 4)
+  assert.deepEqual(attachmentSchema.items.properties.purpose.enum, [
+    'discussion',
+    'character',
+    'style',
+    'character&style',
+  ])
   const groups = await call('configure_tools')
   assert.equal(catalog.length, groups.exposedToolCount)
   writeFileSync(
@@ -493,6 +502,9 @@ try {
       id: frontId,
       expected_token: await token(),
       text: '保持人物不变，把背景改成黄昏的天空，并给出可直接生成的方案',
+      attachments: [
+        { imageName: inpaintEvidence.name, label: '本轮重绘参考', purpose: 'discussion' },
+      ],
       step_delay_ms: 2000,
     })
     await call('ui_send_workspace_message', {
@@ -521,8 +533,13 @@ try {
     const imageInputs = inputContext.images.entries.filter((entry) => entry.status === 'included')
     assert.ok(imageInputs.some((entry) => entry.role === 'edit-target'))
     assert.ok(imageInputs.some((entry) => entry.role === 'discussion'))
+    const attachment = imageInputs.find((entry) => entry.role === 'attachment')
+    assert.ok(
+      attachment && attachment.imageName === submitted.attachments?.[0]?.imageName,
+      'the submitted attachment was delivered as image input',
+    )
     assert.equal(
-      imageInputs.filter((entry) => !entry.sharedWith).length,
+      imageInputs.filter((entry) => entry.role !== 'attachment' && !entry.sharedWith).length,
       1,
       'one source image shared by the two roles is included once',
     )

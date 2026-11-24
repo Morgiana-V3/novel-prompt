@@ -14,8 +14,8 @@ export interface PageInputRegion {
 
 export interface PageInputImage {
   id: string
-  role: 'edit-target' | 'discussion' | 'reference' | 'region'
-  versionId: string
+  role: 'edit-target' | 'discussion' | 'reference' | 'region' | 'attachment'
+  versionId: string | null
   label: string
   imageName: string | null
   regionId?: string

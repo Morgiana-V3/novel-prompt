@@ -8,6 +8,8 @@ export const imageState = shallowReadonly(mutableImageState)
 export const generationParams = shallowReadonly(mutableGenerationParams)
 export {
   DEFAULT_GEN,
+  referenceDraft,
+  setCreationReferences,
   setGenerationBusy,
   selectReferenceImage,
   setPreviewImage,

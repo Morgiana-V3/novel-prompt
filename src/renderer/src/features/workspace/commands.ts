@@ -1,3 +1,5 @@
+import type { ChatAttachment } from '@shared/workspace/attachments'
+import { snapshotReferences } from '@shared/generation/references'
 import { selectRegions } from '@shared/workspace/regions'
 import type { FrontendContext, FrontendRequest } from '@shared/contracts/desktop'
 import { patchWorkspaceConfig } from '@shared/workspace/config'
@@ -13,6 +15,7 @@ import type { Ref } from 'vue'
 import { nextTick } from 'vue'
 
 interface WorkspaceCommandHost {
+  importingAttachment: Ref<boolean>
   configOwner: Ref<string | null>
   operation: Ref<string>
   remoteBusy: Ref<boolean>
@@ -35,6 +38,7 @@ interface WorkspaceCommandHost {
   historyOpen: Ref<boolean>
   compareVersionId: Ref<string>
   composer: Ref<string>
+  attachments: Ref<ChatAttachment[]>
   regionId: Ref<string | null>
   selectedRegionIds: Ref<string[]>
   references: Ref<string[]>
@@ -93,6 +97,7 @@ export function createWorkspaceCommands(host: WorkspaceCommandHost) {
     historyOpen,
     compareVersionId,
     composer,
+    attachments,
     regionId,
     selectedRegionIds,
     references,
@@ -127,6 +132,7 @@ export function createWorkspaceCommands(host: WorkspaceCommandHost) {
   async function settle(signal: AbortSignal, timeout = 5000) {
     const deadline = Date.now() + timeout
     while (
+      host.importingAttachment.value ||
       operation.value ||
       remoteBusy.value ||
       editing.value ||
@@ -249,12 +255,20 @@ export function createWorkspaceCommands(host: WorkspaceCommandHost) {
             configOwner.value = ctx.agentSession!
             await ctx.step('已接续断线 Agent 的配置草稿，内容保持原样，尚未保存')
           } else if (request.config_action === 'update') {
-            configDraft.value = patchWorkspaceConfig(
+            const next = patchWorkspaceConfig(
               configDraft.value,
               request.patch!,
               configSizeLocked.value,
               configDraft.value.model ?? work.value.model,
             )
+            if (request.patch?.params?.preciseReferences && next.params.preciseReferences) {
+              next.params.preciseReferences = await snapshotReferences(
+                next.params.preciseReferences,
+                window.api.naiImportReference,
+              )
+              check()
+            }
+            configDraft.value = next
             await ctx.step('表单已更新，尚未保存或生成')
           } else if (request.config_action === 'save') {
             await finishConfig()
@@ -322,6 +336,21 @@ export function createWorkspaceCommands(host: WorkspaceCommandHost) {
         for (const id of request.reference_ids ?? []) {
           version(id)
         }
+        if (request.attachments !== undefined) {
+          const imported: ChatAttachment[] = []
+          for (const image of request.attachments) {
+            if (image.purpose !== 'discussion' && work.value.model !== 'v4.5') {
+              throw new Error('指定生图参考需要 V4.5')
+            }
+            const imageName = await window.api.naiImportReference(image.imageName)
+            if (imported.some((other) => other.imageName === imageName)) {
+              throw new Error('请勿重复附加相同图片')
+            }
+            imported.push({ ...image, imageName })
+          }
+          check()
+          attachments.value = imported
+        }
         composer.value = request.text!
         selectedRegionIds.value = regions.map((region) => region.id)
         regionId.value = selectedRegionIds.value[0] ?? null
@@ -335,7 +364,7 @@ export function createWorkspaceCommands(host: WorkspaceCommandHost) {
         await flushNotes()
         await ctx.step('需求已填入对话框，尚未提交')
       } else if (request.action === 'send') {
-        if (!composer.value.trim()) {
+        if (!composer.value.trim() && !attachments.value.length) {
           throw new Error('对话框为空，请先填写内容')
         }
         if (external.value && pendingRequest.value) {

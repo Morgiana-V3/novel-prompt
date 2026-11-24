@@ -1,3 +1,4 @@
+import type { ChatAttachment } from '../workspace/attachments'
 import type { NaiGenParams, NaiVersion } from '../generation/types'
 import type { ReverseResult } from '../reverse/types'
 import type { NaiImage } from '../images/types'
@@ -65,6 +66,7 @@ export interface FrontendRequest {
   region_id?: string | null
   region_ids?: string[]
   reference_ids?: string[]
+  attachments?: ChatAttachment[]
   rectangles?: { x: number; y: number; width: number; height: number }[]
   instruction?: string
   target?: number | null
@@ -132,6 +134,7 @@ export interface DesktopState {
     regionIds?: string[]
     pane: string
     editing: boolean
+    attachments?: ChatAttachment[]
     composer: string
     viewedVersionId?: string
     viewedGroupId?: string

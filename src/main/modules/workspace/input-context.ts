@@ -1,3 +1,4 @@
+import { ATTACHMENT_LABELS } from '../../../shared/workspace/attachments'
 import type { PageInputContext, PageInputImage } from '../../../shared/workspace/context'
 import {
   isRoutinePageEvent,
@@ -152,6 +153,14 @@ export function buildPageInputContext(
       label: reference.label,
       imageName: reference.image?.name ?? null,
       status: imageStatus(reference.image),
+    })),
+    ...(request.attachments ?? []).map((image, index): PageInputImage => ({
+      id: 'attachment:' + index,
+      role: 'attachment',
+      versionId: null,
+      imageName: image.imageName,
+      label: '图 ' + (index + 1) + ' · ' + image.label + ' · ' + ATTACHMENT_LABELS[image.purpose],
+      status: 'available',
     })),
     ...regions.map((region): PageInputImage => ({
       id: `region:${region.id}`,

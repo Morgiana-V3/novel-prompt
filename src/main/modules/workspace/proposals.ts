@@ -1,3 +1,4 @@
+import { generationReferences } from '../../../shared/workspace/attachments'
 import { regionIds, selectRegions } from '../../../shared/workspace/regions'
 import { applyInpaintChanges } from '../../../shared/prompts/inpaint-plan'
 import {
@@ -56,6 +57,14 @@ export function applyProposalDecision(
         ? clone(proposal.after)
         : applyInpaintChanges(pageDraft(version, proposal.regionId), proposal.changes)
       checkDraft(next, workspace.model)
+      const attachments =
+        workspace.messages.find((request) => request.id === message.requestId)?.attachments ?? []
+      const previous = version.editor.params.preciseReferences
+      const references = generationReferences(previous ?? [], attachments, workspace.model)
+      if (references) {
+        proposal.previousReferences = previous ? clone(previous) : null
+        version.editor.params.preciseReferences = references
+      }
       proposal.previousExecution = clone(workspace.execution)
       proposal.previousTargets = version.editor.regions.map((region2) => ({
         id: region2.id,
@@ -104,6 +113,11 @@ export function applyProposalDecision(
         JSON.stringify(pageDraft(version, proposal.regionId)) !== JSON.stringify(expected)
       ) {
         throw new Error('采纳后页面又有修改，不能覆盖这些新改动')
+      }
+      if (proposal.previousReferences === null) {
+        delete version.editor.params.preciseReferences
+      } else if (proposal.previousReferences) {
+        version.editor.params.preciseReferences = clone(proposal.previousReferences)
       }
       version.editor.draft = clone(proposal.before)
       for (const previous of proposal.previousTargets ?? []) {

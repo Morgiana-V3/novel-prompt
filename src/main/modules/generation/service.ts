@@ -1,3 +1,6 @@
+import { checkReferences } from '../../../shared/generation/references'
+import { NaiError } from '../../providers/novelai/request'
+import { prepareReferences } from './references'
 import { estimateGeneration, anlasOutcomeText } from '../../../shared/generation/pricing'
 import { authorizePaidOperation } from '../../infrastructure/operation-policy'
 import { recordAnlas, recordGeneratedImage } from '../statistics/service'
@@ -159,11 +162,22 @@ export async function generateImages(
   let delta: number | undefined = 0
   let stopped: string | undefined
 
+  const references = req.params.preciseReferences ?? []
+  checkReferences(references, req.version)
+  const referenceImages = await prepareReferences(references)
+
   onStep('查询会员与额度…')
   let sub: NaiSubscription | undefined
   try {
     sub = await getSubscription()
   } catch (error) {
+    if (
+      references.length &&
+      error instanceof NaiError &&
+      (error.status === 401 || error.status === 403)
+    ) {
+      throw error
+    }
     if (freeOnly) {
       throw new Error(`查询会员状态失败，无法确认免费资格：${(error as Error).message}`)
     }
@@ -214,7 +228,7 @@ export async function generateImages(
     onStep(`${actionLabel}第 ${i + 1}/${count} 张（种子 ${seed}）…`)
     let png: Buffer
     try {
-      png = await generateOne(req, seed, token(), undefined, source)
+      png = await generateOne(req, seed, token(), undefined, source, referenceImages)
       recordGeneratedImage(req.version)
       if (prepared) {
         png = compositeInpaint(prepared, png)
@@ -277,7 +291,7 @@ export async function generateImages(
       after = await getSubscription()
     } catch {
       delta = undefined
-      if (freeOnly) {
+      if (freeOnly || references.length) {
         stopped = '生成后查询余额失败，无法确认是否扣费，已停止后续生成'
       }
     }
@@ -290,6 +304,13 @@ export async function generateImages(
       delta += change.fixed + change.purchased
     } else if (!change) {
       delta = undefined
+    }
+    if (references.length && !change) {
+      stopped = '参考图生成费用未知，已停止后续生成'
+    }
+    if (stopped) {
+      sub = after
+      break
     }
     if ((freeOnly || eligibility.ok) && (!change || change.fixed < 0 || change.purchased < 0)) {
       stopped = change

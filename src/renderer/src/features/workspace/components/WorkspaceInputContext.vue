@@ -22,6 +22,7 @@ const messageIndex = computed(
 const imageRoles: Record<PageInputImage['role'], string> = {
   'edit-target': '修改底图',
   discussion: '讨论图',
+  attachment: '聊天附图',
   reference: '参考图',
   region: '区域示意图',
 }

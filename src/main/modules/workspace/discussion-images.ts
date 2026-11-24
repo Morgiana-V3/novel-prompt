@@ -103,6 +103,9 @@ function markedRegion(bytes: Buffer, mask: string, width: number, height: number
 }
 
 function roleText(entry: PageInputImage): string {
+  if (entry.role === 'attachment') {
+    return '用户在聊天中附上的' + entry.label + '。按标注用途和本轮文字要求理解这张图。'
+  }
   const identity = `「${entry.label}」，versionId=${entry.versionId}`
   if (entry.role === 'edit-target') {
     return `当前采用图片，也是修改目标：${identity}。`
@@ -146,6 +149,9 @@ function assembleImages(context: PageInputContext, version: PageVersion): ChatPa
       context.discussion.image,
       ...context.references.map((reference) => reference.image),
     ].find((image) => image?.name === entry.imageName)
+    if (entry.role === 'attachment' && entry.imageName !== 'ref-' + source.hash + '.png') {
+      throw new Error('聊天附件内容已变更，请重新附图')
+    }
     if (expected?.contentHash && expected.contentHash !== source.hash) {
       throw new Error('图片已不同于本轮读取的版本，请重新读取当前状态')
     }

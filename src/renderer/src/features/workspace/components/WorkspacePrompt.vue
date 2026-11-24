@@ -8,6 +8,7 @@ import { sectionText } from '../../prompts/public/import-export'
 import { DEFAULT_GEN } from '../../generation/public'
 import { DEFAULT_PARAMS } from '../../prompts/public/draft'
 import { PromptEditor } from '../../prompts/public/components'
+import PreciseReferences from '../../generation/components/PreciseReferences.vue'
 import GenerationParameters from '../../generation/components/GenerationParameters.vue'
 import Icon from '../../../shared/ui/Icon.vue'
 import WorkspaceRecord from './WorkspaceRecord.vue'
@@ -107,6 +108,13 @@ defineExpose({ copyPrompt: () => copy(sectionText(active.value.draft)) })
           />恢复默认
         </button>
       </div>
+      <PreciseReferences
+        :images="active.params.preciseReferences ?? []"
+        :model="model"
+        :current="image"
+        :disabled="readOnly"
+        @change="updateParams({ preciseReferences: $event })"
+      />
       <GenerationParameters
         :gen="active.params"
         :params="active.params"

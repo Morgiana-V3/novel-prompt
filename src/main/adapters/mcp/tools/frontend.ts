@@ -524,6 +524,23 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
         text: { type: 'string' },
         region_id: { type: ['string', 'null'] },
         region_ids: { type: 'array', items: { type: 'string' }, maxItems: 16, uniqueItems: true },
+        attachments: {
+          type: 'array',
+          maxItems: 4,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['imageName', 'label', 'purpose'],
+            properties: {
+              imageName: { type: 'string', description: '本机图库或参考素材文件名' },
+              label: { type: 'string', minLength: 1, maxLength: 120 },
+              purpose: {
+                type: 'string',
+                enum: ['discussion', 'character', 'style', 'character&style'],
+              },
+            },
+          },
+        },
         reference_ids: { type: 'array', items: { type: 'string' }, maxItems: 2 },
       },
       ['text'],

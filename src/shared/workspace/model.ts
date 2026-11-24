@@ -1,3 +1,6 @@
+import type { ChatAttachment } from './attachments'
+import type { PreciseReference } from '../generation/references'
+import { REFERENCE_LABELS } from '../generation/references'
 import type { NaiGenParams, NaiGenRequest, NaiVersion } from '../generation/types'
 import type { NaiImage } from '../images/types'
 import type { InpaintChange, InpaintDraft } from '../prompts/types'
@@ -154,6 +157,7 @@ export interface PageProposal {
   appliedContextKey?: string
   after?: InpaintDraft
   execution?: PageExecution
+  previousReferences?: PreciseReference[] | null
   previousExecution?: PageExecution
   previousTargets?: { id: string; target: number | null }[]
 }
@@ -196,6 +200,7 @@ export interface PageMessage {
   regionId?: string | null
   regionIds?: string[]
   regions?: Pick<PageRegion, 'id' | 'label' | 'instruction' | 'target'>[]
+  attachments?: ChatAttachment[]
   referenceIds?: string[]
   discussion?: PageDiscussion
   proposal?: PageProposal
@@ -228,6 +233,7 @@ export interface PageWorkspace {
   latestGeneratedVersionId?: string
   versions: PageVersion[]
   messages: PageMessage[]
+  composerAttachments?: ChatAttachment[]
   composer: string
   execution: PageExecution
   /** 本项目生成、修图的图片存入的图集；未设置时为默认图集 */
@@ -272,7 +278,14 @@ export interface PageWorkspaceSummary {
 }
 export type PageAction =
   | { type: 'recipe'; request: NaiGenRequest }
-  | { type: 'notes'; title: string; goal: string; preserve: string; composer: string }
+  | {
+      type: 'notes'
+      title: string
+      goal: string
+      preserve: string
+      composer: string
+      composerAttachments?: ChatAttachment[]
+    }
   | { type: 'editor'; versionId: string; editor: PageEditorState }
   | { type: 'switch'; versionId: string }
   | { type: 'proposal'; messageId: string; decision: 'accept' | 'reject' | 'undo' }
@@ -352,6 +365,13 @@ export function pageComparison(workspace: PageWorkspace, id: string, compareId?:
     changes: result && before ? pageChanges(before.draft, result.draft) : [],
   }
 }
+function referenceSummary(params: NaiGenParams): string {
+  return (params.preciseReferences ?? [])
+    .map((ref) =>
+      [ref.imageName, REFERENCE_LABELS[ref.mode], ref.strength, ref.fidelity].join(' · '),
+    )
+    .join('\n')
+}
 export const PAGE_PARAM_FIELDS: [keyof NaiGenParams, string][] = [
   ['width', '宽度'],
   ['height', '高度'],
@@ -393,6 +413,9 @@ export function pageEditorChanges(
   const parameters = PAGE_PARAM_FIELDS.filter(
     ([key]) => (baseline.params[key] ?? null) !== (editor.params[key] ?? null),
   ).map(([, label]) => label)
+  if (referenceSummary(baseline.params) !== referenceSummary(editor.params)) {
+    parameters.push('精确参考')
+  }
   if (baseline.model && editor.model && baseline.model !== editor.model) {
     parameters.unshift('模型')
   }
@@ -417,6 +440,11 @@ export function pageConfigurationChanges(workspace: PageWorkspace, id: string, c
       parameters.push({ label, before, after })
     }
   }
+  add(
+    '精确参考',
+    referenceSummary(comparison.before.params),
+    referenceSummary(comparison.snapshot.params),
+  )
   add('模型', comparison.before.model, comparison.snapshot.model)
   const sourceGeneration = comparison.source?.generated
   const resultGeneration = comparison.version?.generated

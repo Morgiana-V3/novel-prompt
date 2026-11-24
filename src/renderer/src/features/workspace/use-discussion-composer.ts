@@ -1,3 +1,4 @@
+import type { ChatAttachment } from '@shared/workspace/attachments'
 import type { PageMessage, PageVersion, PageWorkspace } from '@shared/workspace/model'
 import type { ComputedRef, Ref } from 'vue'
 import { computed, ref } from 'vue'
@@ -15,6 +16,7 @@ export function useDiscussionComposer(
 
   const references = ref<string[]>([])
 
+  const attachments = ref<ChatAttachment[]>(work.value.composerAttachments ?? [])
   const composer = ref(work.value.composer)
 
   const discussionContext = computed(() => {
@@ -41,5 +43,13 @@ export function useDiscussionComposer(
     }
     focusComposer()
   }
-  return { regionId, selectedRegionIds, references, composer, discussionContext, reference }
+  return {
+    regionId,
+    selectedRegionIds,
+    references,
+    attachments,
+    composer,
+    discussionContext,
+    reference,
+  }
 }

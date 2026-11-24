@@ -44,6 +44,7 @@ Electron 主进程是唯一应用宿主，窗口和 MCP 客户端共享服务、
 | `ai:vision-test`                                                                                                              | `src/main/adapters/ipc/settings.ts`                                                                                                 |
 | `clipboard:read`                                                                                                              | `src/main/adapters/ipc/application.ts`                                                                                              |
 | `clipboard:write`                                                                                                             | `src/main/adapters/ipc/application.ts`                                                                                              |
+| `images:import`                                                                                                           | `src/main/adapters/ipc/images.ts`                                                                                                   |
 | `collections:list`、`collections:create`、`collections:rename`、`collections:delete`、`collections:assign`                    | `src/main/adapters/ipc/images.ts`                                                                                                   |
 | `confirmations:reply`                                                                                                         | `src/main/adapters/ipc/settings.ts` → `src/main/adapters/desktop/confirmations.ts`                                                  |
 | `db:aiTranslate`                                                                                                              | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/tags/task-actions.ts`                                                          |
@@ -65,6 +66,7 @@ Electron 主进程是唯一应用宿主，窗口和 MCP 客户端共享服务、
 | `artists:catalog`                                                                                                             | `src/main/adapters/ipc/images.ts` → `modules/artists/catalog.ts` → `providers/quicktagcloud.ts` / `providers/nax.ts`（默认法典，按来源与模型缓存） |
 | `nai:list`                                                                                                                    | `src/main/adapters/ipc/images.ts`                                                                                                   |
 | `nai:readImage`                                                                                                               | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `nai:import-reference`                                                                                                    | `src/main/adapters/ipc/images.ts`                                                                                                   |
 | `nai:recipe`                                                                                                                  | `src/main/adapters/ipc/images.ts`                                                                                                   |
 | `nai:retain`                                                                                                                  | `src/main/adapters/ipc/images.ts`                                                                                                   |
 | `nai:reveal`                                                                                                                  | `src/main/adapters/ipc/images.ts`                                                                                                   |
@@ -82,6 +84,7 @@ Electron 主进程是唯一应用宿主，窗口和 MCP 客户端共享服务、
 | `pages:external-reply`                                                                                                        | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts`                                                     |
 | `pages:generate`                                                                                                              | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts`                                                     |
 | `pages:image-tool`                                                                                                            | `src/main/adapters/ipc/tasks.ts` → `src/main/modules/workspace/task-actions.ts`                                                     |
+| `pages:import-dropped`                                                                                                        | `src/main/adapters/ipc/workspace.ts`                                                                                                |
 | `pages:import`                                                                                                                | `src/main/adapters/ipc/workspace.ts`                                                                                                |
 | `pages:list`                                                                                                                  | `src/main/adapters/ipc/workspace.ts`                                                                                                |
 | `pages:read`                                                                                                                  | `src/main/adapters/ipc/workspace.ts`                                                                                                |
@@ -355,3 +358,9 @@ Skill 目录包由 modules/skills/package-files.ts 校验和整体写入；入�
 本轮修正 MCP 指南与工具描述：本地识别先于完整 AI 反推，结果只读，外部反推也不要求读取创作 Skill。普通创作和工作台仍使用当前/冻结规则。MCP 业务工具覆盖与协议版本分开评估：工具目录包含完整反推等新能力，但协议仅实现 SUPPORTED 中的旧版握手。2026-07-28 的无状态协议不能只改日期接入；连接内工具分组、Agent 归属、规则缓存与订阅都需要迁移设计。
 
 后续维护重点是 ReverseView.vue、ArtistStudio.vue、PageWorkspace.vue 等页面的操作编排职责，以及现有边界检查尚未覆盖的跨 feature 依赖。文件较大本身不作为发版阻塞，也不在临近发版时机械拆分。现有 NovelAI ZIP 与 NAX ZIP 处理器职责不同，后续若合并需保留各自输入校验及大小上限。检查、真实服务灰度、外部 Agent 交互和安装更新验证分别记录，不互相替代。
+
+### V4.5 精确参考
+
+生成页与工作台配置共用参考卡。nai:import-reference 接收本机图库名或用户选取的 PNG/JPEG/WebP 字节，返回图库协议可读的内容哈希文件名。副本存于 image-library/references，独立于临时图库清理。params.preciseReferences 保存用途、强度、还原度与本地引用，旧记录可缺省。工作台 params 补丁与 generate_image.precise_references 使用相同列表结构，免费资格、请求和执行记录共用生成服务。参考图副本留在本机，跨设备导入配方时需重新选取缺失图片。
+
+每条工作台需求可附加最多 4 张 PNG、JPEG 或 WebP 图片。文件选择、拖入和粘贴共用内容寻址导入。草稿保存附件顺序和用途，发送时固化到需求及输入快照。内置 AI 沿现有视觉路由读取，外部 Agent 通过 get_workspace_context 的 attachments 和 read_image 读取。V4.5 的角色、画风或组合用途在采纳方案时合并到编辑器已有参考，撤销恢复原配置。

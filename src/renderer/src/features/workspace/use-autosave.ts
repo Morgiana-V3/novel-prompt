@@ -1,3 +1,4 @@
+import type { ChatAttachment } from '@shared/workspace/attachments'
 import type { PageAction, PageWorkspace } from '@shared/workspace/model'
 import { onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { cleanErr } from '../../shared/lib/format'
@@ -6,6 +7,7 @@ export function useWorkspaceAutosave(
   work: Ref<PageWorkspace>,
   title: Ref<string>,
   composer: Ref<string>,
+  attachments: Ref<ChatAttachment[]>,
   error: Ref<string>,
   isBusy: () => boolean,
   updated: () => void,
@@ -19,6 +21,7 @@ export function useWorkspaceAutosave(
     goal: work.value.goal,
     preserve: work.value.preserve,
     composer: composer.value,
+    composerAttachments: attachments.value,
   })
   const savedNotes = ref(JSON.stringify(notesValue()))
 
@@ -53,7 +56,7 @@ export function useWorkspaceAutosave(
     }
   }
 
-  watch([title, composer], () => {
+  watch([title, composer, attachments], () => {
     clearTimeout(timer)
     if (isBusy()) {
       return

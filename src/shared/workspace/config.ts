@@ -1,3 +1,4 @@
+import { checkReferences, REFERENCE_SCHEMA } from '../generation/references'
 import { isUcPreset, isNaiSampler, isNaiNoiseSchedule, UC_PRESET_NAMES } from '../generation/types'
 import type { NaiGenParams, NaiVersion } from '../generation/types'
 import { MAX_CHARACTERS } from '../generation/presets'
@@ -75,6 +76,10 @@ export function patchWorkspaceConfig(
       seed: [0, 4294967295, 1],
     }
     for (const [field, value] of Object.entries(patch.params)) {
+      if (field === 'preciseReferences') {
+        checkReferences(value, model)
+        continue
+      }
       if (field === 'count') {
         if (![1, 2, 4].includes(value as number)) {
           throw new Error('张数只能为 1、2 或 4')
@@ -178,6 +183,7 @@ export const WORKSPACE_CONFIG_SCHEMA = {
       type: 'object',
       additionalProperties: false,
       properties: {
+        preciseReferences: REFERENCE_SCHEMA,
         count: { type: 'integer', enum: [1, 2, 4] },
         qualityTags: { type: 'boolean' },
         qualityMode: { type: 'string', enum: ['standard', 'light'] },
