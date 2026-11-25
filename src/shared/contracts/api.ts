@@ -1,3 +1,4 @@
+import type { VibeCacheStatus, VibeReference } from '../generation/vibes'
 import type { ArtistCatalogPage, ArtistCatalogQuery } from '../artists/catalog'
 import type { ConfirmationRequest } from './confirmation'
 import type { StatisticsData } from '../statistics/model'
@@ -7,6 +8,7 @@ import type {
   NaiGenParams,
   NaiGenRequest,
   NaiGenResult,
+  NaiImg2ImgRequest,
   NaiInpaintRequest,
   NaiSubscription,
   NaiVersion,
@@ -36,6 +38,7 @@ import type { DbStatus, SearchHit, SearchOptions, TagCategory, UpdateProgress } 
 import type { AiStep, NaiStep, TaskSnapshot } from '../tasks/model'
 import type { UpdateInfo } from '../updates/types'
 import type {
+  Img2ImgConfigSource,
   PageAction,
   PageAgentIdentity,
   PageExecution,
@@ -54,6 +57,13 @@ export interface Api {
   artistCatalog: (query: ArtistCatalogQuery) => Promise<ArtistCatalogPage>
   replyConfirmation: (id: string, approved: boolean) => Promise<void>
   onConfirmations: (cb: (requests: ConfirmationRequest[]) => void) => () => void
+  scanReferenceCleanup: (live: string[]) => Promise<{ name: string; bytes: number }[]>
+  recycleReferences: (
+    live: string[],
+    requested: string[],
+  ) => Promise<{ moved: number; failed: string[] }>
+  naiVibeStatuses: (entries: VibeReference[]) => Promise<VibeCacheStatus[]>
+  naiVibeEncode: (entry: VibeReference) => Promise<{ cached: boolean; charge: number | null }>
   imagesImport: (bytes: Uint8Array, collectionId: string) => Promise<NaiImage>
   collectionsList: () => Promise<ImageCollection[]>
   collectionsCreate: (name: string) => Promise<ImageCollection>
@@ -135,6 +145,7 @@ export interface Api {
     params: NaiGenParams,
     model: NaiVersion,
     draft: InpaintDraft,
+    img2imgConfig?: Img2ImgConfigSource,
   ) => Promise<PageWorkspace>
   pagesImport: (
     params: NaiGenParams,
@@ -150,6 +161,7 @@ export interface Api {
     params: NaiGenParams,
     model: NaiVersion,
     draft: InpaintDraft,
+    img2imgConfig?: Img2ImgConfigSource,
   ) => Promise<PageWorkspace>
   pagesEdit: (id: string, revision: number, action: PageAction) => Promise<PageWorkspace>
   pagesChat: (
@@ -209,7 +221,7 @@ export interface Api {
     version: NaiVersion,
     sub?: NaiSubscription,
   ) => Promise<NaiFreeCheck>
-  naiGenerate: (req: NaiGenRequest) => Promise<NaiGenResult>
+  naiGenerate: (req: NaiGenRequest | NaiImg2ImgRequest) => Promise<NaiGenResult>
   naiInpaint: (req: NaiInpaintRequest) => Promise<NaiGenResult>
   naiCancel: () => Promise<void>
   naiList: () => Promise<NaiImage[]>
@@ -237,6 +249,22 @@ export interface IpcContract {
     result: Awaited<ReturnType<Api['artistCatalog']>>
   }
   'confirmations:reply': { args: Parameters<Api['replyConfirmation']>; result: void }
+  'images:scan-reference-cleanup': {
+    args: Parameters<Api['scanReferenceCleanup']>
+    result: Awaited<ReturnType<Api['scanReferenceCleanup']>>
+  }
+  'images:recycle-references': {
+    args: Parameters<Api['recycleReferences']>
+    result: Awaited<ReturnType<Api['recycleReferences']>>
+  }
+  'nai:vibe-statuses': {
+    args: Parameters<Api['naiVibeStatuses']>
+    result: Awaited<ReturnType<Api['naiVibeStatuses']>>
+  }
+  'nai:vibe-encode': {
+    args: Parameters<Api['naiVibeEncode']>
+    result: Awaited<ReturnType<Api['naiVibeEncode']>>
+  }
   'images:import': {
     args: Parameters<Api['imagesImport']>
     result: Awaited<ReturnType<Api['imagesImport']>>

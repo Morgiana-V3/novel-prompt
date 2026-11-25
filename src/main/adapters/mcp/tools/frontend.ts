@@ -1,3 +1,4 @@
+import { MAX_REFERENCES, REFERENCE_MODES } from '../../../../shared/generation/references'
 import type { FrontendAction, FrontendRequest } from '../../../../shared/contracts/desktop'
 import type { InpaintDraft } from '../../../../shared/prompts/types'
 import { WORKSPACE_CONFIG_SCHEMA } from '../../../../shared/workspace/config'
@@ -526,7 +527,7 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
         region_ids: { type: 'array', items: { type: 'string' }, maxItems: 16, uniqueItems: true },
         attachments: {
           type: 'array',
-          maxItems: 4,
+          maxItems: MAX_REFERENCES,
           items: {
             type: 'object',
             additionalProperties: false,
@@ -536,7 +537,7 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
               label: { type: 'string', minLength: 1, maxLength: 120 },
               purpose: {
                 type: 'string',
-                enum: ['discussion', 'character', 'style', 'character&style'],
+                enum: ['discussion', ...REFERENCE_MODES],
               },
             },
           },

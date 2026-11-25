@@ -23,6 +23,8 @@ import {
   applyGenerationParams,
   referenceDraft,
   setCreationReferences,
+  setCreationVibes,
+  setCreationImg2Img,
   DEFAULT_GEN,
   generationParams,
   imageState,
@@ -44,6 +46,8 @@ interface TabContent {
   params: WorkParams
   history: Snapshot[]
   preciseReferences?: typeof referenceDraft.images
+  vibeReferences?: typeof referenceDraft.vibes
+  img2img?: typeof referenceDraft.img2img
   gen: GenOnly
 }
 
@@ -160,6 +164,8 @@ function capture(): { content: TabContent; session: TabSession } {
       history: promptState.history,
       gen: generationParams,
       preciseReferences: referenceDraft.images,
+      vibeReferences: referenceDraft.vibes,
+      img2img: referenceDraft.img2img,
     }),
     session: {
       lastPreview: promptState.lastPreview,
@@ -182,6 +188,8 @@ function restore(content: TabContent, session: TabSession): void {
   })
   applyGenerationParams({ ...DEFAULT_GEN, ...content.gen })
   setCreationReferences(content.preciseReferences)
+  setCreationVibes(content.vibeReferences)
+  setCreationImg2Img(content.img2img ?? null)
   setPreviewImage(session.currentImage)
   for (const key of registry.keys()) {
     if (!session.view.has(key)) {
@@ -194,6 +202,8 @@ function restore(content: TabContent, session: TabSession): void {
 const hasContent = (content: TabContent) =>
   !!(
     content.preciseReferences?.length ||
+    content.vibeReferences?.length ||
+    content.img2img ||
     content.prompt.trim() ||
     content.negative.trim() ||
     content.characters.some((character) => character.prompt.trim() || character.negative.trim())
@@ -413,6 +423,8 @@ export function tabSummaries(): { id: string; title: string; active: boolean; em
       tab.content ?? {
         ...blankContent(),
         preciseReferences: referenceDraft.images,
+        vibeReferences: referenceDraft.vibes,
+        img2img: referenceDraft.img2img,
         prompt: promptState.prompt,
         negative: promptState.negative,
         characters: promptState.characters,

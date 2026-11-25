@@ -107,12 +107,9 @@ export function registerWorkspaceIpc(context: IpcContext): void {
     return readPage(id)
   })
 
-  handle(
-    'pages:create',
-    (_e, image: string | null, params: NaiGenParams, model: NaiVersion, draft: InpaintDraft) => {
-      return createPage(image, params, model, draft)
-    },
-  )
+  handle('pages:create', (_e, image, params, model, draft, img2imgConfig) => {
+    return createPage(image, params, model, draft, undefined, img2imgConfig)
+  })
 
   handle(
     'pages:import',
@@ -133,12 +130,22 @@ export function registerWorkspaceIpc(context: IpcContext): void {
     },
   )
 
-  handle('pages:import-dropped', async (_event, bytes, fileName, params, model, draft) => {
-    const workspace = await importDroppedPage(bytes, fileName, params, model, draft)
-    send('gallery:changed', null)
-    notifyAppChanged()
-    return workspace
-  })
+  handle(
+    'pages:import-dropped',
+    async (_event, bytes, fileName, params, model, draft, img2imgConfig) => {
+      const workspace = await importDroppedPage(
+        bytes,
+        fileName,
+        params,
+        model,
+        draft,
+        img2imgConfig,
+      )
+      send('gallery:changed', null)
+      notifyAppChanged()
+      return workspace
+    },
+  )
 
   handle('pages:edit', (_e, id: string, revision: number, action: PageAction) => {
     return editPage(id, revision, action)

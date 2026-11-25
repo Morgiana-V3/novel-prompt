@@ -19,4 +19,6 @@
 
 历史 `node scripts/check.mjs pricing operations:policy` 曾使用固定官方样例和模拟接口。该入口现已明确拒绝执行，源码仅供追溯，不能作为当前验收依据。
 
-V4.5 Full 精确参考每张输出、每张启用的参考图另计 5 Anlas。基础生成的 Opus 减免单独计算，参考费加入单张授权和整批报价。仅免费模式不得执行带精确参考的请求。
+V4.5 Full 及 V5 Full 精确参考每张输出、每张启用的参考图另计 5 Anlas。基础生成的 Opus 减免单独计算，参考费加入单张授权和整批报价。仅免费模式不得执行带精确参考的请求。
+
+Vibe Transfer 在 V4.5 Full 的首次编码按图片和信息提取量计 2 Anlas。已缓存的编码和强度调整不产生编码费。使用超过 4 张 Vibe 时，每多一张参考，每张输出另计 2 Anlas，基础生成费用单独计算。编码和生图分别确认，结果未知的编码保留本地记录并阻止直接重试。依据 [NovelAI Vibe Transfer 文档](https://docs.novelai.net/en/image/vibetransfer/) 和 [图像 API](https://image.novelai.net/docs/index.html)。

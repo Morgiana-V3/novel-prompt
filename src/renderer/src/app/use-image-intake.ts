@@ -1,11 +1,13 @@
 import { onBeforeUnmount, ref } from 'vue'
 import { IMAGE_IMPORT_LIMIT, IMAGE_IMPORT_TYPES } from '@shared/images/import'
+import { REFERENCE_MODES, type PreciseReference } from '@shared/generation/references'
 import { readPngPrompt } from '../features/prompts/public/import-export'
 import { cleanErr } from '../shared/lib/format'
 import { toast } from '../shared/lib/notifications'
 
 type ImageRecord = Awaited<ReturnType<typeof readPngPrompt>>
-type ImageUse = 'decode' | 'reverse' | 'workspace' | 'gallery'
+export type ImageUse =
+  'decode' | 'reverse' | 'workspace' | 'img2img' | 'reference' | 'vibe' | 'gallery'
 
 interface IncomingImage {
   file: File
@@ -22,6 +24,9 @@ interface ImageIntakeHandlers {
   decode: (record: ImageRecord) => Promise<void>
   reverse: (file: File) => void
   workspace: (file: File) => Promise<void>
+  img2img: (file: File) => Promise<void>
+  vibe: (file: File) => Promise<void>
+  reference: (file: File, mode: PreciseReference['mode']) => Promise<void>
   gallery: (file: File, collection: string) => Promise<void>
 }
 
@@ -129,7 +134,7 @@ export function useImageIntake(handlers: ImageIntakeHandlers) {
     }
   }
 
-  async function choose(action: ImageUse, collection?: string) {
+  async function choose(action: ImageUse, choice?: string) {
     const incoming = image.value
     if (!incoming || busy.value || handlers.blocked()) {
       return
@@ -150,11 +155,25 @@ export function useImageIntake(handlers: ImageIntakeHandlers) {
         case 'workspace':
           await handlers.workspace(incoming.file)
           break
+        case 'img2img':
+          await handlers.img2img(incoming.file)
+          break
+        case 'vibe':
+          await handlers.vibe(incoming.file)
+          break
+        case 'reference': {
+          const mode = REFERENCE_MODES.find((mode) => mode === choice)
+          if (!mode) {
+            throw new Error('请选择参考图用途')
+          }
+          await handlers.reference(incoming.file, mode)
+          break
+        }
         case 'gallery':
-          if (!collection) {
+          if (!choice) {
             throw new Error('请选择要保存的图集')
           }
-          await handlers.gallery(incoming.file, collection)
+          await handlers.gallery(incoming.file, choice)
           break
       }
       reset()

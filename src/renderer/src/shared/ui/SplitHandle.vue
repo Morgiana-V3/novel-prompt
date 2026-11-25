@@ -4,7 +4,7 @@
  * 由各布局用 var(变量, 默认值) 决定怎么使用；未调整过时完全沿用原有默认布局。
  * 宽度保存在 localStorage，双击或按 Enter 恢复默认，方向键可微调。
  */
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 const KEY_STEP_PX = 16
 const KEY_LARGE_STEP_PX = 64
@@ -46,14 +46,13 @@ function panel(): HTMLElement | null {
   return sibling instanceof HTMLElement ? sibling : null
 }
 
-function upperBound() {
-  // 父元素未渲染（display: contents 或隐藏）时宽度为 0，此时不收紧，等可见后再按实际宽度计算
-  const parentWidth = handle.value?.parentElement?.clientWidth || Infinity
-  return Math.max(props.min, Math.min(props.max, parentWidth - props.reserve))
-}
+const availableWidth = ref(Infinity)
+const upperBound = computed(() =>
+  Math.max(props.min, Math.min(props.max, Math.floor(availableWidth.value - props.reserve))),
+)
 
 function clamp(value: number) {
-  return Math.round(Math.min(upperBound(), Math.max(props.min, value)))
+  return Math.round(Math.min(upperBound.value, Math.max(props.min, value)))
 }
 
 function target(): HTMLElement | null {
@@ -173,7 +172,7 @@ function onKeydown(event: KeyboardEvent) {
   } else if (event.key === 'Home') {
     next = props.min
   } else if (event.key === 'End') {
-    next = upperBound()
+    next = upperBound.value
   } else if (event.key === 'Enter') {
     next = null
   }
@@ -192,7 +191,13 @@ onMounted(() => {
   }
   const parent = handle.value?.parentElement
   if (parent) {
-    observer = new ResizeObserver(() => {
+    observer = new ResizeObserver(([entry]) => {
+      if (!entry.contentRect.width) {
+        return
+      }
+      // 两个面板夹着零宽分隔条，网格的两个列间距都不能分给面板。
+      const gap = parseFloat(getComputedStyle(parent).columnGap) || 0
+      availableWidth.value = entry.contentRect.width - 2 * gap
       if (preferred !== null && !dragging.value) {
         settle(preferred)
       }
@@ -223,7 +228,7 @@ onBeforeUnmount(() => {
     aria-orientation="vertical"
     :aria-label="label"
     :aria-valuemin="min"
-    :aria-valuemax="max"
+    :aria-valuemax="upperBound"
     :aria-valuenow="size ?? undefined"
     :title="`拖动调整${label}，双击恢复默认`"
     @pointerdown="onPointerDown"

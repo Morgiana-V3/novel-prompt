@@ -117,11 +117,11 @@ const emit = defineEmits<{
   }
 }
 
-@media (width <= 800px) {
+@container (width < 1040px) {
   .pw-history {
     position: absolute;
     left: 0;
-    top: 46px;
+    top: 0;
     bottom: 0;
     z-index: 4;
     box-shadow: var(--shadow);

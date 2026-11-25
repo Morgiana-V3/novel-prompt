@@ -360,7 +360,6 @@ onBeforeUnmount(() => {
 
 .skill-trigger:hover {
   border-color: var(--line2);
-  box-shadow: var(--shadow-sm);
 }
 
 .skill-trigger:active {

@@ -2,23 +2,22 @@
 import { computed, ref } from 'vue'
 import type { NaiImage } from '@shared/images/types'
 import { ATTACHMENT_LABELS, type ChatAttachment } from '@shared/workspace/attachments'
-import { REFERENCE_MODES } from '@shared/generation/references'
+import { referenceModes } from '@shared/generation/references'
 import Icon from '../../../shared/ui/Icon.vue'
 import ThemeSelect from '../../../shared/ui/ThemeSelect.vue'
 import ImageViewer from '../../../shared/ui/ImageViewer.vue'
 const props = defineProps<{
   images: ChatAttachment[]
   editable?: boolean
-  canReference?: boolean
+  model?: 'v4.5' | 'v5'
   disabled?: boolean
 }>()
 const emit = defineEmits<{ change: [images: ChatAttachment[]] }>()
 const preview = ref<NaiImage>()
 const options = computed(() =>
-  (['discussion', ...REFERENCE_MODES] as const).map((value) => ({
+  (['discussion', ...referenceModes(props.model ?? 'v4.5')] as const).map((value) => ({
     value,
     label: ATTACHMENT_LABELS[value],
-    disabled: value !== 'discussion' && !props.canReference,
   })),
 )
 const url = (image: ChatAttachment) => 'np-img://img/' + encodeURIComponent(image.imageName)

@@ -1,7 +1,19 @@
 <script setup lang="ts">
+import {
+  checkReferences,
+  REFERENCE_FEE,
+  V5_INPAINT_REFERENCE_NOTICE,
+} from '@shared/generation/references'
 import { estimateGeneration, estimateLabel, anlasOutcomeText } from '@shared/generation/pricing'
+import Img2ImgReference from './components/Img2ImgReference.vue'
 import PreciseReferences from './components/PreciseReferences.vue'
-import { referenceDraft, setCreationReferences } from './state'
+import {
+  referenceDraft,
+  setCreationImg2Img,
+  setCreationReferences,
+  setCreationVibes,
+} from './state'
+import VibeReferences from './components/VibeReferences.vue'
 import GenerationResult from './GenerationResult.vue'
 import CollectionPicker from '../gallery/CollectionPicker.vue'
 import { generationCollection } from '../gallery/collections-state'
@@ -15,7 +27,13 @@ import { activeTask } from '../../shared/state/tasks'
 import { settingsState } from '../settings/state'
 import { shellState } from '../../shared/state/shell'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { NaiFreeCheck, NaiGenParams, NaiGenResult } from '@shared/generation/types'
+import type {
+  NaiFreeCheck,
+  NaiGenParams,
+  NaiGenRequest,
+  NaiGenResult,
+  NaiImg2ImgRequest,
+} from '@shared/generation/types'
 import type { NaiImage } from '@shared/images/types'
 import { toast } from '../../shared/lib/notifications'
 import { importImagePrompt } from '../prompts/public/import-export'
@@ -27,7 +45,6 @@ import { resizeWithin } from '../../shared/lib/autosize'
 import { readPngPrompt } from '../prompts/public/import-export'
 import { type ImportedPrompt } from '@shared/prompts/import'
 import { rememberFavorite, revealFavorite } from '../favorites/public'
-import type { NaiGenRequest } from '@shared/generation/types'
 import { saveSettings } from '../settings/state'
 import Icon from '../../shared/ui/Icon.vue'
 import RunButton from '../../shared/ui/RunButton.vue'
@@ -45,6 +62,7 @@ import { previewPreferences } from '../settings/preview-preferences'
 import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 import { detachLeaving } from '../../shared/lib/list-motion'
 import { vFadeImg } from '../../shared/lib/fade-image'
+import { vSegIndicator } from '../../shared/lib/seg-indicator'
 const { navigate, isActive } = usePagePresentation()
 const {
   open: parametersOpen,
@@ -53,15 +71,47 @@ const {
 } = useSettingsPopover()
 const sentRecipes = tabRef<Record<string, string>>('generate.sentRecipes', () => ({}))
 
+type ReferenceTab = 'img2img' | 'precise' | 'vibe'
 const referencePanel = ref(false)
-const referenceParams = computed(() =>
-  referenceDraft.images.length
-    ? { preciseReferences: referenceDraft.images.map((image) => ({ ...image })) }
-    : {},
+const referenceTab = ref<ReferenceTab>('img2img')
+const referenceCount = computed(
+  () =>
+    (referenceDraft.img2img ? 1 : 0) + referenceDraft.images.length + referenceDraft.vibes.length,
 )
+const referenceParams = computed(() => ({
+  ...(referenceDraft.images.length
+    ? { preciseReferences: referenceDraft.images.map((image) => ({ ...image })) }
+    : {}),
+  ...(referenceDraft.vibes.length
+    ? { vibeReferences: referenceDraft.vibes.map((vibe) => ({ ...vibe })) }
+    : {}),
+}))
+function defaultReferenceTab(): ReferenceTab {
+  if (referenceDraft.img2img) {
+    return 'img2img'
+  }
+  if (referenceDraft.vibes.length) {
+    return 'vibe'
+  }
+  return 'precise'
+}
 function togglePanel(references: boolean) {
-  parametersOpen.value = !parametersOpen.value || referencePanel.value !== references
+  const opening = !parametersOpen.value || referencePanel.value !== references
+  parametersOpen.value = opening
   referencePanel.value = references
+  if (opening && references) {
+    referenceTab.value = defaultReferenceTab()
+  }
+}
+function openReferenceTab(tab: ReferenceTab) {
+  referenceTab.value = tab
+  referencePanel.value = true
+  parametersOpen.value = true
+}
+function matchImg2ImgSize(size: { width: number; height: number }) {
+  params.width = size.width
+  params.height = size.height
+  toast(`已将画幅匹配为 ${size.width}×${size.height}`)
 }
 async function switchReferenceModel() {
   try {
@@ -111,6 +161,7 @@ const feeStatus = computed(() => {
     {
       params: { ...gen, ...referenceParams.value, width: params.width, height: params.height },
       version: version.value,
+      ...(referenceDraft.img2img ? { img2img: { strength: referenceDraft.img2img.strength } } : {}),
     },
     subscriptionState.error ? undefined : sub.value,
   )
@@ -317,13 +368,20 @@ async function saveRecipe() {
 }
 const posEditing = ref(false)
 const inpaintSource = ref<NaiImage | null>(null)
+function openInpaint(image: NaiImage) {
+  if (version.value === 'v5' && referenceDraft.images.length) {
+    toast(V5_INPAINT_REFERENCE_NOTICE)
+    return
+  }
+  inpaintSource.value = image
+}
 const inpaintBusy = ref(false)
 function prepareUpdate(): void {
   if (running.value || inpaintSource.value || posEditing.value) {
     throw new Error('请先完成生图或关闭局部重绘、角色位置编辑器，再重启更新')
   }
 }
-defineExpose({ prepareUpdate })
+defineExpose({ prepareUpdate, openReferenceTab })
 
 async function onInpaintGenerated(response: NaiGenResult) {
   last.value = response
@@ -355,11 +413,12 @@ watch(
     version.value,
     sub.value,
     referenceDraft.images.length,
+    referenceDraft.vibes.length,
   ],
   () => {
     clearTimeout(checkTimer)
     const epoch = ++checkEpoch
-    const config = `${params.width}x${params.height}:${gen.steps}:${version.value}:${referenceDraft.images.length}`
+    const config = `${params.width}x${params.height}:${gen.steps}:${version.value}:${referenceDraft.images.length}:${referenceDraft.vibes.length}`
     if (config !== checkedConfig) {
       checkedConfig = config
       check.value = null
@@ -447,8 +506,14 @@ async function run() {
     error.value = '请先输入主提示词或角色提示词'
     return
   }
-  if (referenceDraft.images.length && version.value !== 'v4.5') {
-    error.value = '当前配置包含 V4.5 精确参考图。请在参考图面板切换模型或移除这些精确参考'
+  if (referenceDraft.vibes.length && (version.value !== 'v4.5' || referenceDraft.images.length)) {
+    error.value = 'Vibe Transfer 需要 V4.5 Full，且不能与精确参考同时生成'
+    return
+  }
+  try {
+    checkReferences(referenceDraft.images, version.value)
+  } catch (cause) {
+    error.value = cleanErr(cause)
     return
   }
   navigate('generate')
@@ -458,10 +523,10 @@ async function run() {
   error.value = ''
   steps.value = []
   const key = workKey()
-  const recipeKey = JSON.stringify(currentRecipe.value)
+  const recipeKey = JSON.stringify([currentRecipe.value, referenceDraft.img2img])
   try {
     const seed = gen.seed === null || (gen.seed as unknown) === '' ? null : Number(gen.seed)
-    const generationResult = await window.api.naiGenerate({
+    const requestPayload: NaiGenRequest | NaiImg2ImgRequest = {
       collectionId: generationCollection.value,
       base: promptState.prompt,
       negative: promptState.negative,
@@ -470,7 +535,9 @@ async function run() {
         .map((character) => ({ ...character })),
       params: { ...gen, ...params, ...referenceParams.value, seed },
       version: version.value,
-    })
+      ...(referenceDraft.img2img ? { img2img: { ...referenceDraft.img2img } } : {}),
+    }
+    const generationResult = await window.api.naiGenerate(requestPayload)
     last.value = generationResult
     for (const img of generationResult.images) {
       imageState.imageKeys[img.name] = key
@@ -512,7 +579,9 @@ const currentIsStale = computed(() => {
   if (!image || !sentRecipes.value[image.name]) {
     return false
   }
-  return sentRecipes.value[image.name] !== JSON.stringify(currentRecipe.value)
+  return (
+    sentRecipes.value[image.name] !== JSON.stringify([currentRecipe.value, referenceDraft.img2img])
+  )
 })
 
 async function cancel() {
@@ -612,13 +681,17 @@ function openImageWorkspace(tool?: WorkspaceToolKind, image = current.value) {
   if (!image) {
     return
   }
-  imageState.workspaceTool = tool ?? null
-  imageState.workspaceImage = { ...image }
+  if (tool === 'enhance') {
+    openImageToImage(image)
+    return
+  }
+  imageState.workspaceImage = { source: { ...image }, tool }
   shellState.tab = 'workspace'
 }
 
-function openImageToImage(image: NaiImage) {
-  openImageWorkspace('enhance', image)
+function openImageToImage(image: NaiImage | File) {
+  imageState.workspaceImage = { source: image, tool: 'enhance', img2img: true }
+  shellState.tab = 'workspace'
 }
 </script>
 
@@ -641,7 +714,8 @@ function openImageToImage(image: NaiImage) {
           <button
             ref="parametersTrigger"
             class="icon-btn creation-parameters-toggle"
-            :aria-expanded="parametersOpen"
+            :class="{ active: parametersOpen && !referencePanel }"
+            :aria-expanded="parametersOpen && !referencePanel"
             aria-haspopup="dialog"
             aria-controls="creation-generation-settings"
             title="生成设置"
@@ -654,11 +728,26 @@ function openImageToImage(image: NaiImage) {
             />
           </button>
           <button
-            class="btn small"
+            class="btn small reference-trigger"
+            :class="{
+              active: parametersOpen && referencePanel,
+              'has-refs': referenceCount > 0,
+            }"
             :aria-expanded="parametersOpen && referencePanel"
+            aria-haspopup="dialog"
+            aria-controls="creation-generation-settings"
             @click="togglePanel(true)"
           >
-            参考图{{ referenceDraft.images.length ? ' · ' + referenceDraft.images.length : '' }}
+            <Icon
+              name="layers"
+              :size="13"
+            />
+            <span>参考图</span>
+            <span
+              v-if="referenceCount"
+              class="ref-count"
+              >{{ referenceCount }}</span
+            >
           </button>
         </div>
         <Transition name="popover-up">
@@ -667,23 +756,110 @@ function openImageToImage(image: NaiImage) {
             id="creation-generation-settings"
             ref="leftPane"
             class="pane-body scroll generation-settings-popover"
+            :class="{ 'reference-popover': referencePanel }"
             role="dialog"
-            aria-label="生成设置"
+            :aria-label="referencePanel ? '图片参考' : '生成设置'"
             :data-generation-settings-open="parametersOpen ? '' : undefined"
           >
-            <PreciseReferences
-              v-if="referencePanel"
-              :key="creationTabs.activeId"
-              :images="referenceDraft.images"
-              :model="version"
-              :current="current"
-              :disabled="running"
-              can-switch
-              can-choose-base
-              @use-base="openImageToImage"
-              @change="setCreationReferences"
-              @switch-model="switchReferenceModel"
-            />
+            <template v-if="referencePanel">
+              <div
+                v-seg-indicator
+                class="seg reference-tabs"
+                role="group"
+                aria-label="图片参考类型"
+              >
+                <button
+                  :class="{ on: referenceTab === 'img2img' }"
+                  title="以一张底图为起点重绘。可在「精确参考」中另加画风参考图。"
+                  :aria-pressed="referenceTab === 'img2img'"
+                  @click="referenceTab = 'img2img'"
+                >
+                  <Icon
+                    name="image"
+                    :size="13"
+                  />
+                  <span>图生图</span>
+                  <span
+                    v-if="referenceDraft.img2img"
+                    class="tab-badge"
+                    >1</span
+                  >
+                </button>
+                <button
+                  :class="{ on: referenceTab === 'precise' }"
+                  :title="`指定要参考的角色或画风。每张参考图、每张输出加收 ${REFERENCE_FEE} Anlas。`"
+                  :aria-pressed="referenceTab === 'precise'"
+                  @click="referenceTab = 'precise'"
+                >
+                  <Icon
+                    name="layers"
+                    :size="13"
+                  />
+                  <span>精确参考</span>
+                  <span
+                    v-if="referenceDraft.images.length"
+                    class="tab-badge"
+                    >{{ referenceDraft.images.length }}</span
+                  >
+                </button>
+                <button
+                  :class="{ on: referenceTab === 'vibe' }"
+                  title="借用参考图的视觉氛围。相同图片和信息提取量可复用已编码的 Vibe。"
+                  :aria-pressed="referenceTab === 'vibe'"
+                  @click="referenceTab = 'vibe'"
+                >
+                  <Icon
+                    name="palette"
+                    :size="13"
+                  />
+                  <span>Vibe</span>
+                  <span
+                    v-if="referenceDraft.vibes.length"
+                    class="tab-badge"
+                    >{{ referenceDraft.vibes.length }}</span
+                  >
+                </button>
+              </div>
+              <div
+                :key="referenceTab"
+                class="reference-panel-body"
+              >
+                <Img2ImgReference
+                  v-if="referenceTab === 'img2img'"
+                  :key="creationTabs.activeId"
+                  :entry="referenceDraft.img2img"
+                  :width="params.width"
+                  :height="params.height"
+                  :current="current"
+                  :disabled="running"
+                  @change="setCreationImg2Img"
+                  @match-size="matchImg2ImgSize"
+                />
+                <VibeReferences
+                  v-else-if="referenceTab === 'vibe'"
+                  :key="creationTabs.activeId"
+                  :entries="referenceDraft.vibes"
+                  :version="version"
+                  :current="current"
+                  :disabled="running"
+                  :conflict="!!referenceDraft.images.length"
+                  allow-switch
+                  @change="setCreationVibes"
+                  @switch-model="switchReferenceModel"
+                />
+                <PreciseReferences
+                  v-else
+                  :key="creationTabs.activeId"
+                  :images="referenceDraft.images"
+                  :conflict="!!referenceDraft.vibes.length"
+                  :model="version"
+                  :current="current"
+                  :disabled="running"
+                  :count="gen.count"
+                  @change="setCreationReferences"
+                />
+              </div>
+            </template>
             <template v-else>
               <div class="field-head gen-params-head">
                 <label class="field-label">生成参数</label>
@@ -766,7 +942,15 @@ function openImageToImage(image: NaiImage) {
           <div class="row run-bar">
             <div class="run-actions">
               <RunButton
-                :label="gen.count > 1 ? `生成 ${gen.count} 张` : '生成'"
+                :label="
+                  referenceDraft.img2img
+                    ? gen.count > 1
+                      ? `图生图 ${gen.count} 张`
+                      : '图生图'
+                    : gen.count > 1
+                      ? `生成 ${gen.count} 张`
+                      : '生成'
+                "
                 :running="running"
                 :stopping="cancelling"
                 :disabled="inpaintBusy || imageState.generating"
@@ -853,7 +1037,7 @@ function openImageToImage(image: NaiImage) {
             @lightbox="lightbox = true"
             @retain="retain"
             @remove="remove"
-            @inpaint="inpaintSource = $event"
+            @inpaint="openInpaint"
             @positions="editImagePositions"
             @workspace="openImageWorkspace"
           />
@@ -1038,7 +1222,7 @@ function openImageToImage(image: NaiImage) {
  * 横图、竖图都在框内完整居中显示，切图时下方缩略图不会被顶上顶下。点击仍可打开大图查看器。
  */
 .pane.right :deep(.viewer-stage) {
-  height: var(--preview-stage-height, clamp(320px, 58vh, 760px));
+  height: clamp(240px, var(--preview-stage-height, clamp(320px, 58vh, 760px)), 90vh);
   min-height: 0;
   container-type: size;
 }
@@ -1115,7 +1299,7 @@ function openImageToImage(image: NaiImage) {
 .pane.left.creation-generation {
   position: relative;
   display: grid;
-  grid-template-columns: auto minmax(46px, 1fr) auto max-content auto;
+  grid-template-columns: auto minmax(46px, 1fr) auto minmax(min-content, max-content) auto;
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
@@ -1136,7 +1320,7 @@ function openImageToImage(image: NaiImage) {
 .generation-tool-buttons {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
 }
 
 .creation-parameters-toggle {
@@ -1144,7 +1328,89 @@ function openImageToImage(image: NaiImage) {
   height: 30px;
 }
 
-.creation-generation .btn.accent {
+.creation-parameters-toggle.active {
+  background: var(--pink-soft);
+  color: var(--pink-deep);
+}
+
+.reference-trigger {
+  height: 30px;
+  padding: 0 10px;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text2);
+}
+
+.reference-trigger.has-refs {
+  border-color: var(--pink-line);
+  background: var(--pink-soft);
+  color: var(--pink-deep);
+}
+
+.reference-trigger.has-refs:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--pink-soft) 72%, var(--pink-line));
+}
+
+.reference-trigger.active {
+  border-color: var(--pink);
+  background: var(--pink-soft);
+  color: var(--pink-deep);
+}
+
+.ref-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--pink);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  animation: pop var(--dur-base) var(--ease-out);
+}
+
+.reference-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.reference-tabs button {
+  min-height: 28px;
+  padding: 4px 6px;
+  line-height: 18px;
+}
+
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--pink-soft);
+  color: var(--pink-deep);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.reference-tabs button.on .tab-badge {
+  background: var(--pink);
+  color: #fff;
+}
+
+.reference-panel-body {
+  animation: view-in var(--dur-base) var(--ease-out);
+}
+
+.creation-generation .pane-foot .btn.accent {
   min-width: 86px;
   min-height: 34px;
   padding: 3px 10px;
@@ -1163,7 +1429,7 @@ function openImageToImage(image: NaiImage) {
   border-radius: 5px;
   background: var(--panel);
   color: var(--text2);
-  white-space: nowrap;
+  text-align: end;
   font-size: 10px;
   font-weight: 400;
   transition:
@@ -1176,10 +1442,12 @@ function openImageToImage(image: NaiImage) {
 }
 
 .creation-generation .generation-settings-popover {
+  --popover-width: 520px;
+
   position: absolute;
   bottom: calc(100% + 8px);
-  left: 8px;
-  right: 8px;
+  left: 10px;
+  width: min(var(--popover-width), calc(100cqw - 20px));
   z-index: 1;
   max-height: min(65vh, calc(100vh - 180px));
   overflow: auto;
@@ -1190,6 +1458,18 @@ function openImageToImage(image: NaiImage) {
   background: var(--bg);
   box-shadow: 0 8px 32px #0000001f;
   transform-origin: bottom left;
+}
+
+.creation-generation .reference-popover {
+  --popover-width: 560px;
+}
+
+.generation-settings-popover :deep(.gen-params) {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 175px), 1fr));
+}
+
+.generation-settings-popover :deep(.gen-advanced > .gen-params) {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr));
 }
 
 .generation-settings-popover .gen-params-head {

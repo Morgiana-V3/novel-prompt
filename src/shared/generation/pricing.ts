@@ -1,9 +1,13 @@
+import { vibeGenerationFee } from './vibes'
 import { REFERENCE_FEE } from './references'
 import type { NaiGenParams, NaiSubscription, NaiVersion } from './types'
 
 /** Official web client pricing, verified 2026-11-04; see docs/novelai-pricing.md. */
 export interface GenerationPriceInput {
-  params: Pick<NaiGenParams, 'width' | 'height' | 'steps' | 'count' | 'preciseReferences'>
+  params: Pick<
+    NaiGenParams,
+    'width' | 'height' | 'steps' | 'count' | 'preciseReferences' | 'vibeReferences'
+  >
   version: NaiVersion
   img2img?: { strength: number }
   inpaint?: { strength: number }
@@ -67,8 +71,13 @@ export function estimateGeneration(
   if (perImage === 0) {
     maximum = request.version === 'v5' ? paidPerImage * (count - 1) : 0
   }
-  const referenceFee = (request.params.preciseReferences?.length ?? 0) * REFERENCE_FEE
-  if (referenceFee && request.version !== 'v4.5') {
+  const references = request.params.preciseReferences?.length ?? 0
+  const vibes = request.params.vibeReferences?.length ?? 0
+  const referenceFee = references * REFERENCE_FEE + vibeGenerationFee(vibes)
+  if (
+    (vibes && (request.version !== 'v4.5' || references)) ||
+    (references && request.version === 'v5' && request.inpaint)
+  ) {
     return undefined
   }
   return {

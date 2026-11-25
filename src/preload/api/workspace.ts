@@ -1,6 +1,7 @@
 import type { NaiGenParams, NaiVersion } from '../../shared/generation/types'
 import type { InpaintDraft } from '../../shared/prompts/types'
 import type {
+  Img2ImgConfigSource,
   PageAction,
   PageAgentIdentity,
   PageExecution,
@@ -42,8 +43,9 @@ export const workspaceApi = {
     params: NaiGenParams,
     model: NaiVersion,
     draft: InpaintDraft,
+    img2imgConfig?: Img2ImgConfigSource,
   ): Promise<PageWorkspace> =>
-    invoke('pages:import-dropped', bytes, fileName, params, model, draft),
+    invoke('pages:import-dropped', bytes, fileName, params, model, draft, img2imgConfig),
   pagesImport: (
     params: NaiGenParams,
     model: NaiVersion,
@@ -60,7 +62,8 @@ export const workspaceApi = {
     params: NaiGenParams,
     model: NaiVersion,
     draft: InpaintDraft,
-  ): Promise<PageWorkspace> => invoke('pages:create', image, params, model, draft),
+    img2imgConfig?: Img2ImgConfigSource,
+  ): Promise<PageWorkspace> => invoke('pages:create', image, params, model, draft, img2imgConfig),
   pagesEdit: (id: string, revision: number, action: PageAction): Promise<PageWorkspace> =>
     invoke('pages:edit', id, revision, action),
   pagesChat: (

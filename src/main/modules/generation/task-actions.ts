@@ -1,12 +1,19 @@
 import type { IpcActions } from '../../../shared/contracts/api'
-import type { NaiGenRequest, NaiInpaintRequest } from '../../../shared/generation/types'
+import type {
+  NaiGenRequest,
+  NaiImg2ImgRequest,
+  NaiInpaintRequest,
+} from '../../../shared/generation/types'
 import type { TaskContext } from '../tasks/context'
 import { generateImages } from './service'
 
 export function createGenerationActions(context: TaskContext) {
   const { tasks, send } = context
 
-  const generate = (kind: 'generate' | 'inpaint', req: NaiGenRequest | NaiInpaintRequest) =>
+  const generate = (
+    kind: 'generate' | 'inpaint',
+    req: NaiGenRequest | NaiImg2ImgRequest | NaiInpaintRequest,
+  ) =>
     tasks.run(
       kind,
       async ({ id, signal, progress }) => {
@@ -32,7 +39,7 @@ export function createGenerationActions(context: TaskContext) {
       { resource: 'generation', cancelMode: 'after-current' },
     )
   return {
-    'nai:generate': (req: NaiGenRequest) => generate('generate', req),
+    'nai:generate': (req: NaiGenRequest | NaiImg2ImgRequest) => generate('generate', req),
     'nai:inpaint': (req: NaiInpaintRequest) => {
       if (!req?.inpaint) {
         throw new Error('缺少原图或遮罩')

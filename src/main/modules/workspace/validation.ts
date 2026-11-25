@@ -1,3 +1,4 @@
+import { V5_INPAINT_REFERENCE_NOTICE } from '../../../shared/generation/references'
 import { regionIds, selectRegions } from '../../../shared/workspace/regions'
 import { isUcPreset, isNaiSampler, isNaiNoiseSchedule } from '../../../shared/generation/types'
 import { readFileSync } from 'node:fs'
@@ -143,6 +144,9 @@ export function validateExecution(
     return { kind: 'generate' as const, regionId: null }
   }
   const version = pageCurrent(workspace)
+  if (workspace.model === 'v5' && version.editor.params.preciseReferences?.length) {
+    throw new Error(V5_INPAINT_REFERENCE_NOTICE)
+  }
   const ids = regionIds(execution)
   const regions = selectRegions(version, ids)
   if (!version.image || !imagePath(version.image.name) || !regions.length) {

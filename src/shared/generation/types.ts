@@ -1,3 +1,4 @@
+import type { VibeReference } from './vibes'
 import type { PreciseReference } from './references'
 import type { NaiImage } from '../images/types'
 import type { AiCharacter } from '../prompts/types'
@@ -45,6 +46,7 @@ export function isNaiNoiseSchedule(value: unknown): value is NaiNoiseSchedule {
 
 export interface NaiGenParams {
   preciseReferences?: PreciseReference[]
+  vibeReferences?: VibeReference[]
   width: number
   height: number
   steps: number
@@ -83,9 +85,41 @@ export interface NaiInpaintRequest extends NaiGenRequest {
   }
 }
 
-/** 图生图（增强 / 变体）：起点图片由主进程读取，不经渲染进程传输。 */
+/** 图生图（底图重绘）在渲染层的配置状态 */
+export interface Img2ImgBase {
+  imageName: string
+  /** 0.01～0.99，越高改动越大 */
+  strength: number
+  /** 额外噪声 0～0.99 */
+  noise: number
+}
+
+const REF_IMAGE_PATTERN = /^ref-[a-f0-9]{64}\.png$/
+
+export function validImg2Img(value: unknown): value is Img2ImgBase {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+  const candidate = value as Record<string, unknown>
+  return (
+    typeof candidate.imageName === 'string' &&
+    REF_IMAGE_PATTERN.test(candidate.imageName) &&
+    typeof candidate.strength === 'number' &&
+    Number.isFinite(candidate.strength) &&
+    candidate.strength >= 0.01 &&
+    candidate.strength <= 0.99 &&
+    typeof candidate.noise === 'number' &&
+    Number.isFinite(candidate.noise) &&
+    candidate.noise >= 0 &&
+    candidate.noise <= 0.99
+  )
+}
+
+/** 图生图（增强 / 变体 / 底图重绘）：起点图片由主进程读取，不经渲染进程传输。 */
 export interface NaiImg2ImgRequest extends NaiGenRequest {
   img2img: {
+    /** 本机参考图名；工作台直接传 sourceBytes 时可省略 */
+    imageName?: string
     /** 0.01～0.99，越高改动越大 */
     strength: number
     /** 额外噪声 0～0.99 */

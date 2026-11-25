@@ -180,10 +180,10 @@ function stopGeneration() {
 .pw-execution {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   flex-shrink: 0;
   gap: 6px;
-  height: 52px;
   min-height: 52px;
   padding: 8px 0;
   border-top: 1px solid var(--line);

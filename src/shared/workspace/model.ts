@@ -107,6 +107,8 @@ export function pageImageToolSize(
   return { width: width * 2, height: height * 2 }
 }
 
+export type Img2ImgConfigSource = 'original' | 'creation'
+
 export interface PageExecution {
   kind: 'generate' | 'inpaint'
   regionId: string | null
@@ -368,8 +370,19 @@ export function pageComparison(workspace: PageWorkspace, id: string, compareId?:
 function referenceSummary(params: NaiGenParams): string {
   return (params.preciseReferences ?? [])
     .map((ref) =>
-      [ref.imageName, REFERENCE_LABELS[ref.mode], ref.strength, ref.fidelity].join(' · '),
+      [
+        ref.imageName,
+        REFERENCE_LABELS[ref.mode],
+        ref.strength,
+        ref.fidelity,
+        ref.preferSameOutfit,
+      ].join(' · '),
     )
+    .join('\n')
+}
+function vibeSummary(params: NaiGenParams): string {
+  return (params.vibeReferences ?? [])
+    .map(({ imageName, strength, information }) => [imageName, strength, information].join(' · '))
     .join('\n')
 }
 export const PAGE_PARAM_FIELDS: [keyof NaiGenParams, string][] = [
@@ -416,6 +429,9 @@ export function pageEditorChanges(
   if (referenceSummary(baseline.params) !== referenceSummary(editor.params)) {
     parameters.push('精确参考')
   }
+  if (vibeSummary(baseline.params) !== vibeSummary(editor.params)) {
+    parameters.push('Vibe Transfer')
+  }
   if (baseline.model && editor.model && baseline.model !== editor.model) {
     parameters.unshift('模型')
   }
@@ -444,6 +460,11 @@ export function pageConfigurationChanges(workspace: PageWorkspace, id: string, c
     '精确参考',
     referenceSummary(comparison.before.params),
     referenceSummary(comparison.snapshot.params),
+  )
+  add(
+    'Vibe Transfer',
+    vibeSummary(comparison.before.params),
+    vibeSummary(comparison.snapshot.params),
   )
   add('模型', comparison.before.model, comparison.snapshot.model)
   const sourceGeneration = comparison.source?.generated

@@ -117,7 +117,7 @@ ${AGENT_ENTRY}
 - get_workspace_context 默认 skills_task:overview，只给必读总则与冻结目录。编写提示词选 prompt，画面分析选 preview，重绘选 inpaint（同时读取提示词规则），需要全部选 all；skills_ids 补读指定篇目。scope=all 用户规则在具体任务中必读。动手前确认 missingRequiredIds 为空且实际保留相关正文；目录/指纹不是正文，不确定是否相关时补读。
 - rules_only:true 只返回项目/请求标识、模型及规则；若 requestId 与之前读取的任务不同，重新读完整任务上下文。每篇有独立 digest，sections 仅返回所选篇目中未读或变化的正文；manifest 始终给出当前名称、范围、优先级和指纹，removedIds 标识不再启用的篇目。修改或重排规则只影响新提交需求，不能用当前 get_skill 替换已冻结规则。
 - skills_digests 可显式声明实际保留的正文指纹表（从已读 sections 建立，不能从 manifest 冒充已读）。它取代连接缓存判断，缺失或不匹配的所选篇目会重发。skills_mode:metadata 只看目录、不标记已读；full 强制重读所选篇目。上下文压缩或回复丢失后必须补读。bodiesNotModified 仅表示没有需要发送的新正文，仍须处理 manifestChanged、最新 manifest 与 removedIds。未分段的冻结原文保持完整，不猜测切分、不替换历史。
-- 聊天附图按 materials.attachments 的图号和用途逐张调用 read_image。仅讨论供读图；V4.5 用户指定的角色或画风参考在采纳方案时载入，按每张参考每张输出计费。ui_set_workspace_input 可传 attachments 列表（最多四张），空数组清空。
+- 聊天附图按 materials.attachments 的图号和用途逐张调用 read_image。仅讨论供读图；用户指定的角色、画风或 V5 服装参考在采纳方案时载入，按每张参考每张输出计费。ui_set_workspace_input 可传 attachments 列表（本应用最多 16 张），空数组清空。
 - 标准读取顺序：先获取本轮请求、材料清单和规则目录；补正文用 rules_only:true，一次给出本轮需要的 skills_task/skills_ids；历史详情用 get_workspace 的 message_ids/version_ids。materials 只指出要读什么，不证明已经看过图片或正文。缺少相关规则或实际像素时先补读，不能以路径、目录或摘要代替。
 - get_workspace_context 的 inputContext 只给输入快照的小摘要，不重复顶层已有的当前草稿、参数或规则目录。需要核对发送时的完整输入时按 inputContext.read 调用 get_workspace(detail:full,message_ids:[requestId])；summary 消息也只给小摘要。materials.inputContextSource=frozen 才表示原始冻结输入；reconstructed 是按现存状态重建的旧记录摘要，detailAvailable:false 时不得声称历史完整输入可恢复。
 - 新请求的输入历史会排除确认的常规回执，history.filteredRoutineCount 单独计数；omittedCount 表示其余未列入历史窗口的消息，两者都不表示原记录被删除。拒绝、撤销、停止、失败、实际生成和底稿切换仍是业务事实，不以建议的当前状态覆盖其发生顺序。冻结输入的 latestExecution/latestBillingObservation 是提交前已有记录，不能当作实时余额或付费授权；需要当前额度时调用 nai_subscription，涉及未知执行结果先查询操作与版本记录。

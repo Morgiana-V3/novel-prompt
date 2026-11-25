@@ -521,7 +521,7 @@ defineExpose({
           v-if="attachments.length"
           :images="attachments"
           editable
-          :can-reference="work.model === 'v4.5'"
+          :model="work.model"
           :disabled="inputBlocked"
           @change="attachments = $event"
         />
@@ -1006,7 +1006,6 @@ defineExpose({
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  box-shadow: 0 3px 10px color-mix(in srgb, var(--pink) 28%, transparent);
   transition:
     background-color var(--dur-fast) var(--ease-out),
     box-shadow var(--dur-base) var(--ease-out),
@@ -1016,7 +1015,6 @@ defineExpose({
 
 .pw-send:hover:not(:disabled) {
   background: var(--pink-deep);
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--pink) 36%, transparent);
 }
 
 .pw-send:active:not(:disabled) {

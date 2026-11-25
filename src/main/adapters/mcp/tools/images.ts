@@ -1,3 +1,4 @@
+import { checkVibes, VIBE_SCHEMA } from '../../../../shared/generation/vibes'
 import { checkReferences, REFERENCE_SCHEMA } from '../../../../shared/generation/references'
 import { NAI_SAMPLERS, NAI_NOISE_SCHEDULES } from '../../../../shared/generation/types'
 import { existsSync, readFileSync } from 'node:fs'
@@ -86,6 +87,7 @@ export function createGenerateImageTool(): McpTool {
         seed: { type: 'integer', description: '种子，不填随机；多张时依次 +1' },
         count: { type: 'integer', description: '张数 1~4，默认 1' },
         precise_references: REFERENCE_SCHEMA,
+        vibe_references: VIBE_SCHEMA,
         collection_id: {
           type: 'string',
           description: '保存到哪个图集（list_images 返回的 collections[].id），省略时为默认图集',
@@ -137,6 +139,14 @@ export function createGenerateImageTool(): McpTool {
       if (argumentsRecord.precise_references !== undefined) {
         checkReferences(argumentsRecord.precise_references, version(argumentsRecord.version))
         params.preciseReferences = argumentsRecord.precise_references
+      }
+      if (argumentsRecord.vibe_references !== undefined) {
+        checkVibes(
+          argumentsRecord.vibe_references,
+          version(argumentsRecord.version),
+          !!params.preciseReferences?.length,
+        )
+        params.vibeReferences = argumentsRecord.vibe_references
       }
       const generationResult = await generateImages(
         {

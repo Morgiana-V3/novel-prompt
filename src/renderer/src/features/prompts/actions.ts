@@ -6,6 +6,8 @@ import { toast, reportError } from '../../shared/lib/notifications'
 import { settingsState, saveSettings } from '../settings/state'
 import {
   setCreationReferences,
+  setCreationVibes,
+  setCreationImg2Img,
   referenceDraft,
   applyGenerationParams,
   generationParams,
@@ -301,6 +303,8 @@ export async function importGenerationRequest(
     params: { ...promptState.params },
     generation: { ...generationParams },
     preciseReferences: referenceDraft.images,
+    vibeReferences: referenceDraft.vibes,
+    img2img: referenceDraft.img2img,
     version: settingsState.settings?.naiVersion ?? 'v4.5',
   }
   // Persist the model first: a failed save must not leave half an import applied.
@@ -313,6 +317,8 @@ export async function importGenerationRequest(
   }
   applyGenerationParams(request.params)
   setCreationReferences(request.params.preciseReferences)
+  setCreationVibes(request.params.vibeReferences)
+  setCreationImg2Img(null)
   const undo = async () => {
     if (settingsState.settings?.naiVersion !== before.version) {
       await saveSettings({ naiVersion: before.version })
@@ -322,6 +328,8 @@ export async function importGenerationRequest(
     Object.assign(promptState.params, before.params)
     applyGenerationParams(before.generation)
     setCreationReferences(before.preciseReferences)
+    setCreationVibes(before.vibeReferences)
+    setCreationImg2Img(before.img2img)
     toast('已恢复导入前的提示词、模型和生成参数')
   }
   const seedNote = keepSeed || originalSeed === null ? '' : `（种子随机，原种子 ${originalSeed}）`

@@ -1,6 +1,8 @@
-import { checkReferences } from '../../../shared/generation/references'
+import { checkVibes, vibeGenerationFee } from '../../../shared/generation/vibes'
+import { preparedVibes } from './vibes'
+import { checkReferences, V5_INPAINT_REFERENCE_NOTICE } from '../../../shared/generation/references'
 import { NaiError } from '../../providers/novelai/request'
-import { prepareReferences } from './references'
+import { prepareImg2ImgImage, prepareReferences } from './references'
 import { estimateGeneration, anlasOutcomeText } from '../../../shared/generation/pricing'
 import { authorizePaidOperation } from '../../infrastructure/operation-policy'
 import { recordAnlas, recordGeneratedImage } from '../statistics/service'
@@ -94,12 +96,18 @@ export async function generateImages(
     }
     return 'temporary' as const
   }
+  const references = req.params.preciseReferences ?? []
+  checkReferences(references, req.version)
+  if (references.length && req.version === 'v5' && 'inpaint' in req) {
+    throw new Error(V5_INPAINT_REFERENCE_NOTICE)
+  }
+  const vibes = req.params.vibeReferences ?? []
+  checkVibes(vibes, req.version, !!references.length)
   const storage = resolveStorage()
   let prepared: PreparedInpaint | undefined
   let img2imgSource: string | undefined
   if ('img2img' in req) {
     if (
-      !opts.sourceBytes ||
       !Number.isFinite(req.img2img.strength) ||
       req.img2img.strength < 0.01 ||
       req.img2img.strength > 0.99 ||
@@ -107,9 +115,16 @@ export async function generateImages(
       req.img2img.noise < 0 ||
       req.img2img.noise > 0.99
     ) {
-      throw new Error('增强强度须在 0.01～0.99，噪声须在 0～0.99')
+      throw new Error('图生图强度须在 0.01～0.99，噪声须在 0～0.99')
     }
-    img2imgSource = opts.sourceBytes.toString('base64')
+    let bytes = opts.sourceBytes
+    if (!bytes) {
+      if (!req.img2img.imageName) {
+        throw new Error('缺少图生图底图，请重新选择')
+      }
+      bytes = await prepareImg2ImgImage(req.img2img.imageName, req.params.width, req.params.height)
+    }
+    img2imgSource = bytes.toString('base64')
   }
   if ('inpaint' in req) {
     if (
@@ -154,7 +169,7 @@ export async function generateImages(
     actionLabel = '局部重绘'
   } else if (img2imgSource) {
     source = { kind: 'img2img', imageBase64: img2imgSource }
-    actionLabel = '增强'
+    actionLabel = opts.workspaceId ? '增强' : '图生图'
   }
   const freeOnly = opts.freeOnly ?? false
   const count = Math.max(1, Math.min(8, Math.floor(req.params.count || 1)))
@@ -162,9 +177,9 @@ export async function generateImages(
   let delta: number | undefined = 0
   let stopped: string | undefined
 
-  const references = req.params.preciseReferences ?? []
-  checkReferences(references, req.version)
-  const referenceImages = await prepareReferences(references)
+  const paidReferences = !!references.length || vibeGenerationFee(vibes.length) > 0
+  const referenceImages = await prepareReferences(references, req.version)
+  const vibeImages = preparedVibes(vibes)
 
   onStep('查询会员与额度…')
   let sub: NaiSubscription | undefined
@@ -172,7 +187,7 @@ export async function generateImages(
     sub = await getSubscription()
   } catch (error) {
     if (
-      references.length &&
+      paidReferences &&
       error instanceof NaiError &&
       (error.status === 401 || error.status === 403)
     ) {
@@ -228,7 +243,7 @@ export async function generateImages(
     onStep(`${actionLabel}第 ${i + 1}/${count} 张（种子 ${seed}）…`)
     let png: Buffer
     try {
-      png = await generateOne(req, seed, token(), undefined, source, referenceImages)
+      png = await generateOne(req, seed, token(), undefined, source, referenceImages, vibeImages)
       recordGeneratedImage(req.version)
       if (prepared) {
         png = compositeInpaint(prepared, png)
@@ -291,7 +306,7 @@ export async function generateImages(
       after = await getSubscription()
     } catch {
       delta = undefined
-      if (freeOnly || references.length) {
+      if (freeOnly || paidReferences) {
         stopped = '生成后查询余额失败，无法确认是否扣费，已停止后续生成'
       }
     }
@@ -305,7 +320,7 @@ export async function generateImages(
     } else if (!change) {
       delta = undefined
     }
-    if (references.length && !change) {
+    if (paidReferences && !change) {
       stopped = '参考图生成费用未知，已停止后续生成'
     }
     if (stopped) {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { PreciseReference } from '@shared/generation/references'
+import type { VibeReference } from '@shared/generation/vibes'
 import { vSegIndicator } from '../../../shared/lib/seg-indicator'
 import { reportError } from '../../../shared/lib/notifications'
 import type { NaiVersion } from '@shared/generation/types'
@@ -27,6 +28,7 @@ const props = defineProps<{
   height: number
   count: number
   preciseReferences?: PreciseReference[]
+  vibeReferences?: VibeReference[]
   steps: number
   model: NaiVersion
   disabled: boolean
@@ -48,6 +50,7 @@ const source = computed(() => ({
   height: props.height,
   count: props.kind === 'upscale' ? 1 : props.count,
   preciseReferences: props.preciseReferences,
+  vibeReferences: props.vibeReferences,
   steps: props.steps,
   version: props.model,
 }))

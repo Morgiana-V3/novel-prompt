@@ -29,7 +29,7 @@ export function useChatAttachments(
     try {
       for (const source of sources) {
         if (images.value.length >= MAX_REFERENCES) {
-          errors.add('每条消息最多附加 4 张图片')
+          errors.add(`本应用每条消息最多附加 ${MAX_REFERENCES} 张图片`)
           break
         }
         try {

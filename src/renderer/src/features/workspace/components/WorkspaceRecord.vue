@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { REFERENCE_LABELS } from '@shared/generation/references'
+import { REFERENCE_LABELS, hasOutfitPreference } from '@shared/generation/references'
 import { computed, ref } from 'vue'
 import type { NaiImage } from '@shared/images/types'
 import type { NaiVersion } from '@shared/generation/types'
@@ -77,22 +77,68 @@ const positionReference = computed(() => {
       v-if="params.preciseReferences?.length"
       class="record-block"
     >
-      <h3>精确参考</h3>
-      <div
-        v-for="(reference, index) in params.preciseReferences"
-        :key="index"
-        class="row"
-      >
-        <img
-          width="48"
-          height="48"
-          style="object-fit: contain"
-          :src="'np-img://img/' + encodeURIComponent(reference.imageName)"
-          alt="参考图"
-        /><span
-          >{{ REFERENCE_LABELS[reference.mode] }} · 强度 {{ reference.strength }} · 还原度
-          {{ reference.fidelity }}</span
+      <h3>
+        精确参考
+        <small>{{ params.preciseReferences.length }} 张</small>
+      </h3>
+      <div class="record-refs">
+        <div
+          v-for="(reference, index) in params.preciseReferences"
+          :key="index"
+          class="record-ref-item"
         >
+          <img
+            class="record-ref-thumb"
+            :src="'np-img://img/' + encodeURIComponent(reference.imageName)"
+            alt="参考图"
+          />
+          <div class="record-ref-meta">
+            <strong>{{ REFERENCE_LABELS[reference.mode] }}</strong>
+            <span
+              >强度 {{ reference.strength.toFixed(2)
+              }}<template v-if="model === 'v4.5'">
+                · 还原度 {{ (reference.fidelity ?? 1).toFixed(2) }}</template
+              ><template
+                v-else-if="
+                  hasOutfitPreference(reference.mode) &&
+                  (reference.preferSameOutfit ?? reference.mode === 'character&style')
+                "
+              >
+                · 偏好相同服装</template
+              ></span
+            >
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section
+      v-if="params.vibeReferences?.length"
+      class="record-block"
+    >
+      <h3>
+        Vibe Transfer
+        <small>{{ params.vibeReferences.length }} 张</small>
+      </h3>
+      <div class="record-refs">
+        <div
+          v-for="vibe in params.vibeReferences"
+          :key="vibe.imageName"
+          class="record-ref-item"
+        >
+          <img
+            class="record-ref-thumb"
+            :src="'np-img://img/' + encodeURIComponent(vibe.imageName)"
+            alt="Vibe 参考图"
+          />
+          <div class="record-ref-meta">
+            <strong>Vibe 参考</strong>
+            <span
+              >强度 {{ vibe.strength.toFixed(2) }} · 信息提取
+              {{ vibe.information.toFixed(2) }}</span
+            >
+          </div>
+        </div>
       </div>
     </section>
 
@@ -289,6 +335,51 @@ const positionReference = computed(() => {
   height: 24px;
   padding: 0 10px;
   font-size: 11.5px;
+}
+
+.record-refs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 8px;
+}
+
+.record-ref-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.record-ref-thumb {
+  width: 48px;
+  height: 56px;
+  flex-shrink: 0;
+  object-fit: contain;
+  border-radius: 7px;
+  background: var(--hover);
+  border: 1px solid var(--line);
+}
+
+.record-ref-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.record-ref-meta strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.record-ref-meta span {
+  font-size: 11.5px;
+  color: var(--text2);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- 参数平铺 ---------- */

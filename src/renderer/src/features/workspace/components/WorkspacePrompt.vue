@@ -8,6 +8,7 @@ import { sectionText } from '../../prompts/public/import-export'
 import { DEFAULT_GEN } from '../../generation/public'
 import { DEFAULT_PARAMS } from '../../prompts/public/draft'
 import { PromptEditor } from '../../prompts/public/components'
+import VibeReferences from '../../generation/components/VibeReferences.vue'
 import PreciseReferences from '../../generation/components/PreciseReferences.vue'
 import GenerationParameters from '../../generation/components/GenerationParameters.vue'
 import Icon from '../../../shared/ui/Icon.vue'
@@ -109,12 +110,46 @@ defineExpose({ copyPrompt: () => copy(sectionText(active.value.draft)) })
         </button>
       </div>
       <PreciseReferences
+        show-heading
         :images="active.params.preciseReferences ?? []"
+        :count="active.params.count"
+        :conflict="!!active.params.vibeReferences?.length"
         :model="model"
         :current="image"
         :disabled="readOnly"
         @change="updateParams({ preciseReferences: $event })"
       />
+      <details
+        v-if="model === 'v4.5' || active.params.vibeReferences?.length"
+        class="workspace-vibe-details"
+        :open="!!active.params.vibeReferences?.length"
+      >
+        <summary
+          class="disclosure workspace-vibe-summary"
+          title="相同图片和信息提取量可复用已编码的 Vibe。"
+        >
+          <Icon
+            name="palette"
+            :size="14"
+          />
+          <span>Vibe Transfer</span>
+          <span
+            v-if="active.params.vibeReferences?.length"
+            class="pill"
+            >{{ active.params.vibeReferences.length }}</span
+          >
+        </summary>
+        <div class="workspace-vibe-body">
+          <VibeReferences
+            :entries="active.params.vibeReferences ?? []"
+            :version="model"
+            :current="image"
+            :disabled="readOnly"
+            :conflict="!!active.params.preciseReferences?.length"
+            @change="updateParams({ vibeReferences: $event })"
+          />
+        </div>
+      </details>
       <GenerationParameters
         :gen="active.params"
         :params="active.params"
@@ -169,5 +204,48 @@ defineExpose({ copyPrompt: () => copy(sectionText(active.value.draft)) })
 
 .workspace-config-body :deep(.gen-advanced) {
   background: var(--bg);
+}
+
+.workspace-vibe-details {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  overflow: hidden;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.workspace-vibe-details[open] {
+  border-color: var(--line2);
+}
+
+.workspace-vibe-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.workspace-vibe-summary:hover {
+  background: var(--panel);
+}
+
+.workspace-vibe-summary .icon {
+  color: var(--pink-deep);
+}
+
+.workspace-vibe-summary .pill {
+  margin-left: auto;
+  background: var(--pink-soft);
+  color: var(--pink-deep);
+  font-weight: 600;
+}
+
+.workspace-vibe-body {
+  padding: 2px 12px 12px;
+  border-top: 1px solid var(--line);
 }
 </style>

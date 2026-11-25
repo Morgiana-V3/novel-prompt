@@ -1,3 +1,5 @@
+import { checkReferences } from '../../../shared/generation/references'
+import { checkVibes } from '../../../shared/generation/vibes'
 import { isNaiVersion } from '../../../shared/generation/types'
 import { randomUUID } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
@@ -5,7 +7,12 @@ import { basename } from 'node:path'
 import { PNG } from 'pngjs'
 import type { NaiGenParams, NaiVersion } from '../../../shared/generation/types'
 import type { InpaintDraft } from '../../../shared/prompts/types'
-import { pageCurrent, type PageAction, type PageWorkspace } from '../../../shared/workspace/model'
+import {
+  pageCurrent,
+  type Img2ImgConfigSource,
+  type PageAction,
+  type PageWorkspace,
+} from '../../../shared/workspace/model'
 import { pngSize } from '../../providers/novelai/png-response'
 import { imagePath } from '../images/access'
 import { importImageAsPng } from '../images/import'
@@ -36,6 +43,7 @@ export async function createPage(
   model: NaiVersion,
   fallback: InpaintDraft,
   title = '新项目',
+  img2imgConfig?: Img2ImgConfigSource,
 ): Promise<PageWorkspace> {
   if (!isNaiVersion(model)) {
     throw new Error('不支持的生图模型')
@@ -47,7 +55,7 @@ export async function createPage(
   }
   let draft = fallback
   let imported = false
-  if (src) {
+  if (src && img2imgConfig !== 'creation') {
     try {
       draft = await readPngPrompt(readFileSync(src))
       imported = true
@@ -55,7 +63,7 @@ export async function createPage(
       /* Explicit fallback from current prompt. */
     }
   }
-  const recorded = imageName ? readImageRecipe(imageName) : null
+  const recorded = imageName && img2imgConfig !== 'creation' ? readImageRecipe(imageName) : null
   if (recorded) {
     const request = recorded.request
     draft = { base: request.base, negative: request.negative, characters: request.characters }
@@ -65,6 +73,19 @@ export async function createPage(
   }
   checkDraft(draft, model)
   checkPageParams(params)
+  checkReferences(params.preciseReferences ?? [], model)
+  checkVibes(params.vibeReferences ?? [], model, !!params.preciseReferences?.length)
+  if (
+    img2imgConfig &&
+    !draft.base.trim() &&
+    !draft.characters.some((character) => character.prompt.trim())
+  ) {
+    throw new Error(
+      img2imgConfig === 'original'
+        ? '原图没有可用于图生图的提示词，请改用当前创作配置'
+        : '当前创作没有提示词，请先添加主提示词或角色提示词',
+    )
+  }
   const now = Date.now()
   const versionId = randomUUID()
   const id = randomUUID()
@@ -99,8 +120,8 @@ export async function createPage(
             width: image?.width ?? params.width,
             height: image?.height ?? params.height,
             count: 1,
-            qualityTags: false,
-            ucPreset: 'none',
+            qualityTags: img2imgConfig === 'creation' ? params.qualityTags : false,
+            ucPreset: img2imgConfig === 'creation' ? params.ucPreset : 'none',
           },
           strength: 1,
         },
@@ -152,12 +173,13 @@ export async function importDroppedPage(
   params: NaiGenParams,
   model: NaiVersion,
   fallback: InpaintDraft,
+  img2imgConfig?: Img2ImgConfigSource,
 ): Promise<PageWorkspace> {
   if (typeof fileName !== 'string' || !fileName.trim() || fileName.length > 1024) {
     throw new Error('图片文件名无效')
   }
   const png = await importImageAsPng(bytes, 4 * 1024 * 1024)
-  return createPageFromPng(png, fileName, params, model, fallback)
+  return createPageFromPng(png, fileName, params, model, fallback, img2imgConfig)
 }
 
 async function createPageFromPng(
@@ -166,6 +188,7 @@ async function createPageFromPng(
   params: NaiGenParams,
   model: NaiVersion,
   fallback: InpaintDraft,
+  img2imgConfig?: Img2ImgConfigSource,
 ): Promise<PageWorkspace> {
   const staged = stageImportedImage(bytes)
   try {
@@ -174,7 +197,7 @@ async function createPageFromPng(
         .replace(/\.(?:png|jpe?g|webp)$/i, '')
         .trim()
         .slice(0, 100) || '未命名项目'
-    return await createPage(staged.name, params, model, fallback, title)
+    return await createPage(staged.name, params, model, fallback, title, img2imgConfig)
   } finally {
     staged.dispose()
   }

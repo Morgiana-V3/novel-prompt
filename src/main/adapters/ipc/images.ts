@@ -1,3 +1,9 @@
+import { encodeReferenceVibe, vibeStatuses } from '../../modules/generation/vibes'
+import {
+  recycleUnusedReferences,
+  scanRecyclableReferences,
+} from '../../modules/images/reference-cleanup'
+import { taskIsActive } from '../../../shared/tasks/model'
 import { queryArtistCatalog } from '../../modules/artists/catalog'
 import { app, clipboard, ClipboardItem, dialog, shell } from 'electron'
 import { copyFileSync, mkdirSync } from 'node:fs'
@@ -80,6 +86,15 @@ export function registerImagesIpc(context: IpcContext): void {
   )
 
   handle('nai:import-reference', (_event, source) => importReferenceImage(source))
+  handle('nai:vibe-statuses', (_event, entries) => vibeStatuses(entries))
+  handle('nai:vibe-encode', (_event, entry) => encodeReferenceVibe(entry))
+  handle('images:scan-reference-cleanup', (_event, live) => scanRecyclableReferences(live))
+  handle('images:recycle-references', (_event, live, requested) => {
+    if (context.tasks.snapshot().tasks.some(taskIsActive)) {
+      throw new Error('请等待当前任务完成后再回收参考素材')
+    }
+    return recycleUnusedReferences(live, requested)
+  })
   handle('nai:list', () => {
     return listImages(10000)
   })

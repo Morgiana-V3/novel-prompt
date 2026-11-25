@@ -1,3 +1,4 @@
+import type { VibeReference } from '../../shared/generation/vibes'
 import type { ArtistCatalogPage, ArtistCatalogQuery } from '../../shared/artists/catalog'
 import type { NaiGenRequest } from '../../shared/generation/types'
 import type { NaiImage, SavedRecipe } from '../../shared/images/types'
@@ -5,6 +6,11 @@ import type { ImageCollection } from '../../shared/images/collections'
 import { invoke } from './bridge'
 
 export const imagesApi = {
+  scanReferenceCleanup: (live: string[]) => invoke('images:scan-reference-cleanup', live),
+  recycleReferences: (live: string[], requested: string[]) =>
+    invoke('images:recycle-references', live, requested),
+  naiVibeStatuses: (entries: VibeReference[]) => invoke('nai:vibe-statuses', entries),
+  naiVibeEncode: (entry: VibeReference) => invoke('nai:vibe-encode', entry),
   artistCatalog: (query: ArtistCatalogQuery): Promise<ArtistCatalogPage> =>
     invoke('artists:catalog', query),
   imagesImport: (bytes: Uint8Array, collectionId: string): Promise<NaiImage> =>

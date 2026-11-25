@@ -23,6 +23,63 @@ import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 import ConfirmDialog from '../../shared/ui/ConfirmDialog.vue'
 import { FavoriteButton } from '../favorites/public'
 
+const props = defineProps<{ prepareReferenceCleanup: () => Promise<void> }>()
+const cleanupBusy = ref(false)
+const cleanupCandidates = ref<{ name: string; bytes: number }[] | null>(null)
+const cleanupSize = computed(() =>
+  ((cleanupCandidates.value?.reduce((sum, file) => sum + file.bytes, 0) ?? 0) / 1048576).toFixed(1),
+)
+
+function liveReferences() {
+  const names = new Set<string>()
+  for (let index = 0; index < localStorage.length; index++) {
+    const key = localStorage.key(index)
+    if (!key) {
+      continue
+    }
+    for (const match of (localStorage.getItem(key) ?? '').matchAll(/\bref-[a-f0-9]{64}\.png\b/g)) {
+      names.add(match[0])
+    }
+  }
+  return [...names]
+}
+
+async function scanReferences() {
+  cleanupBusy.value = true
+  try {
+    await props.prepareReferenceCleanup()
+    const candidates = await window.api.scanReferenceCleanup(liveReferences())
+    if (candidates.length) {
+      cleanupCandidates.value = candidates
+    } else {
+      toast('没有符合回收条件的未使用素材')
+    }
+  } catch (cause) {
+    toast(cleanErr(cause))
+  } finally {
+    cleanupBusy.value = false
+  }
+}
+
+async function recycleReferences() {
+  const candidates = cleanupCandidates.value?.map((file) => file.name) ?? []
+  cleanupCandidates.value = null
+  cleanupBusy.value = true
+  try {
+    await props.prepareReferenceCleanup()
+    const result = await window.api.recycleReferences(liveReferences(), candidates)
+    toast(
+      result.failed.length
+        ? '已回收 ' + result.moved + ' 张，' + result.failed.length + ' 张移动失败'
+        : '已将 ' + result.moved + ' 张参考素材移到系统回收站',
+    )
+  } catch (cause) {
+    toast(cleanErr(cause))
+  } finally {
+    cleanupBusy.value = false
+  }
+}
+
 const images = ref<NaiImage[]>([])
 const api = window.api
 const retention = ref('all')
@@ -328,6 +385,13 @@ function step(delta: number) {
         </h2>
         <div class="row">
           <button
+            class="btn ghost small"
+            :disabled="cleanupBusy"
+            @click="scanReferences"
+          >
+            {{ cleanupBusy ? '正在检查素材…' : '回收未用参考' }}
+          </button>
+          <button
             v-if="activeCollection && collection !== DEFAULT_COLLECTION"
             class="btn ghost small"
             @click="startEdit('rename')"
@@ -614,6 +678,21 @@ function step(delta: number) {
       @confirm="remove"
       @cancel="confirming = ''"
     />
+    <ConfirmDialog
+      v-if="cleanupCandidates"
+      title="回收未使用参考素材"
+      :message="
+        '找到 ' +
+        cleanupCandidates.length +
+        ' 张未使用素材，约 ' +
+        cleanupSize +
+        ' MB。确认后移到系统回收站。'
+      "
+      confirm-label="移到回收站"
+      danger
+      @confirm="recycleReferences"
+      @cancel="cleanupCandidates = null"
+    />
   </div>
 </template>
 <style scoped>
@@ -768,7 +847,6 @@ function step(delta: number) {
 
 .library-thumb:hover {
   border-color: var(--pink-line);
-  box-shadow: var(--shadow-lift);
   transform: translateY(var(--lift-card));
 }
 
@@ -853,7 +931,6 @@ function step(delta: number) {
 
 .library-preview-open:hover {
   border-color: var(--pink-line);
-  box-shadow: var(--shadow-pop);
 }
 
 .library-preview-open img {

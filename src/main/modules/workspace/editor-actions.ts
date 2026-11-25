@@ -1,3 +1,4 @@
+import { checkVibes } from '../../../shared/generation/vibes'
 import { validateAttachments } from '../../../shared/workspace/attachments'
 import { checkReferences } from '../../../shared/generation/references'
 import { regionIds } from '../../../shared/workspace/regions'
@@ -21,6 +22,11 @@ export function applyRecipe(
   checkDraft(request, request.version)
   checkPageParams(request.params)
   checkReferences(request.params.preciseReferences ?? [], request.version)
+  checkVibes(
+    request.params.vibeReferences ?? [],
+    request.version,
+    !!request.params.preciseReferences?.length,
+  )
   workspace.model = request.version
   version.editor.model = request.version
   version.editor.draft = {
@@ -64,6 +70,11 @@ export function applyEditor(
   }
   const updated = clone(action.editor)
   checkReferences(updated.params.preciseReferences ?? [], workspace.model)
+  checkVibes(
+    updated.params.vibeReferences ?? [],
+    workspace.model,
+    !!updated.params.preciseReferences?.length,
+  )
   if (updated.draft.characters.length !== version.editor.draft.characters.length) {
     updated.regions.forEach((region) => {
       region.target = null

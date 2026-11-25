@@ -1017,7 +1017,7 @@ async function beginConfigFromButton() {
         </button>
       </div>
     </header>
-    <div class="pw-main">
+    <div class="pw-work-area">
       <WorkspaceVersionSidebar
         v-if="historyOpen"
         :group-cards="groupCards"
@@ -1026,301 +1026,303 @@ async function beginConfigFromButton() {
         @view="viewHistory"
         @missing="markVersionMissing"
       />
-      <div class="pw-canvas-column">
-        <div
-          v-if="aiCollapsed && error"
-          class="error-box"
-          role="alert"
-        >
-          {{ error }}
-        </div>
-        <div
-          v-if="editingPrompt"
-          class="pw-scope-bar pw-next-bar"
-        >
-          <div class="pw-scope-label">
-            <b>下一次生成</b
-            ><span
-              class="muted small"
-              :title="'基于底稿 ' + current.label"
-              >底稿 {{ displayVersionLabel(current.label) }}</span
-            >
-            <span
-              class="small pw-next-summary"
-              :class="{ changed: !!nextChanges?.count }"
-              :title="nextChangesTitle"
-              >{{ nextChangesText }}</span
-            >
-          </div>
-          <div class="pw-scope-actions">
-            <button
-              v-if="configDirty"
-              class="btn ghost small"
-              :disabled="!!operation || remoteBusy"
-              title="放弃这次打开后的修改，恢复到打开前的下一版配置"
-              aria-label="撤销本次修改"
-              @click="discardConfig"
-            >
-              <Icon
-                name="undo"
-                :size="13"
-              /><span>撤销本次修改</span>
-            </button>
-            <button
-              v-if="currentBaseline"
-              class="btn ghost small"
-              :disabled="!!operation || remoteBusy || !nextChanges?.count"
-              title="把提示词和参数恢复为生成底稿时使用的配置"
-              aria-label="恢复底稿配置"
-              @click="restoreBaseline"
-            >
-              <Icon
-                name="reset"
-                :size="13"
-              /><span>恢复底稿配置</span>
-            </button>
-            <button
-              class="icon-btn sm"
-              title="复制完整提示词"
-              @click="promptEditor?.copyPrompt()"
-            >
-              <Icon
-                name="copy"
-                :size="15"
-              />
-            </button>
-          </div>
-        </div>
-        <div
-          v-else
-          class="pw-scope-bar"
-          :data-historical="historical"
-        >
+      <div class="pw-main">
+        <div class="pw-canvas-column">
           <div
-            class="pw-scope-label"
-            :title="viewed.label"
+            v-if="aiCollapsed && error"
+            class="error-box"
+            role="alert"
           >
-            <b>{{ displayVersionLabel(viewedGroup.label) }}</b
-            ><span class="muted small"
-              >第 {{ viewedGroup.versions.findIndex((v) => v.id === viewed.id) + 1 }} 张</span
-            >
-          </div>
-          <div class="pw-scope-actions">
-            <button
-              class="icon-btn sm"
-              title="引用此版参与讨论"
-              aria-label="引用此版"
-              :disabled="busy || !viewed.image"
-              @click="reference(viewed.id)"
-            >
-              <Icon
-                name="chat"
-                :size="16"
-              />
-            </button>
-            <button
-              class="btn small pw-adopt"
-              :class="{ ghost: !historical }"
-              :disabled="busy || !historical || viewed.image?.missing"
-              :title="
-                historical
-                  ? '设为创作底稿，从这张图片继续修改和重绘'
-                  : '下一版配置与重绘基于这张图片'
-              "
-              @click="continueVersion(viewed.id)"
-            >
-              {{ historical ? '设为底稿' : '当前底稿' }}
-            </button>
-            <ThemeSelect
-              v-if="pane === 'changes'"
-              v-model="compareVersionId"
-              class="pw-compare"
-              :options="compareOptions"
-              aria-label="对比对象"
-            />
+            {{ error }}
           </div>
           <div
-            v-if="pane === 'prompt'"
-            class="pw-prompt-actions"
+            v-if="editingPrompt"
+            class="pw-scope-bar pw-next-bar"
           >
-            <button
-              v-if="snapshotEditor && historical"
-              class="btn ghost small"
-              :disabled="busy"
-              :title="
-                historical
-                  ? '把这一版的提示词和参数载入下一版配置（底稿图片不变）'
-                  : '在本版配置的基础上编辑下一版'
-              "
-              @click="editFromSnapshot"
-            >
-              <Icon
-                name="import"
-                :size="13"
-              />{{ historical ? '载入到下一版' : '编辑下一版' }}
-            </button>
-            <button
-              class="icon-btn sm"
-              title="复制完整提示词"
-              @click="snapshotPrompt?.copyPrompt()"
-            >
-              <Icon
-                name="copy"
-                :size="15"
-              />
-            </button>
+            <div class="pw-scope-label">
+              <b>下一次生成</b
+              ><span
+                class="muted small"
+                :title="'基于底稿 ' + current.label"
+                >底稿 {{ displayVersionLabel(current.label) }}</span
+              >
+              <span
+                class="small pw-next-summary"
+                :class="{ changed: !!nextChanges?.count }"
+                :title="nextChangesTitle"
+                >{{ nextChangesText }}</span
+              >
+            </div>
+            <div class="pw-scope-actions">
+              <button
+                v-if="configDirty"
+                class="btn ghost small"
+                :disabled="!!operation || remoteBusy"
+                title="放弃这次打开后的修改，恢复到打开前的下一版配置"
+                aria-label="撤销本次修改"
+                @click="discardConfig"
+              >
+                <Icon
+                  name="undo"
+                  :size="13"
+                /><span>撤销本次修改</span>
+              </button>
+              <button
+                v-if="currentBaseline"
+                class="btn ghost small"
+                :disabled="!!operation || remoteBusy || !nextChanges?.count"
+                title="把提示词和参数恢复为生成底稿时使用的配置"
+                aria-label="恢复底稿配置"
+                @click="restoreBaseline"
+              >
+                <Icon
+                  name="reset"
+                  :size="13"
+                /><span>恢复底稿配置</span>
+              </button>
+              <button
+                class="icon-btn sm"
+                title="复制完整提示词"
+                @click="promptEditor?.copyPrompt()"
+              >
+                <Icon
+                  name="copy"
+                  :size="15"
+                />
+              </button>
+            </div>
           </div>
-        </div>
-        <WorkspacePrompt
-          v-if="editingPrompt && configDraft"
-          ref="promptEditor"
-          :editor="configDraft"
-          :model="configDraft.model ?? work.model"
-          :image="current.image"
-          editable
-          :disabled="!!operation || remoteBusy"
-          :size-locked="configSizeLocked"
-          @change-editor="updateConfigDraft"
-          @input.capture="configOwner = null"
-          @change.capture="configOwner = null"
-          @click.capture="configOwner = null"
-        />
-        <WorkspaceCanvas
-          v-else-if="pane === 'canvas'"
-          ref="viewport"
-          v-model:zoom="zoom"
-          v-model:show-mask="showMask"
-          :viewed="viewed"
-          :current="current"
-          :overlay="overlay"
-          :historical="historical"
-          :busy="busy"
-          :display-regions="displayRegions"
-          :overlay-mode="overlayMode"
-          :active-tool="openTool?.kind ?? null"
-          @missing="markVersionMissing"
-          @recover="recoverImage"
-          @edit="openEditor"
-          @tool="openImageTool"
-        />
-        <WorkspaceCandidates
-          v-else-if="pane === 'images'"
-          :viewed-candidates="viewedCandidates"
-          :viewed="viewed"
-          :current="current"
-          :viewed-group="viewedGroup"
-          :busy="busy"
-          :operation="operation"
-          :clearing-image="clearingImage"
-          @view="viewCandidate"
-          @missing="markVersionMissing"
-          @confirm="clearingImage = $event"
-          @remove="clearImage"
-        />
-        <template v-else-if="pane === 'prompt'"
-          ><WorkspacePrompt
-            v-if="snapshotEditor"
-            ref="snapshotPrompt"
-            :key="viewed.id"
-            :editor="snapshotEditor"
-            :model="snapshotEditor.model ?? work.model"
-            :image="viewed.image"
-            :initial="!viewed.generated"
-          />
           <div
             v-else
-            class="pw-blank"
+            class="pw-scope-bar"
+            :data-historical="historical"
           >
-            此版本未保存生图配置快照
-          </div></template
-        >
-        <div
-          v-else-if="pane === 'changes'"
-          class="pw-change-board scroll"
-        >
-          <WorkspaceIterations
-            :work="work"
-            :version-id="viewed.id"
-            :compare-id="compareVersionId"
+            <div
+              class="pw-scope-label"
+              :title="viewed.label"
+            >
+              <b>{{ displayVersionLabel(viewedGroup.label) }}</b
+              ><span class="muted small"
+                >第 {{ viewedGroup.versions.findIndex((v) => v.id === viewed.id) + 1 }} 张</span
+              >
+            </div>
+            <div class="pw-scope-actions">
+              <button
+                class="icon-btn sm"
+                title="引用此版参与讨论"
+                aria-label="引用此版"
+                :disabled="busy || !viewed.image"
+                @click="reference(viewed.id)"
+              >
+                <Icon
+                  name="chat"
+                  :size="16"
+                />
+              </button>
+              <button
+                class="btn small pw-adopt"
+                :class="{ ghost: !historical }"
+                :disabled="busy || !historical || viewed.image?.missing"
+                :title="
+                  historical
+                    ? '设为创作底稿，从这张图片继续修改和重绘'
+                    : '下一版配置与重绘基于这张图片'
+                "
+                @click="continueVersion(viewed.id)"
+              >
+                {{ historical ? '设为底稿' : '当前底稿' }}
+              </button>
+              <ThemeSelect
+                v-if="pane === 'changes'"
+                v-model="compareVersionId"
+                class="pw-compare"
+                :options="compareOptions"
+                aria-label="对比对象"
+              />
+            </div>
+            <div
+              v-if="pane === 'prompt'"
+              class="pw-prompt-actions"
+            >
+              <button
+                v-if="snapshotEditor && historical"
+                class="btn ghost small"
+                :disabled="busy"
+                :title="
+                  historical
+                    ? '把这一版的提示词和参数载入下一版配置（底稿图片不变）'
+                    : '在本版配置的基础上编辑下一版'
+                "
+                @click="editFromSnapshot"
+              >
+                <Icon
+                  name="import"
+                  :size="13"
+                />{{ historical ? '载入到下一版' : '编辑下一版' }}
+              </button>
+              <button
+                class="icon-btn sm"
+                title="复制完整提示词"
+                @click="snapshotPrompt?.copyPrompt()"
+              >
+                <Icon
+                  name="copy"
+                  :size="15"
+                />
+              </button>
+            </div>
+          </div>
+          <WorkspacePrompt
+            v-if="editingPrompt && configDraft"
+            ref="promptEditor"
+            :editor="configDraft"
+            :model="configDraft.model ?? work.model"
+            :image="current.image"
+            editable
+            :disabled="!!operation || remoteBusy"
+            :size-locked="configSizeLocked"
+            @change-editor="updateConfigDraft"
+            @input.capture="configOwner = null"
+            @change.capture="configOwner = null"
+            @click.capture="configOwner = null"
+          />
+          <WorkspaceCanvas
+            v-else-if="pane === 'canvas'"
+            ref="viewport"
+            v-model:zoom="zoom"
+            v-model:show-mask="showMask"
+            :viewed="viewed"
+            :current="current"
+            :overlay="overlay"
+            :historical="historical"
+            :busy="busy"
+            :display-regions="displayRegions"
+            :overlay-mode="overlayMode"
+            :active-tool="openTool?.kind ?? null"
+            @missing="markVersionMissing"
+            @recover="recoverImage"
+            @edit="openEditor"
+            @tool="openImageTool"
+          />
+          <WorkspaceCandidates
+            v-else-if="pane === 'images'"
+            :viewed-candidates="viewedCandidates"
+            :viewed="viewed"
+            :current="current"
+            :viewed-group="viewedGroup"
+            :busy="busy"
+            :operation="operation"
+            :clearing-image="clearingImage"
+            @view="viewCandidate"
+            @missing="markVersionMissing"
+            @confirm="clearingImage = $event"
+            @remove="clearImage"
+          />
+          <template v-else-if="pane === 'prompt'"
+            ><WorkspacePrompt
+              v-if="snapshotEditor"
+              ref="snapshotPrompt"
+              :key="viewed.id"
+              :editor="snapshotEditor"
+              :model="snapshotEditor.model ?? work.model"
+              :image="viewed.image"
+              :initial="!viewed.generated"
+            />
+            <div
+              v-else
+              class="pw-blank"
+            >
+              此版本未保存生图配置快照
+            </div></template
+          >
+          <div
+            v-else-if="pane === 'changes'"
+            class="pw-change-board scroll"
+          >
+            <WorkspaceIterations
+              :work="work"
+              :version-id="viewed.id"
+              :compare-id="compareVersionId"
+            />
+          </div>
+          <WorkspaceExecutionBar
+            :current="current"
+            :selected-region-ids="selectedRegionIds"
+            :execution="work.execution"
+            :next-editor="nextEditor"
+            :model="work.model"
+            :operation="operation"
+            :remote-busy="remoteBusy"
+            :busy="busy"
+            :has-execution-region="!!executionRegions.length"
+            :progress="progress"
+            :generate-task="generateTask"
+            :collection-id="work.collectionId"
+            @execution="setExecution"
+            @collection="setCollection"
+            @generate="generate"
+            @preview="inspectMask"
+            @cancel="cancelTask"
           />
         </div>
-        <WorkspaceExecutionBar
-          :current="current"
-          :selected-region-ids="selectedRegionIds"
-          :execution="work.execution"
-          :next-editor="nextEditor"
-          :model="work.model"
-          :operation="operation"
-          :remote-busy="remoteBusy"
-          :busy="busy"
-          :has-execution-region="!!executionRegions.length"
-          :progress="progress"
-          :generate-task="generateTask"
-          :collection-id="work.collectionId"
-          @execution="setExecution"
-          @collection="setCollection"
-          @generate="generate"
-          @preview="inspectMask"
-          @cancel="cancelTask"
+        <SplitHandle
+          v-show="!aiCollapsed"
+          storage-key="workspace-chat"
+          variable="--pw-chat-user"
+          scope=".pw-shell"
+          side="end"
+          :min="360"
+          :max="820"
+          :reserve="480"
+          label="AI 对话栏宽度"
         />
-      </div>
-      <SplitHandle
-        v-show="!aiCollapsed"
-        storage-key="workspace-chat"
-        variable="--pw-chat-user"
-        scope=".pw-shell"
-        side="end"
-        :min="300"
-        :max="820"
-        :reserve="420"
-        label="AI 对话栏宽度"
-      />
-      <div
-        id="workspace-ai-panel"
-        class="pw-ai-dock"
-        :inert="aiCollapsed"
-        :aria-hidden="aiCollapsed"
-      >
-        <WorkspaceConversation
-          ref="conversation"
-          v-model:composer="composer"
-          v-model:attachments="attachments"
-          v-model:importing="importingAttachment"
-          v-model:region-ids="selectedRegionIds"
-          :work="work"
-          :current="current"
-          :busy="busy"
-          :historical="historical"
-          :external="external"
-          :agent-label="agentLabel"
-          :agent-connected="agentConnected"
-          :agent-status="agentStatus"
-          :agent-activity="agentActivity"
-          :pending-request="pendingRequest"
-          :pending-text="pendingText"
-          :operation="operation"
-          :progress="operation === 'chat' ? chatProgress : progress"
-          :error="error"
-          :editing-prompt="editingPrompt"
-          :selected-proposal-id="selectedProposalId"
-          :references="references"
-          :discussion-context="discussionContext"
-          :label="label"
-          :time="time"
-          :status="status"
-          :stale="stale"
-          :plan-label="planLabel"
-          @agent-mode="setAgentMode"
-          @view="viewCandidate"
-          @proposal="proposal"
-          @cancel-external="cancelExternal"
-          @cancel-chat="cancelChat"
-          @clear-error="error = ''"
-          @reference="reference"
-          @annotation="updateSelection"
-          @locate="locateRegion"
-          @send="send"
-        />
+        <div
+          id="workspace-ai-panel"
+          class="pw-ai-dock"
+          :inert="aiCollapsed"
+          :aria-hidden="aiCollapsed"
+        >
+          <WorkspaceConversation
+            ref="conversation"
+            v-model:composer="composer"
+            v-model:attachments="attachments"
+            v-model:importing="importingAttachment"
+            v-model:region-ids="selectedRegionIds"
+            :work="work"
+            :current="current"
+            :busy="busy"
+            :historical="historical"
+            :external="external"
+            :agent-label="agentLabel"
+            :agent-connected="agentConnected"
+            :agent-status="agentStatus"
+            :agent-activity="agentActivity"
+            :pending-request="pendingRequest"
+            :pending-text="pendingText"
+            :operation="operation"
+            :progress="operation === 'chat' ? chatProgress : progress"
+            :error="error"
+            :editing-prompt="editingPrompt"
+            :selected-proposal-id="selectedProposalId"
+            :references="references"
+            :discussion-context="discussionContext"
+            :label="label"
+            :time="time"
+            :status="status"
+            :stale="stale"
+            :plan-label="planLabel"
+            @agent-mode="setAgentMode"
+            @view="viewCandidate"
+            @proposal="proposal"
+            @cancel-external="cancelExternal"
+            @cancel-chat="cancelChat"
+            @clear-error="error = ''"
+            @reference="reference"
+            @annotation="updateSelection"
+            @locate="locateRegion"
+            @send="send"
+          />
+        </div>
       </div>
     </div>
 
@@ -1332,6 +1334,7 @@ async function beginConfigFromButton() {
       :count="current.editor.params.count"
       :steps="current.editor.params.steps"
       :precise-references="current.editor.params.preciseReferences"
+      :vibe-references="current.editor.params.vibeReferences"
       :model="work.model"
       :disabled="busy"
       @run="runImageTool"
@@ -1347,6 +1350,7 @@ async function beginConfigFromButton() {
       :count="current.editor.params.count"
       :steps="current.editor.params.steps"
       :precise-references="current.editor.params.preciseReferences"
+      :vibe-references="current.editor.params.vibeReferences"
       :model="work.model"
       :disabled="busy"
       @run="runToolFromPanel"
@@ -1583,7 +1587,9 @@ async function beginConfigFromButton() {
   color: var(--muted);
 }
 
+.pw-work-area,
 .pw-main {
+  min-width: 0;
   position: relative;
   display: flex;
   flex: 1;
@@ -1605,7 +1611,7 @@ async function beginConfigFromButton() {
 
 .pw-canvas-column {
   flex: 1;
-  min-width: 240px;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1921,6 +1927,7 @@ async function beginConfigFromButton() {
   flex-direction: column;
   background: var(--bg);
   outline: none;
+  container-type: inline-size;
   --pw-chat-width: var(--pw-chat-user, 380px);
 }
 
@@ -2056,7 +2063,7 @@ async function beginConfigFromButton() {
 
 @media (width <= 1050px) {
   .pw-shell {
-    --pw-chat-width: var(--pw-chat-user, 320px);
+    --pw-chat-width: var(--pw-chat-user, 360px);
   }
 
   .pw-header-tools {
@@ -2070,10 +2077,6 @@ async function beginConfigFromButton() {
 }
 
 @media (width <= 800px) {
-  .pw-shell {
-    --pw-chat-width: var(--pw-chat-user, 280px);
-  }
-
   .pw-header-actions {
     gap: 2px;
   }

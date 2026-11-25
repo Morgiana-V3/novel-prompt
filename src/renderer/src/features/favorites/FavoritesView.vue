@@ -604,7 +604,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           storage-key="favorites-detail"
           variable="--favorites-detail-width"
           side="end"
-          :min="300"
+          :min="360"
           :max="900"
           :reserve="320"
           label="收藏详情栏宽度"
@@ -1073,7 +1073,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .favorite-card:hover .favorite-cover {
   transform: translateY(var(--lift-card));
   border-color: var(--pink-line);
-  box-shadow: var(--shadow-lift);
 }
 
 .favorite-card:hover .favorite-cover img {
@@ -1156,7 +1155,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 /* ---------- 详情 ---------- */
 .favorites-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 0 var(--favorites-detail-width, minmax(340px, 0.72fr));
+  grid-template-columns: minmax(320px, 1fr) 0 var(--favorites-detail-width, minmax(360px, 0.72fr));
   flex: 1;
   min-height: 0;
 
@@ -1556,7 +1555,7 @@ footer label {
   }
 
   .favorites-body {
-    grid-template-columns: minmax(0, 1fr) 0 var(--favorites-detail-width, minmax(300px, 1fr));
+    grid-template-columns: minmax(320px, 1fr) 0 var(--favorites-detail-width, minmax(360px, 1fr));
     gap: 12px 6px;
   }
 

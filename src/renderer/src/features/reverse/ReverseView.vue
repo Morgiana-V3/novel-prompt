@@ -771,7 +771,7 @@ async function source(url: string) {
         class="reverse-split"
         storage-key="reverse-reference"
         variable="--reverse-reference-width"
-        :min="240"
+        :min="320"
         :max="900"
         :reserve="380"
         label="参考图栏宽度"
@@ -1316,7 +1316,7 @@ progress {
 
 .reverse-workspace.is-recognition {
   display: grid;
-  grid-template-columns: var(--reverse-reference-width, minmax(240px, 0.8fr)) 0 minmax(
+  grid-template-columns: var(--reverse-reference-width, minmax(320px, 0.8fr)) 0 minmax(
       380px,
       1.2fr
     );

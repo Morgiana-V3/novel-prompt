@@ -1,5 +1,6 @@
 import {
   MAX_REFERENCES,
+  checkReferences,
   REFERENCE_FEE,
   REFERENCE_LABELS,
   type PreciseReference,
@@ -27,7 +28,7 @@ export function validateAttachments(items: unknown): asserts items is ChatAttach
     ) ||
     new Set(items.map((item) => item.imageName)).size !== items.length
   ) {
-    throw new Error('聊天附件无效，请选择最多 4 张不同的图片')
+    throw new Error(`聊天附件无效，本应用每条消息最多附加 ${MAX_REFERENCES} 张不同图片`)
   }
 }
 export function attachmentReferenceNotice(items: ChatAttachment[] = []) {
@@ -45,12 +46,13 @@ export function generationReferences(
   current: PreciseReference[],
   attachments: ChatAttachment[],
   model: string,
+  usingVibes = false,
 ) {
   if (attachments.every((image) => image.purpose === 'discussion')) {
     return undefined
   }
-  if (model !== 'v4.5') {
-    throw new Error('角色与画风参考需要 V4.5 Full，请切换模型或将附图用途改为仅讨论')
+  if (usingVibes) {
+    throw new Error('当前配置使用 Vibe Transfer，请将本轮附图改为仅讨论，或先移除 Vibe')
   }
   const next = current.map((image) => ({ ...image }))
   for (const { imageName, purpose } of attachments) {
@@ -59,13 +61,17 @@ export function generationReferences(
     }
     const existing = next.find((image) => image.imageName === imageName)
     if (existing) {
+      if (existing.mode !== purpose) {
+        delete existing.preferSameOutfit
+      }
       existing.mode = purpose
     } else {
       next.push({ imageName, mode: purpose, strength: 1, fidelity: 1 })
     }
   }
   if (next.length > MAX_REFERENCES) {
-    throw new Error('合并后超过 4 张生成参考，请先在配置中移除不需要的参考图')
+    throw new Error(`合并后超过本应用 ${MAX_REFERENCES} 张精确参考上限，请先移除不需要的参考图`)
   }
+  checkReferences(next, model)
   return next
 }

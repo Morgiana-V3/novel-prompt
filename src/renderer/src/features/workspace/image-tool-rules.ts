@@ -1,3 +1,5 @@
+import { V5_INPAINT_REFERENCE_NOTICE, type PreciseReference } from '@shared/generation/references'
+import type { VibeReference } from '@shared/generation/vibes'
 import { estimateGeneration, estimateUpscale, estimateLabel } from '@shared/generation/pricing'
 import type { NaiSubscription, NaiVersion } from '@shared/generation/types'
 import type { PageImageTool } from '@shared/workspace/model'
@@ -17,6 +19,8 @@ export interface ToolSource {
   count: number
   steps: number
   version?: NaiVersion
+  preciseReferences?: PreciseReference[]
+  vibeReferences?: VibeReference[]
 }
 
 /** 不能执行的原因；可以执行时为空字符串 */
@@ -25,6 +29,9 @@ export function toolBlockedReason(tool: PageImageTool, source: ToolSource): stri
     return source.width * source.height > UPSCALE_MAX_PIXELS ? '原图超过放大接口的输入上限' : ''
   }
   if (tool.kind === 'outpaint') {
+    if (source.version === 'v5' && source.preciseReferences?.length) {
+      return V5_INPAINT_REFERENCE_NOTICE
+    }
     if (source.width % 64 || source.height % 64) {
       return '原图宽高不是 64 的倍数，无法扩图'
     }

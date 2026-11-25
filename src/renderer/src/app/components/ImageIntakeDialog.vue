@@ -5,8 +5,14 @@ import Icon from '../../shared/ui/Icon.vue'
 import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 import type { IconName } from '../../shared/ui/icons'
 
-type IntakeAction = 'decode' | 'reverse' | 'workspace' | 'gallery'
-type DirectAction = Exclude<IntakeAction, 'gallery'>
+import {
+  REFERENCE_LABELS,
+  referenceModes,
+  type PreciseReference,
+} from '@shared/generation/references'
+import type { ImageUse } from '../use-image-intake'
+
+type DirectAction = Exclude<ImageUse, 'gallery' | 'reference'>
 
 interface DirectActionItem {
   action: DirectAction
@@ -26,9 +32,10 @@ const props = defineProps<{
   error: string
   collections: readonly { id: string; name: string }[]
   defaultCollectionId: string
+  model: 'v4.5' | 'v5'
 }>()
 const emit = defineEmits<{
-  choose: [action: IntakeAction, collectionId?: string]
+  choose: [action: ImageUse, choice?: string]
   cancel: []
 }>()
 
@@ -39,8 +46,14 @@ const galleryConfirm = ref<HTMLButtonElement>()
 const titleId = useId()
 const hintIdPrefix = useId()
 const galleryPanelId = useId()
+const referencePanelId = useId()
+const referenceOptions = computed(() =>
+  referenceModes(props.model).map((value) => ({ value, label: REFERENCE_LABELS[value] })),
+)
+const referencePanel = ref<HTMLElement>()
+const isReferenceExpanded = ref(false)
 const isClosing = ref(false)
-const pendingAction = ref<IntakeAction>()
+const pendingAction = ref<ImageUse>()
 
 // 预览
 const hasPreviewError = ref(false)
@@ -63,7 +76,7 @@ const decodeHint = computed(() => {
   }
   return '恢复原图提示词和可用的生成参数'
 })
-const directActions = computed<DirectActionItem[]>(() => [
+const appDirectActions = computed<DirectActionItem[]>(() => [
   {
     action: 'decode',
     label: '读取生成记录',
@@ -87,20 +100,20 @@ const directActions = computed<DirectActionItem[]>(() => [
   },
 ])
 
-function hintId(action: IntakeAction): string {
+function hintId(action: ImageUse): string {
   return `${hintIdPrefix}-${action}`
 }
 
-function isPending(action: IntakeAction): boolean {
+function isPending(action: ImageUse): boolean {
   return props.busy && pendingAction.value === action
 }
 
-function chooseDirect(item: DirectActionItem) {
-  if (item.isDisabled || isClosing.value) {
+function chooseDirect(action: DirectAction) {
+  if (props.busy || isClosing.value) {
     return
   }
-  pendingAction.value = item.action
-  emit('choose', item.action)
+  pendingAction.value = action
+  emit('choose', action)
 }
 
 // 保存到图库：先原位选择图集，确认后才通知父组件
@@ -138,12 +151,33 @@ async function toggleGallery() {
     return
   }
   isGalleryExpanded.value = !isGalleryExpanded.value
+  isReferenceExpanded.value = false
 
   if (!isGalleryExpanded.value) {
     return
   }
   await nextTick()
   galleryPanel.value?.querySelector<HTMLButtonElement>('.theme-select')?.focus()
+}
+
+async function toggleReference() {
+  if (props.busy || isClosing.value) {
+    return
+  }
+  isReferenceExpanded.value = !isReferenceExpanded.value
+  isGalleryExpanded.value = false
+  if (isReferenceExpanded.value) {
+    await nextTick()
+    referencePanel.value?.querySelector<HTMLButtonElement>('button')?.focus()
+  }
+}
+
+function confirmReference(mode: PreciseReference['mode']) {
+  if (props.busy || isClosing.value) {
+    return
+  }
+  pendingAction.value = 'reference'
+  emit('choose', 'reference', mode)
 }
 
 function confirmGallery() {
@@ -252,55 +286,115 @@ onBeforeUnmount(() => dialog.value?.close())
         role="group"
         :aria-labelledby="titleId"
       >
-        <button
-          v-for="item in directActions"
-          :key="item.action"
-          class="intake-action"
-          :class="{ pending: isPending(item.action) }"
-          :disabled="item.isDisabled"
-          :aria-describedby="item.hint ? hintId(item.action) : undefined"
-          @click="chooseDirect(item)"
+        <section
+          class="intake-section"
+          aria-label="解析与管理"
         >
-          <span class="intake-action-icon"
-            ><Icon
-              :name="item.icon"
-              :size="16"
-          /></span>
-          <span class="intake-action-text"
-            ><span>{{ item.label }}</span
-            ><small
-              v-if="item.hint"
-              :id="hintId(item.action)"
-              >{{ item.hint }}</small
-            ></span
-          >
-          <Icon
-            v-if="item.action !== 'decode' || metadata === 'available'"
-            name="chevron"
-            class="intake-action-caret"
-            :size="12"
-          />
-        </button>
-        <div
-          class="intake-gallery"
-          :class="{ expanded: isGalleryExpanded }"
-        >
+          <h3 class="intake-section-title">解析与管理</h3>
           <button
+            v-for="item in appDirectActions"
+            :key="item.action"
             class="intake-action"
-            :class="{ pending: isPending('gallery') }"
-            :disabled="busy"
-            :aria-expanded="isGalleryExpanded"
-            :aria-controls="galleryPanelId"
-            @click="toggleGallery"
+            :class="{ pending: isPending(item.action) }"
+            :disabled="item.isDisabled"
+            :aria-describedby="item.hint ? hintId(item.action) : undefined"
+            @click="chooseDirect(item.action)"
           >
             <span class="intake-action-icon"
               ><Icon
-                name="album"
+                :name="item.icon"
+                :size="16"
+            /></span>
+            <span class="intake-action-text"
+              ><span>{{ item.label }}</span
+              ><small
+                v-if="item.hint"
+                :id="hintId(item.action)"
+                >{{ item.hint }}</small
+              ></span
+            >
+            <Icon
+              v-if="item.action !== 'decode' || metadata === 'available'"
+              name="chevron"
+              class="intake-action-caret"
+              :size="12"
+            />
+          </button>
+          <div
+            class="intake-gallery"
+            :class="{ expanded: isGalleryExpanded }"
+          >
+            <button
+              class="intake-action"
+              :class="{ pending: isPending('gallery') }"
+              :disabled="busy"
+              :aria-expanded="isGalleryExpanded"
+              :aria-controls="galleryPanelId"
+              @click="toggleGallery"
+            >
+              <span class="intake-action-icon"
+                ><Icon
+                  name="album"
+                  :size="16"
+              /></span>
+              <span class="intake-action-text">
+                <span>保存到图库</span>
+                <small>选图集后保存</small>
+              </span>
+              <Icon
+                name="chevron"
+                class="intake-action-caret"
+                :size="12"
+              />
+            </button>
+            <Transition name="intake-expand">
+              <div
+                v-if="isGalleryExpanded"
+                :id="galleryPanelId"
+                ref="galleryPanel"
+                class="intake-gallery-panel"
+              >
+                <div class="intake-gallery-select">
+                  <ThemeSelect
+                    v-model="targetCollectionId"
+                    :options="collectionOptions"
+                    :disabled="busy"
+                    aria-label="保存到图集"
+                  />
+                </div>
+                <button
+                  ref="galleryConfirm"
+                  class="btn accent small"
+                  :disabled="!canConfirmGallery"
+                  @click="confirmGallery"
+                >
+                  确认保存
+                </button>
+              </div>
+            </Transition>
+          </div>
+        </section>
+
+        <section
+          class="intake-section"
+          aria-label="生图参考与改画"
+        >
+          <h3 class="intake-section-title">生图参考与改画</h3>
+          <button
+            class="intake-action"
+            :class="{ pending: isPending('img2img') }"
+            :disabled="busy"
+            :aria-describedby="hintId('img2img')"
+            @click="chooseDirect('img2img')"
+          >
+            <span class="intake-action-icon"
+              ><Icon
+                name="image"
                 :size="16"
             /></span>
             <span class="intake-action-text">
-              <span>保存到图库</span>
-              <small>选图集后保存</small>
+              <span>用于图生图</span>
+              <small :id="hintId('img2img')">以这张图为底稿，按提示词重画</small>
             </span>
             <Icon
               name="chevron"
@@ -309,29 +403,78 @@ onBeforeUnmount(() => dialog.value?.close())
             />
           </button>
           <div
-            v-if="isGalleryExpanded"
-            :id="galleryPanelId"
-            ref="galleryPanel"
-            class="intake-gallery-panel"
+            class="intake-gallery"
+            :class="{ expanded: isReferenceExpanded }"
           >
-            <div class="intake-gallery-select">
-              <ThemeSelect
-                v-model="targetCollectionId"
-                :options="collectionOptions"
-                :disabled="busy"
-                aria-label="保存到图集"
-              />
-            </div>
             <button
-              ref="galleryConfirm"
-              class="btn accent small"
-              :disabled="!canConfirmGallery"
-              @click="confirmGallery"
+              class="intake-action"
+              :class="{ pending: isPending('reference') }"
+              :disabled="busy"
+              :aria-expanded="isReferenceExpanded"
+              :aria-controls="referencePanelId"
+              @click="toggleReference"
             >
-              确认保存
+              <span class="intake-action-icon"
+                ><Icon
+                  name="layers"
+                  :size="16"
+              /></span>
+              <span class="intake-action-text">
+                <span>设为精确参考</span>
+                <small>{{
+                  model === 'v5' ? '指定要参考的角色、画风或服装' : '指定要参考的角色或画风'
+                }}</small>
+              </span>
+              <Icon
+                name="chevron"
+                class="intake-action-caret"
+                :size="12"
+              />
             </button>
+            <Transition name="intake-expand">
+              <div
+                v-if="isReferenceExpanded"
+                :id="referencePanelId"
+                ref="referencePanel"
+                class="intake-gallery-panel intake-reference-modes"
+                role="group"
+                aria-label="选择参考用途"
+              >
+                <button
+                  v-for="option in referenceOptions"
+                  :key="option.value"
+                  class="btn small"
+                  :disabled="busy"
+                  @click="confirmReference(option.value)"
+                >
+                  {{ option.label }}
+                </button>
+              </div>
+            </Transition>
           </div>
-        </div>
+          <button
+            class="intake-action"
+            :class="{ pending: isPending('vibe') }"
+            :disabled="busy"
+            :aria-describedby="hintId('vibe')"
+            @click="chooseDirect('vibe')"
+          >
+            <span class="intake-action-icon"
+              ><Icon
+                name="palette"
+                :size="16"
+            /></span>
+            <span class="intake-action-text">
+              <span>{{ model === 'v5' ? '切到 V4.5 并加入 Vibe' : '用于 Vibe Transfer' }}</span>
+              <small :id="hintId('vibe')">提取整张图的视觉特征，混入新画面</small>
+            </span>
+            <Icon
+              name="chevron"
+              class="intake-action-caret"
+              :size="12"
+            />
+          </button>
+        </section>
       </div>
     </div>
     <footer class="intake-footer">
@@ -352,8 +495,8 @@ onBeforeUnmount(() => dialog.value?.close())
 
 <style scoped>
 .image-intake {
-  width: min(720px, calc(100vw - 40px));
-  height: min(460px, calc(100dvh - 68px));
+  width: min(740px, calc(100vw - 40px));
+  height: min(588px, calc(100dvh - 56px));
   max-width: none;
   max-height: none;
   margin: auto;
@@ -462,9 +605,24 @@ onBeforeUnmount(() => dialog.value?.close())
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 16px;
+  gap: 14px;
+  padding: 14px 16px;
   overflow: auto;
+}
+
+.intake-section {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.intake-section-title {
+  margin: 0;
+  padding: 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
 }
 
 .intake-action {
@@ -473,8 +631,8 @@ onBeforeUnmount(() => dialog.value?.close())
   align-items: center;
   gap: 10px;
   width: 100%;
-  min-height: 52px;
-  padding: 9px 12px;
+  min-height: 48px;
+  padding: 8px 12px;
   text-align: left;
   font-size: 13px;
   font-weight: 500;
@@ -483,9 +641,14 @@ onBeforeUnmount(() => dialog.value?.close())
   border-radius: 12px;
   background: var(--bg);
   transition:
+    transform var(--dur-slow) var(--bounce),
     border-color var(--dur-fast) var(--ease-out),
     background-color var(--dur-fast) var(--ease-out),
     box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.intake-action:active:not(:disabled) {
+  transform: scale(var(--press));
 }
 
 .intake-action-icon {
@@ -498,7 +661,8 @@ onBeforeUnmount(() => dialog.value?.close())
   color: var(--text2);
   transition:
     background-color var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out);
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
 }
 
 .intake-action-text {
@@ -511,7 +675,7 @@ onBeforeUnmount(() => dialog.value?.close())
 .intake-action-text small {
   font-size: 11.5px;
   font-weight: 400;
-  line-height: 1.5;
+  line-height: 1.45;
   color: var(--muted);
 }
 
@@ -521,7 +685,9 @@ onBeforeUnmount(() => dialog.value?.close())
   stroke-width: 2.4;
   stroke-linecap: round;
   stroke-linejoin: round;
-  transition: transform var(--dur-base) var(--ease-out);
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    stroke var(--dur-fast) var(--ease-out);
 }
 
 .intake-action:hover:not(:disabled),
@@ -534,6 +700,11 @@ onBeforeUnmount(() => dialog.value?.close())
 .intake-action.pending .intake-action-icon {
   background: var(--bg);
   color: var(--pink-deep);
+}
+
+.intake-section > .intake-action:hover:not(:disabled) .intake-action-caret {
+  stroke: var(--pink-deep);
+  transform: translateX(2px);
 }
 
 .intake-action:focus-visible {
@@ -560,14 +731,48 @@ onBeforeUnmount(() => dialog.value?.close())
   transform: rotate(-90deg);
 }
 
+.intake-gallery.expanded > .intake-action {
+  border-color: var(--pink-line);
+  background: var(--pink-soft);
+}
+
+.intake-gallery.expanded > .intake-action .intake-action-icon {
+  background: var(--bg);
+  color: var(--pink-deep);
+}
+
 .intake-gallery-panel {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-top: 6px;
   padding: 10px 12px;
+  border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--panel);
+}
+
+.intake-expand-enter-active {
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-glide);
+}
+
+.intake-expand-leave-active {
+  transition:
+    opacity var(--dur-fast) var(--ease-in),
+    transform var(--dur-fast) var(--ease-in);
+}
+
+.intake-expand-enter-from,
+.intake-expand-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.intake-reference-modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .intake-gallery-select {

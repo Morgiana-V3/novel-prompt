@@ -153,6 +153,7 @@ export function queueExternalRequest(
     version.editor.params.preciseReferences ?? [],
     workspace.composerAttachments ?? [],
     workspace.model,
+    !!version.editor.params.vibeReferences?.length,
   )
   const selectedRegions = selectRegions(version, selection)
   const selectedIds = selectedRegions.map((region) => region.id)

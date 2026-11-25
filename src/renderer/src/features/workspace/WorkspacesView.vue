@@ -7,14 +7,29 @@ import { promptState } from '../prompts/public/draft'
 import {
   imageState,
   clearWorkspaceImage,
-  takeWorkspaceTool,
+  referenceDraft,
   type WorkspaceToolKind,
 } from '../generation/public'
 import { settingsState } from '../settings/state'
 import { shellState } from '../../shared/state/shell'
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
+import {
+  computed,
+  inject,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  shallowRef,
+  watch,
+  type Ref,
+} from 'vue'
 import type { DesktopState, FrontendRequest, FrontendContext } from '@shared/contracts/desktop'
-import type { PageWorkspace as Session, PageWorkspaceSummary } from '@shared/workspace/model'
+import type {
+  Img2ImgConfigSource,
+  PageWorkspace as Session,
+  PageWorkspaceSummary,
+} from '@shared/workspace/model'
+import { IMAGE_IMPORT_LIMIT, IMAGE_IMPORT_TYPES } from '@shared/images/import'
 import type { NaiImage } from '@shared/images/types'
 import type { NaiGenParams } from '@shared/generation/types'
 import { cleanErr } from '../../shared/lib/format'
@@ -32,18 +47,32 @@ const error = ref('')
 const deleting = ref<string | null>(null)
 const start = ref('blank')
 const title = ref('')
-const selectedImage = ref<NaiImage | null>(null)
+const selectedImage = shallowRef<NaiImage | File | null>(null)
+const img2imgConfig = ref<Img2ImgConfigSource | null>(null)
+const img2imgPrompt = ref('')
+const baseImageUrl = ref('')
+const baseImageLabel = computed(() => {
+  const image = selectedImage.value
+  if (image instanceof File) {
+    return image.name
+  }
+  return image ? image.width + ' × ' + image.height : ''
+})
+watch(selectedImage, (image, _previous, cleanup) => {
+  if (image instanceof File) {
+    const url = URL.createObjectURL(image)
+    baseImageUrl.value = url
+    cleanup(() => URL.revokeObjectURL(url))
+  } else {
+    baseImageUrl.value = image?.url ?? ''
+  }
+})
 /*
  * 生图创作「去精修」下拉选的工具：只对这次送来图片新建的项目生效，
  * 取消新建或切到别的项目都会清掉，避免之后误打开。
  */
 const pendingTool = ref<WorkspaceToolKind | null>(null)
-const initialTool = ref<WorkspaceToolKind | null>(null)
-watch(current, (_next, previous) => {
-  if (previous) {
-    initialTool.value = null
-  }
-})
+const initialTool = ref<{ id: string; kind: WorkspaceToolKind } | null>(null)
 const projectDialog = ref<HTMLDialogElement>()
 const frontendControl = inject<{ state: Ref<DesktopState['frontend']>; stop: () => void }>(
   'frontend-control',
@@ -75,6 +104,9 @@ watch([creating, () => shellState.tab], async () => {
     formLeaving.value = true
     closeDialogThen(projectDialog.value, () => {
       formLeaving.value = false
+      if (!creating.value) {
+        selectedImage.value = null
+      }
     })
   }
 })
@@ -171,6 +203,7 @@ async function frontendAction(request: FrontendRequest, ctx: FrontendContext) {
   }
 }
 defineExpose({
+  stageImageToImage,
   importDroppedImage,
   prepareUpdate,
   agentOpen,
@@ -212,38 +245,66 @@ async function open(id: string) {
     busy.value = false
   }
 }
-function newSession(image?: NaiImage) {
+function newSession(image?: NaiImage | File) {
   dismissDelete(false)
   creating.value = true
   start.value = image ? 'gallery' : 'blank'
   selectedImage.value = image ?? null
+  img2imgConfig.value = null
+  img2imgPrompt.value = ''
+  pendingTool.value = null
   title.value = ''
   error.value = ''
 }
+function hasCreationPrompt() {
+  return !!promptState.prompt.trim() || promptState.characters.some((item) => item.prompt.trim())
+}
+
+async function stageImageToImage(image: NaiImage | File) {
+  if (
+    image instanceof File &&
+    (!IMAGE_IMPORT_TYPES.some((type) => type === image.type) || image.size > IMAGE_IMPORT_LIMIT)
+  ) {
+    throw new Error('请选择不超过 25 MB 的 PNG、JPEG 或 WebP 底图')
+  }
+  if (!(await prepareUpdate()) || busy.value) {
+    throw new Error('请先保存或完成当前精修项目的编辑')
+  }
+  newSession(image)
+  img2imgConfig.value =
+    hasCreationPrompt() || (image instanceof File && image.type !== 'image/png')
+      ? 'creation'
+      : 'original'
+  pendingTool.value = 'enhance'
+}
+
 watch(
   () => imageState.workspaceImage,
-  async (image) => {
-    if (!image) {
+  async (input) => {
+    if (!input) {
       return
     }
     clearWorkspaceImage()
-    pendingTool.value = takeWorkspaceTool()
-    if (busy.value) {
-      error.value = '请等待当前操作完成，再选择项目图片。'
-      return
+    try {
+      if (input.img2img) {
+        await stageImageToImage(input.source)
+        return
+      }
+      if (busy.value || (current.value && !(await workspace.value?.prepareLeave()))) {
+        throw new Error('请先保存或完成当前精修项目的编辑')
+      }
+      if (creating.value) {
+        selectedImage.value = input.source
+        start.value = 'gallery'
+        error.value = ''
+      } else {
+        newSession(input.source)
+      }
+      pendingTool.value = input.tool ?? null
+      void refresh().catch(reportError)
+    } catch (cause) {
+      toast(cleanErr(cause))
     }
-    if (current.value && !(await workspace.value?.prepareLeave())) {
-      return
-    }
-    current.value = null
-    if (creating.value) {
-      selectedImage.value = image
-      start.value = 'gallery'
-      error.value = ''
-    } else {
-      newSession(image)
-    }
-    void refresh().catch(reportError)
   },
 )
 function initialParams(): NaiGenParams {
@@ -278,29 +339,34 @@ async function create() {
   error.value = ''
   try {
     // 沿用图片预览里的步数、Guidance、采样器等设置（种子随机、每次一张），不再悄悄换成默认值
+    const model = settingsState.settings?.naiVersion ?? 'v5'
+    const config = img2imgConfig.value ?? undefined
     const params = initialParams()
+    if (config === 'creation') {
+      params.preciseReferences = referenceDraft.images.map((image) => ({ ...image }))
+      params.vibeReferences = referenceDraft.vibes.map((vibe) => ({ ...vibe }))
+    }
     const draft =
-      start.value === 'current'
+      start.value === 'current' || config === 'creation'
         ? {
-            base: promptState.prompt,
+            base:
+              config === 'creation' && !hasCreationPrompt()
+                ? img2imgPrompt.value.trim()
+                : promptState.prompt,
             negative: promptState.negative,
             characters: promptState.characters.map((character) => ({ ...character })),
           }
         : { base: '', negative: '', characters: [] }
     const resolveDoc = async () => {
       if (start.value === 'import') {
-        return await window.api.pagesImport(
-          params,
-          settingsState.settings?.naiVersion ?? 'v5',
-          draft,
-        )
+        return await window.api.pagesImport(params, model, draft)
       }
-      return await window.api.pagesCreate(
-        start.value === 'gallery' ? selectedImage.value!.name : null,
-        params,
-        settingsState.settings?.naiVersion ?? 'v5',
-        draft,
-      )
+      const image = start.value === 'gallery' ? selectedImage.value : null
+      if (image instanceof File) {
+        const bytes = new Uint8Array(await image.arrayBuffer())
+        return await window.api.pagesImportDropped(bytes, image.name, params, model, draft, config)
+      }
+      return await window.api.pagesCreate(image?.name ?? null, params, model, draft, config)
     }
     let doc = await resolveDoc()
     if (!doc) {
@@ -321,10 +387,15 @@ async function create() {
         renameError = cleanErr(error2)
       }
     }
-    initialTool.value = start.value === 'gallery' ? pendingTool.value : null
+    initialTool.value =
+      start.value === 'gallery' && pendingTool.value
+        ? { id: doc.id, kind: pendingTool.value }
+        : null
     pendingTool.value = null
     current.value = doc
     creating.value = false
+    await nextTick()
+    initialTool.value = null
     await refresh()
     if (renameError) {
       toast(`项目已创建，但名称未保存：${renameError}。可在项目顶部点击标题重命名`)
@@ -444,7 +515,7 @@ async function close() {
       ref="workspace"
       :key="current.id"
       :workspace="current"
-      :initial-tool="initialTool"
+      :initial-tool="initialTool?.id === current.id ? initialTool.kind : null"
       @close="close"
     />
     <section
@@ -622,7 +693,7 @@ async function close() {
         :inert="frontendRunning"
       >
         <div class="row">
-          <h3>新建项目</h3>
+          <h3>{{ img2imgConfig ? '使用图片改画' : '新建项目' }}</h3>
           <button
             class="icon-btn ml-auto"
             :disabled="busy"
@@ -640,7 +711,7 @@ async function close() {
             placeholder="给这次尝试起个名字"
             :disabled="busy"
         /></label>
-        <label
+        <label v-if="!img2imgConfig"
           >从哪里开始<ThemeSelect
             v-model="start"
             :disabled="busy"
@@ -651,20 +722,57 @@ async function close() {
               { value: 'import', label: '导入 PNG 图片' },
             ]"
         /></label>
+        <fieldset
+          v-else
+          class="img2img-config"
+          :disabled="busy"
+        >
+          <legend>提示词与生成配置</legend>
+          <label class="img2img-choice">
+            <input
+              v-model="img2imgConfig"
+              type="radio"
+              name="img2img-config"
+              value="creation"
+            />
+            使用当前创作配置
+          </label>
+          <label class="img2img-choice">
+            <input
+              v-model="img2imgConfig"
+              type="radio"
+              name="img2img-config"
+              value="original"
+            />
+            沿用原图生成配置
+          </label>
+        </fieldset>
+        <label v-if="img2imgConfig === 'creation' && !hasCreationPrompt()">
+          本次改画提示词
+          <input
+            v-model="img2imgPrompt"
+            class="input"
+            maxlength="30000"
+            placeholder="描述要保留或改动的画面"
+            :disabled="busy"
+          />
+        </label>
         <div
           v-if="start === 'gallery'"
           class="session-image"
         >
           <template v-if="selectedImage"
             ><img
-              :src="selectedImage.url"
+              :src="baseImageUrl"
               alt="项目基础图片"
             />
             <div>
-              <b>基础图片</b><span>{{ selectedImage.width }} × {{ selectedImage.height }}</span>
+              <b>基础图片</b>
+              <span>{{ baseImageLabel }}</span>
             </div></template
           >
           <button
+            v-if="!img2imgConfig"
             class="btn small"
             :disabled="busy"
             @click="shellState.tab = 'generate'"
@@ -677,10 +785,14 @@ async function close() {
         </div>
         <button
           class="btn primary"
-          :disabled="busy || (start === 'gallery' && !selectedImage)"
+          :disabled="
+            busy ||
+            (start === 'gallery' && !selectedImage) ||
+            (img2imgConfig === 'creation' && !hasCreationPrompt() && !img2imgPrompt.trim())
+          "
           @click="create"
         >
-          {{ start === 'import' ? '选择 PNG 并开始' : '开始项目' }}
+          {{ img2imgConfig ? '打开图生图' : start === 'import' ? '选择 PNG 并开始' : '开始项目' }}
         </button>
       </section>
 
@@ -736,6 +848,61 @@ async function close() {
   margin: 0;
   background: transparent;
   max-width: none;
+}
+
+.img2img-config {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.img2img-config legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: 12px;
+  color: var(--text2);
+}
+
+.session-create .img2img-choice {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    transform var(--dur-slow) var(--bounce),
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.session-create .img2img-choice:hover {
+  border-color: var(--pink-line);
+  background: var(--panel);
+}
+
+.session-create .img2img-choice:active {
+  transform: scale(var(--press));
+}
+
+.img2img-choice:has(input:checked) {
+  border-color: var(--pink-line);
+  background: var(--pink-soft);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--pink) 12%, transparent);
+}
+
+.img2img-choice input {
+  margin: 0;
+  accent-color: var(--pink-deep);
 }
 
 .project-dialog h3 {
@@ -851,7 +1018,6 @@ async function close() {
 
 .session-card:has(.session-open:hover:not(:disabled)) {
   border-color: var(--pink-line);
-  box-shadow: var(--shadow-lift);
   transform: translateY(var(--lift-card));
 }
 

@@ -1,3 +1,4 @@
+import { checkVibes, VIBE_SCHEMA } from '../generation/vibes'
 import { checkReferences, REFERENCE_SCHEMA } from '../generation/references'
 import { isUcPreset, isNaiSampler, isNaiNoiseSchedule, UC_PRESET_NAMES } from '../generation/types'
 import type { NaiGenParams, NaiVersion } from '../generation/types'
@@ -76,6 +77,10 @@ export function patchWorkspaceConfig(
       seed: [0, 4294967295, 1],
     }
     for (const [field, value] of Object.entries(patch.params)) {
+      if (field === 'vibeReferences') {
+        checkVibes(value, model, false)
+        continue
+      }
       if (field === 'preciseReferences') {
         checkReferences(value, model)
         continue
@@ -137,6 +142,7 @@ export function patchWorkspaceConfig(
       }
     }
     Object.assign(next.params, patch.params)
+    checkVibes(next.params.vibeReferences ?? [], model, !!next.params.preciseReferences?.length)
   }
   if (patch.strength !== undefined) {
     if (
@@ -184,6 +190,7 @@ export const WORKSPACE_CONFIG_SCHEMA = {
       additionalProperties: false,
       properties: {
         preciseReferences: REFERENCE_SCHEMA,
+        vibeReferences: VIBE_SCHEMA,
         count: { type: 'integer', enum: [1, 2, 4] },
         qualityTags: { type: 'boolean' },
         qualityMode: { type: 'string', enum: ['standard', 'light'] },

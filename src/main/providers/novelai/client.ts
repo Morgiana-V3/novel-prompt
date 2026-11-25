@@ -1,10 +1,17 @@
+import { referenceCaption } from '../../../shared/generation/references'
 import type {
   NaiGenRequest,
   NaiImg2ImgRequest,
   NaiInpaintRequest,
   NaiSubscription,
 } from '../../../shared/generation/types'
-import { buildBody, buildImg2ImgBody, buildInpaintBody, buildUpscaleBody } from './payload'
+import {
+  buildBody,
+  buildImg2ImgBody,
+  buildInpaintBody,
+  buildUpscaleBody,
+  MODEL_ID,
+} from './payload'
 import { isPng, readZip } from './png-response'
 import { NaiError, request } from './request'
 
@@ -39,6 +46,7 @@ export async function generateOne(
   signal?: AbortSignal,
   prepared?: PreparedSource,
   referenceImages: string[] = [],
+  vibes: string[] = [],
 ): Promise<Buffer> {
   const body = requestBody(req, seed, prepared)
   const refs = req.params.preciseReferences ?? []
@@ -46,12 +54,30 @@ export async function generateOne(
     Object.assign(body.parameters as Record<string, unknown>, {
       director_reference_images: referenceImages,
       director_reference_descriptions: refs.map((ref) => ({
-        caption: { base_caption: ref.mode, char_captions: [] },
+        caption: { base_caption: referenceCaption(ref, req.version), char_captions: [] },
         legacy_uc: false,
       })),
       director_reference_information_extracted: refs.map(() => 1),
       director_reference_strength_values: refs.map((ref) => ref.strength),
-      director_reference_secondary_strength_values: refs.map((ref) => 1 - ref.fidelity),
+      director_reference_secondary_strength_values: refs.map((ref) =>
+        req.version === 'v5' ? 0 : 1 - (ref.fidelity ?? 1),
+      ),
+    })
+  }
+  if (vibes.length) {
+    const references = req.params.vibeReferences ?? []
+    const totalStrength = Math.max(
+      1,
+      references.reduce((sum, reference) => sum + reference.strength, 0),
+    )
+    Object.assign(body.parameters as Record<string, unknown>, {
+      reference_image_multiple: vibes,
+      reference_information_extracted_multiple: references.map(
+        (reference) => reference.information,
+      ),
+      reference_strength_multiple: references.map(
+        (reference) => reference.strength / totalStrength,
+      ),
     })
   }
   const res = await request(
@@ -62,6 +88,23 @@ export async function generateOne(
     signal,
   )
   return readImageResponse(res)
+}
+
+export async function encodeVibe(
+  image: string,
+  information: number,
+  token: string,
+): Promise<Buffer> {
+  const result = await request(
+    '/ai/encode-vibe',
+    {
+      method: 'POST',
+      body: JSON.stringify({ image, information_extracted: information, model: MODEL_ID['v4.5'] }),
+    },
+    'application/binary',
+    token,
+  )
+  return Buffer.from(await result.arrayBuffer())
 }
 
 /**

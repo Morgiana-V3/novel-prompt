@@ -1,12 +1,19 @@
+import { validVibes, type VibeReference } from '@shared/generation/vibes'
 import { validReferences, type PreciseReference } from '@shared/generation/references'
-import type { NaiGenParams } from '@shared/generation/types'
+import { validImg2Img, type Img2ImgBase, type NaiGenParams } from '@shared/generation/types'
 import type { NaiImage } from '@shared/images/types'
 import { reactive, watch } from 'vue'
 
 /** 只属于生图的参数；画幅、质量词、UC 预设与画面推测共用（promptState.params） */
 export type GenOnly = Omit<
   NaiGenParams,
-  'width' | 'height' | 'qualityTags' | 'qualityMode' | 'ucPreset' | 'preciseReferences'
+  | 'width'
+  | 'height'
+  | 'qualityTags'
+  | 'qualityMode'
+  | 'ucPreset'
+  | 'preciseReferences'
+  | 'vibeReferences'
 >
 
 export const GEN_PARAMS_KEY = 'np-gen-params'
@@ -46,10 +53,43 @@ function loadReferences(): PreciseReference[] {
     return []
   }
 }
-export const referenceDraft = reactive({ images: loadReferences() })
+function loadVibes(): VibeReference[] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem('np-creation-vibes') ?? '[]')
+    return validVibes(value) ? value : []
+  } catch {
+    return []
+  }
+}
+function loadImg2Img(): Img2ImgBase | null {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem('np-creation-img2img') ?? 'null')
+    return validImg2Img(value) ? value : null
+  } catch {
+    return null
+  }
+}
+
+export const referenceDraft = reactive({
+  images: loadReferences(),
+  vibes: loadVibes(),
+  img2img: loadImg2Img(),
+})
+export function setCreationVibes(vibes: VibeReference[] = []) {
+  referenceDraft.vibes = vibes.map((vibe) => ({ ...vibe }))
+  localStorage.setItem('np-creation-vibes', JSON.stringify(referenceDraft.vibes))
+}
 export function setCreationReferences(images: PreciseReference[] = []) {
   referenceDraft.images = images.map((image) => ({ ...image }))
   localStorage.setItem('np-creation-references', JSON.stringify(referenceDraft.images))
+}
+export function setCreationImg2Img(img2img: Img2ImgBase | null = null) {
+  referenceDraft.img2img = img2img ? { ...img2img } : null
+  if (referenceDraft.img2img) {
+    localStorage.setItem('np-creation-img2img', JSON.stringify(referenceDraft.img2img))
+  } else {
+    localStorage.removeItem('np-creation-img2img')
+  }
 }
 export const generationParams = reactive<GenOnly>(loadGenParams())
 watch(
@@ -71,20 +111,16 @@ export const imageState = reactive({
   positionReference: { visible: true, opacity: 40 },
 
   /** 图片预览送入新建会话的图片，只暂存，不自动创建记录。 */
-  workspaceImage: null as NaiImage | null,
-  /** 「去精修」下拉选的工具：项目打开后直接打开它，用一次即清空 */
-  workspaceTool: null as WorkspaceToolKind | null,
+  workspaceImage: null as {
+    source: NaiImage | File
+    tool?: WorkspaceToolKind
+    img2img?: boolean
+  } | null,
 })
 
 export type WorkspaceToolKind = 'outpaint' | 'enhance' | 'upscale'
 
 /** 取出并清空「去精修」要打开的工具 */
-export function takeWorkspaceTool(): WorkspaceToolKind | null {
-  const tool = imageState.workspaceTool
-  imageState.workspaceTool = null
-  return tool
-}
-
 export function setGenerationBusy(value: boolean): void {
   imageState.generating = value
 }

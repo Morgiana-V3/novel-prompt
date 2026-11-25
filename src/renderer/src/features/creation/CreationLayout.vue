@@ -93,9 +93,9 @@ watch(
       class="creation-split"
       storage-key="creation-editor"
       variable="--creation-editor-width"
-      :min="280"
+      :min="460"
       :max="900"
-      :reserve="360"
+      :reserve="380"
       label="提示词编辑区宽度"
     />
     <section class="creation-results">
@@ -191,7 +191,8 @@ watch(
 
 .creation-active {
   display: grid;
-  grid-template-columns: var(--creation-editor-width, minmax(280px, 0.9fr)) 0 minmax(360px, 1.1fr);
+  container-type: inline-size;
+  grid-template-columns: var(--creation-editor-width, minmax(460px, 0.9fr)) 0 minmax(380px, 1.1fr);
   grid-template-rows: minmax(0, 1fr) auto;
   height: 100%;
   min-height: 0;
@@ -353,16 +354,12 @@ watch(
 }
 
 @media (width <= 1050px) {
-  .creation-active {
-    grid-template-columns: var(--creation-editor-width, minmax(250px, 1fr)) 0 minmax(300px, 1.1fr);
-  }
-
   .creation-editor {
     padding: 12px calc(12px - var(--scrollbar-size) / 2) 12px 12px;
   }
 }
 
-@media (width <= 760px) {
+@media (width < 1060px) {
   .creation-active {
     display: flex;
     flex-direction: column;

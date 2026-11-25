@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { vSegIndicator } from '../shared/lib/seg-indicator'
 import { useDesktopSession } from './desktop/use-desktop-session'
-import { imageState } from '../features/generation/public'
+import {
+  imageState,
+  referenceDraft,
+  setCreationImg2Img,
+  setCreationReferences,
+  setCreationVibes,
+} from '../features/generation/public'
+import { MAX_REFERENCES } from '@shared/generation/references'
+import { MAX_VIBES } from '@shared/generation/vibes'
 import ConfirmDialog from '../shared/ui/ConfirmDialog.vue'
 import type { ConfirmationRequest } from '@shared/contracts/confirmation'
 
@@ -27,7 +35,7 @@ import {
   refreshSnippets,
 } from '../features/prompts/public/import-export'
 import { refreshFavorites } from '../features/favorites/public'
-import { openTabForLoad } from '../features/creation/public/navigation'
+import { creationTabs, openTabForLoad, tabsBlocker } from '../features/creation/public/navigation'
 import { cleanErr } from '../shared/lib/format'
 import { toast, runToastAction } from '../shared/lib/notifications'
 import { type Tab } from '../shared/state/shell'
@@ -380,6 +388,13 @@ async function setVersion(modelVersion: NaiVersion) {
   }
 }
 
+async function prepareReferenceCleanup() {
+  if (frontend.value?.status === 'running' || !(await workspaceView.value?.prepareUpdate())) {
+    throw new Error('请先完成当前工作台编辑或任务，再回收参考素材')
+  }
+  generateView.value?.prepareUpdate()
+}
+
 const {
   dragging: imageDragging,
   image: incomingImage,
@@ -414,6 +429,83 @@ const {
     await workspaceView.value.importDroppedImage(file)
     shellState.tab = 'workspace'
     toast('已创建精修项目')
+  },
+  img2img: async (file) => {
+    const tabId = creationTabs.activeId
+    function checkTarget() {
+      const blocked = tabsBlocker()
+      if (blocked || tabId !== creationTabs.activeId) {
+        throw new Error(blocked || '创作标签已切换，请重新选择底图')
+      }
+    }
+    checkTarget()
+    const imageName = await window.api.naiImportReference(new Uint8Array(await file.arrayBuffer()))
+    checkTarget()
+    setCreationImg2Img({
+      imageName,
+      strength: referenceDraft.img2img?.strength ?? 0.7,
+      noise: referenceDraft.img2img?.noise ?? 0.2,
+    })
+    shellState.tab = 'generate'
+    await nextTick()
+    generateView.value?.openReferenceTab('img2img')
+    toast('已设为图生图底图，调整强度与噪声后可直接生成')
+  },
+  reference: async (file, mode) => {
+    const tabId = creationTabs.activeId
+    function checkTarget() {
+      const blocked = tabsBlocker()
+      if (blocked || tabId !== creationTabs.activeId) {
+        throw new Error(blocked || '创作标签已切换，请重新选择参考图')
+      }
+      if (referenceDraft.vibes.length) {
+        throw new Error('请先移除当前标签的 Vibe，或在新标签中添加精确参考')
+      }
+      if (referenceDraft.images.length >= MAX_REFERENCES) {
+        throw new Error(`当前标签已达本应用 ${MAX_REFERENCES} 张精确参考上限`)
+      }
+    }
+    checkTarget()
+    const imageName = await window.api.naiImportReference(new Uint8Array(await file.arrayBuffer()))
+    checkTarget()
+    if (referenceDraft.images.some((image) => image.imageName === imageName)) {
+      throw new Error('这张图已在当前标签的精确参考中')
+    }
+    setCreationReferences([...referenceDraft.images, { imageName, mode, strength: 1, fidelity: 1 }])
+    shellState.tab = 'generate'
+    await nextTick()
+    generateView.value?.openReferenceTab('precise')
+    toast('已添加到当前标签的精确参考')
+  },
+  vibe: async (file) => {
+    const tabId = creationTabs.activeId
+    function checkTarget() {
+      const blocked = tabsBlocker()
+      if (blocked || tabId !== creationTabs.activeId) {
+        throw new Error(blocked || '创作标签已切换，请重新添加 Vibe')
+      }
+      if (referenceDraft.images.length) {
+        throw new Error('请先移除当前标签的精确参考，或在新标签中添加 Vibe')
+      }
+      if (referenceDraft.vibes.length >= MAX_VIBES) {
+        throw new Error('当前标签最多可添加 16 张 Vibe')
+      }
+    }
+    checkTarget()
+    const imageName = await window.api.naiImportReference(new Uint8Array(await file.arrayBuffer()))
+    checkTarget()
+    if (referenceDraft.vibes.some((entry) => entry.imageName === imageName)) {
+      throw new Error('这张图已经加入当前标签的 Vibe')
+    }
+    if (settingsState.settings?.naiVersion !== 'v4.5') {
+      await saveSettings({ naiVersion: 'v4.5' })
+    }
+    checkTarget()
+    setCreationVibes([...referenceDraft.vibes, { imageName, information: 1, strength: 0.6 }])
+    shellState.tab = 'generate'
+    await nextTick()
+    generateView.value?.openReferenceTab('vibe')
+    toast('已添加 Vibe，可在参考图面板编码')
   },
   gallery: async (file, collection) => {
     const saved = await window.api.imagesImport(
@@ -457,6 +549,7 @@ const {
     :error="imageIntakeError"
     :collections="collections"
     :default-collection-id="DEFAULT_COLLECTION"
+    :model="settingsState.settings?.naiVersion ?? 'v4.5'"
     @choose="chooseImageUse"
     @cancel="closeImageIntake"
   />
@@ -672,7 +765,10 @@ const {
           v-show="shellState.tab === 'workspace'"
           ref="workspaceView"
         />
-        <GalleryView v-show="shellState.tab === 'gallery'" />
+        <GalleryView
+          v-show="shellState.tab === 'gallery'"
+          :prepare-reference-cleanup="prepareReferenceCleanup"
+        />
         <FavoritesView v-show="shellState.tab === 'favorites'" />
         <SettingsView
           v-show="shellState.tab === 'settings'"

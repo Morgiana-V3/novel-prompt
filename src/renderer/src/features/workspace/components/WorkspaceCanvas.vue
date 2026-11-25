@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { V5_INPAINT_REFERENCE_NOTICE } from '@shared/generation/references'
 import { computed, ref } from 'vue'
 import type { PageVersion, PageRegion, PageImageTool } from '@shared/workspace/model'
 import type { IconName } from '../../../shared/ui/icons'
@@ -79,6 +80,13 @@ function useTool(key: ImageTool['key'], event: MouseEvent) {
 }
 
 function toolTitle(tool: ImageTool) {
+  if (
+    (tool.key === 'inpaint' || tool.key === 'outpaint') &&
+    props.current.editor.model === 'v5' &&
+    props.current.editor.params.preciseReferences?.length
+  ) {
+    return V5_INPAINT_REFERENCE_NOTICE
+  }
   return editBlockedReason.value ? `${tool.label} · ${editBlockedReason.value}` : tool.hint
 }
 

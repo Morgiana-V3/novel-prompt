@@ -3,9 +3,10 @@ import { readFile, stat } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import type { PreciseReference } from '../../../shared/generation/references'
 import { imagePath } from '../images/access'
-import { storeReferenceImage } from '../images/library'
+import { storeReferenceImage, touchReferenceImage } from '../images/library'
 
 const MAX_BYTES = 40 * 1024 * 1024
+const MAX_IMG2IMG_PIXELS = 4 * 1024 * 1024
 const options = { limitInputPixels: 24_000_000 }
 
 async function sourceBytes(source: Uint8Array | string): Promise<Buffer> {
@@ -20,6 +21,9 @@ async function sourceBytes(source: Uint8Array | string): Promise<Buffer> {
       source !== 'ref-' + createHash('sha256').update(bytes).digest('hex') + '.png'
     ) {
       throw new Error('参考图内容已变化，请重新选择')
+    }
+    if (/^ref-[a-f0-9]{64}\.png$/.test(source)) {
+      touchReferenceImage(path)
     }
     return bytes
   }
@@ -50,13 +54,47 @@ export async function importReferenceImage(source: Uint8Array | string) {
   return storeReferenceImage(await normalize(bytes))
 }
 
-export async function prepareReferences(references: PreciseReference[]): Promise<string[]> {
+/** V5 uses the closest log-aspect bucket on a 64px grid, up to one megapixel. */
+function v5ReferenceSize(width: number, height: number) {
+  let size = { width: 1024, height: 1024 }
+  let distance = Infinity
+  for (let long = 1024; long <= 4096; long += 64) {
+    const short = Math.floor(1048576 / long / 64) * 64
+    const candidate =
+      width >= height ? { width: long, height: short } : { width: short, height: long }
+    const difference = Math.abs(
+      Math.log(width / height) - Math.log(candidate.width / candidate.height),
+    )
+    if (difference < distance) {
+      distance = difference
+      size = candidate
+    }
+  }
+  return size
+}
+
+export async function prepareReferences(
+  references: PreciseReference[],
+  version: string,
+): Promise<string[]> {
   const images: string[] = []
   for (const reference of references) {
     reference.imageName = await importReferenceImage(reference.imageName)
     const bytes = await sourceBytes(reference.imageName)
     const image = sharp(bytes, options)
     const { width, height } = await image.metadata()
+    if (version === 'v5') {
+      const size = v5ReferenceSize(width, height)
+      const result =
+        width === size.width && height === size.height
+          ? bytes
+          : await image
+              .resize({ ...size, fit: 'cover', position: 'centre' })
+              .png()
+              .toBuffer()
+      images.push(result.toString('base64'))
+      continue
+    }
     const ratio = width / height
     let size = [1472, 1472]
     if (ratio > Math.sqrt(1.5)) {
@@ -72,4 +110,31 @@ export async function prepareReferences(references: PreciseReference[]): Promise
     images.push(padded.toString('base64'))
   }
   return images
+}
+
+/** 图生图底图准备：验证引用完整性，按目标画幅缩放到无透明通道 PNG */
+export async function prepareImg2ImgImage(
+  imageName: string,
+  width: number,
+  height: number,
+): Promise<Buffer> {
+  if (
+    !Number.isInteger(width) ||
+    !Number.isInteger(height) ||
+    width < 64 ||
+    height < 64 ||
+    width % 64 ||
+    height % 64 ||
+    width * height > MAX_IMG2IMG_PIXELS
+  ) {
+    throw new Error(`目标尺寸 ${width}×${height} 无效，须为 64 的倍数且总像素不超过 4096×1024`)
+  }
+  const normalizedName = await importReferenceImage(imageName)
+  const bytes = await sourceBytes(normalizedName)
+  return sharp(bytes, options)
+    .autoOrient()
+    .resize(width, height, { fit: 'fill', kernel: 'lanczos3' })
+    .removeAlpha()
+    .png()
+    .toBuffer()
 }

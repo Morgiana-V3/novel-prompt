@@ -62,7 +62,7 @@ interface WorkspaceCommandHost {
   showSuggestions: (versionId: string, messageId?: string) => Promise<void>
   review: (versionId: string) => void
   refreshOverlay: () => Promise<void>
-  send: () => Promise<void>
+  send: () => Promise<boolean>
   openEditor: () => Promise<void>
   closeEditor: () => Promise<void>
   continueVersion: (versionId: string) => Promise<void>
@@ -339,8 +339,8 @@ export function createWorkspaceCommands(host: WorkspaceCommandHost) {
         if (request.attachments !== undefined) {
           const imported: ChatAttachment[] = []
           for (const image of request.attachments) {
-            if (image.purpose !== 'discussion' && work.value.model !== 'v4.5') {
-              throw new Error('指定生图参考需要 V4.5')
+            if (image.purpose === 'costume' && work.value.model !== 'v5') {
+              throw new Error('服装参考需要 V5')
             }
             const imageName = await window.api.naiImportReference(image.imageName)
             if (imported.some((other) => other.imageName === imageName)) {
@@ -371,8 +371,11 @@ export function createWorkspaceCommands(host: WorkspaceCommandHost) {
           throw new Error('已有待处理需求，请等待回复或取消后再发送')
         }
         await ctx.step('正在提交当前对话框内容')
-        await send()
+        const sent = await send()
         check()
+        if (!sent) {
+          throw new Error(error.value || '当前需求未发送，请核对工作台输入和任务状态')
+        }
         if (pageLatestProposal(work.value, current.value.id)?.proposal?.status === 'pending') {
           await showSuggestions(current.value.id)
         }

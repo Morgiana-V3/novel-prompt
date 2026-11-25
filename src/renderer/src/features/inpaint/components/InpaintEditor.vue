@@ -2,6 +2,7 @@
 import { vSegIndicator } from '../../../shared/lib/seg-indicator'
 import { useMaskRaster } from '../use-mask-raster'
 import { useSourceImage } from '../use-source-image'
+import { V5_INPAINT_REFERENCE_NOTICE } from '@shared/generation/references'
 import { estimateGeneration, estimateLabel } from '@shared/generation/pricing'
 import { subscriptionState } from '../../generation/subscription'
 import { useEditorPersistence } from '../use-editor-persistence'
@@ -105,9 +106,13 @@ const editable = computed(
     viewing.value === 'source' &&
     !!sourceUrl.value,
 )
+const referenceConflict = computed(
+  () => version.value === 'v5' && !!settings.preciseReferences?.length,
+)
 const canRun = computed(
   () =>
     opened.value &&
+    !referenceConflict.value &&
     !loading.value &&
     !running.value &&
     !analyzing.value &&
@@ -586,6 +591,10 @@ const { loadSource } = useSourceImage({
 })
 
 async function generate(batch = false) {
+  if (referenceConflict.value) {
+    error.value = V5_INPAINT_REFERENCE_NOTICE
+    return
+  }
   if (
     batch
       ? running.value || analyzing.value || loading.value || !batchReady.value.length
@@ -1405,7 +1414,12 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
           </div>
           <div class="ip-foot">
             <span
-              v-if="!running && !coverage"
+              v-if="referenceConflict"
+              class="muted small"
+              >{{ V5_INPAINT_REFERENCE_NOTICE }}</span
+            >
+            <span
+              v-else-if="!running && !coverage"
               class="muted small"
               >请先选择区域</span
             >
@@ -1413,7 +1427,7 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
               v-if="!selectionOnly && batchReady.length"
               title="按批注顺序生成，每一区域以上一区域结果为底图；重新执行从原图开始"
               class="btn primary"
-              :disabled="running || analyzing || loading"
+              :disabled="running || analyzing || loading || referenceConflict"
               @click="generate(true)"
             >
               生成已采纳的 {{ batchReady.length }} 个区域

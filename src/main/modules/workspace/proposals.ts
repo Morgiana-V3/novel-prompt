@@ -60,7 +60,12 @@ export function applyProposalDecision(
       const attachments =
         workspace.messages.find((request) => request.id === message.requestId)?.attachments ?? []
       const previous = version.editor.params.preciseReferences
-      const references = generationReferences(previous ?? [], attachments, workspace.model)
+      const references = generationReferences(
+        previous ?? [],
+        attachments,
+        workspace.model,
+        !!version.editor.params.vibeReferences?.length,
+      )
       if (references) {
         proposal.previousReferences = previous ? clone(previous) : null
         version.editor.params.preciseReferences = references

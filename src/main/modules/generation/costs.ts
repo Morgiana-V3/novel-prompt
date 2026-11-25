@@ -1,3 +1,4 @@
+import { vibeGenerationFee } from '../../../shared/generation/vibes'
 import type {
   NaiFreeCheck,
   NaiGenParams,
@@ -15,7 +16,7 @@ export const FREE_MIN_PERCENT = 2
 
 /** 调用端的免费资格检查：服务端才是最终决定者，所以生成后还要核对余额 */
 export function freeCheck(
-  params: Pick<NaiGenParams, 'width' | 'height' | 'steps' | 'preciseReferences'>,
+  params: Pick<NaiGenParams, 'width' | 'height' | 'steps' | 'preciseReferences' | 'vibeReferences'>,
   version: NaiVersion,
   sub?: NaiSubscription,
 ): NaiFreeCheck {
@@ -23,6 +24,9 @@ export function freeCheck(
   const notes: string[] = []
   if (params.preciseReferences?.length) {
     reasons.push('每张输出按参考图数量收取附加费')
+  }
+  if (vibeGenerationFee(params.vibeReferences?.length ?? 0)) {
+    reasons.push('使用超过 4 张 Vibe 时有额外的单张生成费用')
   }
   if (params.width * params.height > FREE_MAX_PIXELS) {
     reasons.push(`尺寸 ${params.width}×${params.height} 超过免费上限（总像素不超过 1024×1024）`)

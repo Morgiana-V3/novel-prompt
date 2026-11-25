@@ -3,6 +3,7 @@ import type {
   NaiGenParams,
   NaiGenRequest,
   NaiGenResult,
+  NaiImg2ImgRequest,
   NaiInpaintRequest,
   NaiSubscription,
   NaiVersion,
@@ -21,7 +22,8 @@ export const generationApi = {
     version: NaiVersion,
     sub?: NaiSubscription,
   ): Promise<NaiFreeCheck> => invoke('nai:freeCheck', params, version, sub),
-  naiGenerate: (req: NaiGenRequest): Promise<NaiGenResult> => invoke('nai:generate', req),
+  naiGenerate: (req: NaiGenRequest | NaiImg2ImgRequest): Promise<NaiGenResult> =>
+    invoke('nai:generate', req),
   naiInpaint: (req: NaiInpaintRequest): Promise<NaiGenResult> => invoke('nai:inpaint', req),
   naiCancel: (): Promise<void> => invoke('nai:cancel'),
   naiList: (): Promise<NaiImage[]> => invoke('nai:list'),

@@ -55,19 +55,16 @@
 
 .btn.primary:hover:not(:disabled) {
   background: #000;
-  box-shadow: 0 6px 16px rgb(0 0 0 / 16%);
 }
 
 .btn.accent {
   background: var(--pink);
   border-color: var(--pink);
   color: #fff;
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--pink) 30%, transparent);
 }
 
 .btn.accent:hover:not(:disabled) {
   background: var(--pink-deep);
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--pink) 38%, transparent);
 }
 
 /* 危险操作 / 二次确认删除：统一定义，避免各处 scoped 规则与 .btn:hover 打架 */

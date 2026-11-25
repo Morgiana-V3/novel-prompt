@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, useId } from 'vu
 import type { NaiImage } from '@shared/images/types'
 import { backdropCloser } from '../../../shared/lib/dialog-motion'
 import { cleanErr } from '../../../shared/lib/format'
+import { vFadeImg } from '../../../shared/lib/fade-image'
+import { vSegIndicator } from '../../../shared/lib/seg-indicator'
 import Icon from '../../../shared/ui/Icon.vue'
 
 const props = defineProps<{
@@ -106,13 +108,15 @@ onBeforeUnmount(() => dialog.value?.close())
     </header>
     <div class="picker-toolbar">
       <div
-        class="picker-filters"
+        v-seg-indicator
+        class="seg picker-filters"
         role="group"
         aria-label="图片来源"
       >
         <button
           v-for="item in filters"
           :key="item.value"
+          :class="{ on: source === item.value }"
           :aria-pressed="source === item.value"
           :disabled="busy"
           @click="filterBy(item.value)"
@@ -158,6 +162,7 @@ onBeforeUnmount(() => dialog.value?.close())
               @click="selected = image"
             >
               <img
+                v-fade-img
                 :src="image.url"
                 alt=""
                 loading="lazy"
@@ -279,24 +284,12 @@ onBeforeUnmount(() => dialog.value?.close())
 }
 
 .picker-filters {
-  gap: 3px;
-  padding: 3px;
-  border-radius: 8px;
-  background: var(--hover);
+  gap: 2px;
 }
 
 .picker-filters button {
-  padding: 5px 10px;
-  border-radius: 6px;
+  padding: 4px 11px;
   font-size: 12px;
-  color: var(--text2);
-}
-
-.picker-filters button[aria-pressed='true'] {
-  background: var(--bg);
-  box-shadow: var(--shadow-sm);
-  color: var(--text);
-  font-weight: 600;
 }
 
 .picker-body {
@@ -329,9 +322,13 @@ onBeforeUnmount(() => dialog.value?.close())
   position: relative;
   aspect-ratio: 1;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: 9px;
   background: var(--hover);
   border: 2px solid transparent;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-slow) var(--bounce),
+    box-shadow var(--dur-base) var(--ease-out);
 }
 
 .picker-tile img {
@@ -341,8 +338,13 @@ onBeforeUnmount(() => dialog.value?.close())
   display: block;
 }
 
-.picker-tile:hover {
+.picker-tile:hover:not(:disabled) {
   border-color: var(--pink-line);
+  transform: translateY(var(--lift-chip));
+}
+
+.picker-tile:active:not(:disabled) {
+  transform: scale(var(--press-sm));
 }
 
 .picker-tile[aria-pressed='true'],
@@ -361,6 +363,7 @@ onBeforeUnmount(() => dialog.value?.close())
   width: 18px;
   height: 18px;
   border-radius: 50%;
+  animation: pop var(--dur-base) var(--ease-out);
 }
 
 .picker-more {

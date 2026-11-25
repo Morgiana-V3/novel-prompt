@@ -106,7 +106,7 @@ export function useDiscussionActions(context: WorkspaceActionContext, options: D
       (!composer.value.trim() && !attachments.value.length) ||
       (external.value && pendingRequest.value)
     ) {
-      return
+      return false
     }
     const discussionVersionId = discussionVersion.value.id
     errorMessage.value = ''
@@ -133,11 +133,12 @@ export function useDiscussionActions(context: WorkspaceActionContext, options: D
       references.value = []
       savedNotes.value = JSON.stringify(notesValue())
       updated()
+      return true
     } catch (error) {
       errorMessage.value = cleanErr(error)
       composer.value = originalText
       if (!persisted) {
-        return
+        return false
       }
       try {
         work.value = await window.api.pagesRead(work.value.id)
@@ -147,6 +148,7 @@ export function useDiscussionActions(context: WorkspaceActionContext, options: D
       } catch {
         /* Preserve local state if reading also fails. */
       }
+      return false
     } finally {
       pendingText.value = ''
       operation.value = ''

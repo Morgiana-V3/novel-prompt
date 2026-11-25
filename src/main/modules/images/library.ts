@@ -15,6 +15,7 @@ import {
   rmdirSync,
   statSync,
   unlinkSync,
+  utimesSync,
 } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { PNG } from 'pngjs'
@@ -256,8 +257,15 @@ export function storeReferenceImage(png: Buffer): string {
   const path = join(ensure(join(root(), 'references')), name)
   if (!existsSync(path)) {
     writeFileAtomic(path, png)
+  } else {
+    touchReferenceImage(path)
   }
   return name
+}
+
+export function touchReferenceImage(path: string) {
+  const now = new Date()
+  utimesSync(path, now, now)
 }
 
 export function retainImage(name: string): NaiImage {

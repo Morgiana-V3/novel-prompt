@@ -6,31 +6,58 @@ import {
   MAX_REFERENCES,
   REFERENCE_FEE,
   REFERENCE_LABELS,
-  REFERENCE_MODES,
+  referenceModes,
+  hasOutfitPreference,
+  validReferences,
   type PreciseReference,
 } from '@shared/generation/references'
 import ReferenceGalleryDialog from './ReferenceGalleryDialog.vue'
 import Icon from '../../../shared/ui/Icon.vue'
 import ThemeSelect from '../../../shared/ui/ThemeSelect.vue'
 import { cleanErr } from '../../../shared/lib/format'
+import { detachLeaving } from '../../../shared/lib/list-motion'
+import { vFadeImg } from '../../../shared/lib/fade-image'
 
 const props = defineProps<{
   images: PreciseReference[]
   model: NaiVersion
   disabled?: boolean
   current?: NaiImage | null
-  canSwitch?: boolean
-  canChooseBase?: boolean
+  count: number
+  showHeading?: boolean
+  conflict?: boolean
 }>()
 const emit = defineEmits<{
   change: [images: PreciseReference[]]
-  switchModel: []
-  useBase: [image: NaiImage]
 }>()
-const modeOptions = REFERENCE_MODES.map((value) => ({ value, label: REFERENCE_LABELS[value] }))
+const levelHints = {
+  strength: '调高会突出所选的参考特征，调低让角色或画风有更多变化。',
+  fidelity: '调高会更严格地还原参考细节，调低更容易用提示词改变这些细节。',
+}
+const outfitHint = '开启后优先沿用参考图的服装，关闭后更容易更换造型。'
+const modeOptions = computed(() =>
+  referenceModes(props.model).map((value) => ({ value, label: REFERENCE_LABELS[value] })),
+)
+const levels = computed(() =>
+  props.model === 'v5' ? (['strength'] as const) : (['strength', 'fidelity'] as const),
+)
+function maximum(field: 'strength' | 'fidelity') {
+  return field === 'strength' && props.model === 'v5' ? 5 : 1
+}
+function setMode(index: number, mode: PreciseReference['mode']) {
+  update(index, { mode, preferSameOutfit: undefined })
+}
+function adaptToV45(index: number) {
+  const image = props.images[index]
+  update(index, {
+    mode: image.mode === 'costume' ? 'character' : image.mode,
+    strength: Math.min(image.strength, 1),
+    fidelity: image.fidelity ?? 1,
+    preferSameOutfit: undefined,
+  })
+}
 const fileInput = ref<HTMLInputElement>()
 const galleryOpen = ref(false)
-const usesBaseImage = computed(() => props.model === 'v5')
 watch(
   () => props.model,
   () => {
@@ -44,31 +71,17 @@ onBeforeUnmount(() => {
   mounted = false
 })
 const canAdd = computed(
-  () =>
-    props.model === 'v4.5' &&
-    props.images.length < MAX_REFERENCES &&
-    !props.disabled &&
-    !busy.value,
+  () => props.images.length < MAX_REFERENCES && !props.conflict && !props.disabled && !busy.value,
 )
 function showGallery() {
   error.value = ''
   galleryOpen.value = true
 }
-function useBase(image: NaiImage) {
-  galleryOpen.value = false
-  emit('useBase', image)
-}
-async function selectFromGallery(image: NaiImage) {
-  if (usesBaseImage.value) {
-    useBase(image)
-  } else {
-    await add(image.name)
-  }
-}
 async function add(source: File | string) {
   if (!canAdd.value) {
     return
   }
+  const model = props.model
   busy.value = true
   error.value = ''
   try {
@@ -81,7 +94,8 @@ async function add(source: File | string) {
     if (
       !mounted ||
       props.disabled ||
-      props.model !== 'v4.5' ||
+      props.model !== model ||
+      props.conflict ||
       props.images.length >= MAX_REFERENCES
     ) {
       return
@@ -116,79 +130,38 @@ function update(index: number, patch: Partial<PreciseReference>) {
 <template>
   <section
     class="reference-editor"
-    aria-label="图片参考"
+    aria-label="精确参考"
   >
-    <template v-if="usesBaseImage">
-      <header>
-        <Icon
-          name="image"
-          :size="15"
-        />
-        <strong>图生图</strong><span>V5 Full 可用</span>
-      </header>
-      <p
-        v-if="canChooseBase"
-        class="reference-note"
-      >
-        以一张图片为底图，按提示词改画。有生成记录的底图会沿用原模型。
-      </p>
-      <p
-        v-else
-        class="reference-note"
-      >
-        有底图时，可在画布工具栏通过「增强」使用图生图。
-      </p>
-      <div
-        v-if="canChooseBase"
-        class="reference-actions"
-      >
-        <button
-          v-if="current && !current.missing"
-          class="btn small"
-          :disabled="disabled"
-          @click="useBase(current)"
-        >
-          <Icon
-            name="image"
-            :size="14"
-          />用当前图改画
-        </button>
-        <button
-          class="btn small"
-          :disabled="disabled"
-          aria-haspopup="dialog"
-          :aria-expanded="galleryOpen"
-          @click="showGallery"
-        >
-          <Icon
-            name="folder"
-            :size="14"
-          />从图库选底图
-        </button>
-      </div>
-      <div class="reference-legacy">
-        <span>角色与画风精确参考适用 V4.5 Full</span>
-        <button
-          v-if="canSwitch"
-          class="btn ghost small"
-          :disabled="disabled"
-          @click="emit('switchModel')"
-        >
-          切到 V4.5
-        </button>
-      </div>
-    </template>
-    <header v-else>
+    <input
+      ref="fileInput"
+      type="file"
+      accept="image/png,image/jpeg,image/webp"
+      hidden
+      @change="pickFile"
+    />
+    <header v-if="showHeading">
       <Icon
         name="layers"
         :size="15"
       />
-      <strong>角色与画风参考</strong><span>每张参考 · 每张输出 +{{ REFERENCE_FEE }} Anlas</span>
+      <strong>精确参考</strong>
+      <span
+        v-if="!images.length"
+        class="reference-fee"
+        >每张参考、每张输出 +{{ REFERENCE_FEE }} Anlas</span
+      >
     </header>
-    <div
-      v-if="model === 'v4.5'"
-      class="reference-actions"
+    <p
+      v-if="conflict"
+      class="reference-callout"
     >
+      <Icon
+        name="info"
+        :size="14"
+      />
+      <span>当前已启用 Vibe Transfer，请先移除 Vibe 再添加精确参考。</span>
+    </p>
+    <div class="reference-actions">
       <button
         class="btn small"
         :disabled="!canAdd"
@@ -200,13 +173,6 @@ function update(index: number, patch: Partial<PreciseReference>) {
         />
         上传图片
       </button>
-      <input
-        ref="fileInput"
-        type="file"
-        accept="image/png,image/jpeg,image/webp"
-        hidden
-        @change="pickFile"
-      />
       <button
         class="btn small"
         :disabled="!canAdd"
@@ -232,19 +198,30 @@ function update(index: number, patch: Partial<PreciseReference>) {
         />
         用当前图片
       </button>
+      <span
+        v-if="images.length"
+        class="reference-fee"
+        :title="`${images.length} 张参考图 × ${count} 张输出 × ${REFERENCE_FEE} Anlas`"
+        >参考费 +{{ images.length * REFERENCE_FEE * count }} Anlas</span
+      >
+      <small v-if="images.length >= MAX_REFERENCES"
+        >已达到本应用每次 {{ MAX_REFERENCES }} 张的上限</small
+      >
     </div>
     <ReferenceGalleryDialog
       v-if="galleryOpen"
       :busy="busy"
-      :disabled="usesBaseImage ? !!disabled : !canAdd"
+      :disabled="!canAdd"
       :error="error"
-      :base-image="usesBaseImage"
-      @select="selectFromGallery"
+      @select="add($event.name)"
       @close="galleryOpen = false"
     />
-    <div
+    <TransitionGroup
       v-if="images.length"
-      class="reference-grid"
+      tag="div"
+      name="list"
+      class="reference-grid list-motion"
+      @before-leave="detachLeaving"
     >
       <article
         v-for="(image, index) in images"
@@ -252,6 +229,7 @@ function update(index: number, patch: Partial<PreciseReference>) {
         class="reference-card"
       >
         <img
+          v-fade-img
           class="reference-preview"
           :src="'np-img://img/' + encodeURIComponent(image.imageName)"
           :alt="REFERENCE_LABELS[image.mode] + '参考图'"
@@ -263,7 +241,7 @@ function update(index: number, patch: Partial<PreciseReference>) {
             :options="modeOptions"
             :disabled="disabled"
             :aria-label="'参考图 ' + (index + 1) + ' 用途'"
-            @update:model-value="update(index, { mode: $event })"
+            @update:model-value="setMode(index, $event)"
           />
           <button
             class="reference-remove"
@@ -285,26 +263,52 @@ function update(index: number, patch: Partial<PreciseReference>) {
         </div>
         <div class="reference-levels">
           <label
-            v-for="field in ['strength', 'fidelity'] as const"
+            v-for="field in levels"
             :key="field"
           >
-            <span>{{ field === 'strength' ? '强度' : '还原度' }}</span>
+            <span :title="levelHints[field]">{{ field === 'strength' ? '强度' : '还原度' }}</span>
             <input
               type="range"
+              :title="levelHints[field]"
               :aria-label="'参考图 ' + (index + 1) + (field === 'strength' ? '强度' : '还原度')"
               min="0"
-              max="1"
+              :max="maximum(field)"
               step="0.05"
-              :value="image[field]"
+              :value="image[field] ?? 1"
               :disabled="disabled"
-              :style="{ '--progress': image[field] * 100 + '%' }"
+              :style="{
+                '--progress': Math.min((image[field] ?? 1) / maximum(field), 1) * 100 + '%',
+              }"
               @input="update(index, { [field]: Number(($event.target as HTMLInputElement).value) })"
             />
-            <output>{{ image[field].toFixed(2) }}</output>
+            <output :title="levelHints[field]">{{ (image[field] ?? 1).toFixed(2) }}</output>
           </label>
+          <label
+            v-if="model === 'v5' && hasOutfitPreference(image.mode)"
+            class="outfit-preference"
+          >
+            <input
+              type="checkbox"
+              :title="outfitHint"
+              :checked="image.preferSameOutfit ?? image.mode === 'character&style'"
+              :disabled="disabled"
+              @change="
+                update(index, { preferSameOutfit: ($event.target as HTMLInputElement).checked })
+              "
+            />
+            <span :title="outfitHint">偏好相同服装</span>
+          </label>
+          <button
+            v-if="model === 'v4.5' && !validReferences([image], model)"
+            class="btn small"
+            :disabled="disabled"
+            @click="adaptToV45(index)"
+          >
+            适配 V4.5 参数{{ image.mode === 'costume' ? '（改为角色）' : '' }}
+          </button>
         </div>
       </article>
-    </div>
+    </TransitionGroup>
     <span
       v-if="busy"
       role="status"
@@ -321,7 +325,7 @@ function update(index: number, patch: Partial<PreciseReference>) {
   display: grid;
   gap: 10px;
   min-width: 0;
-  padding: 10px 0;
+  padding: 4px 0 2px;
 }
 
 .reference-editor header,
@@ -347,39 +351,42 @@ function update(index: number, patch: Partial<PreciseReference>) {
   color: var(--pink-deep);
 }
 
-.reference-editor header span {
+.reference-fee {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 400;
 }
 
 .reference-actions button {
-  min-height: 28px;
-  border-radius: 8px;
-  padding: 3px 9px;
-}
-
-.reference-note {
-  margin: 0;
-  color: var(--text2);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.reference-legacy {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  height: 28px;
+  line-height: 18px;
   gap: 6px;
-  padding-top: 7px;
-  border-top: 1px solid var(--line);
-  color: var(--text2);
-  font-size: 11px;
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.reference-callout {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0;
+  padding: 8px 11px;
+  border: 1px solid color-mix(in srgb, var(--alias) 22%, var(--line));
+  border-radius: 10px;
+  background: var(--alias-soft);
+  color: var(--alias);
+  font-size: 12px;
+  line-height: 1.45;
+  animation: fade-in var(--dur-base) var(--ease-out);
 }
 
 .reference-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 236px), 1fr));
   gap: 8px;
 }
 
@@ -387,11 +394,20 @@ function update(index: number, patch: Partial<PreciseReference>) {
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr);
   grid-template-rows: auto 1fr;
-  gap: 5px 10px;
+  gap: 6px 10px;
   padding: 9px;
-  background: var(--bg);
+  background: var(--panel);
   border: 1px solid var(--line2);
   border-radius: 12px;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+
+.reference-card:hover {
+  border-color: var(--pink-line);
+  background: var(--bg);
 }
 
 .reference-preview {
@@ -400,8 +416,9 @@ function update(index: number, patch: Partial<PreciseReference>) {
   height: 80px;
   align-self: center;
   object-fit: contain;
-  background: var(--panel);
-  border-radius: 7px;
+  background: var(--hover);
+  border-radius: 8px;
+  border: 1px solid var(--line);
 }
 
 .reference-role {
@@ -415,37 +432,61 @@ function update(index: number, patch: Partial<PreciseReference>) {
   place-items: center;
   width: 24px;
   height: 24px;
-  border-radius: 6px;
+  border-radius: 7px;
   color: var(--muted);
   flex-shrink: 0;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-slow) var(--bounce);
 }
 
-.reference-remove:hover {
+.reference-remove:hover:not(:disabled) {
   background: var(--bad-soft);
   color: var(--bad);
+}
+
+.reference-remove:active:not(:disabled) {
+  transform: scale(var(--press-sm));
 }
 
 .reference-levels {
   display: grid;
   align-content: center;
-  gap: 1px;
+  gap: 2px;
 }
 
 .reference-levels label {
   display: grid;
-  grid-template-columns: 3em minmax(22px, 1fr) 3em;
+  grid-template-columns: 4em minmax(24px, 1fr) 2.8em;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   color: var(--text2);
-  font-size: 10px;
+  font-size: 11px;
+}
+
+.reference-levels .outfit-preference {
+  display: flex;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.outfit-preference input {
+  margin: 0;
+  accent-color: var(--pink);
+}
+
+.reference-levels label > span {
+  justify-self: start;
 }
 
 .reference-levels output {
-  text-align: right;
+  justify-self: end;
   font-variant-numeric: tabular-nums;
+  color: var(--text);
 }
 
-.reference-levels input {
+.reference-levels input[type='range'] {
   appearance: none;
   width: 100%;
   min-width: 0;
@@ -454,23 +495,44 @@ function update(index: number, patch: Partial<PreciseReference>) {
   background: transparent;
 }
 
-.reference-levels input::-webkit-slider-runnable-track {
-  height: 3px;
-  border-radius: 4px;
+.reference-levels input[type='range']::-webkit-slider-runnable-track {
+  height: 3.5px;
+  border-radius: 999px;
   background: linear-gradient(to right, var(--pink) var(--progress), var(--line2) var(--progress));
 }
 
-.reference-levels input::-webkit-slider-thumb {
+.reference-levels input[type='range']::-webkit-slider-thumb {
   appearance: none;
-  width: 10px;
-  height: 10px;
-  margin-top: -3.5px;
+  width: 11px;
+  height: 11px;
+  margin-top: -3.75px;
   background: var(--pink);
+  border: 1.5px solid #fff;
+  box-shadow: 0 1px 3px rgb(20 20 30 / 22%);
   border-radius: 50%;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.reference-levels input[type='range']:hover:not(:disabled)::-webkit-slider-thumb {
+  transform: scale(1.18);
+}
+
+.reference-levels input[type='range']:active:not(:disabled)::-webkit-slider-thumb {
+  transform: scale(0.95);
+}
+
+.reference-editor [role='status'] {
+  color: var(--text2);
+  font-size: 11.5px;
+  animation: fade-in var(--dur-base) var(--ease-out);
 }
 
 .reference-editor [role='alert'] {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--bad-soft);
   color: var(--bad);
-  font-size: 11px;
+  font-size: 11.5px;
+  animation: alert-in var(--dur-slow) var(--ease-out);
 }
 </style>

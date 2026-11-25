@@ -267,13 +267,20 @@ try {
   assertMcpCatalog(catalog)
   const attachmentSchema = catalog.find((tool) => tool.name === 'ui_set_workspace_input')
     ?.inputSchema.properties.attachments
-  assert.equal(attachmentSchema?.maxItems, 4)
+  assert.equal(attachmentSchema?.maxItems, 16)
   assert.deepEqual(attachmentSchema.items.properties.purpose.enum, [
     'discussion',
     'character',
     'style',
     'character&style',
+    'costume',
   ])
+  const precise = catalog.find((tool) => tool.name === 'generate_image').inputSchema.properties
+    .precise_references
+  assert.equal(precise.maxItems, 16)
+  assert.equal(precise.items.properties.strength.maximum, 5)
+  assert.ok(precise.items.properties.mode.enum.includes('costume'))
+  assert.equal(precise.items.properties.preferSameOutfit.type, 'boolean')
   const groups = await call('configure_tools')
   assert.equal(catalog.length, groups.exposedToolCount)
   writeFileSync(

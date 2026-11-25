@@ -44,6 +44,10 @@ Electron 主进程是唯一应用宿主，窗口和 MCP 客户端共享服务、
 | `ai:vision-test`                                                                                                              | `src/main/adapters/ipc/settings.ts`                                                                                                 |
 | `clipboard:read`                                                                                                              | `src/main/adapters/ipc/application.ts`                                                                                              |
 | `clipboard:write`                                                                                                             | `src/main/adapters/ipc/application.ts`                                                                                              |
+| `images:scan-reference-cleanup`                                                                                                           | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `images:recycle-references`                                                                                                           | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `nai:vibe-statuses`                                                                                                           | `src/main/adapters/ipc/images.ts`                                                                                                   |
+| `nai:vibe-encode`                                                                                                           | `src/main/adapters/ipc/images.ts`                                                                                                   |
 | `images:import`                                                                                                           | `src/main/adapters/ipc/images.ts`                                                                                                   |
 | `collections:list`、`collections:create`、`collections:rename`、`collections:delete`、`collections:assign`                    | `src/main/adapters/ipc/images.ts`                                                                                                   |
 | `confirmations:reply`                                                                                                         | `src/main/adapters/ipc/settings.ts` → `src/main/adapters/desktop/confirmations.ts`                                                  |
@@ -359,8 +363,12 @@ Skill 目录包由 modules/skills/package-files.ts 校验和整体写入；入�
 
 后续维护重点是 ReverseView.vue、ArtistStudio.vue、PageWorkspace.vue 等页面的操作编排职责，以及现有边界检查尚未覆盖的跨 feature 依赖。文件较大本身不作为发版阻塞，也不在临近发版时机械拆分。现有 NovelAI ZIP 与 NAX ZIP 处理器职责不同，后续若合并需保留各自输入校验及大小上限。检查、真实服务灰度、外部 Agent 交互和安装更新验证分别记录，不互相替代。
 
-### V4.5 精确参考
+### 精确参考
 
-生成页与工作台配置共用参考卡。nai:import-reference 接收本机图库名或用户选取的 PNG/JPEG/WebP 字节，返回图库协议可读的内容哈希文件名。副本存于 image-library/references，独立于临时图库清理。params.preciseReferences 保存用途、强度、还原度与本地引用，旧记录可缺省。工作台 params 补丁与 generate_image.precise_references 使用相同列表结构，免费资格、请求和执行记录共用生成服务。参考图副本留在本机，跨设备导入配方时需重新选取缺失图片。
+生成页与工作台配置共用参考卡。nai:import-reference 接收本机图库名或用户选取的 PNG/JPEG/WebP 字节，返回图库协议可读的内容哈希文件名。副本存于 image-library/references，独立于临时图库清理。params.preciseReferences 保存用途、强度与本地引用。V4.5 使用 fidelity，V5 支持 costume 用途和角色类的可选 preferSameOutfit，强度上限为 5。V5 按最接近的宽高比尺寸中心裁切，V4.5 使用原有补黑画布。旧记录可缺省精确参考列表。工作台 params 补丁与 generate_image.precise_references 使用相同列表结构，免费资格、请求和执行记录共用生成服务。参考图副本留在本机，跨设备导入配方时需重新选取缺失图片。
 
-每条工作台需求可附加最多 4 张 PNG、JPEG 或 WebP 图片。文件选择、拖入和粘贴共用内容寻址导入。草稿保存附件顺序和用途，发送时固化到需求及输入快照。内置 AI 沿现有视觉路由读取，外部 Agent 通过 get_workspace_context 的 attachments 和 read_image 读取。V4.5 的角色、画风或组合用途在采纳方案时合并到编辑器已有参考，撤销恢复原配置。
+本应用每条工作台需求可附加最多 16 张 PNG、JPEG 或 WebP 图片。文件选择、拖入和粘贴共用内容寻址导入。草稿保存附件顺序和用途，发送时固化到需求及输入快照。内置 AI 沿现有视觉路由读取，外部 Agent 通过 get_workspace_context 的 attachments 和 read_image 读取。角色、画风、角色与画风及 V5 服装用途在采纳方案时合并到编辑器已有参考，撤销恢复原配置。
+
+图生图使用现有工作台项目与增强工具。新建时通过 pages:create 或 pages:import-dropped 传入可选的配置来源，明确选择原图记录或当前创作；提交前由工作台服务确认提示词可用。常规项目仍沿用原有导入行为。
+
+Vibe Transfer 的配置位于 NaiGenParams.vibeReferences。编码使用官方 image/ai/encode-vibe，结果以原图内容哈希、模型和信息提取量为缓存键，存入 image-library/vibes；强度仅在生成请求中使用。收费前由现有 operation policy 确认，未知写入保留 pending 标志。生图只读已完成缓存，不触发编码。图集素材回收扫描工作台、收藏、图库 PNG 文本和当前渲染草稿，保留近期素材及编码缓存来源。
