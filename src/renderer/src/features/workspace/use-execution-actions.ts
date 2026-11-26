@@ -64,6 +64,14 @@ export function useExecutionActions(context: WorkspaceActionContext, options: Ex
     operation.value = 'save'
     errorMessage.value = ''
     try {
+      const { model, params } = current.value.editor
+      if (execution.kind === 'inpaint' && model === 'v5' && params.preciseReferences?.length) {
+        throw new Error(
+          configDraft.value && !configDraft.value.params.preciseReferences?.length
+            ? '已在草稿中移除精确参考。请先保存配置，再选择局部重绘。'
+            : 'V5 局部重绘暂不支持精确参考。请在「编辑配置」中移除参考并保存。',
+        )
+      }
       if (
         execution.kind === 'inpaint' &&
         configDraft.value &&
@@ -81,6 +89,9 @@ export function useExecutionActions(context: WorkspaceActionContext, options: Ex
       }
     } catch (error) {
       errorMessage.value = cleanErr(error)
+      if (frontendContext()) {
+        throw error
+      }
     } finally {
       operation.value = ''
     }
@@ -134,6 +145,9 @@ export function useExecutionActions(context: WorkspaceActionContext, options: Ex
         work.value = await window.api.pagesRead(work.value.id)
       } catch {
         /* Keep existing state. */
+      }
+      if (frontendContext()) {
+        throw error
       }
     } finally {
       operation.value = ''

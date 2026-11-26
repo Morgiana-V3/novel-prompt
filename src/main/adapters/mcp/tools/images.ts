@@ -3,11 +3,14 @@ import { checkReferences, REFERENCE_SCHEMA } from '../../../../shared/generation
 import { NAI_SAMPLERS, NAI_NOISE_SCHEDULES } from '../../../../shared/generation/types'
 import { existsSync, readFileSync } from 'node:fs'
 import type {
+  Img2ImgBase,
   NaiGenParams,
+  NaiGenRequest,
   NaiNoiseSchedule,
   NaiSampler,
 } from '../../../../shared/generation/types'
 import { FREE_MAX_PIXELS, FREE_MAX_STEPS, freeCheck } from '../../../modules/generation/costs'
+import { importReferenceImage } from '../../../modules/generation/references'
 import { generateImages, getSubscription } from '../../../modules/generation/service'
 import { imagePath, listImages } from '../../../modules/images/access'
 import { imageCollections } from '../../../modules/images/collections'
@@ -67,12 +70,16 @@ export function createGenerateImageTool(): McpTool {
   return {
     name: 'generate_image',
     title: 'NovelAI 生图',
-    description: `用 NovelAI 文生图并保存到本机图库，返回图片文件路径。默认只允许免费操作；付费或费用未知时需要用户授权：生成前检查 Opus 会员、免费额度、总像素 ≤ ${FREE_MAX_PIXELS}、步数 ≤ ${FREE_MAX_STEPS}，不满足时须由用户授权后提交；每张生成后核对 Anlas，原预计免费但发现扣除时立即停止。confirm 仅表示执行意图，不代表付费授权。必须传 confirm: true。每次最多 4 张，逐张生成。`,
+    description: `用 NovelAI 文生图或图生图并保存到本机图库，返回图片文件路径。base 可明确传空字符串。传 img2img 使用指定底图；质量词和 UC 预设仍按请求设置追加。默认只允许免费操作；付费或费用未知时需要用户授权：生成前检查 Opus 会员、免费额度、总像素 ≤ ${FREE_MAX_PIXELS}、步数 ≤ ${FREE_MAX_STEPS}，不满足时须由用户授权后提交；每张生成后核对 Anlas，原预计免费但发现扣除时立即停止。confirm 仅表示执行意图，不代表付费授权。必须传 confirm: true。每次最多 4 张，逐张生成。`,
     inputSchema: {
       type: 'object',
       properties: {
         ...PROMPT_PROPS,
         ...PARAM_PROPS,
+        base: {
+          type: 'string',
+          description: '主提示词。允许明确传空字符串，关闭 quality_tags 可保留空的主提示词',
+        },
         steps: { type: 'integer', description: `步数，默认 23，免费上限 ${FREE_MAX_STEPS}` },
         scale: { type: 'number', description: 'Prompt Guidance，默认 5' },
         cfg_rescale: { type: 'number', description: 'Guidance Rescale 0~1，默认 0' },
@@ -88,6 +95,17 @@ export function createGenerateImageTool(): McpTool {
         count: { type: 'integer', description: '张数 1~4，默认 1' },
         precise_references: REFERENCE_SCHEMA,
         vibe_references: VIBE_SCHEMA,
+        img2img: {
+          type: 'object',
+          additionalProperties: false,
+          description: '以本机图库或参考素材为底图重绘',
+          properties: {
+            image_name: { type: 'string', minLength: 1, description: '本机图库或参考素材文件名' },
+            strength: { type: 'number', minimum: 0.01, maximum: 0.99 },
+            noise: { type: 'number', minimum: 0, maximum: 0.99 },
+          },
+          required: ['image_name', 'strength', 'noise'],
+        },
         collection_id: {
           type: 'string',
           description: '保存到哪个图集（list_images 返回的 collections[].id），省略时为默认图集',
@@ -148,15 +166,26 @@ export function createGenerateImageTool(): McpTool {
         )
         params.vibeReferences = argumentsRecord.vibe_references
       }
+      const request: NaiGenRequest = {
+        base: str(argumentsRecord.base),
+        negative: str(argumentsRecord.negative),
+        characters: characters(argumentsRecord.characters),
+        params,
+        version: version(argumentsRecord.version),
+        collectionId,
+      }
+      const img2imgInput = argumentsRecord.img2img as
+        { image_name: string; strength: number; noise: number } | undefined
+      let img2img: Img2ImgBase | undefined
+      if (img2imgInput) {
+        img2img = {
+          imageName: await importReferenceImage(img2imgInput.image_name),
+          strength: img2imgInput.strength,
+          noise: img2imgInput.noise,
+        }
+      }
       const generationResult = await generateImages(
-        {
-          base: str(argumentsRecord.base),
-          negative: str(argumentsRecord.negative),
-          characters: characters(argumentsRecord.characters),
-          params,
-          version: version(argumentsRecord.version),
-          collectionId,
-        },
+        img2img ? { ...request, img2img } : request,
         progress ?? (() => {}),
         () => signal.aborted,
         {},
@@ -242,7 +271,7 @@ export function createReadImagePromptTool(): McpTool {
     name: 'read_image_prompt',
     title: '读取图片里的提示词',
     description:
-      '读取 NovelAI 生成的 PNG 里保存的提示词（主提示词、角色及位置、负面、尺寸）。传图库里的 name，或任意 PNG 文件的绝对路径 path。注意：读出的是实际发送的内容，已包含质量词和 UC 预设。',
+      '读取 PNG 里保存的提示词、角色位置和尺寸，并在可识别时返回来源 sourceKind。传图库里的 name 或 PNG 的绝对路径 path。图生图和局部重绘记录本次处理使用的提示词。',
     inputSchema: {
       type: 'object',
       properties: { name: { type: 'string' }, path: { type: 'string' } },
@@ -262,6 +291,7 @@ export function createReadImagePromptTool(): McpTool {
         negative: importedPrompt.negative,
         width: importedPrompt.width,
         height: importedPrompt.height,
+        sourceKind: importedPrompt.imageSourceKind ?? null,
       })
     },
   }

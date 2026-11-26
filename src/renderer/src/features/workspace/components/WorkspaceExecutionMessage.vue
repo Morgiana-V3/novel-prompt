@@ -31,6 +31,7 @@ watch(
 )
 const kindLabels: Record<PageExecutionEvent['kind'], string> = {
   generate: '生成',
+  img2img: '整图图生图',
   inpaint: '局部重绘',
   upscale: '放大',
   outpaint: '扩图',

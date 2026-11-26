@@ -1,5 +1,5 @@
 import type { ChatAttachment } from '../workspace/attachments'
-import type { NaiGenParams, NaiVersion } from '../generation/types'
+import type { Img2ImgBase, NaiGenParams, NaiVersion } from '../generation/types'
 import type { ReverseResult } from '../reverse/types'
 import type { NaiImage } from '../images/types'
 import type { AiChange, AiOptimizeResult, InpaintDraft } from '../prompts/types'
@@ -31,6 +31,8 @@ export type FrontendAction =
   | 'creation-ai-config'
   | 'creation-ai-propose'
   | 'creation-ai-review'
+  | 'creation-config'
+  | 'creation-inpaint'
   | 'open'
   | 'create'
   | 'view'
@@ -68,14 +70,21 @@ export interface FrontendRequest {
   reference_ids?: string[]
   attachments?: ChatAttachment[]
   rectangles?: { x: number; y: number; width: number; height: number }[]
+  /** 生图创作局部重绘编辑器的主提示词，仅作用于本次执行。 */
+  prompt?: string
   instruction?: string
   target?: number | null
   message_id?: string
   decision?: 'accept' | 'reject' | 'undo' | 'switch'
-  kind?: 'generate' | 'inpaint'
+  kind?: 'generate' | 'img2img' | 'inpaint'
   mode?: 'internal' | 'external'
   response?: PageExternalReply
   config_action?: 'begin' | 'resume' | 'update' | 'save' | 'cancel'
+  creation_config_action?: 'set_img2img' | 'save' | 'load'
+  favorite_id?: string
+  keep_seed?: boolean
+  strength?: number
+  noise?: number
   patch?: WorkspaceConfigPatch
   agent_session?: string
   fresh?: boolean
@@ -89,6 +98,19 @@ export interface FrontendContext {
   signal: AbortSignal
   step: (message: string) => Promise<void>
 }
+
+export interface CreationInpaintReceipt {
+  sourceImageName: string
+  image: NaiImage
+  /** 费用观测独立于成品是否已保存。 */
+  billing: {
+    status: 'known' | 'unknown'
+    anlasDelta: number | null
+    usageDelta: number | null
+  }
+  stopped: string | null
+}
+
 export interface DesktopState {
   reverse?: {
     reference: string
@@ -106,6 +128,7 @@ export interface DesktopState {
   tab: AppTab
   /** 生图创作当前分页（词条检查 / 智能优化 / 画面推测 / 图片预览）；旧页签 compare、ai、preview、generate 会导航到这里 */
   creationPanel?: AppTab
+  creationConfig?: { params: NaiGenParams; img2img: Img2ImgBase | null }
   creationAi?: {
     source: 'internal' | 'external'
     instruction: string

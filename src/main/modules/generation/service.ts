@@ -15,11 +15,11 @@ import type {
   NaiInpaintRequest,
   NaiSubscription,
 } from '../../../shared/generation/types'
-import type { NaiImage } from '../../../shared/images/types'
+import type { ImageRecipe, NaiImage } from '../../../shared/images/types'
 import { generateOne, readSubscription, type PreparedSource } from '../../providers/novelai/client'
 import { buildBody } from '../../providers/novelai/payload'
 import { imagePath } from '../images/access'
-import { readImageRecipe, storeGeneratedImage } from '../images/library'
+import { storeGeneratedImage } from '../images/library'
 import { imageCollections } from '../images/collections'
 import { getSettings } from '../settings/service'
 import { anlasChange, freeCheck } from './costs'
@@ -48,28 +48,6 @@ function readInpaintSource(imageName: string): Buffer {
 }
 
 export const randomSeed = () => Math.floor(Math.random() * 4_294_967_295)
-
-/**
- * 局部重绘底图的整图配方：底图本身是重绘结果时沿用它记下的整图配方；
- * 底图是普通生图时用它的配方；读不到或只有重绘修改提示词时不猜测。
- */
-function baseRecipeOf(imageName: string | undefined): NaiGenRequest | undefined {
-  if (!imageName) {
-    return undefined
-  }
-  try {
-    const recipe = readImageRecipe(imageName)
-    if (!recipe) {
-      return undefined
-    }
-    if (recipe.base) {
-      return structuredClone(recipe.base)
-    }
-    return recipe.sourceKind === 'inpaint' ? undefined : structuredClone(recipe.request)
-  } catch {
-    return undefined
-  }
-}
 
 export interface GenerateOptions {
   freeOnly?: boolean
@@ -161,15 +139,16 @@ export async function generateImages(
     )
   }
   let source: PreparedSource | undefined
-  // 局部重绘：记下底图的整图配方，收藏和载入配置时用整图提示词而不是重绘修改提示词
-  const baseRequest = prepared && 'inpaint' in req ? baseRecipeOf(req.inpaint.imageName) : undefined
+  let sourceKind: ImageRecipe['sourceKind'] = 'generate'
   let actionLabel = '生成'
   if (prepared) {
     source = { kind: 'infill', imageBase64: prepared.imageBase64, maskBase64: prepared.maskBase64 }
+    sourceKind = 'inpaint'
     actionLabel = '局部重绘'
   } else if (img2imgSource) {
     source = { kind: 'img2img', imageBase64: img2imgSource }
-    actionLabel = opts.workspaceId ? '增强' : '图生图'
+    sourceKind = 'img2img'
+    actionLabel = opts.sourceBytes ? '增强' : '图生图'
   }
   const freeOnly = opts.freeOnly ?? false
   const count = Math.max(1, Math.min(8, Math.floor(req.params.count || 1)))
@@ -268,8 +247,7 @@ export async function generateImages(
         {
           schema: 1,
           createdAt: Date.now(),
-          sourceKind: source ? 'inpaint' : 'generate',
-          ...(baseRequest ? { base: baseRequest } : {}),
+          sourceKind,
           request: {
             base: actual.input as string,
             negative: actualParams.negative_prompt,

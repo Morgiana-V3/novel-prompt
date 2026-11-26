@@ -4,6 +4,7 @@ import type { ConfirmationRequest } from './confirmation'
 import type { StatisticsData } from '../statistics/model'
 import type { ImageCollection } from '../images/collections'
 import type {
+  Img2ImgBase,
   NaiFreeCheck,
   NaiGenParams,
   NaiGenRequest,
@@ -112,7 +113,7 @@ export interface Api {
   recipesList: () => Promise<SavedRecipe[]>
   recipesExport: (id: string) => Promise<boolean>
   recipesCreate: (name: string) => Promise<SavedRecipe>
-  recipesCreateConfig: (request: NaiGenRequest) => Promise<SavedRecipe>
+  recipesCreateConfig: (request: NaiGenRequest, img2img?: Img2ImgBase) => Promise<SavedRecipe>
   recipesCreateWorkspace: (id: string, versionId: string) => Promise<SavedRecipe>
   imagesCleanupStatus: () => Promise<{ pending: number; message: string }>
   imagesCleanupRetry: () => Promise<{ pending: number; message: string }>
@@ -222,7 +223,7 @@ export interface Api {
     sub?: NaiSubscription,
   ) => Promise<NaiFreeCheck>
   naiGenerate: (req: NaiGenRequest | NaiImg2ImgRequest) => Promise<NaiGenResult>
-  naiInpaint: (req: NaiInpaintRequest) => Promise<NaiGenResult>
+  naiInpaint: (req: NaiInpaintRequest, actionId?: string) => Promise<NaiGenResult>
   naiCancel: () => Promise<void>
   naiList: () => Promise<NaiImage[]>
   naiReadImage: (name: string) => Promise<Uint8Array>

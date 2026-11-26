@@ -25,6 +25,7 @@ const draft = shape({
   characters: array(shape({ prompt: str, negative: str, position: str }, ['prompt'])),
 })
 const image = shape({ name: str, url: str, width: num, height: num, storage: str }, ['name'])
+const img2imgConfig = shape({ imageName: str, strength: num, noise: num })
 const region = shape({ id: str, label: str, instruction: str, target: nullable(int) })
 const page = shape(
   {
@@ -90,6 +91,7 @@ const desktop = shape({
   draft,
   creationTabs: array(shape({ id: str, title: str, active: bool, empty: bool })),
   creationAi: objectSchema,
+  creationConfig: shape({ params: objectSchema, img2img: nullable(img2imgConfig) }),
   model: str,
   image: nullable(image),
   workspace: nullable(desktopWorkspace),
@@ -98,7 +100,7 @@ const desktop = shape({
 })
 // frontend is optional before the first visible action; creationTabs is absent on older hosts.
 desktop.required = desktop.required.filter(
-  (text: string) => !['frontend', 'creationTabs', 'creationAi'].includes(text),
+  (text: string) => !['frontend', 'creationTabs', 'creationAi', 'creationConfig'].includes(text),
 )
 const workspace = shape(
   {
@@ -350,12 +352,16 @@ const namedSchemas: Record<string, Schema> = {
     ['original', 'displayed', 'desktop', 'stateChangedDuringCapture'],
   ),
   read_image: shape({ original: dimensions, displayed: dimensions }),
-  read_image_prompt: draft,
+  read_image_prompt: shape(
+    { ...draft.properties, width: num, height: num, sourceKind: nullable(str) },
+    draft.required,
+  ),
   list_favorites: shape({ items: array(favoriteSummary), total: int, tags: strings }),
   get_favorite: shape(
     {
       ...favoriteFields,
       sourceKind: str,
+      img2img: nullable(img2imgConfig),
       request: objectSchema,
       baseRequest: nullable(objectSchema),
       imagePath: nullable(str),
@@ -388,6 +394,17 @@ const namedSchemas: Record<string, Schema> = {
   }),
   generate_image: generation,
   inpaint_image: generation,
+  ui_inpaint_creation_image: shape({
+    token: str,
+    sourceImageName: str,
+    image,
+    billing: shape({
+      status: { enum: ['known', 'unknown'] },
+      anlasDelta: nullable(num),
+      usageDelta: nullable(num),
+    }),
+    stopped: nullable(str),
+  }),
   prepare_inpaint: shape({
     image_name: str,
     width: num,

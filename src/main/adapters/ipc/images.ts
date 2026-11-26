@@ -137,8 +137,8 @@ export function registerImagesIpc(context: IpcContext): void {
     return createRecipe(name)
   })
 
-  handle('recipes:config', (_e, request) => {
-    return createConfigRecipe(request)
+  handle('recipes:config', (_e, request, img2img) => {
+    return createConfigRecipe(request, img2img)
   })
 
   handle('recipes:workspace', (_e, id: string, versionId: string) => {

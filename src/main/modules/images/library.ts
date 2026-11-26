@@ -139,6 +139,10 @@ export function readImageRecipe(name: string): ImageRecipe | null {
   if (!path) {
     return null
   }
+  return readImageRecipeAtPath(path)
+}
+
+export function readImageRecipeAtPath(path: string): ImageRecipe | null {
   const stat = statSync(path)
   const sidecar = existsSync(`${path}.json`) ? statSync(`${path}.json`) : null
   const stamp = `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}:${sidecar?.mtimeMs}:${sidecar?.ctimeMs}:${sidecar?.size}`

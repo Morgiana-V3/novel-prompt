@@ -4,10 +4,10 @@ import { vSegIndicator } from '../../shared/lib/seg-indicator'
 import { vFadeImg } from '../../shared/lib/fade-image'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { groupFavorites, type FavoriteGroup } from '@shared/images/favorite-groups'
-import { favorites, refreshFavorites } from './state'
+import { imageEditSourceLabel } from '@shared/images/metadata'
+import { favorites, loadFavoriteConfiguration, refreshFavorites } from './state'
 import { shellState } from '../../shared/state/shell'
-import { importGenerationRequest, sectionText } from '../prompts/public/import-export'
-import { openTabForLoad } from '../creation/public/navigation'
+import { sectionText } from '../prompts/public/import-export'
 import { loadPreferences, setLoadKeepSeed } from '../generation/public'
 import { copy, toast } from '../../shared/lib/notifications'
 import { cleanErr } from '../../shared/lib/format'
@@ -60,13 +60,7 @@ const filtered = computed(() =>
     group.items.some(
       (item) =>
         (!tag.value || item.tags.includes(tag.value)) &&
-        [
-          item.name,
-          item.note,
-          ...item.tags,
-          sectionText(item.recipe.request),
-          item.recipe.base ? sectionText(item.recipe.base) : '',
-        ]
+        [item.name, item.note, ...item.tags, sectionText(item.recipe.request)]
           .join(' ')
           .toLowerCase()
           .includes(query.value.trim().toLowerCase()),
@@ -133,13 +127,28 @@ const variantOptions = computed(() =>
     label: `${index + 1} / ${all.length} · 种子 ${item.recipe.request.params.seed ?? '随机'}`,
   })),
 )
-/** 局部重绘收藏优先展示和载入整图配方；这次重绘的修改提示词另外列出 */
-const request = computed(() => selected.value?.recipe.base ?? selected.value?.recipe.request)
-const inpaintEdit = computed(() =>
-  selected.value?.recipe.sourceKind === 'inpaint' && selected.value.recipe.base
-    ? selected.value.recipe.request
-    : null,
-)
+const request = computed(() => selected.value?.recipe.request)
+const editSource = computed(() => imageEditSourceLabel(selected.value?.recipe.sourceKind))
+const imageSource = computed(() => {
+  const favorite = selected.value
+  if (favorite?.img2img) {
+    return '图生图配置'
+  }
+  if (editSource.value) {
+    return editSource.value
+  }
+  if (favorite?.recipe.sourceKind !== 'generate' || !favorite.sourceImage) {
+    return ''
+  }
+  const { preciseReferences, vibeReferences } = favorite.recipe.request.params
+  if (preciseReferences?.length) {
+    return '文生图 · 精确参考'
+  }
+  if (vibeReferences?.length) {
+    return '文生图 · Vibe'
+  }
+  return '文生图'
+})
 /** 图例里显示「角色 N · 首个词条」，便于和提示词对应 */
 function roleLabel(prompt: string, index: number) {
   const firstTag = prompt.split(/[,\n]/)[0]?.trim() ?? ''
@@ -203,20 +212,27 @@ watch(
   },
   { immediate: true },
 )
-const parameters = computed(() =>
-  request.value
-    ? [
-        ['采样器', request.value.params.sampler],
-        ['步数', request.value.params.steps],
-        ['引导强度', request.value.params.scale],
-        ['引导重缩放', request.value.params.cfgRescale],
-        ['噪声调度', request.value.params.noiseSchedule],
-        ['生成张数', request.value.params.count],
-        ['自动质量词', request.value.params.qualityTags ? '开启' : '关闭'],
-        ['负面预设', request.value.params.ucPreset],
-      ]
-    : [],
-)
+const parameters = computed(() => {
+  const generation = request.value?.params
+  if (!generation) {
+    return []
+  }
+  const fields = [
+    ['采样器', generation.sampler],
+    ['步数', generation.steps],
+    ['引导强度', generation.scale],
+    ['引导重缩放', generation.cfgRescale],
+    ['噪声调度', generation.noiseSchedule],
+    ['生成张数', generation.count],
+    ['自动质量词', generation.qualityTags ? '开启' : '关闭'],
+    ['负面预设', generation.ucPreset],
+  ]
+  const img2img = selected.value?.img2img
+  if (img2img) {
+    fields.push(['重绘强度', img2img.strength], ['额外噪声', img2img.noise])
+  }
+  return fields
+})
 const createdAt = computed(() =>
   selected.value
     ? new Date(selected.value.createdAt).toLocaleString('zh-CN', {
@@ -229,17 +245,17 @@ const createdAt = computed(() =>
     : '',
 )
 async function load() {
-  if (!request.value || busy.value) {
-    return
-  }
-  const snapshot = JSON.parse(JSON.stringify(request.value))
-  if (!openTabForLoad(selected.value?.name)) {
+  const favorite = selected.value
+  if (!favorite || busy.value) {
     return
   }
   busy.value = true
+  error.value = ''
   try {
-    await importGenerationRequest(snapshot, '已载入收藏', { keepSeed: keepSeed.value })
-    shellState.tab = 'generate'
+    await loadFavoriteConfiguration(favorite, {
+      keepSeed: keepSeed.value,
+      canLoad: () => shellState.tab === 'favorites' && selected.value?.id === favorite.id,
+    })
   } catch (e) {
     error.value = cleanErr(e)
   } finally {
@@ -485,9 +501,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                   :size="11"
                 />{{ group.items.length }} 个版本</span
               ><span
-                v-if="group.cover.recipe.sourceKind === 'inpaint'"
+                v-if="imageEditSourceLabel(group.cover.recipe.sourceKind)"
                 class="favorite-kind"
-                >局部重绘</span
+                >{{ imageEditSourceLabel(group.cover.recipe.sourceKind) }}</span
               >
             </div>
             <div class="favorite-card-meta">
@@ -668,9 +684,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                   ><span class="pill">{{ request.params.width }} × {{ request.params.height }}</span
                   ><span class="pill">种子 {{ request.params.seed ?? '随机' }}</span
                   ><span
-                    v-if="selected.recipe.sourceKind === 'inpaint'"
+                    v-if="imageSource"
                     class="pill alias"
-                    >局部重绘</span
+                    >{{ imageSource }}</span
                   >
                 </div>
               </div>
@@ -738,17 +754,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               </p>
             </template>
             <p
-              v-if="selected.recipe.sourceKind === 'inpaint'"
+              v-if="editSource"
               class="favorite-hint"
             >
               <Icon
                 name="warn"
                 :size="13"
-              />{{
-                inpaintEdit
-                  ? '来自局部重绘：下面是整图提示词，载入配置使用整图配方；这次重绘的修改见最下方。'
-                  : '来自局部重绘：缺少整图配方，下面是这次重绘发送的提示词。'
-              }}
+              />提示词仅记录本次重绘使用的内容。
             </p>
             <section class="favorite-block">
               <h3>
@@ -798,20 +810,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               </dl>
               <p class="muted small">收藏于 {{ createdAt }}</p>
             </section>
-            <details
-              v-if="inpaintEdit"
-              class="favorite-block favorite-edit"
-            >
-              <summary class="disclosure">这次重绘的修改</summary>
-              <pre :class="{ empty: !inpaintEdit.base }">{{ inpaintEdit.base || '未填写' }}</pre>
-              <template
-                v-for="(character, index) in inpaintEdit.characters"
-                :key="index"
-              >
-                <h4>角色 {{ index + 1 }}</h4>
-                <pre>{{ character.prompt }}</pre>
-              </template>
-            </details>
           </div>
           <PositionCompareDialog
             v-if="layoutOpen"
@@ -825,7 +823,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           />
           <footer>
             <label
-              title="勾选后载入时沿用原种子，用于复现原图；默认不勾选，种子随机便于用这组提示词多试几张。图库、拖入图片等载入入口共用此设置"
+              title="勾选后载入时沿用记录中的种子，默认使用随机种子。图库、拖入图片等载入入口共用此设置"
               ><input
                 v-model="keepSeed"
                 type="checkbox"
@@ -1391,16 +1389,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   border-radius: 12px;
   background: var(--panel);
   border: 1px solid var(--line);
-}
-
-.favorite-edit summary {
-  cursor: pointer;
-  color: var(--text2);
-  font-size: 12px;
-}
-
-.favorite-edit[open] summary {
-  margin-bottom: 8px;
 }
 
 .favorite-block.plain {

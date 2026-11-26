@@ -414,6 +414,9 @@ async function closeEditor() {
   await refreshOverlay()
 }
 function planLabel(execution?: PageExecution, versionId = current.value.id) {
+  if (execution?.kind === 'img2img') {
+    return `整图图生图 · 强度 ${execution.strength} · 噪声 ${execution.noise}`
+  }
   if (execution?.kind !== 'inpaint') {
     return '按提示词生成新图'
   }

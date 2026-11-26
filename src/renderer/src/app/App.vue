@@ -545,6 +545,7 @@ const {
     :width="incomingImage.width"
     :height="incomingImage.height"
     :metadata="incomingImage.metadata"
+    :image-source-kind="incomingImage.record?.imageSourceKind"
     :busy="imageIntakeBusy"
     :error="imageIntakeError"
     :collections="collections"

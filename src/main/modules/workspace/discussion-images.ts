@@ -1,7 +1,10 @@
 import { nativeImage } from 'electron'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { PNG } from 'pngjs'
+import { MAX_REFERENCES } from '../../../shared/generation/references'
+import { MAX_VIBES, VIBE_IMAGE_PATTERN } from '../../../shared/generation/vibes'
+import { MAX_CONTEXT_REFERENCE_FILE_BYTES } from '../../../shared/workspace/context'
 import type {
   PageInputContext,
   PageInputImage,
@@ -21,6 +24,8 @@ interface EncodedImage {
 const encodedImages = new Map<string, EncodedImage>()
 const MAX_CACHE_ENTRIES = 24
 const MAX_CACHE_BYTES = 16 * 1024 * 1024
+const MAX_CONFIGURED_REFERENCE_IMAGES = Math.max(MAX_REFERENCES, MAX_VIBES)
+const MAX_CONFIGURED_REFERENCE_PAYLOAD_BYTES = 2 * 1024 * 1024
 let cachedBytes = 0
 const digest = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex')
 
@@ -106,6 +111,9 @@ function roleText(entry: PageInputImage): string {
   if (entry.role === 'attachment') {
     return '用户在聊天中附上的' + entry.label + '。按标注用途和本轮文字要求理解这张图。'
   }
+  if (entry.role === 'generation-reference') {
+    return `${entry.label}。这是生成配置里已存在的参考，按标注的用途和强度理解。`
+  }
   const identity = `「${entry.label}」，versionId=${entry.versionId}`
   if (entry.role === 'edit-target') {
     return `当前采用图片，也是修改目标：${identity}。`
@@ -119,12 +127,113 @@ function roleText(entry: PageInputImage): string {
   return `用户引用的历史图片 ${identity}，仅参考，当前采用版本未切换。`
 }
 
+function appendConfiguredReferenceImages(
+  entries: PageInputImage[],
+  parts: ChatPart[],
+  delivered: Map<string, string>,
+) {
+  const deliveredByName = new Map<string, { id: string; sourceSignature?: string }>()
+  for (const entry of entries) {
+    if (
+      entry.imageName &&
+      entry.role !== 'region' &&
+      entry.role !== 'generation-reference' &&
+      entry.status === 'included'
+    ) {
+      deliveredByName.set(entry.imageName, {
+        id: entry.sharedWith ?? entry.id,
+        sourceSignature: entry.sourceSignature,
+      })
+    }
+  }
+  let additionalImages = 0
+  let additionalPayloadBytes = 0
+  for (const entry of entries) {
+    const imageName = entry.imageName
+    if (entry.role !== 'generation-reference' || !imageName) {
+      continue
+    }
+    const fromCurrentInput = deliveredByName.get(imageName)
+    if (fromCurrentInput) {
+      entry.status = 'included'
+      entry.sharedWith = fromCurrentInput.id
+      entry.sourceSignature = fromCurrentInput.sourceSignature
+      parts.push({
+        type: 'text',
+        text: roleText(entry) + `与输入 ${fromCurrentInput.id} 共用图片。`,
+      })
+      continue
+    }
+    const path = imagePath(imageName)
+    if (!path) {
+      entry.status = 'missing'
+      parts.push({ type: 'text', text: roleText(entry) + '图片不可用，本轮只提供参考参数。' })
+      continue
+    }
+    try {
+      if (
+        additionalImages >= MAX_CONFIGURED_REFERENCE_IMAGES ||
+        additionalPayloadBytes >= MAX_CONFIGURED_REFERENCE_PAYLOAD_BYTES ||
+        statSync(path).size > MAX_CONTEXT_REFERENCE_FILE_BYTES
+      ) {
+        entry.status = 'omitted'
+        parts.push({ type: 'text', text: roleText(entry) + '达到参考图输入上限，本轮只提供参数。' })
+        continue
+      }
+      const signature = fileSignature(path)
+      const bytes = readFileSync(path)
+      const hash = digest(bytes)
+      if (VIBE_IMAGE_PATTERN.test(imageName) && imageName !== `ref-${hash}.png`) {
+        throw new Error('参考图内容已变更')
+      }
+      const image = encoded(hash, () => encodePicture(bytes))
+      if (fileSignature(path) !== signature) {
+        throw new Error('参考图在装配时已变更')
+      }
+      const imageKey = digest(image.url)
+      const sharedWith = delivered.get(imageKey)
+      const imagePayloadBytes = Buffer.byteLength(image.url)
+      if (
+        !sharedWith &&
+        additionalPayloadBytes + imagePayloadBytes > MAX_CONFIGURED_REFERENCE_PAYLOAD_BYTES
+      ) {
+        entry.status = 'omitted'
+        parts.push({ type: 'text', text: roleText(entry) + '达到参考图输入上限，本轮只提供参数。' })
+        continue
+      }
+      entry.status = 'included'
+      entry.sourceSignature = `${hash}:${signature}`
+      entry.sharedWith = sharedWith
+      parts.push({
+        type: 'text',
+        text: roleText(entry) + (sharedWith ? `与输入 ${sharedWith} 共用图片。` : ''),
+      })
+      deliveredByName.set(imageName, {
+        id: sharedWith ?? entry.id,
+        sourceSignature: entry.sourceSignature,
+      })
+      if (!sharedWith) {
+        parts.push({ type: 'image_url', image_url: { url: image.url } })
+        delivered.set(imageKey, entry.id)
+        additionalImages++
+        additionalPayloadBytes += imagePayloadBytes
+      }
+    } catch {
+      entry.status = 'missing'
+      parts.push({ type: 'text', text: roleText(entry) + '图片无法读取，本轮只提供参考参数。' })
+    }
+  }
+}
+
 /** Preserve every role label, but include identical encoded bytes only once per request. */
 function assembleImages(context: PageInputContext, version: PageVersion): ChatPart[] {
   const parts: ChatPart[] = []
   const sources = new Map<string, { bytes: Buffer; hash: string; signature: string }>()
   const delivered = new Map<string, string>()
   for (const entry of context.images.entries) {
+    if (entry.role === 'generation-reference') {
+      continue
+    }
     const path = entry.imageName ? imagePath(entry.imageName) : null
     if (!path) {
       entry.status = entry.imageName ? 'missing' : 'none'
@@ -185,9 +294,16 @@ function assembleImages(context: PageInputContext, version: PageVersion): ChatPa
       delivered.set(imageKey, entry.id)
     }
   }
+  appendConfiguredReferenceImages(context.images.entries, parts, delivered)
   context.images.mode = delivered.size ? 'included' : 'none'
   if (!delivered.size && context.images.entries.some((entry) => entry.status === 'missing')) {
     context.images.mode = 'missing'
+  }
+  if (
+    context.images.mode === 'none' &&
+    context.images.entries.some((entry) => entry.status === 'omitted')
+  ) {
+    context.images.mode = 'text-only'
   }
   for (const [path, source] of sources) {
     if (fileSignature(path) !== source.signature) {

@@ -4,6 +4,7 @@ import { detachLeaving } from '../../shared/lib/list-motion'
 import { vFadeImg } from '../../shared/lib/fade-image'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { NaiImage } from '@shared/images/types'
+import { imageEditSourceLabel } from '@shared/images/metadata'
 import { DEFAULT_COLLECTION } from '@shared/images/collections'
 import {
   collections,
@@ -277,8 +278,11 @@ async function reuse() {
     if (!openTabForLoad()) {
       return
     }
-    // 局部重绘结果优先载入整图配方，而不是这次重绘的修改提示词
-    await importGenerationRequest(recipe.base ?? recipe.request, '图库载入')
+    const editSource = imageEditSourceLabel(recipe.sourceKind)
+    await importGenerationRequest(
+      recipe.request,
+      editSource ? `已载入本次${editSource}的记录` : '图库载入',
+    )
     selectReferenceImage(image)
     shellState.tab = 'generate'
   })

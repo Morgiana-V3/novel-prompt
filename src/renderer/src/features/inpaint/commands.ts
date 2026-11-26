@@ -2,6 +2,37 @@ import { nextTick, type Ref } from 'vue'
 import type { FrontendRequest, FrontendContext } from '@shared/contracts/desktop'
 import type { InpaintDraft } from '@shared/prompts/types'
 import type { Region } from './model'
+
+type SelectionRectangles = NonNullable<FrontendRequest['rectangles']>
+
+export function setRectangleSelection(
+  region: Region,
+  rectangles: SelectionRectangles,
+  brush: number,
+  width: number,
+  height: number,
+) {
+  if (
+    !rectangles.length ||
+    rectangles.some(
+      (bounds) => bounds.x + bounds.width > width || bounds.y + bounds.height > height,
+    )
+  ) {
+    throw new Error('请提供原图边界内的选区')
+  }
+  const first = rectangles[0]
+  region.baseMask = null
+  region.strokes = rectangles.map((rect) => ({
+    tool: 'rect',
+    radius: brush,
+    points: [
+      { x: rect.x, y: rect.y },
+      { x: rect.x + rect.width, y: rect.y + rect.height },
+    ],
+  }))
+  region.anchor = { x: first.x + first.width / 2, y: first.y + first.height / 2 }
+}
+
 interface RegionCommandHost {
   frontendBusy: Ref<boolean>
   loading: Ref<boolean>
@@ -108,22 +139,7 @@ export function createRegionCommands(host: RegionCommandHost) {
         removeRegion()
       } else {
         if (request.rectangles !== undefined) {
-          region2.baseMask = null
-          region2.strokes = []
-          for (const rect of rectangles) {
-            region2.strokes.push({
-              tool: 'rect',
-              radius: brush.value,
-              points: [
-                { x: rect.x, y: rect.y },
-                { x: rect.x + rect.width, y: rect.y + rect.height },
-              ],
-            })
-          }
-          region2.anchor = {
-            x: rectangles[0].x + rectangles[0].width / 2,
-            y: rectangles[0].y + rectangles[0].height / 2,
-          }
+          setRectangleSelection(region2, rectangles, brush.value, width.value, height.value)
         }
         invalidateRegion(region2)
         await nextTick()

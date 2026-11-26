@@ -4,6 +4,8 @@ import type { InpaintDraft } from '../prompts/types'
 import type { PageEventBilling, PageExecutionObservation } from './events'
 import type { PageDiscussion, PageExecution, PageSkillSection } from './model'
 
+export const MAX_CONTEXT_REFERENCE_FILE_BYTES = 40 * 1024 * 1024
+
 export interface PageInputRegion {
   id: string
   label: string
@@ -14,12 +16,13 @@ export interface PageInputRegion {
 
 export interface PageInputImage {
   id: string
-  role: 'edit-target' | 'discussion' | 'reference' | 'region' | 'attachment'
+  role:
+    'edit-target' | 'discussion' | 'reference' | 'region' | 'attachment' | 'generation-reference'
   versionId: string | null
   label: string
   imageName: string | null
   regionId?: string
-  status: 'available' | 'included' | 'text-only' | 'missing' | 'none'
+  status: 'available' | 'included' | 'text-only' | 'missing' | 'omitted' | 'none'
   /** Another role in this request already carries the same encoded image. */
   sharedWith?: string
   /** Local source stamp; a delivery record, never evidence of model understanding. */

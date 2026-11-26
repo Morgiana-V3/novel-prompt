@@ -1,16 +1,25 @@
-import { isUcPreset, isNaiNoiseSchedule, isNaiSampler } from '../../../shared/generation/types'
+import {
+  isUcPreset,
+  isNaiNoiseSchedule,
+  isNaiSampler,
+  validImg2Img,
+  type Img2ImgBase,
+  type NaiGenRequest,
+} from '../../../shared/generation/types'
+import { checkReferences } from '../../../shared/generation/references'
+import { checkVibes } from '../../../shared/generation/vibes'
 import { nativeImage } from 'electron'
 import { randomUUID, createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
-import type { NaiGenRequest } from '../../../shared/generation/types'
 import type { ImageRecipe, SavedRecipe } from '../../../shared/images/types'
 import { writeFileAtomic } from '../../infrastructure/atomic-file'
 import { dataDir } from '../../infrastructure/paths'
 import { readPage } from '../workspace/repository'
 import { checkDraft, checkPageParams } from '../workspace/validation'
-import { libraryImagePath, readImageRecipe } from './library'
-import { embedRecipe } from './png-record'
+import { importReferenceImage } from '../generation/references'
+import { libraryImagePath, readImageRecipe, readImageRecipeAtPath } from './library'
+import { embedRecipe, readPngRecipe } from './png-record'
 
 const directory = () => {
   const path = join(dataDir(), 'recipes')
@@ -48,7 +57,18 @@ function withImage(record: SavedRecipe): SavedRecipe {
       writeFileAtomic(file(record.id), JSON.stringify(record))
     }
   }
-  return { ...record, imageUrl: existsSync(path) ? `np-img://favorite/${record.id}` : undefined }
+  const hasImage = existsSync(path)
+  let recipe = record.recipe
+  if (hasImage && recipe.sourceKind === 'inpaint') {
+    try {
+      if (readImageRecipeAtPath(path)?.sourceKind === 'img2img') {
+        recipe = { ...recipe, sourceKind: 'img2img' }
+      }
+    } catch {
+      // Keep the saved record when its optional PNG provenance is unreadable.
+    }
+  }
+  return { ...record, recipe, imageUrl: hasImage ? `np-img://favorite/${record.id}` : undefined }
 }
 export function listRecipes(): SavedRecipe[] {
   return readdirSync(directory())
@@ -77,13 +97,19 @@ export function createRecipe(imageName: string): SavedRecipe {
   }
   return saveRecipe(imageName, recipe)
 }
-export function createConfigRecipe(request: NaiGenRequest): SavedRecipe {
+export async function createConfigRecipe(
+  request: NaiGenRequest,
+  img2img?: Img2ImgBase,
+): Promise<SavedRecipe> {
   if (!request || !['v5', 'v4.5'].includes(request.version)) {
     throw new Error('模型无效')
   }
   checkDraft(request, request.version)
   checkPageParams(request.params)
   const parameters = request.params
+  const references = parameters.preciseReferences ?? []
+  checkReferences(references, request.version)
+  checkVibes(parameters.vibeReferences ?? [], request.version, references.length > 0)
   if (
     !Number.isInteger(parameters.count) ||
     parameters.count < 1 ||
@@ -100,12 +126,22 @@ export function createConfigRecipe(request: NaiGenRequest): SavedRecipe {
   ) {
     throw new Error('生成配置无效')
   }
-  return saveRecipe('', {
-    schema: 1,
-    createdAt: Date.now(),
-    sourceKind: 'generate',
-    request: structuredClone(request),
-  })
+  if (img2img !== undefined) {
+    if (!validImg2Img(img2img)) {
+      throw new Error('图生图底图或重绘参数无效')
+    }
+    await importReferenceImage(img2img.imageName)
+  }
+  return saveRecipe(
+    '',
+    {
+      schema: 1,
+      createdAt: Date.now(),
+      sourceKind: 'generate',
+      request: structuredClone(request),
+    },
+    img2img,
+  )
 }
 export function createWorkspaceRecipe(id: string, versionId: string): SavedRecipe {
   const workspace = readPage(id)
@@ -124,7 +160,7 @@ export function createWorkspaceRecipe(id: string, versionId: string): SavedRecip
   const recipe: ImageRecipe = {
     schema: 1,
     createdAt: version.createdAt,
-    sourceKind: generationSnapshot.execution.kind === 'inpaint' ? 'inpaint' : 'generate',
+    sourceKind: generationSnapshot.execution.kind,
     request: {
       ...structuredClone(generationSnapshot.draft),
       version: generationSnapshot.model,
@@ -133,12 +169,23 @@ export function createWorkspaceRecipe(id: string, versionId: string): SavedRecip
   }
   return saveRecipe(version.image?.name ?? '', recipe)
 }
-function saveRecipe(imageName: string, recipe: ImageRecipe): SavedRecipe {
+function saveRecipe(imageName: string, recipe: ImageRecipe, img2img?: Img2ImgBase): SavedRecipe {
   const path = libraryImagePath(imageName)
-  const bytes = path ? embedRecipe(readFileSync(path), recipe) : undefined
+  const originalBytes = path ? readFileSync(path) : undefined
+  const bytes = originalBytes ? embedRecipe(originalBytes, recipe) : undefined
   const contentHash = bytes ? createHash('sha256').update(bytes).digest('hex') : undefined
   if (contentHash) {
-    const existing = listRecipes().find((item) => item.contentHash === contentHash)
+    const favorites = listRecipes()
+    let existing = favorites.find((item) => item.contentHash === contentHash)
+    if (!existing && recipe.sourceKind === 'img2img' && originalBytes) {
+      const legacyBytes = embedRecipe(originalBytes, { ...recipe, sourceKind: 'inpaint' })
+      const legacyHash = createHash('sha256').update(legacyBytes).digest('hex')
+      const legacyFavorite = favorites.find((item) => item.contentHash === legacyHash)
+      // Compare the exact old encoding only when the PNG carries image-to-image provenance.
+      if (legacyFavorite && readPngRecipe(legacyBytes)?.sourceKind === 'img2img') {
+        existing = legacyFavorite
+      }
+    }
     if (existing) {
       existing.sourceImages = [
         ...new Set([...(existing.sourceImages ?? []), existing.sourceImage, imageName]),
@@ -166,6 +213,7 @@ function saveRecipe(imageName: string, recipe: ImageRecipe): SavedRecipe {
     sourceImage: imageName,
     thumbnail: resolveR(),
     recipe,
+    ...(img2img ? { img2img: { ...img2img } } : {}),
     contentHash,
     sourceImages: imageName ? [imageName] : [],
   }

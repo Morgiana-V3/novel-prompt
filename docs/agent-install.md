@@ -126,7 +126,7 @@ npm install; npm run build
 2. `navigate_app` 打开窗口或切换页面；`tab: "workspace"` 配合 `workspace_id` 打开指定会话。生图创作有多个相互独立的标签，`get_app_state.desktop.creationTabs` 列出 id、名称、是否当前与是否为空，`creation_tab_id` 切换到指定标签。
 3. 修改主提示词时，先读取状态，再把 `desktop.token` 作为 `apply_app_prompt.expected_token` 传入。期间用户已编辑则拒绝覆盖，成功写入会保留修改前历史。默认写入当前标签；`target: "new_tab"` 按软件的载入规则承接（当前标签为空则直接用，否则新开标签），`fresh_tab` 总是新开，`tab_title` 可命名新标签。
 4. 在工作台中用 `list_workspaces` / `get_workspace` 读取上下文，用 `propose_workspace_edit` 提交完整建议。建议会显示在界面中，用户可以查看、采纳；也可按用户指示调用 `apply_workspace_action` 采纳、拒绝、撤销或切换历史版本。写入必须使用最新 `revision`，遇到用户正在编辑时先等待。
-5. `generate_workspace` 根据已采纳稿生成新版本，也能使用已有区域重绘；`run_workspace_image_tool` 对当前底稿执行放大（upscale）、扩图（outpaint）或精修（enhance），结果作为新候选。必须开启「允许生图」、取得用户授权并传 `confirm: true`；仍检查免费条件。`read_image` 将图库图片或选区预览作为 MCP 图片返回，客户端需要支持图像内容。
+5. `generate_workspace` 按工作台当前执行方式生成新候选，支持文生图、整图图生图和局部重绘。`run_workspace_image_tool` 对当前底稿执行放大（upscale）、扩图（outpaint）或增强（enhance）。必须开启「允许生图」、取得用户授权并传 `confirm: true`，同时检查免费条件。`read_image` 返回图库图片或选区预览，客户端需要支持 MCP 图片内容。
 6. `list_tasks` 和 `cancel_task` 与软件任务中心共用状态。Agent 任务有来源标记；生图取消等待当前图片保存，保留已完成结果。
 
 支持资源 `novelprompt://app/state` 的读取、订阅与变化通知，以及带 `progressToken` 的调用进度。**变化通知是否触发模型行动由外部客户端决定**：服务端支持通知不等于 Agent 会自动醒来。不支持订阅的客户端可在操作前调用 `get_app_state`。不需要为每次状态变化重新发送整套 Skill，`prompt_guide(detail: "summary")` 提供摘要和规则指纹，写提示词前仍应获取完整有效规则。
@@ -138,6 +138,8 @@ npm install; npm run build
 | 工具                          | 软件中可见的效果                                                             |
 | ----------------------------- | ---------------------------------------------------------------------------- |
 | `ui_open_workspace`           | 显示窗口并打开指定会话                                                       |
+| `ui_creation_config`          | 为当前创作设置图生图底图、保存配置收藏或载入收藏                               |
+| `ui_inpaint_creation_image`   | 在创作页打开图库图片，显示局部重绘选区，执行后在创作预览显示生成结果           |
 | `ui_create_workspace`         | 显示新建表单，填入名称与来源，再创建会话                                     |
 | `ui_view_workspace`           | 切换画布、当前提示词、修改对比、建议或历史                                   |
 | `ui_set_workspace_input`      | 填入对话框，选择讨论区域及参考版本；尚不提交                                 |
@@ -147,10 +149,10 @@ npm install; npm run build
 | `ui_cancel_workspace_request` | 取消待处理的外部需求，保留消息记录                                           |
 | `ui_add_workspace_region`     | 打开选区编辑器，绘制矩形遮罩、填写批注并保存回工作台                         |
 | `ui_review_workspace`         | 展示建议后采纳、拒绝或撤销；也可从历史版本继续                               |
-| `ui_generate_workspace`       | 显示执行方式与遮罩，再生成或重绘，结果进入画布与历史                         |
+| `ui_generate_workspace`       | 显示执行方式，局部重绘时显示遮罩，结果进入画布与历史                         |
 | `ui_capture_app`              | 返回当前应用窗口的真实截图及当时状态，用于查看实际显示效果                   |
 
-前台入口复用界面原有操作逻辑，并等待界面确认完成后返回状态。每次调用返回当前 `DesktopState`；后续操作传入其 `token`，或从 `get_app_state.desktop.token` 获取最新值。界面变化、用户正在编辑、另一前台操作仍在执行时会拒绝覆盖。不要并发调用前台工具，也不要在同一轮操作中混入后台写入工具。
+前台入口复用界面原有操作逻辑，并等待界面确认完成。一般返回当前 `DesktopState`，创作页局部重绘返回独立执行回执。后续操作可用返回的 `token`，或从 `get_app_state.desktop.token` 获取最新值。界面变化、用户正在编辑或另一前台操作仍在执行时会拒绝覆盖。不要并发调用前台工具，也不要在同一轮操作中混入后台写入工具。
 
 需要慢速演示时，为前台工具传入 `step_delay_ms: 2000`，每个可见步骤会停留约两秒，包括选区编辑器内部的绘制、批注和保存。可选范围为 0～5000 毫秒，省略时维持默认速度。
 
@@ -162,7 +164,25 @@ npm install; npm run build
 
 两种模式的生成均受「允许生图」权限约束。内置模式提交讨论受「允许调用 AI」权限约束；外部接管模式只保存需求，不调用内置模型，不要求 DeepSeek Key。填写、查看、绘制批注不调用 AI。前台生成仍需用户授权、`confirm: true` 和免费条件检查。
 
-当前前台覆盖 AI 工作台及区域重绘、创作建议审阅与完整图片反推。画师图鉴与画师调试目前只有页面导航，没有选择来源或画师的专用 MCP 动作。选区支持一个区域内多个矩形，不支持任意笔刷轨迹或所有弹窗自动化；其他页面保留已有导航与共享提示词接口。前台与后台工具可同时安装，由 Agent 按用户要求选择，不需要全局模式开关。
+### 用 MCP 设置图生图和收藏配置
+
+`generate_image` 可传 `img2img: { image_name, strength, noise }`，直接使用本机图库或参考素材作底图。省略此对象时执行文生图。两种模式均可明确传 `base: ""`。要发送完全空白的提示词，同时传 `characters: []`、`negative: ""`、`quality_tags: false` 和 `uc_preset: "none"`。
+
+先调用 `get_app_state`，读取 `desktop.creationConfig` 中的当前参数与底图设置。每次调用 `ui_creation_config` 都须传入最新的 `expected_token`。如果当前页面或草稿已被用户改动，应重新读取状态再决定下一步。
+
+- `creation_config_action: "set_img2img"` 使用 `list_images` 返回的图库 `image_name` 设置当前创作底图，同时传入 `strength`（0.01～0.99）和 `noise`（0～0.99）。
+- `creation_config_action: "save"` 收藏当前创作配置，包括图生图底图和参数。通过 `list_favorites` 查找新收藏，再用 `get_favorite` 查看具体设置。
+- `creation_config_action: "load"` 传入 `favorite_id` 载入配置。可选 `keep_seed` 控制是否保留种子。载入沿用创作页的标签规则，保留已有草稿。
+
+动作完成后返回当前 `DesktopState`，供下一步读取 `token` 和 `creationConfig`。这三种动作均只处理配置，不调用 AI 或生成图片。
+
+### 用 MCP 在创作页局部重绘
+
+通过 `list_images` 和 `read_image` 查看图库图片并核对像素尺寸，再读取最新 `get_app_state.desktop.token`。获得用户生成授权后，调用 `ui_inpaint_creation_image`，传入 `expected_token`、`image_name`、`confirm: true` 和 1～32 个 `rectangles`。每个矩形包含整数 `x`、`y`、`width`、`height`，使用原图像素和左上角原点。可选 `prompt` 只调整本次重绘的主提示词，传入空字符串会清空该字段。省略时保留编辑器默认值，角色和负面提示词始终沿用编辑器。
+
+回执包含已保存的 `image`、原图文件名 `sourceImageName`、`token`、费用观测 `billing` 和 `stopped`。用 `read_image` 核对成品。 `billing.status` 为 `known` 时 `anlasDelta` 是实际观测的余额变化，负数表示余额减少。为 `unknown` 时 `anlasDelta` 为 `null`，应按原 `operation_id` 核对操作、图库和余额后再决定下一步。`usageDelta` 单独记录 V5 免费额度变化，未观测到时为 `null`。`stopped` 保留已收到的停止原因，无原因时为 `null`。通过 `get_operation` 的 `result.structuredContent` 可读取同一回执。
+
+当前前台覆盖 AI 工作台及区域重绘、创作配置、创作页独立局部重绘和建议审阅、完整图片反推。画师图鉴与画师调试目前只有页面导航，没有选择来源或画师的专用 MCP 动作。选区支持一个区域内多个矩形，不支持任意笔刷轨迹或所有弹窗自动化；其他页面保留已有导航与共享提示词接口。前台与后台工具可同时安装，由 Agent 按用户要求选择，不需要全局模式开关。
 
 开发验证：`npm run desktop:smoke`、`npm run mcp:host-smoke` 当前均为本机开发实例的只读核验，不验证冷启动、重连或生图。完整验收使用 `npm run check:full` 的真实服务灰度，并按 [测试说明](testing.md) 补上外部 Agent 实际看图、提交建议及前台执行。历史模拟与独立 profile 流程已停用。
 
@@ -193,7 +213,7 @@ npm install; npm run build
 2. `ui_set_workspace_agent(mode: "external")`：绑定当前实际 MCP 连接，右侧显示连接来源。每个会话只有一个接管者；另一个在线 Agent 不能抢占。用户可在界面切回内置 AI 解除接管。
 3. `ui_set_workspace_input` → `ui_send_workspace_message`：保存用户需求、选区、引用版本以及启用 Skill 的正文和摘要哈希；不调用内置 AI。
 4. `get_workspace_context`：读取待处理请求及本轮 Skill、提示词、参数、图片、引用、区域预览路径。按需 `read_image` 和 `get_workspace` 获取画面与完整历史。`request.stale=true` 表示用户已改变任务上下文，应取消旧需求并重新发送。
-5. Agent 自行查询 tag、分析和组织方案；`ui_reply_workspace_request(response)` 把回复放入右侧对话，并显示可选修改建议。`response.requestId` 必须对应待处理用户消息；普通讨论只需 `requestId` 和 `reply`。可选 `understanding` 记录用户明确的目标与保留项；可选 `proposal` 包含 `title`、`warning`、完整 `draft` 及 `execution`（`kind: generate|inpaint`、`regionId`）。
+5. Agent 自行查询 tag、分析和组织方案，用 `ui_reply_workspace_request(response)` 将回复与可选方案显示在右侧对话。`response.requestId` 必须对应待处理用户消息。普通讨论只需 `requestId` 和 `reply`。可选 `understanding` 记录用户明确的目标与保留项，可选 `proposal` 包含 `title`、`warning`、完整 `draft` 及 `execution`。字段说明见[工作台执行方式与选区](#工作台执行方式与选区)。
 6. `ui_review_workspace` 采纳 / 拒绝 / 撤销；经用户授权后 `ui_generate_workspace`。方案写入不会自动采纳或生图。
 
 后台对应接口为 `set_workspace_agent`、`reply_workspace_request` 和 `cancel_workspace_request`，使用工作区 `revision`；前台取消用 `ui_cancel_workspace_request`。取消保留原消息，重复或迟到的回复会被拒绝。发送后编辑提示词、切换版本或修改选区会使原请求过期；只修改未发送输入不会改变任务上下文，但提交回复仍须重新读取最新状态。
@@ -225,7 +245,7 @@ reverse_image 只做本地标签识别，不能替代完整提示词反推，也
 - 历史页使用 `message_limit`（1～100）、`before_message_id`，翻页必须附上一页的 `history.revision` 作为 `history_revision`；变化时拒绝混合分页。默认摘要省略方案前后稿、历史生成参数和规则正文，原始项目文件保持完整。
 - `since_revision` 比较本连接最近缓存的对应 `detail` 快照。未变返回 `notModified`；变化返回 `delta:true`、新增/变更的消息和候选，以及删除 id 列表。旧消息的采纳/撤销、旧候选配置变化也会被发现。按 id 合并，摘要/全文分别缓存；增量需要翻页时保持原 `since_revision`，携带当前 `history_revision`，读完消息与候选两类增量的所有页后再推进本地版本。单独翻页时另一列表不重复返回，分页信息的 `included:false` 表示未读取，不能理解为空集合。重新连接、首次请求某种 detail 或基线超过最近 32 个快照时，返回 `resetRequired:true` 和当前分页快照，须重建缓存。切勿把分页/局部详情中缺失的条目当成删除。
 - `list_images` 支持 `storage`、`collection_id`、`query`、`limit`、`before_name`，返回 `items/collections/hasMore/nextBeforeName`；`generate_image` 可用 `collection_id` 指定保存到哪个图集。
-- 收藏：`list_favorites`（`query`/`tag`/`limit`）返回摘要，`get_favorite` 返回完整 `request` 与收藏原图路径，可直接交给 `generate_image` 复用；`save_favorite` 从图库图片收藏（可同时命名、加标签），`update_favorite` 修改名称/备注/标签，`delete_favorite` 删除收藏副本，来源图片保留。
+- 收藏：`list_favorites`（`query`/`tag`/`limit`）返回摘要。`get_favorite` 返回完整 `request`、可空的 `img2img`，以及收藏原图路径（如有）。有图生图底图的配置可通过 `ui_creation_config` 载入。`save_favorite` 从图库图片收藏，可同时命名、加标签。`update_favorite` 修改名称、备注或标签。`delete_favorite` 删除收藏副本，来源图片保留。
 - 提示词片段：`list_snippets`（`query`/`category`）、`save_snippet`（带 `id` 为修改，省略为新建）、`delete_snippet`。
 - 图片反推：`reverse_image` 接受图库 `image_name` 或本机图片绝对路径 `path`，用本地模型返回标签、角色与 Kaloscope 画师候选，不消耗额度；模型需先在「图片反推」页下载。与界面共用识别进程，界面正在识别时排队；在任务中心取消会停止识别。
 - 收藏与片段的改动会通知界面即时刷新星标和片段库。
@@ -298,8 +318,20 @@ reverse_image 只做本地标签识别，不能替代完整提示词反推，也
 
 `npm run mcp:launch-smoke` 是已停用的历史入口。当前验收不另起临时宿主；文件缺失、冷启动与安装版 MCP 启动链路不包含在只读核验中。
 
-### 工作台多区域讨论与重绘
+### 工作台执行方式与选区
 
 `ui_set_workspace_input`、`submit_workspace_request` 使用 `region_ids` 数组选择本轮区域，省略时不附加区域；原 `region_id` 仍用于单区。`get_workspace_context` 的 `request.regionIds` 与 `selectedRegions` 给出本轮范围、批注和各区预览，`regions` 是全部可用区域。
 
-方案继续返回一份完整 `draft`；重绘时传 `execution: { kind: "inpaint", regionId: "首个区域 id", regionIds: ["区域 id", "另一区域 id"] }`，必须包含本轮选中的全部区域，不能加入未勾选项。统一强度与草稿作用于遮罩并集。采纳与执行仍是独立动作；`ui_generate_workspace` 和 `generate_workspace` 都支持 `region_ids`。仅绘制或附加批注不会自动触发生图。
+方案仍返回一份完整的 `draft`。按用户确认的方式设置 `execution`：
+
+| 执行方式 | 方案中的 `execution` 示例 | 输入 |
+| --- | --- | --- |
+| 文生图 | `{ kind: "generate", regionId: null, regionIds: [] }` | 使用下一版提示词和已配置的参考图生成新图 |
+| 整图图生图 | `{ kind: "img2img", regionId: null, regionIds: [], strength: 0.7, noise: 0.2 }` | 使用当前采用版本的图片作为整张底图。强度为 0.01～0.99，额外噪声为 0～0.99 |
+| 局部重绘 | `{ kind: "inpaint", regionId: "区域 A", regionIds: ["区域 A", "区域 B"] }` | 包含本轮选中的全部区域，统一强度与草稿作用于遮罩并集 |
+
+V5 局部重绘与精确参考冲突时，先说明限制。用户可移除精确参考并把相关聊天附图设为「仅讨论」后重发，或者明确选择整图图生图。
+
+采纳与执行仍是独立动作。前台执行整图图生图时，调用 `ui_generate_workspace(kind: "img2img")`，沿用当前已采纳的图生图参数，或同时传入 `strength` 和 `noise`。整图图生图的执行请求省略 `region_ids`。后台 `generate_workspace` 使用当前已采纳的执行方式和参数。局部重绘可在两个工具中通过 `region_ids` 明确选择区域。
+
+工作台的文生图和整图图生图均接受空提示词。需要发送空字符串时，将 `draft.base` 和 `draft.negative` 设为空字符串、`draft.characters` 设为空数组，并关闭质量词和 UC 预设。质量词与 UC 预设仍分别作用于主提示词和负面提示词。

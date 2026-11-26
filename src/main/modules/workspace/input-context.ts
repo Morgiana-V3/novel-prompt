@@ -1,5 +1,13 @@
+import { statSync } from 'node:fs'
+import { MAX_REFERENCES, REFERENCE_LABELS } from '../../../shared/generation/references'
+import type { NaiGenParams } from '../../../shared/generation/types'
+import { MAX_VIBES } from '../../../shared/generation/vibes'
 import { ATTACHMENT_LABELS } from '../../../shared/workspace/attachments'
-import type { PageInputContext, PageInputImage } from '../../../shared/workspace/context'
+import {
+  MAX_CONTEXT_REFERENCE_FILE_BYTES,
+  type PageInputContext,
+  type PageInputImage,
+} from '../../../shared/workspace/context'
 import {
   isRoutinePageEvent,
   latestPageExecution,
@@ -12,6 +20,7 @@ import {
   type PageWorkspace,
 } from '../../../shared/workspace/model'
 import { regionIds, regionNotes, selectRegions } from '../../../shared/workspace/regions'
+import { imagePath } from '../images/access'
 import { discussionSnapshot } from './snapshot'
 
 /** Filter only redundant receipts; all original records remain available for full-text lookup. */
@@ -118,6 +127,43 @@ function executionObservations(workspace: PageWorkspace) {
   return { latestExecution, latestBillingObservation }
 }
 
+/** Keep the generation panel order and give these images their own IDs and roles. */
+export function configuredReferenceCards(params: NaiGenParams) {
+  return [
+    ...(params.preciseReferences ?? []).slice(0, MAX_REFERENCES).map((reference, index) => ({
+      ...reference,
+      kind: 'precise' as const,
+      index: index + 1,
+      id: `precise-reference:${index}`,
+      label: `精确参考 ${index + 1} · ${REFERENCE_LABELS[reference.mode]} · 强度 ${reference.strength}`,
+    })),
+    ...(params.vibeReferences ?? []).slice(0, MAX_VIBES).map((reference, index) => ({
+      ...reference,
+      kind: 'vibe' as const,
+      index: index + 1,
+      id: `vibe-reference:${index}`,
+      label: `Vibe ${index + 1} · 强度 ${reference.strength} · 信息提取量 ${reference.information}`,
+    })),
+  ]
+}
+
+export function configuredReferenceAvailability(imageName: string) {
+  const path = imagePath(imageName)
+  if (!path) {
+    return 'missing'
+  }
+  try {
+    return statSync(path).size <= MAX_CONTEXT_REFERENCE_FILE_BYTES ? 'available' : 'too-large'
+  } catch {
+    return 'missing'
+  }
+}
+
+function configuredReferenceStatus(imageName: string): PageInputImage['status'] {
+  const availability = configuredReferenceAvailability(imageName)
+  return availability === 'too-large' ? 'omitted' : availability
+}
+
 /** Metadata only: never reads images, re-composes rules, or summarizes stored message bodies. */
 export function buildPageInputContext(
   workspace: PageWorkspace,
@@ -170,6 +216,14 @@ export function buildPageInputContext(
       imageName: version.image?.name ?? null,
       regionId: region.id,
       status: imageStatus(version.image),
+    })),
+    ...configuredReferenceCards(version.editor.params).map((reference): PageInputImage => ({
+      id: reference.id,
+      role: 'generation-reference',
+      versionId: null,
+      label: reference.label,
+      imageName: reference.imageName,
+      status: configuredReferenceStatus(reference.imageName),
     })),
   ]
   return structuredClone({

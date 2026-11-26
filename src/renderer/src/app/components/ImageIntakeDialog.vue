@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { imageEditSourceLabel } from '@shared/images/metadata'
+import type { ImageRecipe } from '@shared/images/types'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import { backdropCloser, closeDialogThen } from '../../shared/lib/dialog-motion'
 import Icon from '../../shared/ui/Icon.vue'
@@ -28,6 +30,7 @@ const props = defineProps<{
   width: number
   height: number
   metadata: 'checking' | 'available' | 'absent'
+  imageSourceKind?: ImageRecipe['sourceKind']
   busy: boolean
   error: string
   collections: readonly { id: string; name: string }[]
@@ -74,7 +77,8 @@ const decodeHint = computed(() => {
   if (props.metadata === 'absent') {
     return '这张图片没有内嵌生成记录'
   }
-  return '恢复原图提示词和可用的生成参数'
+  const source = imageEditSourceLabel(props.imageSourceKind)
+  return source ? `${source} · 提示词来自本次重绘` : '读取图片内嵌的提示词与参数'
 })
 const appDirectActions = computed<DirectActionItem[]>(() => [
   {
@@ -547,6 +551,7 @@ onBeforeUnmount(() => dialog.value?.close())
   min-width: 0;
   min-height: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 10px;
   margin: 0;

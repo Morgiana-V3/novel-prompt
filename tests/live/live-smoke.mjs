@@ -113,6 +113,7 @@ async function call(name, args = {}, timeoutMs) {
   const generationTools = [
     'generate_image',
     'inpaint_image',
+    'ui_inpaint_creation_image',
     'generate_workspace',
     'run_workspace_image_tool',
     'ui_generate_workspace',
@@ -120,6 +121,7 @@ async function call(name, args = {}, timeoutMs) {
   if (
     generationTools.includes(name) &&
     (data.anlasChange === '未知' ||
+      data.billing?.status === 'unknown' ||
       data.workspace?.latestExecution?.event.billing.status === 'unknown')
   ) {
     step.status = 'billing-unknown'
@@ -265,6 +267,38 @@ try {
   client.notify('notifications/initialized')
   catalog = (await request('tools/list')).result.tools
   assertMcpCatalog(catalog)
+  const creationConfigTool = catalog.find((tool) => tool.name === 'ui_creation_config')
+  assert.ok(creationConfigTool.inputSchema.required.includes('expected_token'))
+  assert.deepEqual(creationConfigTool.inputSchema.properties.creation_config_action.enum, [
+    'set_img2img',
+    'save',
+    'load',
+  ])
+  const creationInpaint = catalog.find((tool) => tool.name === 'ui_inpaint_creation_image')
+  for (const field of ['expected_token', 'image_name', 'rectangles', 'confirm']) {
+    assert.ok(creationInpaint.inputSchema.required.includes(field))
+  }
+  assert.ok(!creationInpaint.inputSchema.required.includes('prompt'))
+  assert.equal(creationInpaint.inputSchema.properties.prompt.type, 'string')
+  assert.equal(creationInpaint.inputSchema.properties.operation_id.type, 'string')
+  assert.equal(creationInpaint.inputSchema.properties.rectangles.maxItems, 32)
+  assert.equal(creationInpaint.annotations.openWorldHint, true)
+  const inpaintReceipt = creationInpaint.outputSchema.anyOf.find(
+    (schema) => schema.properties?.billing,
+  )
+  assert.deepEqual(inpaintReceipt.required, [
+    'token',
+    'sourceImageName',
+    'image',
+    'billing',
+    'stopped',
+  ])
+  assert.deepEqual(inpaintReceipt.properties.billing.required, [
+    'status',
+    'anlasDelta',
+    'usageDelta',
+  ])
+  assert.deepEqual(inpaintReceipt.properties.billing.properties.status.enum, ['known', 'unknown'])
   const attachmentSchema = catalog.find((tool) => tool.name === 'ui_set_workspace_input')
     ?.inputSchema.properties.attachments
   assert.equal(attachmentSchema?.maxItems, 16)
@@ -281,6 +315,15 @@ try {
   assert.equal(precise.items.properties.strength.maximum, 5)
   assert.ok(precise.items.properties.mode.enum.includes('costume'))
   assert.equal(precise.items.properties.preferSameOutfit.type, 'boolean')
+  const generationInput = catalog.find((tool) => tool.name === 'generate_image').inputSchema
+  assert.ok(generationInput.required.includes('base'))
+  assert.equal(generationInput.properties.base.minLength ?? 0, 0)
+  const img2img = generationInput.properties.img2img
+  assert.deepEqual(img2img.required, ['image_name', 'strength', 'noise'])
+  assert.equal(img2img.properties.strength.minimum, 0.01)
+  assert.equal(img2img.properties.strength.maximum, 0.99)
+  assert.equal(img2img.properties.noise.minimum, 0)
+  assert.equal(img2img.properties.noise.maximum, 0.99)
   const groups = await call('configure_tools')
   assert.equal(catalog.length, groups.exposedToolCount)
   writeFileSync(

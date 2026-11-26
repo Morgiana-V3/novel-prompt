@@ -24,7 +24,8 @@ export const generationApi = {
   ): Promise<NaiFreeCheck> => invoke('nai:freeCheck', params, version, sub),
   naiGenerate: (req: NaiGenRequest | NaiImg2ImgRequest): Promise<NaiGenResult> =>
     invoke('nai:generate', req),
-  naiInpaint: (req: NaiInpaintRequest): Promise<NaiGenResult> => invoke('nai:inpaint', req),
+  naiInpaint: (req: NaiInpaintRequest, actionId?: string): Promise<NaiGenResult> =>
+    invoke('nai:inpaint', req, actionId),
   naiCancel: (): Promise<void> => invoke('nai:cancel'),
   naiList: (): Promise<NaiImage[]> => invoke('nai:list'),
   naiReadImage: (name: string): Promise<Uint8Array> => invoke('nai:readImage', name),

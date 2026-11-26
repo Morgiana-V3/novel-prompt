@@ -1,4 +1,9 @@
-import type { NaiGenResult } from '../../../shared/generation/types'
+import type {
+  NaiGenRequest,
+  NaiGenResult,
+  NaiImg2ImgRequest,
+  NaiInpaintRequest,
+} from '../../../shared/generation/types'
 import { readFileSync } from 'node:fs'
 import { regionIds, regionNotes, selectRegions } from '../../../shared/workspace/regions'
 import { imagePath } from '../images/access'
@@ -56,27 +61,27 @@ export async function renderPage(
     // Keep returned billing and saved candidates even when execution ends without a full batch.
     try {
       const draft = structuredClone(pageDraft(version, null))
-      if (!draft.base.trim() && !draft.characters.some((character) => character.prompt.trim())) {
-        throw new Error('请先填写提示词，或让 AI 提出修改并采纳后再重绘')
-      }
       const params = { ...version.editor.params }
       checkPageParams(params)
       if (workspace.versions.length + params.count > 1000) {
         throw new Error('生成后将超过 1000 张候选，请减少生成张数或新建项目')
       }
-      const request = {
-        ...draft,
-        params,
-        version: workspace.model,
-        ...(selectedExecution.kind === 'inpaint'
-          ? {
-              inpaint: {
-                imageName: version.image!.name,
-                mask,
-                strength: version.editor.strength,
-              },
-            }
-          : {}),
+      const base: NaiGenRequest = { ...draft, params, version: workspace.model }
+      let request: NaiGenRequest | NaiInpaintRequest | NaiImg2ImgRequest = base
+      if (selectedExecution.kind === 'inpaint') {
+        request = {
+          ...base,
+          inpaint: { imageName: version.image!.name, mask, strength: version.editor.strength },
+        }
+      } else if (selectedExecution.kind === 'img2img') {
+        request = {
+          ...base,
+          img2img: {
+            imageName: version.image!.name,
+            strength: selectedExecution.strength,
+            noise: selectedExecution.noise,
+          },
+        }
       }
       const effectiveParams = {
         ...params,
@@ -192,7 +197,12 @@ export async function renderPage(
       errorText = failure.error instanceof Error ? failure.error.message : String(failure.error)
       errorText ||= '未知执行错误'
     }
-    const action = regions.length ? `局部重绘 ${regionLabel}` : '按提示词生成'
+    let action = '按提示词生成'
+    if (selectedExecution.kind === 'img2img') {
+      action = '整图图生图'
+    } else if (regions.length) {
+      action = `局部重绘 ${regionLabel}`
+    }
     const completion = versionIds.length
       ? `已保存 ${versionIds.length} 张候选。${workspace.currentVersionId !== version.id ? '首张结果已设为创作底稿。' : '当前底稿未改变。'}`
       : '没有保存新候选，当前底稿未改变。'

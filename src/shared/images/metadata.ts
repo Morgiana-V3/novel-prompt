@@ -10,7 +10,7 @@ export function validRecipe(value: unknown): value is ImageRecipe {
   return !!(
     r?.schema === 1 &&
     Number.isFinite(r.createdAt) &&
-    ['generate', 'inpaint', 'legacy'].includes(r.sourceKind) &&
+    ['generate', 'img2img', 'inpaint', 'legacy'].includes(r.sourceKind) &&
     validRequest(r.request) &&
     (r.base === undefined || validRequest(r.base))
   )
@@ -51,33 +51,71 @@ function validRequest(q: ImageRecipe['request'] | undefined): boolean {
   )
 }
 
+export function imageEditSourceLabel(sourceKind?: ImageRecipe['sourceKind']): string {
+  if (sourceKind === 'img2img') {
+    return '图生图'
+  }
+  if (sourceKind === 'inpaint') {
+    return '局部重绘'
+  }
+  return ''
+}
+
+function editSourceFromMetadata(value: unknown): 'img2img' | 'inpaint' | undefined {
+  if (typeof value !== 'string') {
+    return undefined
+  }
+  if (/inpaint|infill/i.test(value)) {
+    return 'inpaint'
+  }
+  if (/img2img/i.test(value)) {
+    return 'img2img'
+  }
+  return undefined
+}
+
 /** Native NAI metadata also works for PNGs created outside NovelPrompt. */
 export function recipeFromTexts(texts: Record<string, string>, createdAt = 0): ImageRecipe | null {
+  let raw
+  if (texts.Comment) {
+    try {
+      raw = JSON.parse(texts.Comment)
+    } catch {
+      // The embedded app record is independent of the provider comment.
+    }
+  }
+  const nativeRequestType = raw?.request_type ?? raw?.parameters?.request_type
+  const nativeEditSource = editSourceFromMetadata(nativeRequestType ?? texts.Source)
   if (texts.NovelPrompt !== undefined) {
-    const own = JSON.parse(texts.NovelPrompt)
+    const own: unknown = JSON.parse(texts.NovelPrompt)
     if (!validRecipe(own)) {
       throw new Error('图片生成记录损坏或版本不受支持')
     }
+    // Older versions labeled both image-to-image and masked edits as inpaint.
+    if (own.sourceKind === 'inpaint' && nativeEditSource === 'img2img') {
+      return { ...own, sourceKind: nativeEditSource }
+    }
     return own
   }
-  if (!texts.Comment) {
-    return null
-  }
-  let raw
-  try {
-    raw = JSON.parse(texts.Comment)
-  } catch {
+  if (!raw) {
     return null
   }
   const prompt = fromMetadata(raw)
-  if (!prompt) {
-    return null
-  }
   const meta =
     raw.parameters && typeof raw.parameters === 'object'
       ? { ...raw.parameters, input: raw.input }
       : raw
   const source = `${meta.model_name ?? ''} ${texts.Source ?? ''}`
+  if (
+    !prompt &&
+    (!/\b(?:NovelAI Diffusion\b|nai-diffusion-)/i.test(source) ||
+      !['PromptGenerateRequest', 'Img2ImgRequest', 'NativeInfillingRequest'].includes(
+        nativeRequestType,
+      ) ||
+      !hasExplicitEmptyPrompt(meta))
+  ) {
+    return null
+  }
   let version: 'v4.5' | 'v5' | null = null
   if (/(?:diffusion[ -]|\b)v?4[.-]5\b/i.test(source)) {
     version = 'v4.5'
@@ -87,11 +125,11 @@ export function recipeFromTexts(texts: Record<string, string>, createdAt = 0): I
   const recipe = {
     schema: 1,
     createdAt,
-    sourceKind: /inpaint/i.test(String(meta.request_type ?? source)) ? 'inpaint' : 'generate',
+    sourceKind: nativeEditSource ?? editSourceFromMetadata(source) ?? 'generate',
     request: {
-      base: prompt.base,
-      negative: prompt.negative,
-      characters: prompt.characters,
+      base: prompt?.base ?? '',
+      negative: prompt?.negative ?? '',
+      characters: prompt?.characters ?? [],
       version,
       params: {
         width: meta.width,
@@ -124,6 +162,23 @@ interface NaiMeta {
   v4_prompt?: { caption?: NaiCaption; use_coords?: boolean }
   v4_negative_prompt?: { caption?: NaiCaption }
   parameters?: NaiMeta
+}
+
+/** A native generation may intentionally send no text at all. */
+function hasExplicitEmptyPrompt(metadata: NaiMeta): boolean {
+  const positive = metadata.v4_prompt?.caption
+  const negative = metadata.v4_negative_prompt?.caption
+  return (
+    positive?.base_caption === '' &&
+    negative?.base_caption === '' &&
+    Array.isArray(positive.char_captions) &&
+    positive.char_captions.length === 0 &&
+    Array.isArray(negative.char_captions) &&
+    negative.char_captions.length === 0 &&
+    [metadata.input, metadata.prompt, metadata.uc, metadata.negative_prompt].every(
+      (text) => text === undefined || text === '',
+    )
+  )
 }
 
 const trimText = (value: unknown) => (typeof value === 'string' ? value.trim() : '')

@@ -75,16 +75,8 @@ export async function createPage(
   checkPageParams(params)
   checkReferences(params.preciseReferences ?? [], model)
   checkVibes(params.vibeReferences ?? [], model, !!params.preciseReferences?.length)
-  if (
-    img2imgConfig &&
-    !draft.base.trim() &&
-    !draft.characters.some((character) => character.prompt.trim())
-  ) {
-    throw new Error(
-      img2imgConfig === 'original'
-        ? '原图没有可用于图生图的提示词，请改用当前创作配置'
-        : '当前创作没有提示词，请先添加主提示词或角色提示词',
-    )
+  if (img2imgConfig === 'original' && !imported) {
+    throw new Error('原图没有可读取的生成记录，请改用当前创作配置')
   }
   const now = Date.now()
   const versionId = randomUUID()

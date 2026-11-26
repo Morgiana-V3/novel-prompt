@@ -1,5 +1,6 @@
 import type { ImportedPrompt } from '@shared/prompts/import'
-import type { NaiGenRequest } from '@shared/generation/types'
+import { imageEditSourceLabel } from '@shared/images/metadata'
+import type { Img2ImgBase, NaiGenRequest } from '@shared/generation/types'
 import type { TagCategory } from '@shared/tags/types'
 import { watch } from 'vue'
 import { toast, reportError } from '../../shared/lib/notifications'
@@ -289,7 +290,7 @@ export function clearWorkspace(): void {
 export async function importGenerationRequest(
   original: NaiGenRequest,
   source: string,
-  options: { keepSeed?: boolean } = {},
+  options: { keepSeed?: boolean; img2img?: Img2ImgBase } = {},
 ): Promise<void> {
   // 载入默认用随机种子；需要复现时由「保留种子」偏好或调用方明确指定
   const keepSeed = options.keepSeed ?? loadPreferences.keepSeed
@@ -318,7 +319,7 @@ export async function importGenerationRequest(
   applyGenerationParams(request.params)
   setCreationReferences(request.params.preciseReferences)
   setCreationVibes(request.params.vibeReferences)
-  setCreationImg2Img(null)
+  setCreationImg2Img(options.img2img ?? null)
   const undo = async () => {
     if (settingsState.settings?.naiVersion !== before.version) {
       await saveSettings({ naiVersion: before.version })
@@ -342,10 +343,12 @@ export async function importGenerationRequest(
 }
 
 export async function importImagePrompt(imported: ImportedPrompt, source: string): Promise<void> {
+  const editSource = imageEditSourceLabel(imported.imageSourceKind)
+  const message = editSource ? `已载入本次${editSource}的记录` : source
   if (imported.request) {
-    await importGenerationRequest(imported.request, source)
+    await importGenerationRequest(imported.request, message)
   } else {
-    importPrompt(imported, `${source}（无完整生成参数）`)
+    importPrompt(imported, `${message}（无完整生成参数）`)
   }
 }
 

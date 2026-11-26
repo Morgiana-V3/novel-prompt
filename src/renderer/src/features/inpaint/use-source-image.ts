@@ -1,4 +1,4 @@
-import { onBeforeUnmount, type Ref } from 'vue'
+import { onBeforeUnmount, ref, type Ref } from 'vue'
 import type { NaiImage } from '@shared/images/types'
 import type { NaiGenParams } from '@shared/generation/types'
 import type { InpaintDraft } from '@shared/prompts/types'
@@ -25,6 +25,7 @@ interface SourceImageHost {
 /** Owns decoding, metadata import and the lifetime of the source object URL. */
 export function useSourceImage(host: SourceImageHost) {
   const { source, sourceUrl, loading, error, width, height, draft, settings, promptNote } = host
+  const sourceHadPreciseReferences = ref(false)
   async function loadSource(image: NaiImage, readPrompt = true) {
     loading.value = true
     error.value = ''
@@ -55,13 +56,18 @@ export function useSourceImage(host: SourceImageHost) {
           draft.characters = toDrafts(meta.characters)
           settings.qualityTags = false
           settings.ucPreset = 'none'
+          sourceHadPreciseReferences.value = !!meta.request?.params.preciseReferences?.length
           if (meta.request && !host.initialEditor()) {
-            Object.assign(settings, meta.request.params, { count: 1 })
-            promptNote.value = ''
-          } else {
-            promptNote.value = ''
+            // Reference cards belong to the current operation. A PNG records a previous request.
+            Object.assign(settings, meta.request.params, {
+              count: 1,
+              preciseReferences: settings.preciseReferences,
+              vibeReferences: settings.vibeReferences,
+            })
           }
+          promptNote.value = ''
         } catch {
+          sourceHadPreciseReferences.value = false
           promptNote.value = '这张图没有生成记录，已带入当前提示词，请核对后修改。'
         }
       }
@@ -92,5 +98,5 @@ export function useSourceImage(host: SourceImageHost) {
       URL.revokeObjectURL(sourceUrl.value)
     }
   })
-  return { loadSource }
+  return { loadSource, sourceHadPreciseReferences }
 }

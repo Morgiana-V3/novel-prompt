@@ -25,6 +25,7 @@ const imageRoles: Record<PageInputImage['role'], string> = {
   attachment: '聊天附图',
   reference: '参考图',
   region: '区域示意图',
+  'generation-reference': '已配置生成参考',
 }
 const imageModes: Record<PageInputContext['images']['mode'], string> = {
   unassembled: '尚未记录图片装配结果。',
@@ -44,6 +45,11 @@ const decisionNames: Record<PageInputContext['history']['decisions'][number]['st
   rejected: '已拒绝',
   withdrawn: '已撤回',
 }
+const executionLabels: Record<PageInputContext['execution']['kind'], string> = {
+  generate: '按提示词生图',
+  img2img: '整图图生图',
+  inpaint: '局部重绘',
+}
 
 function toggle(event: Event) {
   isOpen.value = (event.currentTarget as HTMLDetailsElement).open
@@ -62,7 +68,8 @@ function imageStatus(image: PageInputImage): string {
   const labels = {
     included: '已装配到输入',
     'text-only': '仅文字描述',
-    missing: '图片缺失',
+    missing: '图片缺失或不可读取',
+    omitted: '达到参考图输入上限，仅提供参数',
     none: '无图片',
   }
   return labels[image.status]
@@ -136,9 +143,12 @@ function executionRegions(recorded: PageInputContext): string {
             <dd>{{ context.model }}</dd>
             <dt>执行计划</dt>
             <dd>
-              {{ context.execution.kind === 'inpaint' ? '局部重绘' : '完整生成' }}
+              {{ executionLabels[context.execution.kind] }}
               <template v-if="context.execution.kind === 'inpaint'">
                 · {{ executionRegions(context) }}
+              </template>
+              <template v-else-if="context.execution.kind === 'img2img'">
+                · 重绘强度 {{ context.execution.strength }} · 额外噪声 {{ context.execution.noise }}
               </template>
             </dd>
           </dl>

@@ -2,7 +2,6 @@
 import { vSegIndicator } from '../../../shared/lib/seg-indicator'
 import { useMaskRaster } from '../use-mask-raster'
 import { useSourceImage } from '../use-source-image'
-import { V5_INPAINT_REFERENCE_NOTICE } from '@shared/generation/references'
 import { estimateGeneration, estimateLabel } from '@shared/generation/pricing'
 import { subscriptionState } from '../../generation/subscription'
 import { useEditorPersistence } from '../use-editor-persistence'
@@ -10,7 +9,7 @@ import { SnippetButton } from '../../prompts/public/components'
 import { useInpaintAnalysis } from '../use-analysis'
 import RegionComment from './RegionComment.vue'
 import RegionContextMenu from './RegionContextMenu.vue'
-import { createRegionCommands } from '../commands'
+import { createRegionCommands, setRectangleSelection } from '../commands'
 
 import { executeInpaintQueue } from '../generation'
 import { useMaskInteraction } from '../use-mask-interaction'
@@ -37,6 +36,11 @@ import { reviewChanges } from '../../prompts/public/review'
 import { vAutosize } from '../../../shared/lib/autosize'
 import { changeLabel } from '@shared/prompts/inpaint-plan'
 import type { PageEditorState } from '@shared/workspace/model'
+import type {
+  CreationInpaintReceipt,
+  FrontendRequest,
+  FrontendContext,
+} from '@shared/contracts/desktop'
 
 const props = defineProps<{
   image: NaiImage
@@ -75,11 +79,20 @@ const draft = reactive({
   characters: toDrafts(promptState.characters),
 })
 const settings = reactive({ ...props.params, count: 1, seed: null as number | null, strength: 1 })
+const runParams = computed<NaiGenParams>(() => ({
+  ...settings,
+  width: width.value,
+  height: height.value,
+  count: 1,
+  seed: null,
+  preciseReferences: version.value === 'v5' ? undefined : settings.preciseReferences,
+  vibeReferences: version.value === 'v5' ? undefined : settings.vibeReferences,
+}))
 // 重绘沿用原图的步数与 Guidance、种子每次随机，界面只在可能扣费时提示费用。
 const estimate = computed(() =>
   estimateGeneration(
     {
-      params: { ...settings, width: width.value, height: height.value },
+      params: runParams.value,
       version: version.value,
       inpaint: { strength: settings.strength },
     },
@@ -106,13 +119,9 @@ const editable = computed(
     viewing.value === 'source' &&
     !!sourceUrl.value,
 )
-const referenceConflict = computed(
-  () => version.value === 'v5' && !!settings.preciseReferences?.length,
-)
 const canRun = computed(
   () =>
     opened.value &&
-    !referenceConflict.value &&
     !loading.value &&
     !running.value &&
     !analyzing.value &&
@@ -548,7 +557,7 @@ const hasUnsavedWork = computed(
       (region) => region.hasPixels || region.instruction.trim() || region.accepted,
     ),
 )
-const { loadSource } = useSourceImage({
+const { loadSource, sourceHadPreciseReferences } = useSourceImage({
   source,
   sourceUrl,
   loading,
@@ -590,11 +599,14 @@ const { loadSource } = useSourceImage({
   },
 })
 
-async function generate(batch = false) {
-  if (referenceConflict.value) {
-    error.value = V5_INPAINT_REFERENCE_NOTICE
-    return
-  }
+const skipPreciseReferences = computed(
+  () =>
+    !props.selectionOnly &&
+    version.value === 'v5' &&
+    (sourceHadPreciseReferences.value || !!settings.preciseReferences?.length),
+)
+
+async function generate(batch = false, actionId?: string) {
   if (
     batch
       ? running.value || analyzing.value || loading.value || !batchReady.value.length
@@ -606,13 +618,6 @@ async function generate(batch = false) {
     error.value = '请先在设置中填写 NovelAI Token'
     return
   }
-  if (
-    !editDraft.value.base.trim() &&
-    !editDraft.value.characters.some((character) => character.prompt.trim())
-  ) {
-    error.value = '请填写希望重绘后呈现的内容'
-    return
-  }
   error.value = ''
   lastRemoval.value = null
   status.value = '检查重绘参数…'
@@ -621,14 +626,8 @@ async function generate(batch = false) {
   commentAt.value = null
   emit('busy', true)
   stopQueue.value = false
+  let latest: NaiGenResult | undefined
   try {
-    const params: NaiGenParams = {
-      ...settings,
-      width: width.value,
-      height: height.value,
-      count: 1,
-      seed: null,
-    }
     const queue = (batch ? batchReady.value : [selected.value]).map((region) => ({
       label: regionLabel(region),
       mask: exportMask(region),
@@ -638,9 +637,10 @@ async function generate(batch = false) {
     await executeInpaintQueue({
       sourceImage: source.value.name,
       queue,
-      params,
+      params: runParams.value,
       version: version.value,
       strength: settings.strength,
+      actionId,
       shouldStop: () => stopQueue.value,
       report: (message) => {
         status.value = message
@@ -649,6 +649,7 @@ async function generate(batch = false) {
         error.value = message
       },
       generated: (response, generatedDraft) => {
+        latest = response
         emit('generated', response)
         if (response.images.length) {
           result.value = response.images[response.images.length - 1]
@@ -665,6 +666,7 @@ async function generate(batch = false) {
     runningQueueSize.value = 0
     emit('busy', false)
   }
+  return latest
 }
 async function close() {
   if (running.value) {
@@ -780,7 +782,59 @@ const frontendRegion = createRegionCommands({
   nextRegionNumber: () => ++regionNumber,
   cancelPendingSave,
 })
-defineExpose({ frontendRegion })
+async function frontendInpaint(
+  request: FrontendRequest,
+  context: FrontendContext,
+): Promise<CreationInpaintReceipt> {
+  frontendBusy.value = true
+  try {
+    await sourceReady
+    if (loading.value || error.value || !sourceUrl.value || props.selectionOnly) {
+      throw new Error(error.value || '局部重绘编辑器尚未就绪')
+    }
+    await context.step('已打开原图和局部重绘编辑器')
+    setRectangleSelection(
+      selected.value,
+      request.rectangles ?? [],
+      brush.value,
+      width.value,
+      height.value,
+    )
+    tool.value = 'rect'
+    if (request.prompt !== undefined) {
+      draft.base = request.prompt
+    }
+    panel.value = 'prompt'
+    invalidateRegion(selected.value)
+    await nextTick()
+    renderMask()
+    measureMask()
+    await context.step('已在原图上框选重绘区域')
+    if (skipPreciseReferences.value) {
+      await context.step('本次 V5 局部重绘会跳过精确参考')
+    }
+    const sourceImageName = source.value.name
+    const response = await generate(false, context.actionId)
+    const image = response?.images.at(-1)
+    if (!response || !image) {
+      throw new Error(error.value || response?.stopped || '未生成局部重绘结果')
+    }
+    return {
+      sourceImageName,
+      image,
+      billing: {
+        status: response.anlasDelta === undefined ? 'unknown' : 'known',
+        anlasDelta: response.anlasDelta ?? null,
+        usageDelta: response.usageDelta ?? null,
+      },
+      stopped: response.stopped ?? null,
+    }
+  } finally {
+    frontendBusy.value = false
+    opened.value = false
+  }
+}
+defineExpose({ frontendRegion, frontendInpaint })
 onBeforeUnmount(() => {
   cancelPendingSave()
   alive = false
@@ -1413,21 +1467,17 @@ function updateRegionComment(patch: Pick<Region, 'instruction'> | Pick<Region, '
             </button>
           </div>
           <div class="ip-foot">
-            <span
-              v-if="referenceConflict"
-              class="muted small"
-              >{{ V5_INPAINT_REFERENCE_NOTICE }}</span
-            >
-            <span
-              v-else-if="!running && !coverage"
-              class="muted small"
-              >请先选择区域</span
-            >
+            <div class="ip-foot-notes muted small">
+              <span v-if="!loading && !running && sourceUrl && !coverage">
+                先用画笔或框选标出要重绘的区域
+              </span>
+              <span v-if="skipPreciseReferences">本次 V5 局部重绘会跳过精确参考。</span>
+            </div>
             <button
               v-if="!selectionOnly && batchReady.length"
               title="按批注顺序生成，每一区域以上一区域结果为底图；重新执行从原图开始"
               class="btn primary"
-              :disabled="running || analyzing || loading || referenceConflict"
+              :disabled="running || analyzing || loading"
               @click="generate(true)"
             >
               生成已采纳的 {{ batchReady.length }} 个区域
@@ -1875,6 +1925,12 @@ fieldset {
   align-items: center;
   padding: 12px 16px;
   border-top: 1px solid var(--line);
+}
+
+.ip-foot-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
 }
 
 @media (width <= 1150px) {

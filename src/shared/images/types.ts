@@ -1,4 +1,4 @@
-import type { NaiGenRequest } from '../generation/types'
+import type { Img2ImgBase, NaiGenRequest } from '../generation/types'
 
 export interface NaiImage {
   collectionId?: string
@@ -19,13 +19,8 @@ export interface ImageRecipe {
   schema: 1
   request: NaiGenRequest
   createdAt: number
-  /** 重绘收藏只复用提示词和设置；完整重绘依赖工作台中的底图与遮罩。 */
-  sourceKind: 'generate' | 'inpaint' | 'legacy'
-  /**
-   * 局部重绘结果所基于的整图配方：追溯到最初的普通生图（重绘的重绘沿用同一份）。
-   * request 是这次重绘实际发送的修改提示词；收藏、载入配置优先使用整图配方。
-   * 旧图片或底图没有可靠配方时缺省。
-   */
+  sourceKind: 'generate' | 'img2img' | 'inpaint' | 'legacy'
+  /** 兼容旧 PNG 中附带的底图配置。当前图片的记录始终是 request。 */
   base?: NaiGenRequest
 }
 
@@ -41,4 +36,6 @@ export interface SavedRecipe {
   sourceImage: string
   thumbnail: string
   recipe: ImageRecipe
+  /** 纯配置收藏的底图与参数。 */
+  img2img?: Img2ImgBase
 }

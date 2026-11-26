@@ -1,5 +1,6 @@
 import { V5_INPAINT_REFERENCE_NOTICE } from '../../../shared/generation/references'
 import { regionIds, selectRegions } from '../../../shared/workspace/regions'
+import { generationReferences, type ChatAttachment } from '../../../shared/workspace/attachments'
 import { isUcPreset, isNaiSampler, isNaiNoiseSchedule } from '../../../shared/generation/types'
 import { readFileSync } from 'node:fs'
 import { MAX_CHARACTERS, isGridPosition, parsePosition } from '../../../shared/generation/presets'
@@ -137,13 +138,38 @@ export function validateExecution(
   execution: PageExecution,
   allowedIds?: string[],
 ) {
-  if (!execution || !['generate', 'inpaint'].includes(execution.kind)) {
+  if (!execution || !['generate', 'img2img', 'inpaint'].includes(execution.kind)) {
     throw new Error('请选择执行方式')
   }
   if (execution.kind === 'generate') {
     return { kind: 'generate' as const, regionId: null }
   }
   const version = pageCurrent(workspace)
+  if (execution.kind === 'img2img') {
+    if (!version.image || !imagePath(version.image.name)) {
+      throw new Error('整图图生图需要当前采用版本有可读取的底图')
+    }
+    if (execution.regionId !== null || regionIds(execution).length) {
+      throw new Error('整图图生图使用整张底图，区域字段须留空')
+    }
+    if (
+      !Number.isFinite(execution.strength) ||
+      execution.strength < 0.01 ||
+      execution.strength > 0.99 ||
+      !Number.isFinite(execution.noise) ||
+      execution.noise < 0 ||
+      execution.noise > 0.99
+    ) {
+      throw new Error('整图图生图的重绘强度须为 0.01～0.99，噪声须为 0～0.99')
+    }
+    return {
+      kind: 'img2img' as const,
+      regionId: null,
+      regionIds: [] as [],
+      strength: execution.strength,
+      noise: execution.noise,
+    }
+  }
   if (workspace.model === 'v5' && version.editor.params.preciseReferences?.length) {
     throw new Error(V5_INPAINT_REFERENCE_NOTICE)
   }
@@ -159,4 +185,25 @@ export function validateExecution(
     throw new Error('重绘方案必须包含本轮选中的全部区域，不能遗漏或加入未勾选区域')
   }
   return { kind: 'inpaint' as const, regionId: ids[0], regionIds: ids }
+}
+
+export function validateProposalExecution(
+  workspace: PageWorkspace,
+  execution: PageExecution,
+  attachments: ChatAttachment[] = [],
+  allowedIds?: string[],
+) {
+  const parameters = pageCurrent(workspace).editor.params
+  const references = generationReferences(
+    parameters.preciseReferences ?? [],
+    attachments,
+    workspace.model,
+    !!parameters.vibeReferences?.length,
+  )
+  if (workspace.model === 'v5' && execution?.kind === 'inpaint' && references?.length) {
+    throw new Error(
+      'V5 局部重绘无法使用本轮指定的精确参考。需要局部重绘时，请移除现有精确参考并将相关附图改为「仅讨论」后重发。保留精确参考时，可选整图图生图。',
+    )
+  }
+  return { execution: validateExecution(workspace, execution, allowedIds), references }
 }

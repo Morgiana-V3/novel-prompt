@@ -1,4 +1,3 @@
-import { generationReferences } from '../../../shared/workspace/attachments'
 import { regionIds, selectRegions } from '../../../shared/workspace/regions'
 import { applyInpaintChanges } from '../../../shared/prompts/inpaint-plan'
 import {
@@ -9,7 +8,7 @@ import {
   type PageWorkspace,
 } from '../../../shared/workspace/model'
 import { clone, pageEvent } from './snapshot'
-import { checkDraft, validateExecution } from './validation'
+import { checkDraft, validateProposalExecution } from './validation'
 
 export function applyProposalDecision(
   workspace: PageWorkspace,
@@ -60,11 +59,11 @@ export function applyProposalDecision(
       const attachments =
         workspace.messages.find((request) => request.id === message.requestId)?.attachments ?? []
       const previous = version.editor.params.preciseReferences
-      const references = generationReferences(
-        previous ?? [],
+      const { execution, references } = validateProposalExecution(
+        workspace,
+        proposal.execution ?? workspace.execution,
         attachments,
-        workspace.model,
-        !!version.editor.params.vibeReferences?.length,
+        proposal.execution ? regionIds(proposal) : undefined,
       )
       if (references) {
         proposal.previousReferences = previous ? clone(previous) : null
@@ -76,7 +75,7 @@ export function applyProposalDecision(
         target: region2.target,
       }))
       if (proposal.execution) {
-        workspace.execution = validateExecution(workspace, proposal.execution)
+        workspace.execution = execution
       }
       if (!regions.length) {
         proposal.previousRegions = version.editor.regions.map((region2) => ({

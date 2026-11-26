@@ -61,9 +61,9 @@ interface ImageTool {
 const editTools: ImageTool[] = [
   {
     key: 'inpaint',
-    label: '局部重绘',
+    label: '圈选区域',
     icon: 'tool-inpaint',
-    hint: '圈出区域写批注，交给 AI 讨论或直接局部重绘',
+    hint: '圈出需要讨论或局部重绘的区域，可添加批注',
   },
   { key: 'outpaint', label: '扩图', icon: 'tool-outpaint', hint: '向四周扩展画布并补全新区域' },
   { key: 'enhance', label: '增强', icon: 'tool-enhance', hint: '以当前图为起点重新采样，修复细节' },
@@ -81,7 +81,7 @@ function useTool(key: ImageTool['key'], event: MouseEvent) {
 
 function toolTitle(tool: ImageTool) {
   if (
-    (tool.key === 'inpaint' || tool.key === 'outpaint') &&
+    tool.key === 'outpaint' &&
     props.current.editor.model === 'v5' &&
     props.current.editor.params.preciseReferences?.length
   ) {

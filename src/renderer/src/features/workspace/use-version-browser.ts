@@ -106,7 +106,12 @@ export function useVersionBrowser(work: Ref<PageWorkspace>) {
         return pageImageToolLabel(version.generated.tool)
       }
       if (version.generated) {
-        return `${version.generated.execution.kind === 'inpaint' ? '局部重绘' : '提示词生成'} · 种子 ${version.generated.params.seed}`
+        const operation = {
+          generate: '提示词生成',
+          img2img: '整图图生图',
+          inpaint: '局部重绘',
+        }[version.generated.execution.kind]
+        return `${operation} · 种子 ${version.generated.params.seed}`
       }
       return '' as const
     }

@@ -1,6 +1,6 @@
 import type { VibeReference } from '../../shared/generation/vibes'
 import type { ArtistCatalogPage, ArtistCatalogQuery } from '../../shared/artists/catalog'
-import type { NaiGenRequest } from '../../shared/generation/types'
+import type { Img2ImgBase, NaiGenRequest } from '../../shared/generation/types'
 import type { NaiImage, SavedRecipe } from '../../shared/images/types'
 import type { ImageCollection } from '../../shared/images/collections'
 import { invoke } from './bridge'
@@ -25,8 +25,8 @@ export const imagesApi = {
   recipesExport: (id: string): Promise<boolean> => invoke('recipes:export', id),
   recipesList: (): Promise<SavedRecipe[]> => invoke('recipes:list'),
   recipesCreate: (name: string): Promise<SavedRecipe> => invoke('recipes:create', name),
-  recipesCreateConfig: (request: NaiGenRequest): Promise<SavedRecipe> =>
-    invoke('recipes:config', request),
+  recipesCreateConfig: (request: NaiGenRequest, img2img?: Img2ImgBase): Promise<SavedRecipe> =>
+    invoke('recipes:config', request, img2img),
   recipesCreateWorkspace: (id: string, versionId: string): Promise<SavedRecipe> =>
     invoke('recipes:workspace', id, versionId),
   imagesCleanupStatus: (): Promise<{ pending: number; message: string }> =>

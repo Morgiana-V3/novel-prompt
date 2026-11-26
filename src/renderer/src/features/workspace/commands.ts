@@ -453,16 +453,35 @@ export function createWorkspaceCommands(host: WorkspaceCommandHost) {
           check()
           await ctx.step('已保存下一版配置，即将生成')
         }
-        await setExecution({
-          kind: request.kind!,
-          regionId: regions[0]?.id ?? null,
-          regionIds: regions.map((region) => region.id),
-        })
+        let execution: PageExecution
+        if (request.kind === 'img2img') {
+          const currentExecution = work.value.execution
+          let { strength, noise } = request
+          if (currentExecution.kind === 'img2img') {
+            strength ??= currentExecution.strength
+            noise ??= currentExecution.noise
+          }
+          if (strength === undefined || noise === undefined) {
+            throw new Error('请先采纳图生图方案，或同时传入重绘强度和额外噪声')
+          }
+          execution = { kind: 'img2img', regionId: null, strength, noise }
+        } else {
+          execution = {
+            kind: request.kind === 'inpaint' ? 'inpaint' : 'generate',
+            regionId: regions[0]?.id ?? null,
+            regionIds: regions.map((region) => region.id),
+          }
+        }
+        await setExecution(execution)
         check()
         inspectMask()
         await refreshOverlay()
         await ctx.step(
-          request.kind === 'inpaint' ? '已显示重绘遮罩，即将执行' : '已选择整图生成，即将执行',
+          {
+            generate: '已选择按提示词生图，即将执行',
+            img2img: '已选择整图图生图，即将执行',
+            inpaint: '已显示重绘遮罩，即将执行',
+          }[execution.kind],
         )
         await generate()
         check()

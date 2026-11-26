@@ -16,7 +16,7 @@ interface PageEventBase {
 
 export interface PageExecutionEvent extends PageEventBase {
   type: 'execution'
-  kind: 'generate' | 'inpaint' | 'upscale' | 'outpaint' | 'enhance'
+  kind: 'generate' | 'img2img' | 'inpaint' | 'upscale' | 'outpaint' | 'enhance'
   sourceVersionId: string
   versionIds: string[]
   adoptedVersionId: string

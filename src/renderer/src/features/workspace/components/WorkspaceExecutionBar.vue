@@ -31,6 +31,7 @@ const emit = defineEmits<{
   cancel: [id: string]
   collection: [id: string]
 }>()
+const hasBottomImage = computed(() => !!props.current.image && !props.current.image.missing)
 const estimate = computed(() =>
   estimateGeneration(
     {
@@ -38,6 +39,9 @@ const estimate = computed(() =>
       version: props.model,
       ...(props.execution.kind === 'inpaint'
         ? { inpaint: { strength: props.nextEditor.strength } }
+        : {}),
+      ...(props.execution.kind === 'img2img'
+        ? { img2img: { strength: props.execution.strength } }
         : {}),
     },
     subscriptionState.error ? undefined : subscriptionState.subscription,
@@ -47,13 +51,14 @@ const cost = computed(() => estimateLabel(estimate.value))
 const isFree = computed(() => estimate.value?.maximum === 0)
 const executionIds = computed(() => regionIds(props.execution))
 const executionChoice = computed(() => {
-  if (props.execution.kind === 'generate') {
-    return 'generate'
+  if (props.execution.kind !== 'inpaint') {
+    return props.execution.kind
   }
   return executionIds.value.length > 1 ? 'merged-current' : props.execution.regionId
 })
 const options = computed(() => [
   { value: 'generate', label: '按提示词生图' },
+  { value: 'img2img', label: '整图图生图', disabled: !hasBottomImage.value },
   ...(executionIds.value.length > 1
     ? [{ value: 'merged-current', label: `合并重绘 · ${executionIds.value.length} 个区域` }]
     : []),
@@ -80,28 +85,31 @@ function chooseExecution(id: string | null) {
     emit('execution', { kind: 'generate', regionId: null })
     return
   }
+  if (id === 'img2img') {
+    emit('execution', { kind: 'img2img', regionId: null, strength: 0.7, noise: 0.2 })
+    return
+  }
   const ids = id ? [id] : []
   if (id === 'merged-selection') {
     ids.splice(0, ids.length, ...props.selectedRegionIds)
   }
   emit('execution', { kind: 'inpaint', regionId: ids[0] ?? null, regionIds: ids })
 }
-const generationLabel = computed(() =>
-  props.execution.kind === 'generate' ? '生成图片' : '执行重绘',
+const generationLabel = computed(
+  () =>
+    ({ generate: '生成图片', img2img: '开始图生图', inpaint: '执行重绘' })[props.execution.kind],
 )
 /* 尺寸、步数属于配置，只在悬停时提示；横条上只留预计消耗标签（与生图创作底栏一致） */
 const generateTitle = computed(() => {
   const { width, height, steps } = props.nextEditor.params
   return `${width}×${height} · ${steps} 步 · ${cost.value}`
 })
-const hasPrompt = computed(
-  () =>
-    !!props.nextEditor.draft.base.trim() ||
-    props.nextEditor.draft.characters.some((character) => !!character.prompt.trim()),
-)
 const canGenerate = computed(() => {
-  if (props.operation || props.remoteBusy || !hasPrompt.value) {
+  if (props.operation || props.remoteBusy) {
     return false
+  }
+  if (props.execution.kind === 'img2img') {
+    return hasBottomImage.value
   }
   return props.execution.kind !== 'inpaint' || props.hasExecutionRegion
 })
@@ -142,6 +150,11 @@ function stopGeneration() {
     >
       查看范围
     </button>
+    <span
+      v-if="execution.kind === 'img2img'"
+      class="pw-img2img-settings"
+      >强度 {{ execution.strength }} · 噪声 {{ execution.noise }}</span
+    >
     <CollectionPicker
       class="pw-collection"
       :model-value="collectionId ?? DEFAULT_COLLECTION"
@@ -195,6 +208,12 @@ function stopGeneration() {
   padding: 0 10px;
   border-radius: 8px;
   font-size: 12px;
+  white-space: nowrap;
+}
+
+.pw-img2img-settings {
+  color: var(--muted);
+  font-size: 11px;
   white-space: nowrap;
 }
 

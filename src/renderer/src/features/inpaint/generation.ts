@@ -8,6 +8,7 @@ interface InpaintQueue {
   params: NaiGenParams
   version: NaiVersion
   strength: number
+  actionId?: string
   shouldStop: () => boolean
   report: (message: string) => void
   failed: (message: string) => void
@@ -24,22 +25,33 @@ export async function executeInpaintQueue(options: InpaintQueue): Promise<void> 
     }
     const region = options.queue[index]
     options.report(`正在重绘${region.label}（${index + 1}/${options.queue.length}）…`)
-    const response = await window.api.naiInpaint({
-      ...region.draft,
-      params: options.params,
-      version: options.version,
-      inpaint: { imageName, mask: region.mask, strength: options.strength },
-    })
+    const response = await window.api.naiInpaint(
+      {
+        ...region.draft,
+        params: options.params,
+        version: options.version,
+        inpaint: { imageName, mask: region.mask, strength: options.strength },
+      },
+      options.actionId,
+    )
     options.generated(response, region.draft)
     if (!response.images.length) {
       options.failed(response.stopped ?? '没有收到重绘结果，队列已停止')
       break
     }
     imageName = response.images[response.images.length - 1].name
+    let stopped = response.stopped
+    if (!stopped && index + 1 < options.queue.length) {
+      if (response.anlasDelta === undefined) {
+        stopped = '本区域已保存。Anlas 变化未知，已停止后续重绘，请核对余额'
+      } else if (response.anlasDelta < 0) {
+        stopped = '本区域已保存。检测到 Anlas 扣费，已停止后续重绘'
+      }
+    }
     options.report(
-      `${response.stopped ?? `已完成 ${index + 1}/${options.queue.length} 个区域，重绘结果已另存到图库。`} · 本区域：${anlasOutcomeText(response)}`,
+      `${stopped ?? `已完成 ${index + 1}/${options.queue.length} 个区域，重绘结果已另存到图库。`} · 本区域：${anlasOutcomeText(response)}`,
     )
-    if (response.stopped) {
+    if (stopped) {
       break
     }
   }

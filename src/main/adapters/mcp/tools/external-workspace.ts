@@ -75,7 +75,9 @@ export const EXTERNAL_RESPONSE_SCHEMA = {
         execution: {
           type: 'object',
           properties: {
-            kind: { type: 'string', enum: ['generate', 'inpaint'] },
+            kind: { type: 'string', enum: ['generate', 'img2img', 'inpaint'] },
+            strength: { type: 'number', minimum: 0.01, maximum: 0.99 },
+            noise: { type: 'number', minimum: 0, maximum: 0.99 },
             regionId: { type: ['string', 'null'] },
             regionIds: {
               type: 'array',
@@ -85,6 +87,15 @@ export const EXTERNAL_RESPONSE_SCHEMA = {
             },
           },
           required: ['kind', 'regionId'],
+          allOf: [
+            {
+              if: { properties: { kind: { const: 'img2img' } }, required: ['kind'] },
+              then: {
+                properties: { regionId: { type: 'null' }, regionIds: { maxItems: 0 } },
+                required: ['strength', 'noise'],
+              },
+            },
+          ],
         },
       },
       required: ['title', 'warning', 'draft', 'execution'],

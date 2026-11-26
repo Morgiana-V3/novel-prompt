@@ -63,7 +63,16 @@ export function useDesktopSession(host: DesktopHost) {
       if (command.type === 'capture-end') {
         endCapture(String(argumentsRecord.lease))
       } else if (command.type === 'frontend') {
-        await runFrontend(argumentsRecord as unknown as FrontendRequest)
+        const receipt = await runFrontend(argumentsRecord as unknown as FrontendRequest)
+        if (receipt) {
+          await nextTick()
+          publishDesktop()
+          window.api.replyDesktop({
+            id: command.id,
+            result: { ...receipt, token: desktopSnapshot().token },
+          })
+          return
+        }
       } else if (command.type === 'navigate') {
         if (!APP_TABS.includes(argumentsRecord.tab as Tab)) {
           throw new Error('未知页面')

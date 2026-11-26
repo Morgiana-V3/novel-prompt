@@ -30,7 +30,7 @@ export const pageBillingSchema: Schema = {
 export const pageExecutionEventSchema = event(
   {
     type: { enum: ['execution'] },
-    kind: { enum: ['generate', 'inpaint', 'upscale', 'outpaint', 'enhance'] },
+    kind: { enum: ['generate', 'img2img', 'inpaint', 'upscale', 'outpaint', 'enhance'] },
     sourceVersionId: text,
     versionIds: strings,
     adoptedVersionId: text,

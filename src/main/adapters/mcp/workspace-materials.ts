@@ -1,7 +1,11 @@
 import type { NaiImage } from '../../../shared/images/types'
 import type { PageInputContext } from '../../../shared/workspace/context'
 import { pageCurrent, type PageMessage, type PageWorkspace } from '../../../shared/workspace/model'
-import { buildPageInputContext } from '../../modules/workspace/input-context'
+import {
+  buildPageInputContext,
+  configuredReferenceAvailability,
+  configuredReferenceCards,
+} from '../../modules/workspace/input-context'
 import { discussionSnapshot } from '../../modules/workspace/snapshot'
 import type { contextSkills } from './skills-cache'
 import { inputContextSummary } from './workspace-result'
@@ -95,6 +99,20 @@ export function workspaceContextMaterials(
         index: index + 1,
         read: { tool: 'read_image', arguments: { name: attachment.imageName } },
       })),
+      generationReferencesSource: inputContext ? inputContextSource : 'current',
+      generationReferences: configuredReferenceCards(
+        inputContext?.editTarget.params ?? current.editor.params,
+      ).map((reference) => {
+        const availability = configuredReferenceAvailability(reference.imageName)
+        return {
+          ...reference,
+          availability,
+          read:
+            availability === 'available'
+              ? { tool: 'read_image', arguments: { name: reference.imageName } }
+              : null,
+        }
+      }),
       regionPreviews: previews.map((region) => ({
         id: region.id,
         label: region.label,

@@ -1,10 +1,19 @@
 import { computed, nextTick, onBeforeUnmount, provide, ref, watch } from 'vue'
-import type { DesktopState, FrontendRequest, FrontendContext } from '@shared/contracts/desktop'
+import type {
+  CreationInpaintReceipt,
+  DesktopState,
+  FrontendRequest,
+  FrontendContext,
+} from '@shared/contracts/desktop'
 import { shellState } from '../../shared/state/shell'
 import { taskState } from '../../shared/state/tasks'
 import { taskIsActive } from '@shared/tasks/model'
 import { cleanErr } from '../../shared/lib/format'
 import type { DesktopHost } from './types'
+import { validImg2Img } from '@shared/generation/types'
+import { setCreationImg2Img } from '../../features/generation/public'
+import { loadFavoriteConfiguration } from '../../features/favorites/public'
+import { toast } from '../../shared/lib/notifications'
 
 /** Serial visible actions retain ownership, cancellation and their user-facing progress. */
 export function useFrontendActions(
@@ -45,6 +54,69 @@ export function useFrontendActions(
     window.api.cancelFrontend()
   }
   provide('frontend-control', { state: frontend, stop: stopFrontend })
+  function requireCreationView() {
+    if (workspaceView.value?.isCreating()) {
+      throw new Error('请先完成图片精修项目的新建')
+    }
+    if (workspaceView.value?.desktopState()?.editing) {
+      throw new Error('请先保存或完成图片精修中的编辑')
+    }
+    const view = generateView.value
+    if (!view) {
+      throw new Error('生图创作页面尚未就绪')
+    }
+    return view
+  }
+  async function runCreationConfig(request: FrontendRequest, context: FrontendContext) {
+    const view = requireCreationView()
+    if (request.creation_config_action === 'load') {
+      const favorite = (await window.api.recipesList()).find(
+        (item) => item.id === request.favorite_id,
+      )
+      if (!favorite) {
+        throw new Error('收藏不存在，请重新调用 list_favorites')
+      }
+      shellState.tab = 'favorites'
+      await context.step('核对素材并载入收藏配置…')
+      if (
+        !(await loadFavoriteConfiguration(favorite, {
+          keepSeed: request.keep_seed,
+          canLoad: () => !context.signal.aborted,
+        }))
+      ) {
+        throw new Error('未载入配置，请检查创作标签状态')
+      }
+      if (favorite.img2img) {
+        await nextTick()
+        view.openReferenceTab('img2img')
+      }
+      return
+    }
+    shellState.tab = 'generate'
+    if (request.creation_config_action === 'save') {
+      await context.step('收藏当前创作配置…')
+      await view.saveCurrentConfig()
+      return
+    }
+    if (request.creation_config_action !== 'set_img2img' || !request.image) {
+      throw new Error('缺少图生图底图')
+    }
+    await context.step('载入图生图底图…')
+    const img2img = {
+      imageName: await window.api.naiImportReference(request.image.name),
+      strength: request.strength,
+      noise: request.noise,
+    }
+    if (!validImg2Img(img2img)) {
+      throw new Error('图生图重绘强度或额外噪声无效')
+    }
+    if (context.signal.aborted) {
+      throw new Error('已停止，原底图保留')
+    }
+    setCreationImg2Img(img2img)
+    await nextTick()
+    view.openReferenceTab('img2img')
+  }
   async function runFrontend(request: FrontendRequest) {
     if (request.actionId === cancelledFrontendId) {
       throw new Error('前台操作已停止')
@@ -81,6 +153,7 @@ export function useFrontendActions(
         }
       },
     }
+    let inpaintReceipt: CreationInpaintReceipt | undefined
     try {
       if (request.action.startsWith('reverse-')) {
         if (workspaceView.value.desktopState()?.editing) {
@@ -102,15 +175,39 @@ export function useFrontendActions(
           throw new Error('智能优化页面尚未就绪')
         }
         await aiView.value.frontendAction(request, context)
+      } else if (request.action === 'creation-config') {
+        await runCreationConfig(request, context)
+      } else if (request.action === 'creation-inpaint') {
+        const view = requireCreationView()
+        shellState.tab = 'generate'
+        await nextTick()
+        inpaintReceipt = await view.frontendInpaint(request, context)
       } else {
         shellState.tab = 'workspace'
         await workspaceView.value.frontendAction(request, context)
       }
+      let stage = ctrl.signal.aborted ? '已停止，已完成的结果保留' : '已完成'
+      if (inpaintReceipt) {
+        if (ctrl.signal.aborted) {
+          inpaintReceipt.stopped ??= '已停止，已保存的重绘结果保留'
+        }
+        stage = '局部重绘已保存'
+        if (inpaintReceipt.billing.status === 'unknown') {
+          stage += '，Anlas 变化未知，请核对费用'
+        }
+        if (inpaintReceipt.stopped) {
+          stage += `。${inpaintReceipt.stopped}`
+        }
+        if (inpaintReceipt.billing.status === 'unknown' || inpaintReceipt.stopped) {
+          toast(stage)
+        }
+      }
       frontend.value = {
         label: request.label,
-        stage: ctrl.signal.aborted ? '已停止，已完成的结果保留' : '已完成',
+        stage,
         status: ctrl.signal.aborted ? 'error' : 'completed',
       }
+      return inpaintReceipt
     } catch (error) {
       frontend.value = { label: request.label, stage: cleanErr(error), status: 'error' }
       throw error

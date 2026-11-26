@@ -1,9 +1,5 @@
 <script setup lang="ts">
-import {
-  checkReferences,
-  REFERENCE_FEE,
-  V5_INPAINT_REFERENCE_NOTICE,
-} from '@shared/generation/references'
+import { checkReferences, REFERENCE_FEE } from '@shared/generation/references'
 import { estimateGeneration, estimateLabel, anlasOutcomeText } from '@shared/generation/pricing'
 import Img2ImgReference from './components/Img2ImgReference.vue'
 import PreciseReferences from './components/PreciseReferences.vue'
@@ -35,6 +31,7 @@ import type {
   NaiImg2ImgRequest,
 } from '@shared/generation/types'
 import type { NaiImage } from '@shared/images/types'
+import type { FrontendRequest, FrontendContext } from '@shared/contracts/desktop'
 import { toast } from '../../shared/lib/notifications'
 import { importImagePrompt } from '../prompts/public/import-export'
 import { workKey } from '../prompts/public/editing'
@@ -348,32 +345,55 @@ async function toggleRetention(event: Event) {
     retentionSaving.value = false
   }
 }
-/** 无需先出图：把当前提示词与全部生成参数存为一条收藏，在收藏页统一浏览、编辑和载入 */
-async function saveRecipe() {
+function desktopConfig() {
+  return { params: currentRecipe.value.params, img2img: referenceDraft.img2img }
+}
+
+/** 保存按钮与前台 MCP 复用当前创作配置。 */
+async function saveCurrentConfig() {
   if (savingRecipe.value) {
-    return
+    throw new Error('正在收藏当前配置')
   }
   savingRecipe.value = true
   try {
     const item = await window.api.recipesCreateConfig(
       JSON.parse(JSON.stringify(currentRecipe.value)),
+      referenceDraft.img2img ? { ...referenceDraft.img2img } : undefined,
     )
     rememberFavorite(item)
     toast('已收藏当前配置', { label: '查看', run: () => revealFavorite(item.id) })
-  } catch (error2) {
-    toast(`收藏失败：${cleanErr(error2)}`)
   } finally {
     savingRecipe.value = false
   }
 }
+async function saveRecipe() {
+  try {
+    await saveCurrentConfig()
+  } catch (error) {
+    toast(`收藏失败：${cleanErr(error)}`)
+  }
+}
 const posEditing = ref(false)
 const inpaintSource = ref<NaiImage | null>(null)
+const inpaintEditor = ref<InstanceType<typeof InpaintEditor>>()
 function openInpaint(image: NaiImage) {
-  if (version.value === 'v5' && referenceDraft.images.length) {
-    toast(V5_INPAINT_REFERENCE_NOTICE)
-    return
-  }
   inpaintSource.value = image
+}
+async function frontendInpaint(request: FrontendRequest, context: FrontendContext) {
+  if (!request.image) {
+    throw new Error('缺少局部重绘原图')
+  }
+  prepareUpdate()
+  openInpaint(request.image)
+  try {
+    await nextTick()
+    if (!inpaintEditor.value) {
+      throw new Error('局部重绘编辑器尚未就绪')
+    }
+    return await inpaintEditor.value.frontendInpaint(request, context)
+  } finally {
+    inpaintSource.value = null
+  }
 }
 const inpaintBusy = ref(false)
 function prepareUpdate(): void {
@@ -381,7 +401,7 @@ function prepareUpdate(): void {
     throw new Error('请先完成生图或关闭局部重绘、角色位置编辑器，再重启更新')
   }
 }
-defineExpose({ prepareUpdate, openReferenceTab })
+defineExpose({ prepareUpdate, openReferenceTab, desktopConfig, saveCurrentConfig, frontendInpaint })
 
 async function onInpaintGenerated(response: NaiGenResult) {
   last.value = response
@@ -497,13 +517,6 @@ async function run() {
   }
   if (activeTask('generate') || activeTask('inpaint') || activeTask('page-generate')) {
     error.value = '请等待当前生图任务完成'
-    return
-  }
-  if (
-    !promptState.prompt.trim() &&
-    !promptState.characters.some((character) => character.prompt.trim())
-  ) {
-    error.value = '请先输入主提示词或角色提示词'
     return
   }
   if (referenceDraft.vibes.length && (version.value !== 'v4.5' || referenceDraft.images.length)) {
@@ -622,10 +635,10 @@ async function readMeta(img: NaiImage): Promise<ImportedPrompt | null> {
   try {
     const recipe = await window.api.naiRecipe(img.name)
     if (recipe) {
-      // 局部重绘结果优先载入整图配方，而不是这次重绘的修改提示词
-      const request = recipe.base ?? recipe.request
+      const request = recipe.request
       return {
         request,
+        imageSourceKind: recipe.sourceKind,
         base: request.base,
         negative: request.negative,
         characters: request.characters,
@@ -653,7 +666,7 @@ async function loadFromImage(img: NaiImage) {
     return
   }
   try {
-    await importImagePrompt(importedPrompt, '已加载原图')
+    await importImagePrompt(importedPrompt, '已加载图片记录')
     imageState.currentImage = img
   } catch (error) {
     reportError(error)
@@ -1207,6 +1220,7 @@ function openImageToImage(image: NaiImage | File) {
     />
     <InpaintEditor
       v-if="inpaintSource"
+      ref="inpaintEditor"
       :image="inpaintSource"
       :params="{ ...gen, ...params, ...referenceParams }"
       @close="inpaintSource = null"

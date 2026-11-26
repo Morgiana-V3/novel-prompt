@@ -109,11 +109,9 @@ export function pageImageToolSize(
 
 export type Img2ImgConfigSource = 'original' | 'creation'
 
-export interface PageExecution {
-  kind: 'generate' | 'inpaint'
-  regionId: string | null
-  regionIds?: string[]
-}
+export type PageExecution =
+  | { kind: 'generate' | 'inpaint'; regionId: string | null; regionIds?: string[] }
+  | { kind: 'img2img'; regionId: null; regionIds?: []; strength: number; noise: number }
 /** The observed image/recipe is frozen independently of the editable target. */
 export interface PageDiscussion {
   versionId: string
@@ -477,7 +475,22 @@ export function pageConfigurationChanges(workspace: PageWorkspace, id: string, c
     sourceGeneration?.tool ? pageImageToolLabel(sourceGeneration.tool) : undefined,
     resultGeneration?.tool ? pageImageToolLabel(resultGeneration.tool) : undefined,
   )
-  add('重绘强度', sourceGeneration?.inpaint?.strength, resultGeneration?.inpaint?.strength)
+  const sourceExecution = sourceGeneration?.execution
+  const resultExecution = resultGeneration?.execution
+  add(
+    '重绘强度',
+    sourceExecution?.kind === 'img2img'
+      ? sourceExecution.strength
+      : sourceGeneration?.inpaint?.strength,
+    resultExecution?.kind === 'img2img'
+      ? resultExecution.strength
+      : resultGeneration?.inpaint?.strength,
+  )
+  add(
+    '额外噪声',
+    sourceExecution?.kind === 'img2img' ? sourceExecution.noise : undefined,
+    resultExecution?.kind === 'img2img' ? resultExecution.noise : undefined,
+  )
   add('区域批注', sourceGeneration?.inpaint?.instruction, resultGeneration?.inpaint?.instruction)
   add('区域对应角色', sourceGeneration?.inpaint?.target, resultGeneration?.inpaint?.target)
   return {

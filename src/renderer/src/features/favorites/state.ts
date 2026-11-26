@@ -1,7 +1,11 @@
 import { reactive } from 'vue'
 import type { NaiImage, SavedRecipe } from '@shared/images/types'
+import { validImg2Img } from '@shared/generation/types'
 import { toast } from '../../shared/lib/notifications'
 import { shellState } from '../../shared/state/shell'
+import { openTabForLoad } from '../creation/public/navigation'
+import { importGenerationRequest } from '../prompts/public/import-export'
+import { imageEditSourceLabel } from '@shared/images/metadata'
 
 export const favorites = reactive({
   items: [] as SavedRecipe[],
@@ -84,4 +88,34 @@ export async function removeFavorite(item: SavedRecipe) {
 
 export function rememberFavorite(item: SavedRecipe): void {
   favorites.items = [item, ...favorites.items.filter((other) => other.id !== item.id)]
+}
+
+export async function loadFavoriteConfiguration(
+  favorite: SavedRecipe,
+  options: { keepSeed?: boolean; canLoad?: () => boolean } = {},
+): Promise<boolean> {
+  const request = JSON.parse(JSON.stringify(favorite.recipe.request))
+  const img2img = favorite.img2img
+  if (img2img !== undefined) {
+    if (!validImg2Img(img2img)) {
+      throw new Error('收藏中的图生图配置无效')
+    }
+    await window.api.naiImportReference(img2img.imageName)
+  }
+  if (options.canLoad?.() === false || !openTabForLoad(favorite.name)) {
+    return false
+  }
+  const edit = imageEditSourceLabel(favorite.recipe.sourceKind)
+  let source = '已载入收藏'
+  if (img2img) {
+    source = '已载入图生图配置'
+  } else if (edit) {
+    source = `已载入本次${edit}的记录`
+  }
+  await importGenerationRequest(request, source, {
+    keepSeed: options.keepSeed,
+    img2img,
+  })
+  shellState.tab = 'generate'
+  return true
 }

@@ -25,7 +25,7 @@ import {
   pageMessage,
   pendingExternalRequest,
 } from './snapshot'
-import { checkDraft, validateExecution } from './validation'
+import { checkDraft, validateProposalExecution } from './validation'
 import { writablePage } from './writable'
 
 /** External agents submit the same reviewable proposals as the built-in collaborator. */
@@ -257,8 +257,15 @@ export function replyExternalRequest(
     ) {
       throw new Error('建议标题或风险说明无效')
     }
-    validateExecution(workspace, proposal.execution, regionIds(request))
   }
+  const execution = proposal
+    ? validateProposalExecution(
+        workspace,
+        proposal.execution,
+        request.attachments,
+        regionIds(request),
+      ).execution
+    : undefined
   if (response.understanding) {
     workspace.goal = response.understanding.goal
     workspace.preserve = response.understanding.preserve
@@ -284,7 +291,7 @@ export function replyExternalRequest(
   message.referenceIds = request.referenceIds
   message.discussion = request.discussion ? clone(request.discussion) : undefined
   message.skills = request.skills
-  if (proposal) {
+  if (proposal && execution) {
     const before = pageDraft(version, request.regionId ?? null)
     message.proposal = {
       regionId: request.regionId ?? null,
@@ -298,7 +305,7 @@ export function replyExternalRequest(
       contextKey: pageContextKey(version, regionIds(request), workspace),
       before: clone(before),
       after: clone(proposal.draft),
-      execution: validateExecution(workspace, proposal.execution, regionIds(request)),
+      execution,
       previousAccepted: null,
     }
   }

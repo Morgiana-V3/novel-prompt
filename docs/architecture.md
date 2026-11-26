@@ -222,11 +222,13 @@ DesktopCommand.type 包含 snapshot、capture-prepare、capture-end、navigate�
 | `ui_configure_creation_ai`、`ui_propose_creation_edit`、`ui_review_creation_ai`                                                            | `src/main/adapters/mcp/tools/frontend.ts`           |
 | `ui_load_reverse_image`、`ui_compose_reverse_prompt`、`ui_propose_reverse_prompt`、`ui_adopt_reverse_prompt`、`ui_transfer_reverse_prompt` | `src/main/adapters/mcp/tools/frontend.ts`           |
 | `ui_create_workspace`                                                                                                                      | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_creation_config`                                                                                                                       | `src/main/adapters/mcp/tools/frontend.ts`           |
 | `ui_delete_workspace`                                                                                                                      | `src/main/adapters/mcp/tools/frontend.ts`           |
 | `ui_delete_workspace_image`                                                                                                                | `src/main/adapters/mcp/tools/frontend.ts`           |
 | `ui_delete_workspace_region`                                                                                                               | `src/main/adapters/mcp/tools/frontend.ts`           |
 | `ui_edit_workspace_config`                                                                                                                 | `src/main/adapters/mcp/tools/frontend.ts`           |
 | `ui_generate_workspace`                                                                                                                    | `src/main/adapters/mcp/tools/frontend.ts`           |
+| `ui_inpaint_creation_image`                                                                                                                | `src/main/adapters/mcp/tools/frontend.ts`           |
 | `ui_open_workspace`                                                                                                                        | `src/main/adapters/mcp/tools/frontend.ts`           |
 | `ui_rename_workspace`                                                                                                                      | `src/main/adapters/mcp/tools/frontend.ts`           |
 | `ui_reply_workspace_request`                                                                                                               | `src/main/adapters/mcp/tools/frontend.ts`           |
@@ -340,7 +342,8 @@ Skill 目录包由 modules/skills/package-files.ts 校验和整体写入；入�
 - 图片装配与请求投递分别记录。可选 `images.delivery` 表示最近一次供应商请求的阶段：`prepared` 为已准备、尚未进入该次网络提交；`attempted` 为通过本地 Key 存在、授权、地址及请求前取消检查后进入网络提交尝试；`responded` 为返回有效供应商消息。`attempts` / `responses` 累计本轮实际尝试及有效消息数，保留多轮处理中此前已发生的请求。网络失败或 HTTP 鉴权拒绝可能已有尝试而无有效回复；这些状态都不证明模型理解、方案正确或执行完成。外部客户端和旧快照没有这些字段时，不推断其投递状态。
 - `prompts/chat.ts` 在确定实际识图路由、必要时移除图片之后，通过可选 `onRoute` 同步快照的 `images` 字段及其 JSON 表示，再交给供应商序列化；纯文本降级按 `images.mode=text-only` 记录。供应商的可选 `onDispatch` 在实际提交前记录尝试，`onResponse` 在有效消息返回后记录回复。目标、草稿、规则和历史范围保持提交时的事实，图片路由及投递字段则记录本轮随后观察到的发送过程。
 - 前端 `WorkspaceInputContext` 的“查看本轮输入”默认收起，从用户消息的冻结 `inputContext` 和同一消息的 `skillSnapshot` 展示原始任务、讨论图与修改底图、完整草稿/参数、区域、规则篇目及历史索引；回复通过 `requestId` 定位原请求。规则正文按冻结区段读取，缺失或不一致时明确提示，旧消息不拿当前状态补推。图片栏区分“已装配”和投递阶段，规则目录及历史索引不表示外部 Agent 已读取；决定状态冻结于提交时，链接仅定位原消息。
-- 外部 `get_workspace_context` 的 `inputContext` 默认仅小摘要，完整冻结输入按 `get_workspace(detail:full,message_ids)` 读取；`materials` 给出图片、预览、缺失规则及近期决定的补读入口。`rules_only` 不装配图片与完整历史。旧需求重建会标记来源，无法重建时明确说明。
+- 外部 `get_workspace_context` 的 `inputContext` 默认仅小摘要，完整冻结输入按 `get_workspace(detail:full,message_ids)` 读取；`materials` 给出图片、预览、缺失规则及近期决定的补读入口。`materials.generationReferences` 按冻结或当前配置列出精确参考和 Vibe 及对应 `read_image` 入口，`generationReferencesSource` 标记配置出处。`rules_only` 不装配图片与完整历史。旧需求重建会标记来源，无法重建时明确说明。
+- 内置精修讨论优先装配本轮附件和选区，再补充已配置生成参考的原图和用途。额外参考图片去重后至多 16 张，图片载荷至多 2 MiB，原文件最大 40 MB。超出预算、缺图和服务商降级为纯文本的状态记录在本轮输入中。参考图用途、强度等参数来自本轮冻结的设置。图像装配、投递和模型理解分别记录。
 - 规则传输沿用篇目 digest，增加选择原因及选中、发送、复用、缺失的 UTF-16 字符数。显式 `skills_digests` 仅代表客户端声明正文仍在当前上下文；连接缓存仅证明曾投递。上下文丢失后使用空指纹表或 `skills_mode:full` 恢复，未发送且未持有的正文不能计为复用。既有用户 Skill 与优先级保持原样，本批不实施条件拆篇。
 
 ## 完整图片反推
@@ -369,6 +372,12 @@ Skill 目录包由 modules/skills/package-files.ts 校验和整体写入；入�
 
 本应用每条工作台需求可附加最多 16 张 PNG、JPEG 或 WebP 图片。文件选择、拖入和粘贴共用内容寻址导入。草稿保存附件顺序和用途，发送时固化到需求及输入快照。内置 AI 沿现有视觉路由读取，外部 Agent 通过 get_workspace_context 的 attachments 和 read_image 读取。角色、画风、角色与画风及 V5 服装用途在采纳方案时合并到编辑器已有参考，撤销恢复原配置。
 
-图生图使用现有工作台项目与增强工具。新建时通过 pages:create 或 pages:import-dropped 传入可选的配置来源，明确选择原图记录或当前创作；提交前由工作台服务确认提示词可用。常规项目仍沿用原有导入行为。
+全局图片用途弹窗的「用于图生图」通过 `nai:import-reference` 保存本机底图副本，将底图及重绘设置写入当前创作标签，并打开图生图面板。精修工作台的「增强」以当前底稿执行整图重绘。从生图预览打开「使用图片改画」时，工作台仍可通过 `pages:create` 或 `pages:import-dropped` 接收可选的配置来源，按选择读取原图记录或当前创作。
+
+`recipes:config` 保存纯创作配置，并使用生图的模型、精确参考与 Vibe 兼容检查。图生图底图的内容哈希文件名、重绘强度和额外噪声保存在 `SavedRecipe.img2img` 中。载入配置时在写入创作标签前检查底图可读取，再恢复图生图设置。独立成品 PNG 的内嵌记录继续使用 `ImageRecipe`，只记录当前图片。
+
+`ui_creation_config` 复用创作页的底图设置、收藏和载入动作，通过 `expected_token` 保护当前标签和用户编辑。`get_app_state.desktop.creationConfig` 提供当前参数和图生图设置，`get_favorite.img2img` 提供收藏中的图生图设置。前台配置动作只写入创作状态或收藏记录。
+
+`ui_inpaint_creation_image` 通过图库文件名打开创作页现有局部重绘编辑器，使用以原图左上角为原点的像素矩形建立遮罩。`prompt` 只覆盖本次重绘的主提示词，角色和负面沿用编辑器。执行复用 `nai:inpaint`，用前台一次性票据关联 Agent 任务、进度和取消，通过现有生成权限和付费授权处理。已保存结果返回紧凑回执，记录来源、成品、独立的 Anlas 与 V5 免费额度观测和停止原因，由现有操作编号日志持久化。后续可用 `get_operation` 核对。
 
 Vibe Transfer 的配置位于 NaiGenParams.vibeReferences。编码使用官方 image/ai/encode-vibe，结果以原图内容哈希、模型和信息提取量为缓存键，存入 image-library/vibes；强度仅在生成请求中使用。收费前由现有 operation policy 确认，未知写入保留 pending 标志。生图只读已完成缓存，不触发编码。图集素材回收扫描工作台、收藏、图库 PNG 文本和当前渲染草稿，保留近期素材及编码缓存来源。

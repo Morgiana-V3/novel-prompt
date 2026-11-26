@@ -1,9 +1,11 @@
 import { fromMetadata, recipeFromTexts } from '../images/metadata'
 import type { NaiGenRequest } from '../generation/types'
+import type { ImageRecipe } from '../images/types'
 import type { AiCharacter } from './types'
 
 export interface ImportedPrompt {
   request?: NaiGenRequest
+  imageSourceKind?: ImageRecipe['sourceKind']
   base: string
   negative: string
   characters: AiCharacter[]
@@ -225,6 +227,7 @@ export async function parsePngPrompt(
       negative: recipe.request.negative,
       characters: recipe.request.characters,
       request: recipe.request,
+      imageSourceKind: recipe.sourceKind,
       width: recipe.request.params.width,
       height: recipe.request.params.height,
       fromMetadata: true,

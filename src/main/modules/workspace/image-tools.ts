@@ -159,9 +159,6 @@ async function executeTool(
     return { ...result, images: [result.image] }
   }
   const draft = structuredClone(version.editor.draft)
-  if (!draft.base.trim() && !draft.characters.some((character) => character.prompt.trim())) {
-    throw new Error('扩图和增强需要提示词描述画面，请先在配置里填写提示词')
-  }
   const sourceSize = pngSize(sourceBytes)
   if (!sourceSize) {
     throw new Error('底稿图片不是有效 PNG')

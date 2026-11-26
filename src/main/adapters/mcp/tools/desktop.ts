@@ -5,7 +5,11 @@ import { APP_TABS, type DesktopState } from '../../../../shared/contracts/deskto
 import type { NaiGenParams, NaiVersion } from '../../../../shared/generation/types'
 import { NAI_VERSIONS } from '../../../../shared/generation/types'
 import type { InpaintDraft } from '../../../../shared/prompts/types'
-import { type PageAction, type PageImageTool } from '../../../../shared/workspace/model'
+import {
+  type PageAction,
+  type PageExecution,
+  type PageImageTool,
+} from '../../../../shared/workspace/model'
 import { dataDir } from '../../../infrastructure/paths'
 import { imagePath } from '../../../modules/images/access'
 import { getSettings } from '../../../modules/settings/service'
@@ -66,18 +70,18 @@ function imageTool(argumentsRecord: Record<string, unknown>): PageImageTool {
     if (scale !== 1 && scale !== 1.5) {
       throw new Error('增强倍数只能是 1 或 1.5')
     }
-    const unit = (value: unknown, fallback: number) => {
+    const unit = (value: unknown, fallback: number, minimum: number, label: string) => {
       const number = Number(value ?? fallback)
-      if (!Number.isFinite(number) || number < 0 || number > 1) {
-        throw new Error('strength 与 noise 须在 0~1 之间')
+      if (!Number.isFinite(number) || number < minimum || number > 0.99) {
+        throw new Error(`${label}须为 ${minimum}～0.99`)
       }
       return number
     }
     return {
       kind: 'enhance',
       scale,
-      strength: unit(argumentsRecord.strength, 0.5),
-      noise: unit(argumentsRecord.noise, 0),
+      strength: unit(argumentsRecord.strength, 0.5, 0.01, '重绘强度'),
+      noise: unit(argumentsRecord.noise, 0, 0, '额外噪声'),
     }
   }
   throw new Error('tool 只能是 upscale、outpaint 或 enhance')
@@ -454,7 +458,7 @@ export function desktopTools(
       name: 'generate_workspace',
       title: '生成会话候选',
       description:
-        '使用当前草稿生成候选或按已有区域重绘；同配置归入同方案。latestGeneratedVersionId 是新结果，currentVersionId 是已采用结果，除首张外不会自动采用。需用户生图授权、confirm:true 和开启允许生图；检查免费资格，付费或费用未知时须由用户授权。',
+        '使用当前草稿生成候选。已采纳的整图图生图方式会使用当前底稿、强度和噪声。提供 region_id 或 region_ids 可明确执行局部重绘。latestGeneratedVersionId 是新候选，currentVersionId 是已采用版本。需用户生图授权、confirm:true 和开启允许生图。',
       inputSchema: {
         type: 'object',
         properties: {
@@ -470,7 +474,7 @@ export function desktopTools(
           },
           region_id: {
             type: 'string',
-            description: '提供时对会话内该区域重绘；省略时按提示词生成',
+            description: '提供时对这个区域重绘',
           },
         },
         required: ['id', 'revision', 'confirm'],
@@ -491,17 +495,20 @@ export function desktopTools(
         }
         return desktop.withWorkspace(string(argumentsRecord.id), async () => {
           let stopped: string | null = null
+          let execution: PageExecution = readPage(string(argumentsRecord.id)).execution
+          const requestedRegions =
+            argumentsRecord.region_ids !== undefined || !!argumentsRecord.region_id
+          if (requestedRegions || execution.kind !== 'img2img') {
+            execution = {
+              kind: requestedRegions ? 'inpaint' : 'generate',
+              regionIds: argumentsRecord.region_ids as string[] | undefined,
+              regionId: string(argumentsRecord.region_id) || null,
+            }
+          }
           const workspace = await renderPage(
             string(argumentsRecord.id),
             revision(argumentsRecord.revision),
-            {
-              kind:
-                argumentsRecord.region_ids !== undefined || argumentsRecord.region_id
-                  ? 'inpaint'
-                  : 'generate',
-              regionIds: argumentsRecord.region_ids as string[] | undefined,
-              regionId: string(argumentsRecord.region_id) || null,
-            },
+            execution,
             progress ?? (() => {}),
             () => signal.aborted,
             {
@@ -526,7 +533,7 @@ export function desktopTools(
       name: 'run_workspace_image_tool',
       title: '会话画布修图',
       description:
-        '对图片精修会话的当前底稿执行修图：upscale 放大 2×；outpaint 四边扩图（left/right/top/bottom 像素）；enhance 增强（scale 1 或 1.5，strength 与 noise 0~1）。结果保存为新候选，不自动替换底稿。扩图与增强使用会话当前草稿作为提示词。需用户生图授权、confirm:true 和开启允许生图；付费或费用未知时须由用户授权。',
+        '对图片精修会话的当前底稿执行放大、扩图或增强。增强支持 scale 1 或 1.5，重绘强度 0.01～0.99，额外噪声 0～0.99。结果保存为新候选。扩图与增强使用会话当前草稿。需用户生图授权、confirm:true 和开启允许生图。',
       inputSchema: {
         type: 'object',
         properties: {
@@ -539,8 +546,8 @@ export function desktopTools(
           top: { type: 'integer', minimum: 0 },
           bottom: { type: 'integer', minimum: 0 },
           scale: { type: 'number', enum: [1, 1.5] },
-          strength: { type: 'number', minimum: 0, maximum: 1 },
-          noise: { type: 'number', minimum: 0, maximum: 1 },
+          strength: { type: 'number', minimum: 0.01, maximum: 0.99 },
+          noise: { type: 'number', minimum: 0, maximum: 0.99 },
         },
         required: ['id', 'revision', 'confirm', 'tool'],
       },

@@ -45,6 +45,16 @@ const nonempty = (value: unknown, label: string) => {
   }
   return value
 }
+function generationGate() {
+  const settings = getSettings()
+  if (!settings.mcpAllowGenerate) {
+    return '请先开启允许 Agent 生图'
+  }
+  if (!settings.naiToken) {
+    return '请先配置 NovelAI Token'
+  }
+  return null
+}
 export function frontendTools(desktop: DesktopBridge): McpTool[] {
   function tool(
     name: string,
@@ -57,7 +67,7 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
     gate?: () => string | null,
   ): McpTool {
     const guarded = !['open', 'create'].includes(action)
-    const creation = action.startsWith('creation-ai-') || action.startsWith('reverse-')
+    const creation = action.startsWith('creation-') || action.startsWith('reverse-')
     return {
       name,
       title: `前台 · ${label}`,
@@ -131,7 +141,9 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
         request.agent_session = requireAgent().sessionId
         if (
           (action === 'create' && argumentsRecord.source === 'image') ||
-          action === 'reverse-load'
+          action === 'reverse-load' ||
+          action === 'creation-inpaint' ||
+          (action === 'creation-config' && request.creation_config_action === 'set_img2img')
         ) {
           request.image = imageInfo(String(argumentsRecord.image_name)) ?? undefined
           if (!request.image) {
@@ -139,7 +151,7 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
           }
         }
         let target = typeof argumentsRecord.id === 'string' ? argumentsRecord.id : undefined
-        if (action.startsWith('reverse-')) {
+        if (action.startsWith('reverse-') || action === 'creation-inpaint') {
           target = ''
         }
         return runFrontend(action, target, label, signal, report, async (actionId, abort) => {
@@ -158,6 +170,71 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
     }
   }
   return [
+    tool(
+      'ui_inpaint_creation_image',
+      '创作页局部重绘',
+      'creation-inpaint',
+      '在生图创作的局部重绘编辑器打开图库图片，显示矩形选区并执行。先用 read_image 查看原图并核对尺寸。坐标使用原图像素，原点在左上角。可用 prompt 修改本次主提示词，角色和负面提示词沿用编辑器。费用按现有 Agent 授权规则处理。返回实际图片、独立费用观测和停止原因，可用 get_operation 复查。',
+      {
+        image_name: { type: 'string', minLength: 1, description: 'list_images 返回的图库文件名' },
+        rectangles: REGION_FIELDS.rectangles,
+        prompt: {
+          type: 'string',
+          maxLength: 30000,
+          description:
+            '本次局部重绘的主提示词。显式传空会清空主提示词，角色和负面提示词沿用编辑器。',
+        },
+        confirm: { type: 'boolean' },
+      },
+      ['image_name', 'rectangles', 'confirm'],
+      (input) => {
+        nonempty(input.image_name, '图库图片名')
+        if (input.confirm !== true) {
+          throw new Error('必须获得用户生成授权并传 confirm:true')
+        }
+      },
+      generationGate,
+    ),
+    tool(
+      'ui_creation_config',
+      '设置、收藏或载入创作配置',
+      'creation-config',
+      '对当前生图创作标签操作。set_img2img 用图库内的 image_name 设底图，必须同时提供 strength 和 noise；先用 apply_app_prompt(target:fresh_tab) 可以在新标签编辑。save 收藏当前配置。load 需要 favorite_id，按载入规则保留用户现有标签，可传 keep_seed。底图与参数在 desktop.creationConfig 中，收藏详情用 get_favorite 读取。',
+      {
+        creation_config_action: { type: 'string', enum: ['set_img2img', 'save', 'load'] },
+        image_name: { type: 'string', description: 'list_images 返回的图库文件名' },
+        strength: { type: 'number', minimum: 0.01, maximum: 0.99 },
+        noise: { type: 'number', minimum: 0, maximum: 0.99 },
+        favorite_id: { type: 'string', description: 'list_favorites 返回的收藏 id' },
+        keep_seed: { type: 'boolean' },
+      },
+      ['creation_config_action'],
+      (input) => {
+        const action = input.creation_config_action
+        if (action === 'set_img2img') {
+          nonempty(input.image_name, '图库图片名')
+          if (
+            typeof input.strength !== 'number' ||
+            !Number.isFinite(input.strength) ||
+            input.strength < 0.01 ||
+            input.strength > 0.99 ||
+            typeof input.noise !== 'number' ||
+            !Number.isFinite(input.noise) ||
+            input.noise < 0 ||
+            input.noise > 0.99
+          ) {
+            throw new Error('重绘强度须为 0.01～0.99，额外噪声须为 0～0.99')
+          }
+        } else if (action === 'load') {
+          nonempty(input.favorite_id, '收藏 id')
+          if (input.keep_seed !== undefined && typeof input.keep_seed !== 'boolean') {
+            throw new Error('keep_seed 须为布尔值')
+          }
+        } else if (action !== 'save') {
+          throw new Error('未知创作配置操作')
+        }
+      },
+    ),
     tool(
       'ui_load_reverse_image',
       '载入反推参考图',
@@ -653,9 +730,11 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
       'ui_generate_workspace',
       '执行生成或重绘',
       'generate',
-      '在前台选择整图生成或已有区域重绘，显示遮罩、执行方式和生成进度，结果进入工作台历史。只使用已采纳稿。采纳方案后打开的下一版配置会先保存再生成，不必额外保存。必须取得用户生成授权，免费资格检查与付费授权。',
+      '从已采纳稿执行按提示词生图、整图图生图或局部重绘。img2img 使用当前底图；可沿用已采纳方案的强度和噪声，或同时传 strength、noise。局部重绘须明示区域。执行前保存打开的下一版配置，结果进入工作台历史，费用按现有授权规则处理。',
       {
-        kind: { type: 'string', enum: ['generate', 'inpaint'] },
+        kind: { type: 'string', enum: ['generate', 'img2img', 'inpaint'] },
+        strength: { type: 'number', minimum: 0.01, maximum: 0.99 },
+        noise: { type: 'number', minimum: 0, maximum: 0.99 },
         region_id: { type: 'string' },
         region_ids: {
           type: 'array',
@@ -671,22 +750,33 @@ export function frontendTools(desktop: DesktopBridge): McpTool[] {
         if (argumentsRecord.confirm !== true) {
           throw new Error('必须获得用户生成授权并传 confirm:true')
         }
-        if (!['generate', 'inpaint'].includes(String(argumentsRecord.kind))) {
+        if (!['generate', 'img2img', 'inpaint'].includes(String(argumentsRecord.kind))) {
           throw new Error('未知生成方式')
         }
         if (argumentsRecord.kind === 'inpaint' && argumentsRecord.region_ids === undefined) {
           nonempty(argumentsRecord.region_id, '重绘区域 id')
         }
-      },
-      () => {
-        if (!getSettings().mcpAllowGenerate) {
-          return '请先开启允许 Agent 生图' as const
+        if (argumentsRecord.kind === 'img2img') {
+          if (argumentsRecord.region_id !== undefined || argumentsRecord.region_ids !== undefined) {
+            throw new Error('整图图生图不使用局部重绘区域')
+          }
+          const { strength, noise } = argumentsRecord
+          if (
+            (strength !== undefined || noise !== undefined) &&
+            (typeof strength !== 'number' ||
+              !Number.isFinite(strength) ||
+              strength < 0.01 ||
+              strength > 0.99 ||
+              typeof noise !== 'number' ||
+              !Number.isFinite(noise) ||
+              noise < 0 ||
+              noise > 0.99)
+          ) {
+            throw new Error('请同时提供重绘强度（0.01～0.99）与额外噪声（0～0.99）')
+          }
         }
-        if (!getSettings().naiToken) {
-          return '请先配置 NovelAI Token' as const
-        }
-        return null
       },
+      generationGate,
     ),
   ]
 }

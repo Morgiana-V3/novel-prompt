@@ -25,13 +25,14 @@ export function groupFavorites(items: SavedRecipe[]): FavoriteGroup[] {
   const groups = new Map<string, FavoriteGroup>()
   for (const item of items) {
     const request = item.recipe.request
-    // Inpainting records lack the source image and mask needed to prove equivalence.
+    // Edited images may use different source pixels even with the same request settings.
     const key =
-      item.recipe.sourceKind === 'inpaint'
+      item.recipe.sourceKind === 'inpaint' || item.recipe.sourceKind === 'img2img'
         ? item.id
         : canonical({
             sourceKind: item.recipe.sourceKind,
             request: { ...request, params: { ...request.params, seed: null } },
+            img2img: item.img2img,
           })
     const group = groups.get(key) ?? { key, items: [], cover: item }
     group.items.push(item)
