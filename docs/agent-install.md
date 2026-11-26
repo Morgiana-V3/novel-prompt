@@ -142,7 +142,7 @@ npm install; npm run build
 | `ui_inpaint_creation_image`   | 在创作页打开图库图片，显示局部重绘选区，执行后在创作预览显示生成结果           |
 | `ui_create_workspace`         | 显示新建表单，填入名称与来源，再创建会话                                     |
 | `ui_view_workspace`           | 切换画布、当前提示词、修改对比、建议或历史                                   |
-| `ui_set_workspace_input`      | 填入对话框，选择讨论区域及参考版本；尚不提交                                 |
+| `ui_set_workspace_input`      | 填入对话框，可设讨论区域、引用版本和聊天附图，提交由发送工具完成               |
 | `ui_send_workspace_message`   | 提交当前输入；内置模式调用内置 AI，外部接管模式保存需求并等待外部 Agent 回复 |
 | `ui_set_workspace_agent`      | 选择内置 AI 或绑定当前外部 Agent，显示处理者及连接状态                       |
 | `ui_reply_workspace_request`  | 展示外部 Agent 写回的回复和可选修改方案                                      |
@@ -211,10 +211,14 @@ npm install; npm run build
 
 1. `ui_open_workspace` / `ui_create_workspace`。
 2. `ui_set_workspace_agent(mode: "external")`：绑定当前实际 MCP 连接，右侧显示连接来源。每个会话只有一个接管者；另一个在线 Agent 不能抢占。用户可在界面切回内置 AI 解除接管。
-3. `ui_set_workspace_input` → `ui_send_workspace_message`：保存用户需求、选区、引用版本以及启用 Skill 的正文和摘要哈希；不调用内置 AI。
+3. `ui_set_workspace_input` → `ui_send_workspace_message` 保存用户需求、选区、引用版本、聊天附图以及启用 Skill 的正文和摘要哈希。外部接管模式等待 Agent 回复。
 4. `get_workspace_context`：读取待处理请求及本轮 Skill、提示词、参数、图片、引用、区域预览路径。按需 `read_image` 和 `get_workspace` 获取画面与完整历史。`request.stale=true` 表示用户已改变任务上下文，应取消旧需求并重新发送。
 5. Agent 自行查询 tag、分析和组织方案，用 `ui_reply_workspace_request(response)` 将回复与可选方案显示在右侧对话。`response.requestId` 必须对应待处理用户消息。普通讨论只需 `requestId` 和 `reply`。可选 `understanding` 记录用户明确的目标与保留项，可选 `proposal` 包含 `title`、`warning`、完整 `draft` 及 `execution`。字段说明见[工作台执行方式与选区](#工作台执行方式与选区)。
 6. `ui_review_workspace` 采纳 / 拒绝 / 撤销；经用户授权后 `ui_generate_workspace`。方案写入不会自动采纳或生图。
+
+聊天附图通过 `ui_set_workspace_input.attachments` 填写，每项包含本机图片文件名 `imageName`、显示名称 `label` 和用途 `purpose`。一轮最多 16 张，传空数组可清空。用途取 `discussion`（仅讨论）、`character`、`style`、`character&style`，V5 另支持 `costume`。采纳方案时，指定了参考用途的附图会加入精确参考。
+
+调用 `get_workspace_context` 后，`materials.attachments` 列出本轮聊天附图及用途，`materials.generationReferences` 列出配置中的精确参考与 Vibe，`materials.references` 列出引用的历史版本图片。按各项 `read` 中的参数调用 `read_image` 查看实际图像。生成参考的 `read` 为 `null` 时，可查看该项的 `availability`。用 `materials.generationReferencesSource` 核对生成参考来自本轮冻结记录、重建内容还是当前配置。清单提供读取入口，实际看图需成功取得图像内容。
 
 后台对应接口为 `set_workspace_agent`、`reply_workspace_request` 和 `cancel_workspace_request`，使用工作区 `revision`；前台取消用 `ui_cancel_workspace_request`。取消保留原消息，重复或迟到的回复会被拒绝。发送后编辑提示词、切换版本或修改选区会使原请求过期；只修改未发送输入不会改变任务上下文，但提交回复仍须重新读取最新状态。
 
@@ -308,7 +312,7 @@ reverse_image 只做本地标签识别，不能替代完整提示词反推，也
 
 ## 工具返回字段
 
-69 个工具均声明各自的 `outputSchema`，包括工作台摘要/完整读取/增量/未变化回执、规则目录与正文、前台状态、图库、任务与操作记录。文本报告仍是 `{text}`，列表仍是 `{items}`，并保留原有文本内容。
+每个工具都通过 `tools/list` 声明自己的 `outputSchema`，包括工作台摘要、完整读取、增量和未变化回执，以及规则、前台状态、图库、任务与操作记录。文本报告使用 `{text}`，列表使用 `{items}`。
 
 服务端在返回前验证字段。若出现 `OUTPUT_CONTRACT_VIOLATION`，`observedResult` 保留原始结果，`retryable:false`；操作可能已经写入，先读实际状态或 `get_operation`，不要自动重试。同一操作编号只回放已记录结果，不重复执行。
 

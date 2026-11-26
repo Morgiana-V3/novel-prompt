@@ -43,7 +43,7 @@ ${AGENT_ENTRY}
 | 当前窗口 | ui_capture_app | 真实应用截图；包含可见弹窗，不能读取被滚动隐藏的完整历史 |
 | 图片资料 | list_images、read_image、read_image_prompt | 分别读取图库目录、图像像素、PNG 内提示词；元数据不能证明画面实际符合要求 |
 | 图片反推 | reverse_image | 本机模型识别标签、角色与画师风格候选，不消耗额度；与界面共用识别进程，模型须先在「图片反推」页下载；画师候选仅供选画风参考 |
-| 收藏与片段 | list_favorites、get_favorite、save_favorite、update_favorite、delete_favorite；list_snippets、save_snippet、delete_snippet | 读取和维护用户的收藏配方与提示词片段，与界面共用数据并即时刷新；get_favorite 的 request 可直接交给 generate_image；删除不可撤销，须先征得同意 |
+| 收藏与片段 | list_favorites、get_favorite、save_favorite、update_favorite、delete_favorite；list_snippets、save_snippet、delete_snippet | 与界面共用收藏配方和提示词片段。get_favorite 返回当前图片的生成记录和可选图生图配置。删除前须征得同意 |
 | 会话与完整记录 | list_workspaces、get_workspace、get_workspace_context、list_workspace_requests、compare_workspace_versions | 会话列表、完整聊天与方案/版本、本轮待处理任务与冻结规则 |
 | 后台工作台 | create_workspace、propose_workspace_edit、apply_workspace_action、generate_workspace、run_workspace_image_tool | 创建、提交建议、采纳/撤销/切换版本、生成，以及对当前底稿放大/扩图/增强；结果可能同步界面，不展示逐步交互 |
 | 外部处理者 | set_workspace_agent、reply_workspace_request、cancel_workspace_request；对应 ui_* | 接管、回复、取消；分析来自你，不是内置 AI |
@@ -65,7 +65,7 @@ ${AGENT_ENTRY}
 
 ## 共通约定
 1. 涉及用户当前操作先 get_app_state。已有会话优先接续；不知道 id 时 list_workspaces，再 get_workspace 读取完整聊天/修改历史，不凭摘要猜测。
-2. 前台返回 DesktopState：后续用返回的 token，或 get_app_state.desktop.token 作为 expected_token；后台写入用最新 get_workspace/get_workspace_context.revision。两种凭据不互换，不编造 id。
+2. 前台通常返回 DesktopState，创作页局部重绘返回执行回执。后续用返回的 token 或 get_app_state.desktop.token 作为 expected_token；后台写入用最新 get_workspace/get_workspace_context.revision。两种凭据不互换，不编造 id。
 3. 前台写入串行执行，等待每步完成。可穿插 get_workspace_context、search_tags、analyze_prompt、read_image 等读取。get_workspace 类读取可能先保存打开会话的输入草稿；用户正在编辑时会拒绝，不强行覆盖。
 4. 慢速演示为前台操作传 step_delay_ms:2000；它只控制可见步骤停留，不代表推理或生图总延迟。ui_capture_app 不接受此参数。
 5. 面向用户的 reply/summary 聚焦实际画面判断、修改理由、保留要求、风险和需要决定的事项。默认不逐项自述读取 Skill、规则指纹、缓存命中、调用编号或余额流水；规则与执行详情保留可核查记录。用户明确询问，或费用未知、异常扣费、权限和停止状态影响下一步决定时，简要说明事实与限制。余额未变不等于没有使用额度，工具成功不等于画面满足要求；执行记录与 Agent 的画面判断分别表述。
@@ -74,7 +74,7 @@ ${AGENT_ENTRY}
 1. ui_open_workspace(id)，或 ui_create_workspace(title,source)。source 可为 blank/current/image；image 需要图库 image_name。
 2. ui_set_workspace_agent(id,expected_token,mode:external)，绑定当前 MCP 连接。先 get_workspace_context 检查是否已有待处理需求；有则直接读取处理，不能再重复发送。
 3. 若要新选区，先 read_image 看原图，再 ui_add_workspace_region。rectangles 使用原图像素 x/y/width/height，不是截图显示坐标；target 为角色零基索引或 null。保存后记录返回的区域 id。修改已有区域用 ui_update_workspace_region(version_id,region_id,instruction/target/rectangles)，仅传需要改变的字段；rectangles 替换该区域整个遮罩，省略则保留。删除用 ui_delete_workspace_region(version_id,region_id,confirm:true)。两者限定已采用候选，在窗口内定位并展示后保存，未保存时停止会丢弃本次修改。
-4. 需要新需求时 ui_set_workspace_input(text,region_id,reference_ids) 只填写；ui_send_workspace_message 才提交并保存请求。使用用户要求的文本，不替换用户未发送的其他草稿。
+4. 需要新需求时用 ui_set_workspace_input 填写 text，按需指定 region_ids、reference_ids 或 attachments。ui_send_workspace_message 提交并保存请求。使用用户要求的文本，保留用户未发送的其他草稿。
 5. get_workspace_context 获取 request.id、stale、discussion、editTarget、draft、params、图片、选区预览和 Skill 正文。discussion 是发送时所指的画面，editTarget 是建议修改的已采用稿；不同则须读取两张图，不把候选图当成当前底图。发送前可用 ui_view_workspace 查看要讨论的候选；发送后切换画布不改变该请求。读 Skill、原图和 preview_path，必要时 get_workspace 补齐历史。stale=true 时走恢复流程。
 6. 开始处理时用 report_workspace_progress(id,revision,request_id,phase:processing) 报告状态；每 120 秒内续报，phase:waiting 结束状态，断线立即清除。阅读 materials.generationReferences 中已配置的精确参考或 Vibe，并通过其中的 read 调用查看实际像素。materials.references 是被引用的历史图，materials.attachments 是本轮聊天附图。ui_reply_workspace_request 的 response 至少包含 requestId 和 reply。纯讨论只提交回复。修改方案同时提交完整 draft 和 execution：generate 为按提示词生成，img2img 以当前采用图做整图重绘并提供 strength、noise、regionId:null，inpaint 使用选中的 regionIds。
 7. 写回只产生回复/建议，不等于采纳。按用户已授权范围 ui_review_workspace(decision:accept|reject|undo,message_id)；仅要求“给建议”则停在方案展示。前台采纳后进入下一版配置编辑页，可继续微调：接着 ui_generate_workspace 会先保存草稿再生成（与界面上的生成按钮一致），要回到查看面板则用 ui_edit_workspace_config(config_action:save)；保存或取消之前，其他前台操作会被拒绝。
@@ -92,6 +92,8 @@ ${AGENT_ENTRY}
 生图创作建议的采纳：读取 desktop.creationAi 的 result、sent、changes 和过期状态，按授权 ui_review_creation_ai(decision:accept|undo,change_ids?)。不传 change_ids 表示全部；逐项选择使用当前 changes[].id。每步使用最新 token。采纳只改提示词；真实生图可用 ui_create_workspace(source:current) 承接当前稿，再配置参数、ui_generate_workspace 并 read_image 核验。
 
 创作配置：新草稿可用 apply_app_prompt(target:fresh_tab) 承接；用 list_images 和 read_image 确认图库底图，再通过 ui_creation_config(creation_config_action:set_img2img) 设置底图、重绘强度和额外噪声。save 收藏当前配置，get_favorite 读取已保存的底图和数值，load 按现有载入规则恢复。每次操作都使用最新 token。
+
+从收藏后台生图时，按 generate_image 的输入 schema 构造请求。将 get_favorite.request.params 中需要的参数展开到顶层，例如将 cfgRescale 映射为 cfg_rescale。图生图配置中的 img2img.imageName 对应 img2img.image_name，并沿用保存的 strength 和 noise。获得用户生成授权后传 confirm:true，涉及付费时仍需相应授权。图生图或局部重绘成品的 request 记录该次处理使用的提示词与参数。
 
 创作页局部重绘：先 read_image 查看真实图片并核对尺寸。获用户生成授权后，使用最新 token 调用 ui_inpaint_creation_image(image_name,rectangles,confirm:true)。原图左上角为像素坐标原点。可用 prompt 调整本次主提示词，显式传空时清空主提示词，角色和负面提示词沿用编辑器。用回执的 image 和 read_image 核对成品，同时检查 billing.status、anlasDelta、usageDelta 和 stopped。费用未知、失败或中断时先用 get_operation 查询原 operation_id，并核对图库和余额再继续。
 

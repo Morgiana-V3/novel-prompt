@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { REFERENCE_FEE } from '@shared/generation/references'
+import { MAX_REFERENCES, REFERENCE_FEE } from '@shared/generation/references'
 import type { ChatAttachment } from '@shared/workspace/attachments'
 import { useChatAttachments } from '../use-chat-attachments'
 import ChatAttachmentList from './ChatAttachmentList.vue'
@@ -564,7 +564,7 @@ defineExpose({
             type="button"
             title="上传图片"
             aria-label="上传聊天图片"
-            :disabled="inputBlocked || attachments.length >= 4"
+            :disabled="inputBlocked || attachments.length >= MAX_REFERENCES"
             @click="fileInput?.click()"
           >
             <Icon
