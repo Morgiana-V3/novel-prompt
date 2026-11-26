@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { Api } from '../../shared/contracts/api'
+import type { Api, CanvasWindowApi } from '../../shared/contracts/api'
 
 declare module '*.vue' {
   import type { DefineComponent } from 'vue'
@@ -10,5 +10,6 @@ declare module '*.vue' {
 declare global {
   interface Window {
     api: Api
+    canvasApi: CanvasWindowApi
   }
 }

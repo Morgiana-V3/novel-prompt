@@ -1,0 +1,851 @@
+.infinite-canvas {
+  --canvas-edge: 12px;
+  --canvas-chrome-clearance: 52px;
+  --canvas-gallery-width: 296px;
+  --canvas-surface-bg: color-mix(in srgb, var(--side) 92%, var(--line));
+  --canvas-dock-bg: color-mix(in srgb, var(--bg) 90%, transparent);
+  --canvas-dock-border: color-mix(in srgb, var(--line2) 86%, transparent);
+
+  position: relative;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--canvas-surface-bg);
+}
+
+.canvas-surface {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  transition: left var(--dur-slow) var(--ease-glide);
+}
+
+.infinite-canvas.has-drawer .canvas-surface {
+  left: calc(var(--canvas-gallery-width) + var(--canvas-edge));
+}
+
+.canvas-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  background-color: var(--canvas-surface-bg);
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    color-mix(in srgb, var(--text2) 18%, transparent) 1px,
+    transparent 1.25px
+  );
+}
+
+.canvas-viewport.is-panning,
+.canvas-viewport.is-moving,
+.canvas-viewport.is-panning .canvas-image,
+.canvas-viewport.is-moving .canvas-image {
+  cursor: grabbing;
+}
+
+.canvas-viewport.is-wiring,
+.canvas-viewport.is-wiring .canvas-image {
+  cursor: crosshair;
+}
+
+/* ---------- 工作流连线层 ---------- */
+.canvas-relations {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.canvas-relation-path {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text2) 28%, transparent);
+  stroke-width: 1.7px;
+  transition:
+    stroke var(--dur-fast) var(--ease-out),
+    stroke-width var(--dur-fast) var(--ease-out);
+}
+
+.canvas-relation-path.tone-pink {
+  stroke: color-mix(in srgb, var(--pink) 58%, transparent);
+}
+
+.canvas-relation-path.tone-blue {
+  stroke: color-mix(in srgb, var(--nl) 56%, transparent);
+}
+
+.canvas-relation-path.tone-amber {
+  stroke: color-mix(in srgb, var(--alias) 62%, transparent);
+}
+
+.canvas-relation-path.active {
+  stroke-width: 2.3px;
+}
+
+.canvas-relation-path.tone-pink.active,
+.canvas-relation-path.tone-neutral.active {
+  stroke: var(--pink);
+}
+
+.canvas-relation-path.tone-blue.active {
+  stroke: var(--nl);
+}
+
+.canvas-relation-path.tone-amber.active {
+  stroke: var(--alias);
+}
+
+.canvas-relation-path.is-preview {
+  stroke: var(--pink);
+  stroke-width: 2px;
+  stroke-dasharray: 5 5;
+}
+
+.canvas-wire-pill {
+  position: absolute;
+  z-index: 3;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--line2);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 95%, transparent);
+  color: var(--text2);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  transform: translate(-50%, -50%);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.canvas-wire-pill:hover {
+  transform: translate(-50%, -50%) scale(1.04);
+}
+
+.canvas-wire-pill.tone-pink {
+  border-color: var(--pink-line);
+  background: var(--pink-soft);
+  color: var(--pink-deep);
+}
+
+.canvas-wire-pill.tone-blue {
+  border-color: color-mix(in srgb, var(--nl) 35%, transparent);
+  background: var(--nl-soft);
+  color: var(--nl);
+}
+
+.canvas-wire-pill.tone-amber {
+  border-color: color-mix(in srgb, var(--alias) 35%, transparent);
+  background: var(--alias-soft);
+  color: var(--alias);
+}
+
+.canvas-node-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+}
+
+/* ---------- 画布图片节点与连线端口 ---------- */
+.canvas-image-wrap {
+  position: absolute;
+}
+
+.canvas-image {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  text-align: left;
+  cursor: grab;
+}
+
+.canvas-image-label {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text2);
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 16px;
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.canvas-image-label .icon {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.canvas-image-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.canvas-image-meta {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.canvas-image-wrap:hover .canvas-image-label,
+.canvas-image[aria-pressed='true'] .canvas-image-label {
+  color: var(--text);
+}
+
+.canvas-image[aria-pressed='true'] .canvas-image-label .icon {
+  color: var(--pink);
+}
+
+.canvas-image-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid rgb(20 20 30 / 8%);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow:
+    0 2px 10px rgb(20 20 30 / 7%),
+    0 1px 2px rgb(20 20 30 / 5%);
+  transition:
+    box-shadow var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.canvas-image-wrap:hover .canvas-image-frame {
+  border-color: var(--pink-line);
+  box-shadow:
+    0 6px 20px rgb(20 20 30 / 10%),
+    0 0 0 1px var(--pink-line);
+}
+
+.canvas-image[aria-pressed='true'] .canvas-image-frame,
+.canvas-image:focus-visible .canvas-image-frame {
+  border-color: var(--pink);
+  outline: 1.5px solid var(--pink);
+  outline-offset: 2px;
+  box-shadow: 0 8px 24px rgb(20 20 30 / 12%);
+}
+
+.canvas-image-port {
+  position: absolute;
+  z-index: 4;
+  top: 50%;
+  right: -11px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--line2);
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--text2);
+  box-shadow: var(--shadow-sm);
+  cursor: crosshair;
+  opacity: 0;
+  transform: translateY(-50%) scale(0.86);
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.canvas-image-wrap:hover .canvas-image-port,
+.canvas-image-wrap:has(.canvas-image[aria-pressed='true']) .canvas-image-port,
+.canvas-image-port:focus-visible {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
+}
+
+.canvas-image-port:hover {
+  border-color: var(--pink);
+  background: var(--pink);
+  color: #fff;
+  transform: translateY(-50%) scale(1.1);
+}
+
+/* ---------- 左侧悬浮工具栏 ---------- */
+.canvas-tools {
+  position: absolute;
+  z-index: 4;
+  top: 50%;
+  left: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 5px;
+  transform: translateY(-50%);
+  border: 1px solid var(--canvas-dock-border);
+  border-radius: 14px;
+  background: var(--canvas-dock-bg);
+  box-shadow: var(--shadow-pop);
+  backdrop-filter: blur(12px);
+}
+
+.canvas-tool-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  color: var(--text2);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-slow) var(--bounce);
+}
+
+.canvas-tool-btn[draggable='true'] {
+  cursor: grab;
+}
+
+.canvas-tool-btn[draggable='true']:active {
+  cursor: grabbing;
+}
+
+.canvas-tool-btn:hover,
+.canvas-tool-btn:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.canvas-tool-btn:active {
+  transform: scale(var(--press-sm));
+}
+
+.canvas-tool-btn.active {
+  background: var(--pink-soft);
+  color: var(--pink-deep);
+}
+
+.canvas-tool-btn.active:hover {
+  background: color-mix(in srgb, var(--pink-soft) 75%, var(--pink-line));
+}
+
+.canvas-tool-tip {
+  position: absolute;
+  z-index: 12;
+  top: 50%;
+  left: calc(100% + 10px);
+  padding: 4px 8px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 6px;
+  background: #292a31;
+  color: #fafafd;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  box-shadow: 0 3px 10px rgb(20 20 30 / 18%);
+  opacity: 0;
+  transform: translate(-4px, -50%);
+  pointer-events: none;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.canvas-tool-btn:hover .canvas-tool-tip,
+.canvas-tool-btn:focus-visible .canvas-tool-tip {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
+.canvas-tools hr {
+  width: 22px;
+  margin: 3px auto;
+  border: 0;
+  border-top: 1px solid var(--line2);
+}
+
+/* ---------- 拖拽实体预览层 ---------- */
+.canvas-drag-card {
+  position: fixed;
+  z-index: 40;
+  pointer-events: none;
+  transform-origin: top left;
+  opacity: 0.94;
+  filter: drop-shadow(0 14px 28px rgb(20 20 35 / 16%));
+}
+
+.canvas-drag-image {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.canvas-drag-image-label {
+  position: absolute;
+  bottom: calc(100% + 5px);
+  left: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  color: var(--text2);
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.canvas-drag-image-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.canvas-drag-image-meta {
+  flex: none;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.canvas-drag-image-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 2px solid var(--pink);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+/* ---------- 左侧停靠素材抽屉（滚动加载 + 可拖拽） ---------- */
+.canvas-gallery {
+  position: absolute;
+  z-index: 6;
+  top: var(--canvas-chrome-clearance);
+  bottom: var(--canvas-edge);
+  left: var(--canvas-edge);
+  display: flex;
+  flex-direction: column;
+  width: min(var(--canvas-gallery-width), calc(100% - 2 * var(--canvas-edge)));
+  overflow: hidden;
+  border: 1px solid var(--canvas-dock-border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg) 96%, transparent);
+  color: var(--text);
+  box-shadow: var(--shadow-pop);
+  backdrop-filter: blur(14px);
+}
+
+.canvas-gallery-header,
+.canvas-gallery-header-actions {
+  display: flex;
+  align-items: center;
+}
+
+.canvas-gallery-header {
+  flex: 0 0 auto;
+  justify-content: space-between;
+  padding: 10px 10px 8px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.canvas-gallery-header h2 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 650;
+}
+
+.canvas-gallery-header-actions {
+  gap: 2px;
+}
+
+.canvas-gallery-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px 12px 2px;
+}
+
+.canvas-material-sources .canvas-source {
+  min-height: 26px;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.canvas-gallery-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 10px 12px 14px;
+}
+
+.canvas-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.canvas-gallery-image {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  cursor: grab;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.canvas-gallery-image:active {
+  cursor: grabbing;
+}
+
+.canvas-gallery-image:hover:not(:disabled),
+.canvas-gallery-image:focus-visible {
+  border-color: var(--pink);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.canvas-gallery-add {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  color: var(--pink-deep);
+  box-shadow: var(--shadow-sm);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.canvas-gallery-image:hover:not(:disabled) .canvas-gallery-add,
+.canvas-gallery-image:focus-visible .canvas-gallery-add {
+  opacity: 1;
+}
+
+.canvas-gallery-scroll-hint {
+  margin: 12px 0 2px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.canvas-gallery-message {
+  margin: 0;
+  padding: 18px 6px;
+  color: var(--text2);
+  font-size: 12px;
+  text-align: center;
+}
+
+.canvas-gallery-error {
+  color: var(--bad);
+  text-align: left;
+}
+
+.canvas-gallery-error p {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+
+.canvas-favorite-list {
+  display: grid;
+  gap: 4px;
+}
+
+.canvas-favorite {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 5px 8px 5px 5px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  text-align: left;
+  cursor: grab;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.canvas-favorite:active {
+  cursor: grabbing;
+}
+
+.canvas-favorite:hover {
+  background: var(--hover);
+}
+
+.canvas-favorite[aria-pressed='true'],
+.canvas-favorite:focus-visible {
+  border-color: var(--pink-line);
+  background: var(--pink-soft);
+}
+
+.canvas-favorite-preview {
+  display: grid;
+  flex: 0 0 34px;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--text2);
+}
+
+.canvas-favorite-name {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-favorite-detail {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--panel);
+}
+
+.canvas-favorite-detail h3 {
+  margin: 0;
+  color: var(--text2);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.canvas-favorite-prompt {
+  max-width: 100%;
+  max-height: 96px;
+  margin: 0;
+  overflow: auto;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text2);
+  font-size: 11.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.canvas-favorite-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.canvas-favorite-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+/* ---------- 底部缩放条与右下角 AI 入口 ---------- */
+.canvas-zoom {
+  position: absolute;
+  z-index: 4;
+  bottom: var(--canvas-edge);
+  left: 14px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 34px;
+  padding: 3px;
+  border: 1px solid var(--canvas-dock-border);
+  border-radius: 10px;
+  background: var(--canvas-dock-bg);
+  color: var(--text2);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(12px);
+}
+
+.canvas-zoom button {
+  display: grid;
+  place-items: center;
+  min-width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.canvas-zoom button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.canvas-zoom .canvas-zoom-value {
+  min-width: 44px;
+  padding: 0 4px;
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+
+.canvas-dock-divider {
+  width: 1px;
+  height: 15px;
+  margin: 0 3px;
+  background: var(--line2);
+}
+
+.canvas-count {
+  padding: 0 7px 0 5px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.canvas-ai-launcher {
+  position: absolute;
+  z-index: 5;
+  right: 14px;
+  bottom: var(--canvas-edge);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 15px;
+  border: 1px solid var(--canvas-dock-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: var(--shadow-pop);
+  backdrop-filter: blur(12px);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-slow) var(--bounce);
+}
+
+.canvas-ai-launcher .icon {
+  color: var(--pink-deep);
+}
+
+.canvas-ai-launcher:hover {
+  border-color: var(--pink-line);
+  background: var(--bg);
+}
+
+.canvas-ai-launcher:active {
+  transform: scale(var(--press-sm));
+}
+
+/* ---------- 进出场过渡 ---------- */
+.canvas-drawer-enter-active,
+.canvas-drawer-leave-active {
+  transition:
+    transform var(--dur-slow) var(--ease-glide),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+.canvas-drawer-enter-from,
+.canvas-drawer-leave-to {
+  opacity: 0;
+  transform: translateX(-14px);
+}
+
+.canvas-drawer-leave-active {
+  pointer-events: none;
+}
+
+.canvas-ai-drawer-enter-active,
+.canvas-ai-drawer-leave-active {
+  transition:
+    transform var(--dur-slow) var(--ease-glide),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+.canvas-ai-drawer-enter-from,
+.canvas-ai-drawer-leave-to {
+  opacity: 0;
+  transform: translateX(18px);
+}
+
+.canvas-ai-drawer-leave-active {
+  pointer-events: none;
+}
+
+.canvas-toolbar-enter-active,
+.canvas-toolbar-leave-active {
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.canvas-toolbar-enter-from,
+.canvas-toolbar-leave-to {
+  opacity: 0;
+}
+
+.canvas-toolbar-leave-active {
+  pointer-events: none;
+}
+
+@media (width <= 700px) {
+  .infinite-canvas {
+    --canvas-gallery-width: 248px;
+  }
+
+  .infinite-canvas.has-drawer .canvas-surface {
+    left: 0;
+  }
+
+  .canvas-count {
+    display: none;
+  }
+}

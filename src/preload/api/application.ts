@@ -30,6 +30,7 @@ export const applicationApi = {
   onSnippetsChanged: (cb: () => void) => on('snippets:changed', cb),
   onTasks: (cb: (snapshot: TaskSnapshot) => void) => on('tasks:changed', cb),
   onAgentConnections: (cb: (agents: PageAgentIdentity[]) => void) => on('agents:changed', cb),
+  openCanvasWindow: () => invoke('window:open-canvas'),
   setImagePreviewActive: (active: boolean): Promise<void> => invoke('window:image-preview', active),
   cancelTask: (): Promise<void> => invoke('task:cancel'),
   getSettings: (): Promise<Settings> => invoke('settings:get'),

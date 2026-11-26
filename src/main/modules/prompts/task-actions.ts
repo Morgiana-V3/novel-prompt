@@ -1,3 +1,4 @@
+import type { CanvasAiRequest } from '../../../shared/canvas-ai'
 import type { IpcActions } from '../../../shared/contracts/api'
 import type {
   AiInpaintRequest,
@@ -5,6 +6,7 @@ import type {
   AiPreviewRequest,
 } from '../../../shared/prompts/types'
 import type { TaskContext } from '../tasks/context'
+import { askCanvasAi } from './canvas-agent'
 import { planInpaint } from './inpaint-planner'
 import { optimizePrompt } from './optimizer'
 import { previewPrompt } from './previewer'
@@ -62,5 +64,17 @@ export function createPromptsActions(context: TaskContext) {
         return result
       }),
     'ai:inpaint-plan-cancel': () => tasks.cancelKey('inpaint-plan'),
+    'ai:canvas-ask': (req: CanvasAiRequest) =>
+      tasks.run('canvas-ai', ({ id, signal, progress }) =>
+        askCanvasAi(
+          req,
+          (step) => {
+            if (progress(step)) {
+              send('ai:step', { id, kind: 'canvas', step })
+            }
+          },
+          signal,
+        ),
+      ),
   } satisfies Partial<IpcActions>
 }

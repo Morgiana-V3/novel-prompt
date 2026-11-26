@@ -8,6 +8,7 @@ export const TASK_LABELS = {
   preview: '画面推测',
   'inpaint-plan': '分析重绘区域',
   'page-chat': '工作台讨论',
+  'canvas-ai': '画布 AI 助手',
   generate: '生成图片',
   inpaint: '局部重绘',
   'page-generate': '生成会话候选',
@@ -50,7 +51,7 @@ export interface TaskSnapshot {
 }
 export interface AiStep {
   id: string
-  kind: 'optimize' | 'preview'
+  kind: 'optimize' | 'preview' | 'canvas'
   step: string
 }
 export interface NaiStep {

@@ -13,6 +13,38 @@ export function registerApplicationIpc(context: IpcContext): void {
   const runtimeData = context.runtimeData
   const bridgeProfile = context.bridgeProfile
 
+  handle('window:open-canvas', async (event) => {
+    if (event.sender !== context.getWindow()?.webContents) {
+      throw new Error('请从经典工作台打开无限画布')
+    }
+    await context.openCanvasWindow()
+  })
+
+  handle('window:focus-classic', (event) => {
+    if (event.sender !== context.getCanvasWindow()?.webContents) {
+      throw new Error('请从无限画布切换到经典工作台')
+    }
+    context.focusClassicWindow()
+  })
+
+  handle('window:canvas-action', (event, action) => {
+    const win = context.getCanvasWindow()
+    if (!win || event.sender !== win.webContents) {
+      throw new Error('仅允许无限画布窗口控制自身状态')
+    }
+    if (action === 'minimize') {
+      win.minimize()
+    } else if (action === 'toggle-maximized') {
+      if (win.isMaximized()) {
+        win.unmaximize()
+      } else {
+        win.maximize()
+      }
+    } else if (action === 'close') {
+      win.close()
+    }
+  })
+
   handle('window:image-preview', (event, active: boolean) => {
     const win = context.getWindow()
 

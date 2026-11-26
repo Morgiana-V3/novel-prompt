@@ -46,6 +46,10 @@ export function registerImagesIpc(context: IpcContext): void {
     send('gallery:changed', null)
     notifyAppChanged()
   }
+  const favoritesChanged = () => {
+    send('favorites:changed', null)
+    notifyAppChanged()
+  }
   handle('images:import', async (_event, bytes, collectionId) => {
     const image = await importGalleryImage(bytes, collectionId)
     collectionsChanged()
@@ -134,15 +138,21 @@ export function registerImagesIpc(context: IpcContext): void {
   })
 
   handle('recipes:create', (_e, name: string) => {
-    return createRecipe(name)
+    const recipe = createRecipe(name)
+    favoritesChanged()
+    return recipe
   })
 
-  handle('recipes:config', (_e, request, img2img) => {
-    return createConfigRecipe(request, img2img)
+  handle('recipes:config', async (_e, request, img2img) => {
+    const recipe = await createConfigRecipe(request, img2img)
+    favoritesChanged()
+    return recipe
   })
 
   handle('recipes:workspace', (_e, id: string, versionId: string) => {
-    return createWorkspaceRecipe(id, versionId)
+    const recipe = createWorkspaceRecipe(id, versionId)
+    favoritesChanged()
+    return recipe
   })
 
   handle('images:cleanup-status', () => {
@@ -156,11 +166,14 @@ export function registerImagesIpc(context: IpcContext): void {
   })
 
   handle('recipes:update', (_e, id, patch) => {
-    return updateRecipe(id, patch)
+    const recipe = updateRecipe(id, patch)
+    favoritesChanged()
+    return recipe
   })
 
   handle('recipes:delete', (_e, id: string) => {
-    return deleteRecipe(id)
+    deleteRecipe(id)
+    favoritesChanged()
   })
 
   // 读回图片原始字节（用于解析图里的提示词）。不走 fetch(np-img://)，避免跨源被拦

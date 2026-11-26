@@ -15,6 +15,7 @@ import { resolveRuntimeProfile } from '../../runtime/runtime-profile.cjs'
 import { taskIsActive } from '../../shared/tasks/model'
 import { DesktopBridge } from '../adapters/desktop/bridge'
 import { registerApplicationIpc } from '../adapters/ipc/application'
+import { registerCanvasProjectIpc } from '../adapters/ipc/canvas-project'
 import { registerImagesIpc } from '../adapters/ipc/images'
 import { registerReverseIpc } from '../adapters/ipc/reverse'
 import { registerSettingsIpc } from '../adapters/ipc/settings'
@@ -117,6 +118,12 @@ export function startApplication(): void {
     if (windowManager.current && !windowManager.current.isDestroyed()) {
       windowManager.current.webContents.send(channel, payload)
     }
+    if (channel === 'gallery:changed' || channel === 'favorites:changed') {
+      const canvas = windowManager.canvas
+      if (canvas && !canvas.isDestroyed()) {
+        canvas.webContents.send(channel, payload)
+      }
+    }
     if (channel === 'tasks:changed') {
       notifyAppChanged()
       notifyTasks(payload as TaskSnapshot)
@@ -128,6 +135,9 @@ export function startApplication(): void {
     registerTaskIpc(send, tasks)
     const context = {
       getWindow: () => windowManager.current,
+      getCanvasWindow: () => windowManager.canvas,
+      focusClassicWindow: createWindow,
+      openCanvasWindow: windowManager.openCanvasWindow,
       send,
       notifyAppChanged,
       runtimeInfo,
@@ -136,6 +146,7 @@ export function startApplication(): void {
       tasks,
     }
     registerApplicationIpc(context)
+    registerCanvasProjectIpc(context)
     registerTagsIpc(context)
     registerSettingsIpc(context)
     registerSkillsIpc(context)
@@ -274,6 +285,7 @@ export function startApplication(): void {
           const idleTimer = setInterval(() => {
             if (
               !windowManager.current &&
+              !windowManager.canvas &&
               !bridge?.clients() &&
               !tasks.snapshot().tasks.some(taskIsActive)
             ) {
@@ -283,6 +295,9 @@ export function startApplication(): void {
           idleTimer.unref()
           if (!process.argv.includes('--mcp-host')) {
             createWindow()
+            if (!app.isPackaged && process.argv.includes('--canvas-window')) {
+              void windowManager.openCanvasWindow().catch((error) => console.error(error))
+            }
           }
           if (SHOT_DIR && windowManager.current) {
             const window2 = windowManager.current

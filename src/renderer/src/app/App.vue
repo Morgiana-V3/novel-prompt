@@ -182,6 +182,10 @@ const generateView = ref<InstanceType<typeof GenerateView>>()
 const aiView = ref<InstanceType<typeof AiView>>()
 const contentEl = ref<HTMLElement>()
 
+function openCanvasWindow() {
+  void window.api.openCanvasWindow().catch(reportError)
+}
+
 /** 侧栏选中项的白色高亮块：切换页面时滑到新位置，而不是瞬间跳过去 */
 const navEl = ref<HTMLElement>()
 const navMark = ref({ y: 0, height: 0, visible: false, animate: false })
@@ -604,6 +608,15 @@ const {
           >
             <Icon :name="t.icon" />
             <span class="nav-label">{{ t.label }}</span>
+          </button>
+          <button
+            v-if="t.key === 'workspace'"
+            class="nav-item"
+            title="打开无限画布窗口"
+            @click="openCanvasWindow"
+          >
+            <Icon name="canvas" />
+            <span class="nav-label">无限画布</span>
           </button>
         </template>
       </nav>

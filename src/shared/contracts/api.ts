@@ -1,3 +1,5 @@
+import type { CanvasAiRequest, CanvasAiResult } from '../canvas-ai'
+import type { CanvasSession, CanvasGalleryAsset } from '../canvas-project'
 import type { VibeCacheStatus, VibeReference } from '../generation/vibes'
 import type { ArtistCatalogPage, ArtistCatalogQuery } from '../artists/catalog'
 import type { ConfirmationRequest } from './confirmation'
@@ -102,6 +104,7 @@ export interface Api {
   tasksCancel: (id: string) => Promise<void>
   tasksClear: () => Promise<void>
   onTasks: (cb: (snapshot: TaskSnapshot) => void) => () => void
+  openCanvasWindow: () => Promise<void>
   pagesList: () => Promise<PageWorkspaceSummary[]>
   pagesRemoved: () => Promise<{ token: string; title: string; removedAt: number }[]>
   pagesRestore: (token: string) => Promise<PageWorkspace>
@@ -244,7 +247,77 @@ export interface Api {
   onAiStep: (kind: AiStep['kind'], cb: (text: string) => void) => () => void
 }
 
+export type CanvasWindowAction = 'minimize' | 'toggle-maximized' | 'close'
+
+export type CanvasWindowApi = Pick<
+  Api,
+  | 'collectionsList'
+  | 'copy'
+  | 'getSettings'
+  | 'naiList'
+  | 'naiReadImage'
+  | 'naiSubscription'
+  | 'pagesCreate'
+  | 'pagesEdit'
+  | 'pagesGenerate'
+  | 'pagesImageTool'
+  | 'naiRecipe'
+  | 'imagesImport'
+  | 'naiImportReference'
+  | 'naiVibeEncode'
+  | 'naiVibeStatuses'
+  | 'onAiStep'
+  | 'onFavoritesChanged'
+  | 'onGalleryChanged'
+  | 'onSnippetsChanged'
+  | 'onTasks'
+  | 'optimize'
+  | 'preview'
+  | 'recipesList'
+  | 'snippetsDelete'
+  | 'snippetsList'
+  | 'snippetsSave'
+  | 'tagComplete'
+  | 'tasksCancel'
+> & {
+  openProject: (tab: string) => Promise<{ name: string; session: CanvasSession } | null>
+  saveProject: (
+    tab: string,
+    title: string,
+    session: CanvasSession,
+    saveAs: boolean,
+  ) => Promise<string | null>
+  closeProject: (tab: string) => Promise<void>
+  favoriteImage: (id: string) => Promise<CanvasGalleryAsset>
+  askCanvasAi: (req: CanvasAiRequest) => Promise<CanvasAiResult>
+  focusClassicWindow: () => Promise<void>
+  canvasWindowAction: (action: CanvasWindowAction) => Promise<void>
+}
+
 export interface IpcContract {
+  'canvas:project-open': {
+    args: Parameters<CanvasWindowApi['openProject']>
+    result: Awaited<ReturnType<CanvasWindowApi['openProject']>>
+  }
+  'canvas:project-save': {
+    args: Parameters<CanvasWindowApi['saveProject']>
+    result: Awaited<ReturnType<CanvasWindowApi['saveProject']>>
+  }
+  'canvas:project-close': {
+    args: Parameters<CanvasWindowApi['closeProject']>
+    result: Awaited<ReturnType<CanvasWindowApi['closeProject']>>
+  }
+  'canvas:favorite-image': {
+    args: Parameters<CanvasWindowApi['favoriteImage']>
+    result: Awaited<ReturnType<CanvasWindowApi['favoriteImage']>>
+  }
+  'ai:canvas-ask': {
+    args: Parameters<CanvasWindowApi['askCanvasAi']>
+    result: Awaited<ReturnType<CanvasWindowApi['askCanvasAi']>>
+  }
+  'window:open-canvas': { args: Parameters<Api['openCanvasWindow']>; result: void }
+  'window:focus-classic': { args: Parameters<CanvasWindowApi['focusClassicWindow']>; result: void }
+  'window:canvas-action': { args: Parameters<CanvasWindowApi['canvasWindowAction']>; result: void }
   'artists:catalog': {
     args: Parameters<Api['artistCatalog']>
     result: Awaited<ReturnType<Api['artistCatalog']>>

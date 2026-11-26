@@ -17,12 +17,25 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin({ exclude: ['pinyin-pro'] })],
   },
   preload: {
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/preload/index.ts'),
+          canvas: resolve(__dirname, 'src/preload/canvas.ts'),
+        },
+      },
+    },
     plugins: [externalizeDepsPlugin()],
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
     build: {
-      rollupOptions: { input: resolve(__dirname, 'src/renderer/index.html') },
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/renderer/index.html'),
+          canvas: resolve(__dirname, 'src/renderer/canvas.html'),
+        },
+      },
     },
     resolve: {
       alias: { '@shared': resolve(__dirname, 'src/shared') },
