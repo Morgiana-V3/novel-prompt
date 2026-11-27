@@ -1,28 +1,37 @@
 <script setup lang="ts">
+import { computed, ref, watch } from 'vue'
 import Icon from '../../shared/ui/Icon.vue'
 import type { CanvasPreview } from './use-canvas-previews'
 
-defineProps<{ preview?: CanvasPreview; showError?: boolean }>()
+const props = defineProps<{ preview?: CanvasPreview; showError?: boolean }>()
+const url = computed(() => (props.preview?.state === 'ready' ? props.preview.url : undefined))
+const loadFailed = ref(false)
+watch(url, () => {
+  loadFailed.value = false
+})
+const failed = computed(() => loadFailed.value || props.preview?.state === 'failed')
 </script>
 
 <template>
   <img
-    v-if="preview?.state === 'ready'"
+    v-if="url && !loadFailed"
+    :key="url"
     class="canvas-thumbnail"
-    :src="preview.url"
+    :src="url"
     alt=""
     draggable="false"
     decoding="async"
+    @error="loadFailed = true"
   />
   <span
     v-else
     class="canvas-thumbnail-placeholder"
   >
     <Icon
-      :name="preview?.state === 'failed' ? 'warn' : 'image'"
+      :name="failed ? 'warn' : 'image'"
       :size="22"
     />
-    <span v-if="showError && preview?.state === 'failed'">无法读取图片</span>
+    <span v-if="showError && failed">无法读取图片</span>
   </span>
 </template>
 

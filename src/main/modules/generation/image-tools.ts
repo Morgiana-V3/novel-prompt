@@ -109,7 +109,7 @@ export async function upscaleImage(
   source: Buffer,
   recipe: ImageRecipe | null,
   onStep: (text: string) => void,
-  options: { freeOnly?: boolean; workspaceId?: string; collectionId?: string },
+  options: { freeOnly?: boolean; workspaceId?: string; collectionId?: string; temporary?: boolean },
 ): Promise<{ image: NaiImage } & AnlasOutcome> {
   if (options.freeOnly) {
     throw new Error('放大始终消耗 Anlas，「仅免费生成」开启时不能放大')
@@ -174,11 +174,17 @@ export async function upscaleImage(
           },
         },
       }
+  let storage: 'workspace' | 'saved' | 'temporary' = 'saved'
+  if (options.temporary) {
+    storage = 'temporary'
+  } else if (options.workspaceId) {
+    storage = 'workspace'
+  }
   const image = storeGeneratedImage(
     bytes,
     storedRecipe,
-    options.workspaceId ? 'workspace' : 'saved',
-    options.workspaceId,
+    storage,
+    storage === 'workspace' ? options.workspaceId : undefined,
     options.collectionId,
   )
   recordGeneratedImage(version)

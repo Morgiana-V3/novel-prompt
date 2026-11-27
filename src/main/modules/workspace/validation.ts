@@ -141,8 +141,9 @@ export function validateExecution(
   if (!execution || !['generate', 'img2img', 'inpaint'].includes(execution.kind)) {
     throw new Error('请选择执行方式')
   }
+  const temporary = execution.temporary === true ? true : undefined
   if (execution.kind === 'generate') {
-    return { kind: 'generate' as const, regionId: null }
+    return { kind: 'generate' as const, regionId: null, ...(temporary ? { temporary } : {}) }
   }
   const version = pageCurrent(workspace)
   if (execution.kind === 'img2img') {
@@ -168,6 +169,7 @@ export function validateExecution(
       regionIds: [] as [],
       strength: execution.strength,
       noise: execution.noise,
+      ...(temporary ? { temporary } : {}),
     }
   }
   if (workspace.model === 'v5' && version.editor.params.preciseReferences?.length) {
@@ -184,7 +186,12 @@ export function validateExecution(
   ) {
     throw new Error('重绘方案必须包含本轮选中的全部区域，不能遗漏或加入未勾选区域')
   }
-  return { kind: 'inpaint' as const, regionId: ids[0], regionIds: ids }
+  return {
+    kind: 'inpaint' as const,
+    regionId: ids[0],
+    regionIds: ids,
+    ...(temporary ? { temporary } : {}),
+  }
 }
 
 export function validateProposalExecution(

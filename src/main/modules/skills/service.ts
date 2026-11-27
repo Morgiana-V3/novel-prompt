@@ -278,8 +278,40 @@ export const skillFilePath = (id: string): string | null => {
   return validId(id) && existsSync(userFile(id)) ? userFile(id) : null
 }
 
-export function composeSkills(feature: SkillFeature, version: NaiVersion) {
-  return composeSkillDocuments(feature, version, activeSkills(feature, version), coreText())
+type ComposedSkills = ReturnType<typeof composeSkillDocuments>
+
+export function composeSkills(
+  feature: SkillFeature,
+  version: NaiVersion,
+  explicitSkillIds: string[],
+): ComposedSkills & { explicitSkills: SkillDoc[] }
+export function composeSkills(
+  feature: SkillFeature,
+  version: NaiVersion,
+  explicitSkillIds?: string[],
+): ComposedSkills
+export function composeSkills(
+  feature: SkillFeature,
+  version: NaiVersion,
+  explicitSkillIds?: string[],
+) {
+  const active = activeSkills(feature, version)
+  if (explicitSkillIds === undefined) {
+    return composeSkillDocuments(feature, version, active, coreText())
+  }
+
+  const explicitSkills = Array.from(new Set(explicitSkillIds), getSkill).filter(
+    (skill) => skill !== null,
+  )
+  const merged = [...explicitSkills]
+  const includedIds = new Set(explicitSkills.map((skill) => skill.id))
+  for (const skill of active) {
+    if (!includedIds.has(skill.id)) {
+      merged.push(skill)
+      includedIds.add(skill.id)
+    }
+  }
+  return { ...composeSkillDocuments(feature, version, merged, coreText()), explicitSkills }
 }
 
 export { userSkillDir } from './paths'

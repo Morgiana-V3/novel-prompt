@@ -7,13 +7,17 @@ import type {
   CanvasAiUpdateOperation,
 } from '@shared/canvas-ai'
 import { REFERENCE_LABELS } from '@shared/generation/references'
+import type { IconName } from '../../shared/ui/icons'
+import type { OperationDialogTab } from './CanvasOperationDialog.vue'
 import { freePosition } from './layout'
 import {
   connectImageToOperation,
   disconnectImageFromOperation,
   newOperation,
   operationLabel,
+  operationSize,
   resolvedReferenceName,
+  TOOL_ICONS,
 } from './operations'
 import type { CanvasBox, CanvasImage, CanvasOperation, CanvasPoint, CanvasSession } from './session'
 
@@ -161,17 +165,99 @@ function wireSummary(image: CanvasImage, node: CanvasOperation, role: string): s
   return `连接 ${imageTitle} → ${operationLabel(node.kind)} #${node.id}（${role}）`
 }
 
+export interface CanvasAiAppliedTarget {
+  id: number
+  nodeKind: 'operation' | 'image'
+  action: 'created' | 'updated' | 'connected' | 'disconnected' | 'removed'
+  title: string
+  summary: string
+  icon: IconName
+  openTab?: OperationDialogTab
+}
+
+interface OperationChange {
+  node: CanvasOperation
+  action: CanvasAiAppliedTarget['action']
+  tabs: Set<OperationDialogTab>
+  details: Set<string>
+}
+
+function operationTarget(
+  change: OperationChange,
+  images: Map<number, CanvasImage>,
+): CanvasAiAppliedTarget {
+  const { node, action, tabs, details } = change
+  const size = operationSize(
+    node,
+    node.sourceId === null ? undefined : images.get(node.sourceId)?.asset,
+  )
+  const summary = [node.request.version.toUpperCase()]
+  if (size) {
+    summary.push(`${size.width}×${size.height}`)
+  }
+  summary.push(...details)
+  let openTab: OperationDialogTab = 'references'
+  if (tabs.has('prompt')) {
+    openTab = 'prompt'
+  } else if (tabs.has('params')) {
+    openTab = 'params'
+  }
+  return {
+    id: node.id,
+    nodeKind: 'operation',
+    action,
+    title: `${operationLabel(node.kind)} #${node.id}`,
+    summary: action === 'removed' ? '盒子已从画布移除' : summary.join(' · '),
+    icon: TOOL_ICONS[node.kind],
+    openTab: action === 'removed' ? undefined : openTab,
+  }
+}
+
+function boundReference<T extends { imageName: string }>(
+  entries: T[] | undefined,
+  image: CanvasImage,
+) {
+  const asset = image.asset
+  if (asset.kind === 'gallery') {
+    const alias = resolvedReferenceName(asset.name)
+    return entries?.find((entry) => entry.imageName === asset.name || entry.imageName === alias)
+  }
+}
+
 export async function applyCanvasAiEdit(
   session: CanvasSession,
   edit: CanvasAiEdit,
   anchorPoint: CanvasPoint,
-): Promise<{ summaries: string[]; focusBoxes: CanvasBox[]; selectedId: number | null }> {
+) {
+  const changes = new Map<number, OperationChange>()
   const summaries: string[] = []
   const focusBoxes: CanvasBox[] = []
   const imagesById = new Map(session.images.map((image) => [image.id, image]))
   const createdByTempId = new Map<string, CanvasOperation>()
   let lastCreated: CanvasOperation | null = null
   let selectedId: number | null = null
+
+  function recordChange(
+    node: CanvasOperation,
+    action: CanvasAiAppliedTarget['action'],
+    tab: OperationDialogTab,
+    detail?: string,
+  ) {
+    const change: OperationChange = changes.get(node.id) ?? {
+      node,
+      action,
+      tabs: new Set(),
+      details: new Set(),
+    }
+    if (action === 'removed' || (change.action !== 'created' && change.action !== 'updated')) {
+      change.action = action
+    }
+    change.tabs.add(tab)
+    if (detail) {
+      change.details.add(detail)
+    }
+    changes.set(node.id, change)
+  }
 
   // 1. Update existing operations
   for (const update of edit.updateOperations ?? []) {
@@ -188,6 +274,16 @@ export async function applyCanvasAiEdit(
       node.sourceId = update.sourceImageId
     }
     applyFields(node, update)
+    const { id: _id, base, negative, characters, sourceImageId, ...params } = update
+    if (base !== undefined || negative !== undefined || characters !== undefined) {
+      recordChange(node, 'updated', 'prompt', '已更新提示词')
+    }
+    if (Object.values(params).some((value) => value !== undefined)) {
+      recordChange(node, 'updated', 'params', '已更新参数')
+    }
+    if (sourceImageId !== undefined) {
+      recordChange(node, 'updated', 'references', '已调整底图')
+    }
     focusBoxes.push(node)
     selectedId = node.id
     summaries.push(`更新 ${operationLabel(node.kind)} #${node.id}`)
@@ -199,6 +295,7 @@ export async function applyCanvasAiEdit(
       spec.sourceImageId !== undefined ? imagesById.get(spec.sourceImageId) : undefined
     const node = newOperation(spec.kind, session.nextImageId++, sourceImage)
     applyFields(node, spec)
+    recordChange(node, 'created', spec.kind === 'generate' ? 'prompt' : 'params')
 
     const predecessor =
       (spec.afterTempId ? createdByTempId.get(spec.afterTempId) : undefined) ??
@@ -228,11 +325,12 @@ export async function applyCanvasAiEdit(
     // Attach inline precise references declared directly on createOperations
     for (const ref of spec.preciseReferences ?? []) {
       const image = imagesById.get(ref.imageId)
-      if (!image) {
+      if (!image || image.asset.kind !== 'gallery') {
         continue
       }
       await connectImageToOperation(node, image, 'precise')
-      const entry = node.request.params.preciseReferences?.at(-1)
+      const entry = boundReference(node.request.params.preciseReferences, image)
+      recordChange(node, 'connected', 'references', '已连接精确参考')
       if (entry) {
         if (ref.mode) {
           entry.mode = ref.mode
@@ -253,11 +351,12 @@ export async function applyCanvasAiEdit(
     // Attach inline Vibe references declared directly on createOperations (V4.5 only)
     for (const vibe of spec.vibeReferences ?? []) {
       const image = imagesById.get(vibe.imageId)
-      if (!image || node.request.version === 'v5') {
+      if (!image || image.asset.kind !== 'gallery' || node.request.version === 'v5') {
         continue
       }
       await connectImageToOperation(node, image, 'vibe')
-      const entry = node.request.params.vibeReferences?.at(-1)
+      const entry = boundReference(node.request.params.vibeReferences, image)
+      recordChange(node, 'connected', 'references', '已连接 Vibe')
       if (entry) {
         if (vibe.strength !== undefined) {
           entry.strength = vibe.strength
@@ -280,7 +379,16 @@ export async function applyCanvasAiEdit(
     if (!image || !node) {
       continue
     }
+    if ((wire.role === 'precise' || wire.role === 'vibe') && image.asset.kind !== 'gallery') {
+      continue
+    }
     await connectImageToOperation(node, image, wire.role)
+    recordChange(
+      node,
+      'connected',
+      'references',
+      '已连接' + (image.asset.label ?? `图片 #${image.id}`),
+    )
     if (wire.role === 'img2img' || wire.role === 'source') {
       if (wire.strength !== undefined) {
         node.strength = wire.strength
@@ -290,7 +398,7 @@ export async function applyCanvasAiEdit(
       }
       summaries.push(wireSummary(image, node, wire.role === 'img2img' ? '图生图' : '底图'))
     } else if (wire.role === 'precise') {
-      const entry = node.request.params.preciseReferences?.at(-1)
+      const entry = boundReference(node.request.params.preciseReferences, image)
       if (entry) {
         if (wire.mode) {
           entry.mode = wire.mode
@@ -306,7 +414,7 @@ export async function applyCanvasAiEdit(
         wireSummary(image, node, `精确参考 · ${REFERENCE_LABELS[wire.mode ?? 'character']}`),
       )
     } else if (wire.role === 'vibe') {
-      const entry = node.request.params.vibeReferences?.at(-1)
+      const entry = boundReference(node.request.params.vibeReferences, image)
       if (entry) {
         if (wire.strength !== undefined) {
           entry.strength = wire.strength
@@ -328,13 +436,35 @@ export async function applyCanvasAiEdit(
     if (!image || !node) {
       continue
     }
+    if (wire.role === 'precise' && !boundReference(node.request.params.preciseReferences, image)) {
+      continue
+    }
+    if (wire.role === 'vibe' && !boundReference(node.request.params.vibeReferences, image)) {
+      continue
+    }
+    if ((wire.role === 'img2img' || wire.role === 'source') && node.sourceId !== image.id) {
+      continue
+    }
     disconnectImageFromOperation(node, image, wire.role)
+    recordChange(
+      node,
+      'disconnected',
+      'references',
+      '已断开' + (image.asset.label ?? `图片 #${image.id}`),
+    )
+    focusBoxes.push(node)
+    selectedId = node.id
     summaries.push(`断开连线 ${operationLabel(node.kind)} #${node.id}`)
   }
 
   // 5. Remove explicitly requested operation boxes
   const removeIds = new Set(edit.removeOperationIds ?? [])
   if (removeIds.size) {
+    for (const node of session.operations) {
+      if (removeIds.has(node.id)) {
+        recordChange(node, 'removed', 'params')
+      }
+    }
     const before = session.operations.length
     session.operations = session.operations.filter((item) => !removeIds.has(item.id))
     const removedCount = before - session.operations.length
@@ -346,5 +476,10 @@ export async function applyCanvasAiEdit(
     }
   }
 
-  return { summaries, focusBoxes, selectedId }
+  return {
+    summaries,
+    targets: Array.from(changes.values(), (change) => operationTarget(change, imagesById)),
+    focusBoxes: focusBoxes.filter((box) => !removeIds.has(box.id)),
+    selectedId: selectedId !== null && removeIds.has(selectedId) ? null : selectedId,
+  }
 }

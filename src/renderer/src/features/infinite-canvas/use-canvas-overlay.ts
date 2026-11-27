@@ -33,7 +33,7 @@ function overlaps(first: ScreenRect, second: ScreenRect, padding = 6) {
   )
 }
 
-function useMeasuredSize(elementRef: Ref<HTMLElement | null>) {
+function useMeasuredSize(elementRef: Ref<HTMLElement | null>, panel = false) {
   const measured = shallowRef<BoxSize>()
 
   watch(
@@ -43,15 +43,30 @@ function useMeasuredSize(elementRef: Ref<HTMLElement | null>) {
       if (!element) {
         return
       }
+      const scroller = element.querySelector<HTMLElement>('.tool-panel-scroll')
       const update = () => {
-        measured.value = {
-          width: element.offsetWidth,
-          height: element.offsetHeight,
+        let height = element.offsetHeight
+        if (scroller) {
+          height += Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+        } else if (panel) {
+          height = Math.max(height, element.scrollHeight)
+        }
+        const width = Math.round(element.offsetWidth)
+        height = Math.round(height)
+        if (
+          !measured.value ||
+          width !== measured.value.width ||
+          Math.abs(height - measured.value.height) >= 2
+        ) {
+          measured.value = { width, height }
         }
       }
       update()
       const observer = new ResizeObserver(update)
       observer.observe(element)
+      if (scroller?.firstElementChild) {
+        observer.observe(scroller.firstElementChild)
+      }
       onCleanup(() => observer.disconnect())
     },
     { flush: 'post' },
@@ -68,17 +83,17 @@ export function useCanvasOverlayPlacement(
   panelRef: Ref<HTMLElement | null>,
 ) {
   const barSize = useMeasuredSize(barRef)
-  const panelSize = useMeasuredSize(panelRef)
+  const panelSize = useMeasuredSize(panelRef, true)
 
   return computed(() => {
     const anchor = getAnchor()
     const viewport = getViewportSize()
-    const safeLeft = Math.min(70, viewport.width / 5)
-    const safeRight = Math.max(safeLeft + 1, viewport.width - 14)
-    const safeTop = 54
-    const safeBottom = Math.max(safeTop + 1, viewport.height - 54)
-    const maxW = Math.max(120, safeRight - safeLeft)
-    const maxH = Math.max(120, safeBottom - safeTop)
+    const safeLeft = Math.round(Math.min(70, viewport.width / 5))
+    const safeRight = Math.max(safeLeft + 1, Math.round(viewport.width) - 14)
+    const safeTop = Math.round(Math.min(54, viewport.height / 4))
+    const safeBottom = Math.max(safeTop + 1, Math.round(viewport.height) - safeTop)
+    const maxW = safeRight - safeLeft
+    const maxH = safeBottom - safeTop
     const hidden: CSSProperties = {
       visibility: 'hidden',
       maxWidth: `${maxW}px`,
@@ -110,6 +125,7 @@ export function useCanvasOverlayPlacement(
       barTop = belowBoxTop
     }
 
+    barTop = clamp(Math.round(barTop), safeTop, safeBottom - barHeight)
     const barRect: ScreenRect = {
       left: barLeft,
       top: barTop,
@@ -131,7 +147,7 @@ export function useCanvasOverlayPlacement(
     const centeredPanelLeft = clamp(centerX - panelWidth / 2, safeLeft, safeRight - panelWidth)
 
     // 1. Prefer opening downward directly below the selected box
-    const belowY = anchor.top + anchor.height + 12
+    const belowY = clamp(Math.round(anchor.top + anchor.height + 12), safeTop, safeBottom)
     const belowRoom = safeBottom - belowY
     if (belowRoom >= Math.min(desiredHeight, 220)) {
       const candidate: ScreenRect = {
@@ -141,68 +157,51 @@ export function useCanvasOverlayPlacement(
         height: Math.min(desiredHeight, belowRoom),
       }
       if (!overlaps(candidate, barRect)) {
-        return {
-          bar: barStyle,
-          panel: {
-            left: `${Math.round(candidate.left)}px`,
-            top: `${Math.round(candidate.top)}px`,
-            maxWidth: `${Math.round(maxW)}px`,
-            maxHeight: `${Math.round(belowRoom)}px`,
-          },
-        }
+        return placePanel(candidate.left, candidate.top, safeBottom)
       }
     }
 
-    // 2. Try opening to the right or left of the box
-    const sideTop = clamp(anchor.top, safeTop, safeBottom - desiredHeight)
-    const sideCandidates: ScreenRect[] = [
-      {
-        left: anchor.left + anchor.width + 12,
-        top: sideTop,
-        width: panelWidth,
-        height: desiredHeight,
-      },
-      {
-        left: anchor.left - panelWidth - 12,
-        top: sideTop,
-        width: panelWidth,
-        height: desiredHeight,
-      },
-    ]
-
-    for (const candidate of sideCandidates) {
-      const fitsHorizontally =
-        candidate.left >= safeLeft && candidate.left + candidate.width <= safeRight
-      if (fitsHorizontally && !overlaps(candidate, barRect)) {
-        return {
-          bar: barStyle,
-          panel: {
-            left: `${Math.round(candidate.left)}px`,
-            top: `${Math.round(candidate.top)}px`,
-            maxWidth: `${Math.round(maxW)}px`,
-            maxHeight: `${Math.round(maxH)}px`,
-          },
-        }
+    function placePanel(left: number, top: number, bottom: number) {
+      const y = clamp(Math.round(top), safeTop, safeBottom)
+      return {
+        bar: barStyle,
+        panel: {
+          left: `${clamp(Math.round(left), safeLeft, safeRight - panelWidth)}px`,
+          top: `${y}px`,
+          maxWidth: `${maxW}px`,
+          maxHeight: `${clamp(Math.round(bottom) - y, 0, safeBottom - y)}px`,
+        },
       }
     }
 
-    // 3. Guaranteed fallback: open directly below (or above) the toolbar itself
-    const roomBelowBar = safeBottom - (barTop + barHeight + 8)
-    const roomAboveBar = barTop - 8 - safeTop
-    const placeBelowBar = roomBelowBar >= roomAboveBar || roomBelowBar >= 220
-    const fallbackRoom = Math.max(140, placeBelowBar ? roomBelowBar : roomAboveBar)
-    const fallbackTop = placeBelowBar
-      ? barTop + barHeight + 8
-      : Math.max(safeTop, barTop - 8 - Math.min(desiredHeight, fallbackRoom))
-
-    return {
-      bar: barStyle,
-      panel: {
-        left: `${Math.round(centeredPanelLeft)}px`,
-        top: `${Math.round(fallbackTop)}px`,
-        maxWidth: `${Math.round(maxW)}px`,
-        maxHeight: `${Math.round(fallbackRoom)}px`,
-      },
+    const belowBar = barTop + barHeight + 8
+    const aboveBar = barTop - 8
+    for (const left of [anchor.left + anchor.width + 12, anchor.left - panelWidth - 12]) {
+      if (left < safeLeft || left + panelWidth > safeRight) {
+        continue
+      }
+      let minTop = safeTop
+      let bottom = safeBottom
+      if (left < barLeft + barWidth + 6 && left + panelWidth + 6 > barLeft) {
+        const minimumRoom = Math.min(180, desiredHeight)
+        const preferBelow = barTop <= anchor.top || aboveBar - safeTop < minimumRoom
+        if (preferBelow && safeBottom - belowBar >= minimumRoom) {
+          minTop = belowBar
+        } else {
+          bottom = aboveBar
+        }
+        if (bottom - minTop < minimumRoom) {
+          continue
+        }
+      }
+      const top = clamp(anchor.top, minTop, bottom - desiredHeight)
+      return placePanel(left, top, bottom)
     }
+
+    const roomBelow = safeBottom - belowBar
+    if (roomBelow >= aboveBar - safeTop || roomBelow >= 220) {
+      return placePanel(centeredPanelLeft, belowBar, safeBottom)
+    }
+    return placePanel(centeredPanelLeft, Math.max(safeTop, aboveBar - desiredHeight), aboveBar)
   })
 }

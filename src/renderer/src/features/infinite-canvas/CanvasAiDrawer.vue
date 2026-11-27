@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId } from 'vue'
 import {
   MAX_CANVAS_AI_REFERENCES,
   type CanvasAiEdit,
@@ -7,10 +7,12 @@ import {
   type CanvasAiMode,
 } from '@shared/canvas-ai'
 import { cleanErr } from '../../shared/lib/format'
+import type { SkillConfigItem } from '@shared/skills/types'
 import { settingsState } from '../settings/state'
 import Icon from '../../shared/ui/Icon.vue'
 import type { IconName } from '../../shared/ui/icons'
-import { buildCanvasAiSnapshot } from './canvas-ai-edits'
+import { buildCanvasAiSnapshot, type CanvasAiAppliedTarget } from './canvas-ai-edits'
+import type { OperationDialogTab } from './CanvasOperationDialog.vue'
 import { operationLabel, TOOL_ICONS } from './operations'
 import type { CanvasAsset, CanvasImage, CanvasOperation, CanvasSession } from './session'
 import type { CanvasPreview } from './use-canvas-previews'
@@ -37,13 +39,15 @@ type CanvasRefItem =
 
 interface ThreadMessage extends CanvasAiMessage {
   references?: string[]
-  appliedChanges?: string[]
+  skills?: string[]
+  appliedTargets?: CanvasAiAppliedTarget[]
 }
 
 interface Conversation {
   id: string
   draft: string
   explicitIds: number[]
+  selectedSkillIds: string[]
   messages: ThreadMessage[]
   mode: CanvasAiMode
   pending: boolean
@@ -51,8 +55,24 @@ interface Conversation {
   error: string
 }
 
-type ReferencePicker =
-  { kind: 'mention'; query: string; start: number; end: number } | { kind: 'search'; query: string }
+type Picker =
+  | { kind: 'mention' | 'skill-slash'; query: string; start: number; end: number }
+  | { kind: 'search' | 'skill-search'; query: string }
+
+const MAX_SELECTED_SKILLS = 6
+const skillScopes = {
+  all: '全部 通用',
+  optimize: '智能优化 描述转提示词',
+  preview: '画面推测',
+  inpaint: '局部重绘',
+}
+const actionLabels = {
+  created: '已新建',
+  updated: '已更新',
+  connected: '已连线',
+  disconnected: '已断线',
+  removed: '已移除',
+}
 
 const props = defineProps<{
   session: CanvasSession
@@ -63,7 +83,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
   focusClassic: []
-  applyEdit: [edit: CanvasAiEdit, done: (summaries: string[]) => void]
+  applyEdit: [edit: CanvasAiEdit, done: (targets: CanvasAiAppliedTarget[]) => void]
+  focusNode: [id: number]
+  openNode: [id: number, tab: OperationDialogTab]
 }>()
 
 function createConversation(): Conversation {
@@ -71,6 +93,7 @@ function createConversation(): Conversation {
     id: crypto.randomUUID(),
     draft: '',
     explicitIds: [],
+    selectedSkillIds: [],
     messages: [],
     mode: 'edit',
     pending: false,
@@ -85,7 +108,36 @@ const conversation = computed(
   () => conversations.value.find((entry) => entry.id === activeId.value) ?? conversations.value[0],
 )
 const historyOpen = ref(false)
-const picker = ref<ReferencePicker | null>(null)
+const picker = ref<Picker | null>(null)
+const skills = ref<SkillConfigItem[]>([])
+const skillLoadError = ref(false)
+const skillPicker = computed(
+  () => picker.value?.kind === 'skill-slash' || picker.value?.kind === 'skill-search',
+)
+const inlinePicker = computed(
+  () => picker.value?.kind === 'mention' || picker.value?.kind === 'skill-slash',
+)
+const selectedSkills = computed(() =>
+  conversation.value.selectedSkillIds.flatMap(
+    (id) => skills.value.find((skill) => skill.id === id) ?? [],
+  ),
+)
+const matchingSkills = computed(() => {
+  const query = picker.value?.query.trim().toLowerCase() ?? ''
+  return skills.value.filter((skill) =>
+    [skill.name, skill.description, skill.scope, skillScopes[skill.scope], skill.model].some(
+      (field) => field.toLowerCase().includes(query),
+    ),
+  )
+})
+
+async function loadSkills() {
+  try {
+    skills.value = await window.canvasApi.skillsList()
+  } catch {
+    skillLoadError.value = true
+  }
+}
 const highlight = ref(0)
 const panelRef = ref<HTMLElement>()
 const messagesRef = ref<HTMLElement>()
@@ -178,14 +230,18 @@ const pickerOptions = computed(() => {
   })
 })
 
+const optionCount = computed(() => {
+  if (skillPicker.value) {
+    return matchingSkills.value.length
+  }
+  return canAttach.value ? pickerOptions.value.length : 0
+})
 const highlightedOptionId = computed(() =>
-  picker.value && canAttach.value && pickerOptions.value.length
-    ? `${listboxId}-${highlightedIndex()}`
-    : undefined,
+  picker.value && optionCount.value ? `${listboxId}-${highlightedIndex()}` : undefined,
 )
 
 function highlightedIndex() {
-  return Math.min(highlight.value, Math.max(0, pickerOptions.value.length - 1))
+  return Math.min(highlight.value, Math.max(0, optionCount.value - 1))
 }
 
 function conversationTitle(entry: Conversation, showDraft = false): string {
@@ -236,46 +292,49 @@ function toggleHistory() {
   historyOpen.value = !historyOpen.value
 }
 
-function updateMention() {
+function updateInlinePicker() {
   const input = composerRef.value
   const end = input?.selectionStart ?? 0
-  const activeMention =
-    input && end === input.selectionEnd
-      ? input.value.slice(0, end).match(/(?:^|[^A-Za-z0-9_.%+@-])[@＠]([^@＠\n]{0,64})$/u)
-      : null
-  if (activeMention) {
-    const query = activeMention[1]
-    picker.value = { kind: 'mention', query, start: end - query.length - 1, end }
+  const prefix = input && end === input.selectionEnd ? input.value.slice(0, end) : ''
+  const slash = prefix.match(/(?:^|\s)[/／]([^/／\s\n]{0,48})$/u)
+  const mention = prefix.match(/(?:^|[^A-Za-z0-9_.%+@-])[@＠]([^@＠\n]{0,64})$/u)
+  const useSlash = slash && (!mention || slash[1].length < mention[1].length)
+  const match = useSlash ? slash : mention
+  if (match) {
+    const query = match[1]
+    picker.value = {
+      kind: useSlash ? 'skill-slash' : 'mention',
+      query,
+      start: end - query.length - 1,
+      end,
+    }
     historyOpen.value = false
     highlight.value = 0
-  } else if (picker.value?.kind === 'mention') {
+  } else {
     picker.value = null
   }
 }
 
 function onDraftInput(event: Event) {
   if (!(event instanceof InputEvent && event.isComposing)) {
-    updateMention()
+    updateInlinePicker()
   }
 }
 
 function onMentionCaret(event: KeyboardEvent) {
-  if (
-    picker.value?.kind === 'mention' &&
-    ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)
-  ) {
-    updateMention()
+  if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+    updateInlinePicker()
   }
 }
 
-async function openReferenceSearch() {
-  if (picker.value?.kind === 'search') {
+async function openSearch(kind: 'search' | 'skill-search') {
+  if (picker.value?.kind === kind) {
     picker.value = null
     focusInput()
     return
   }
   historyOpen.value = false
-  picker.value = { kind: 'search', query: '' }
+  picker.value = { kind, query: '' }
   highlight.value = 0
   await nextTick()
   searchInputRef.value?.focus()
@@ -284,6 +343,38 @@ async function openReferenceSearch() {
 function removeReference(id: number) {
   const thread = conversation.value
   thread.explicitIds = thread.explicitIds.filter((entry) => entry !== id)
+}
+
+function skillDisabled(id: string) {
+  const selected = conversation.value.selectedSkillIds
+  return selected.length >= MAX_SELECTED_SKILLS && !selected.includes(id)
+}
+
+function removeSkill(id: string) {
+  const thread = conversation.value
+  thread.selectedSkillIds = thread.selectedSkillIds.filter((selected) => selected !== id)
+}
+
+async function toggleSkill(id: string) {
+  if (skillDisabled(id)) {
+    return
+  }
+  const thread = conversation.value
+  if (thread.selectedSkillIds.includes(id)) {
+    removeSkill(id)
+  } else {
+    thread.selectedSkillIds.push(id)
+  }
+  const current = picker.value
+  if (current?.kind === 'skill-slash') {
+    thread.draft = thread.draft.slice(0, current.start) + thread.draft.slice(current.end)
+    picker.value = null
+    await nextTick()
+    focusInput()
+    composerRef.value?.setSelectionRange(current.start, current.start)
+  } else {
+    searchInputRef.value?.focus()
+  }
 }
 
 async function attachReference(item: CanvasRefItem) {
@@ -309,7 +400,7 @@ function handlePickerKey(event: KeyboardEvent): boolean {
   if (!picker.value || event.isComposing || event.keyCode === 229) {
     return false
   }
-  const count = canAttach.value ? pickerOptions.value.length : 0
+  const count = optionCount.value
   const index = highlightedIndex()
   if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
     if (count) {
@@ -325,7 +416,9 @@ function handlePickerKey(event: KeyboardEvent): boolean {
   }
   if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
     event.preventDefault()
-    if (count) {
+    if (count && skillPicker.value) {
+      toggleSkill(matchingSkills.value[index].id).catch(() => {})
+    } else if (count) {
       attachReference(pickerOptions.value[index]).catch(() => {})
     }
     return true
@@ -392,14 +485,17 @@ async function send() {
   const attached = [...explicitRefs.value, ...implicitRefs.value]
   const previousDraft = thread.draft
   const previousExplicit = [...thread.explicitIds]
+  const skillIds = [...thread.selectedSkillIds]
 
   thread.messages.push({
     role: 'user',
     content,
     references: attached.map((item) => item.title),
+    skills: selectedSkills.value.map((skill) => skill.name),
   })
   thread.draft = ''
   thread.explicitIds = []
+  thread.selectedSkillIds = []
   thread.error = ''
   thread.pending = true
   thread.step = '正在理解画布与需求…'
@@ -408,6 +504,7 @@ async function send() {
   try {
     const result = await window.canvasApi.askCanvasAi({
       mode: requestMode,
+      skillIds,
       referencedIds: attached.map((item) => item.id),
       messages: thread.messages.slice(-24).map(({ role, content: text }) => ({
         role,
@@ -418,15 +515,15 @@ async function send() {
     if (disposed) {
       return
     }
-    const replyMessage: ThreadMessage = {
+    const replyMessage = reactive<ThreadMessage>({
       role: 'assistant',
       content: result.message,
-    }
+    })
     thread.messages.push(replyMessage)
     if (requestMode === 'edit' && result.edit) {
-      emit('applyEdit', result.edit, (summaries) => {
-        if (!disposed && summaries.length) {
-          replyMessage.appliedChanges = summaries
+      emit('applyEdit', result.edit, (targets) => {
+        if (!disposed && targets.length) {
+          replyMessage.appliedTargets = targets
           revealMessages().catch(() => {})
         }
       })
@@ -436,6 +533,7 @@ async function send() {
       thread.error = cleanErr(reason)
       thread.draft = previousDraft
       thread.explicitIds = previousExplicit
+      thread.selectedSkillIds = skillIds
       thread.messages.pop()
     }
   } finally {
@@ -448,7 +546,7 @@ async function send() {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   document.addEventListener('pointerdown', closePopoversOnOutsidePress)
   if (typeof window.canvasApi?.onAiStep === 'function') {
     offAiStep = window.canvasApi.onAiStep('canvas', (text) => {
@@ -467,6 +565,7 @@ onMounted(() => {
       activeTaskId = running?.id ?? null
     })
   }
+  await loadSkills()
 })
 
 onBeforeUnmount(() => {
@@ -598,7 +697,7 @@ defineExpose({ focusInput })
         :class="'chat-' + message.role"
       >
         <div
-          v-if="message.references?.length"
+          v-if="message.references?.length || message.skills?.length"
           class="ai-sent-references"
         >
           <span
@@ -609,24 +708,54 @@ defineExpose({ focusInput })
           >
             @{{ name }}
           </span>
+          <span
+            v-for="name in message.skills"
+            :key="name"
+            :title="name"
+            class="truncate"
+            >/{{ name }}</span
+          >
         </div>
         <div class="ai-message-content">{{ message.content }}</div>
         <div
-          v-if="message.appliedChanges?.length"
+          v-if="message.appliedTargets?.length"
           class="ai-applied-list"
           aria-label="已应用到画布的变更"
         >
-          <span
-            v-for="(change, changeIndex) in message.appliedChanges"
-            :key="changeIndex"
-            class="ai-applied-pill"
+          <div
+            v-for="target in message.appliedTargets"
+            :key="target.id"
+            class="ai-applied-card"
           >
-            <Icon
-              name="check"
-              :size="11"
-            />
-            <span>{{ change }}</span>
-          </span>
+            <button
+              type="button"
+              class="ai-applied-target"
+              :title="target.summary"
+              :disabled="target.action === 'removed'"
+              @click="emit('focusNode', target.id)"
+            >
+              <Icon
+                :name="target.icon"
+                :size="17"
+              />
+              <span class="ai-applied-detail">
+                <span class="ai-applied-heading"
+                  ><strong class="truncate">{{ target.title }}</strong
+                  ><small>{{ actionLabels[target.action] }}</small></span
+                >
+                <span class="truncate">{{ target.summary }}</span>
+              </span>
+            </button>
+            <button
+              v-if="target.nodeKind === 'operation' && target.action !== 'removed'"
+              class="btn small ai-open-target"
+              type="button"
+              :aria-label="'打开 ' + target.title"
+              @click.stop="emit('openNode', target.id, target.openTab ?? 'prompt')"
+            >
+              打开
+            </button>
+          </div>
         </div>
       </article>
 
@@ -653,19 +782,19 @@ defineExpose({ focusInput })
         class="ai-popover ai-references"
       >
         <label
-          v-if="picker.kind === 'search'"
+          v-if="picker.kind === 'search' || skillPicker"
           class="ai-reference-search"
         >
           <Icon
-            name="at"
+            :name="skillPicker ? 'search' : 'at'"
             :size="14"
           />
           <input
             ref="searchInputRef"
             v-model="picker.query"
             type="search"
-            placeholder="搜索当前画布图片或盒子"
-            aria-label="搜索当前画布元素"
+            :placeholder="skillPicker ? '搜索技能' : '搜索当前画布图片或盒子'"
+            :aria-label="skillPicker ? '搜索技能' : '搜索当前画布元素'"
             :aria-controls="listboxId"
             :aria-activedescendant="highlightedOptionId"
             @input="highlight = 0"
@@ -680,13 +809,25 @@ defineExpose({ focusInput })
         </p>
 
         <p
-          v-if="!canAttach"
+          v-if="skillPicker && !matchingSkills.length"
+          class="ai-reference-empty"
+        >
+          {{ skillLoadError ? '暂时无法读取技能，可继续对话' : '没有匹配的技能' }}
+        </p>
+        <p
+          v-else-if="skillPicker && selectedSkills.length >= MAX_SELECTED_SKILLS"
+          class="ai-reference-empty"
+        >
+          每轮最多选择 {{ MAX_SELECTED_SKILLS }} 个技能
+        </p>
+        <p
+          v-else-if="!skillPicker && !canAttach"
           class="ai-reference-empty"
         >
           每条消息最多引用 {{ MAX_CANVAS_AI_REFERENCES }} 个元素
         </p>
         <p
-          v-else-if="!pickerOptions.length"
+          v-else-if="!skillPicker && !pickerOptions.length"
           class="ai-reference-empty"
         >
           {{ canvasItems.length ? '没有可添加的匹配元素' : '当前画布还没有图片或盒子' }}
@@ -696,9 +837,47 @@ defineExpose({ focusInput })
           :id="listboxId"
           class="ai-reference-options scroll"
           role="listbox"
-          aria-label="当前画布元素"
+          :aria-label="skillPicker ? '技能' : '当前画布元素'"
+          :aria-multiselectable="skillPicker || undefined"
         >
-          <template v-if="canAttach">
+          <template v-if="skillPicker">
+            <button
+              v-for="(skill, index) in matchingSkills"
+              :id="`${listboxId}-${index}`"
+              :key="skill.id"
+              type="button"
+              class="ai-reference-row ai-skill-row"
+              role="option"
+              tabindex="-1"
+              :class="{ 'is-highlighted': highlightedIndex() === index }"
+              :aria-selected="conversation.selectedSkillIds.includes(skill.id)"
+              :disabled="skillDisabled(skill.id)"
+              @pointerenter="highlight = index"
+              @click="toggleSkill(skill.id)"
+            >
+              <Icon
+                name="skill"
+                :size="16"
+              />
+              <span class="ai-reference-label">
+                <span class="ai-skill-heading"
+                  ><strong class="truncate">{{ skill.name }}</strong
+                  ><small>{{ skill.builtin ? '内置' : '自定义' }}</small></span
+                >
+                <small
+                  class="truncate"
+                  :title="skill.description"
+                  >{{ skill.description || skillScopes[skill.scope] }}</small
+                >
+              </span>
+              <Icon
+                v-if="conversation.selectedSkillIds.includes(skill.id)"
+                name="check"
+                :size="14"
+              />
+            </button>
+          </template>
+          <template v-else-if="canAttach">
             <button
               v-for="(item, index) in pickerOptions"
               :id="`${listboxId}-${index}`"
@@ -734,6 +913,17 @@ defineExpose({ focusInput })
             </button>
           </template>
         </div>
+        <button
+          v-if="skillPicker"
+          class="ai-manage-skills"
+          type="button"
+          @click="emit('focusClassic')"
+        >
+          <Icon
+            name="skill"
+            :size="14"
+          />管理技能
+        </button>
       </div>
 
       <p
@@ -745,9 +935,23 @@ defineExpose({ focusInput })
       </p>
 
       <div
-        v-if="explicitRefs.length || implicitRefs.length"
+        v-if="explicitRefs.length || implicitRefs.length || selectedSkills.length"
         class="ai-chips"
       >
+        <button
+          v-for="skill in selectedSkills"
+          :key="skill.id"
+          type="button"
+          class="ai-chip"
+          :aria-label="'移除技能 ' + skill.name"
+          @click="removeSkill(skill.id)"
+        >
+          <span class="truncate">/{{ skill.name }}</span
+          ><Icon
+            name="x"
+            :size="11"
+          />
+        </button>
         <button
           v-for="item in explicitRefs"
           :key="'exp-' + item.id"
@@ -785,15 +989,15 @@ defineExpose({ focusInput })
         ref="composerRef"
         v-model="conversation.draft"
         rows="3"
-        placeholder="输入消息，按 @ 引用画布图片或盒子"
+        placeholder="输入消息，@ 引用画布、/ 使用技能"
         aria-label="输入消息"
         :disabled="conversation.pending"
-        :aria-controls="picker?.kind === 'mention' ? listboxId : undefined"
-        :aria-activedescendant="picker?.kind === 'mention' ? highlightedOptionId : undefined"
+        :aria-controls="inlinePicker ? listboxId : undefined"
+        :aria-activedescendant="inlinePicker ? highlightedOptionId : undefined"
         @input="onDraftInput"
-        @click="picker?.kind === 'mention' && updateMention()"
+        @click="updateInlinePicker"
         @keyup="onMentionCaret"
-        @compositionend="updateMention"
+        @compositionend="updateInlinePicker"
         @keydown="handleComposerKey"
       />
 
@@ -803,15 +1007,30 @@ defineExpose({ focusInput })
           class="icon-btn sm ai-action-icon"
           title="引用画布元素 (@)"
           aria-label="引用画布元素"
-          :aria-expanded="Boolean(picker)"
-          :aria-controls="picker ? listboxId : undefined"
+          :aria-expanded="Boolean(picker) && !skillPicker"
+          :aria-controls="picker && !skillPicker ? listboxId : undefined"
           :disabled="conversation.pending"
-          @click="openReferenceSearch"
+          @click="openSearch('search')"
         >
           <Icon
             name="at"
             :size="15"
           />
+        </button>
+
+        <button
+          class="ai-composer-toggle"
+          type="button"
+          :class="{ 'has-skills': selectedSkills.length }"
+          :aria-expanded="skillPicker"
+          :aria-controls="skillPicker ? listboxId : undefined"
+          :disabled="conversation.pending"
+          @click="openSearch('skill-search')"
+        >
+          <Icon
+            name="skill"
+            :size="14"
+          />使用技能
         </button>
 
         <button
@@ -1042,23 +1261,67 @@ defineExpose({ focusInput })
 }
 
 .ai-applied-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
+  display: grid;
+  gap: 6px;
   margin-top: 8px;
 }
 
-.ai-applied-pill {
-  display: inline-flex;
+.ai-applied-card {
+  display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border: 1px solid color-mix(in srgb, var(--ok) 28%, transparent);
-  border-radius: 999px;
-  background: var(--ok-soft);
-  color: var(--ok);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--side);
+}
+
+.ai-applied-card:focus-within,
+.ai-applied-card:hover {
+  border-color: var(--pink-line);
+}
+
+.ai-applied-target {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text2);
+  text-align: left;
+}
+
+.ai-applied-detail {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
   font-size: 11px;
-  font-weight: 500;
+}
+
+.ai-applied-heading,
+.ai-skill-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.ai-applied-heading small,
+.ai-skill-heading small {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--pink-soft);
+  color: var(--pink-deep);
+  font-size: 10px;
+}
+
+.ai-open-target {
+  flex: none;
+  margin-right: 7px;
 }
 
 .ai-pending {
@@ -1138,7 +1401,8 @@ defineExpose({ focusInput })
   flex-shrink: 0;
 }
 
-.ai-composer-toggle[aria-pressed='true'] {
+.ai-composer-toggle[aria-pressed='true'],
+.ai-composer-toggle.has-skills {
   background: var(--pink-soft);
   color: var(--pink-deep);
   font-weight: 560;
@@ -1189,7 +1453,8 @@ defineExpose({ focusInput })
 
 .ai-references {
   inset: auto 0 calc(100% + 6px);
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   max-height: min(240px, 42vh);
   padding: 5px;
 }
@@ -1248,6 +1513,38 @@ defineExpose({ focusInput })
 
 .ai-reference-row[aria-selected='true'] {
   background: var(--pink-soft);
+  color: var(--pink-deep);
+}
+
+.ai-skill-row.is-highlighted {
+  outline: 1px solid var(--pink-line);
+  outline-offset: -1px;
+  background: var(--side);
+}
+
+.ai-skill-row:disabled {
+  opacity: 0.55;
+}
+
+.ai-skill-row {
+  min-height: 44px;
+}
+
+.ai-manage-skills {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 7px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--text2);
+  font-size: 12px;
+}
+
+.ai-manage-skills:hover {
   color: var(--pink-deep);
 }
 

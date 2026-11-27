@@ -197,24 +197,28 @@ async function encode(index: number) {
         <button
           class="btn small"
           :disabled="!canAdd"
-          @click="fileInput?.click()"
-        >
-          <Icon
-            name="upload"
-            :size="14"
-          />
-          上传图片
-        </button>
-        <button
-          class="btn small"
-          :disabled="!canAdd"
           @click="gallery = true"
         >
           <Icon
             name="folder"
             :size="14"
           />
-          从图库选
+          图库
+        </button>
+        <slot
+          name="after-gallery"
+          :disabled="!canAdd"
+        />
+        <button
+          class="btn small"
+          :disabled="!canAdd"
+          @click="fileInput?.click()"
+        >
+          <Icon
+            name="upload"
+            :size="14"
+          />
+          本地
         </button>
         <button
           v-if="current"
@@ -228,6 +232,10 @@ async function encode(index: number) {
           />
           用当前图片
         </button>
+        <slot
+          name="extra-actions"
+          :disabled="!canAdd"
+        />
       </div>
     </template>
     <input

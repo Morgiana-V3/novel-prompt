@@ -52,6 +52,7 @@ export const randomSeed = () => Math.floor(Math.random() * 4_294_967_295)
 export interface GenerateOptions {
   freeOnly?: boolean
   workspaceId?: string
+  storage?: 'saved' | 'temporary'
   /** 起点图片字节：扩图时为扩展后的画布，图生图时为缩放后的原图；未提供时局部重绘读取 inpaint.imageName */
   sourceBytes?: Buffer
 }
@@ -66,6 +67,9 @@ export async function generateImages(
   req = structuredClone(req)
   req.collectionId = imageCollections.resolve(req.collectionId)
   const resolveStorage = () => {
+    if (opts.storage) {
+      return opts.storage
+    }
     if (opts.workspaceId) {
       return 'workspace' as const
     }

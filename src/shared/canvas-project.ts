@@ -17,9 +17,24 @@ export interface CanvasStroke {
 export interface CanvasBox extends CanvasPoint, CanvasSize {
   id: number
 }
+export type CanvasOutputMode = 'inline' | 'branch'
+
+export interface CanvasOperationOutput {
+  id: string
+  asset: CanvasGalleryAsset
+  label: string
+  workspaceId?: string
+  versionId?: string
+  createdAt: number
+}
+
 export interface CanvasOperation extends CanvasBox {
   kind: CanvasTool
   sourceId: number | null
+  saveToGallery?: boolean
+  outputMode?: CanvasOutputMode
+  outputs?: CanvasOperationOutput[]
+  activeOutputId?: string
   lastRun?: { workspaceId: string; message: string }
   request: NaiGenRequest
   strength: number

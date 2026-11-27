@@ -165,17 +165,6 @@ function update(index: number, patch: Partial<PreciseReference>) {
       <button
         class="btn small"
         :disabled="!canAdd"
-        @click="fileInput?.click()"
-      >
-        <Icon
-          name="upload"
-          :size="14"
-        />
-        上传图片
-      </button>
-      <button
-        class="btn small"
-        :disabled="!canAdd"
         aria-haspopup="dialog"
         :aria-expanded="galleryOpen"
         @click="showGallery"
@@ -184,7 +173,22 @@ function update(index: number, patch: Partial<PreciseReference>) {
           name="folder"
           :size="14"
         />
-        从图库选
+        图库
+      </button>
+      <slot
+        name="after-gallery"
+        :disabled="!canAdd"
+      />
+      <button
+        class="btn small"
+        :disabled="!canAdd"
+        @click="fileInput?.click()"
+      >
+        <Icon
+          name="upload"
+          :size="14"
+        />
+        本地
       </button>
       <button
         v-if="current"
@@ -198,6 +202,10 @@ function update(index: number, patch: Partial<PreciseReference>) {
         />
         用当前图片
       </button>
+      <slot
+        name="extra-actions"
+        :disabled="!canAdd"
+      />
       <span
         v-if="images.length"
         class="reference-fee"

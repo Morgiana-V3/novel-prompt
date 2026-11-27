@@ -1,21 +1,26 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import type { CanvasAiEdit } from '@shared/canvas-ai'
 import { REFERENCE_LABELS } from '@shared/generation/references'
 import type { NaiGenRequest } from '@shared/generation/types'
+import type { NaiImage } from '@shared/images/types'
 import { DEFAULT_COLLECTION } from '@shared/images/collections'
 import { reportError, toast } from '../../shared/lib/notifications'
 import { vSegIndicator } from '../../shared/lib/seg-indicator'
 import Icon from '../../shared/ui/Icon.vue'
 import ThemeSelect from '../../shared/ui/ThemeSelect.vue'
 import CanvasAiDrawer from './CanvasAiDrawer.vue'
+import CanvasContextMenu, { type CanvasMenuItem } from './CanvasContextMenu.vue'
 import CanvasNodeToolbar, { type SelectedCanvasTarget } from './CanvasNodeToolbar.vue'
+import CanvasPortNode from './CanvasPortNode.vue'
+import { edgePoint, nearestPort, type PortSide } from './canvas-ports'
 import CanvasOperationCard from './CanvasOperationCard.vue'
 import CanvasOperationDialog, { type OperationDialogTab } from './CanvasOperationDialog.vue'
 import CanvasThumbnail from './CanvasThumbnail.vue'
 import CanvasWirePopover, { type ActiveWireEditor } from './CanvasWirePopover.vue'
-import { applyCanvasAiEdit } from './canvas-ai-edits'
+import { applyCanvasAiEdit, type CanvasAiAppliedTarget } from './canvas-ai-edits'
 import {
+  DRAG_ASSET_MIME,
   activeCanvasDrag,
   canvasDragPointer,
   clearCanvasDrag,
@@ -24,7 +29,10 @@ import {
 import { freePosition } from './layout'
 import {
   CANVAS_PALETTE_TOOLS,
+  cardErrors,
+  runningCards,
   connectImageToOperation,
+  imageAspectRatio,
   isGenerateKind,
   newOperation,
   operationLabel,
@@ -34,6 +42,11 @@ import {
 } from './operations'
 import {
   CANVAS_TOOLS,
+  activeOperationOutput,
+  allOperationOutputs,
+  canvasClipboard,
+  extractOutputAsCanvasImage,
+  type CanvasClipboardItem,
   type CanvasAsset,
   type CanvasBox,
   type CanvasGalleryAsset,
@@ -45,14 +58,13 @@ import {
 } from './session'
 import { useCanvasFavorites, type FavoriteMaterial } from './use-canvas-favorites'
 import { useCanvasGallery } from './use-canvas-gallery'
-import { useCanvasPreviews, type CanvasPreview } from './use-canvas-previews'
+import { canvasImageUrl, useCanvasPreviews, type CanvasPreview } from './use-canvas-previews'
 import { useCanvasViewport } from './use-canvas-viewport'
 
-interface WorkflowEdge {
+interface WorkflowConnection {
+  from: CanvasBox
+  to: CanvasBox
   id: string
-  path: string
-  midX: number
-  midY: number
   active: boolean
   tone: 'pink' | 'blue' | 'amber' | 'neutral'
   label?: string
@@ -63,9 +75,11 @@ interface WorkflowEdge {
 
 interface PendingWireDrag {
   pointerId: number
-  image: CanvasImage
+  origin: CanvasImage | CanvasOperation
+  side: PortSide
   pointer: CanvasPoint
-  hoveredOperationId: number | null
+  target?: CanvasImage | CanvasOperation
+  targetSide?: PortSide
 }
 
 const props = defineProps<{ session: CanvasSession; title: string }>()
@@ -73,7 +87,6 @@ const galleryOpen = defineModel<boolean>('galleryOpen', { default: false })
 const emit = defineEmits<{ exit: [] }>()
 
 const dragToolMime = 'application/x-novelprompt-canvas-tool'
-const dragAssetMime = 'application/x-novelprompt-canvas-asset'
 const dragFavoriteMime = 'application/x-novelprompt-canvas-favorite'
 
 const imageInput = ref<HTMLInputElement>()
@@ -110,8 +123,9 @@ const {
   fitImages,
   selectImage,
   addImage,
-  removeSelected,
+  removeSelected: removeSelectedNode,
   beginGesture,
+  beginResize,
   trackGesture,
   finishGesture,
   cancelGesture,
@@ -140,7 +154,7 @@ const {
   displayedFavorites,
   selectedFavorite,
   selectFavorite,
-  thumbnailFor,
+  favoriteUrlFor,
   hasMore: favoritesHasMore,
   totalCount: favoritesTotalCount,
   loadMore: loadMoreFavorites,
@@ -192,22 +206,10 @@ const visibleGalleryAssets = computed(() => {
   return displayedAssets.value.slice(startIndex, startIndex + 96)
 })
 
-const demandedAssets = computed(() => {
-  const imageById = new Map(props.session.images.map((image) => [image.id, image]))
-  const selected = visibleImages.value.find(({ image }) => image.id === props.session.selectedId)
-  const operationSources = visibleOperations.value.flatMap(({ node }) => {
-    const source = node.sourceId ? imageById.get(node.sourceId) : undefined
-    return source ? [source.asset] : []
-  })
-  return [
-    ...(selected ? [selected.image.asset] : []),
-    ...operationSources,
-    ...visibleImages.value.map(({ image }) => image.asset),
-    ...visibleGalleryAssets.value,
-  ].filter((asset) => asset.kind === 'gallery')
-})
-
-const { previewFor } = useCanvasPreviews(() => demandedAssets.value)
+const { previewFor } = useCanvasPreviews(() => [
+  ...(toolbarRef.value?.historyAssets ?? []),
+  ...visibleGalleryAssets.value,
+])
 const zoomPercent = computed(() => `${Math.round(zoom.value * 100)}%`)
 
 const canvasCountLabel = computed(() => {
@@ -256,27 +258,62 @@ const activeWireNode = computed(() =>
     : null,
 )
 
-function buildCurve(startX: number, startY: number, endX: number, endY: number) {
-  const forward = endX >= startX
-  const controlOffset = Math.max(44, Math.min(148, Math.abs(endX - startX) * 0.45))
-  const c1x = forward ? startX + controlOffset : startX - controlOffset
-  const c2x = forward ? endX - controlOffset : endX + controlOffset
-  const path = `M ${startX} ${startY} C ${c1x} ${startY}, ${c2x} ${endY}, ${endX} ${endY}`
-  return { path, midX: (startX + endX) / 2, midY: (startY + endY) / 2 }
+const pointerPosition = ref<CanvasPoint>()
+const visiblePorts = computed(() => [
+  ...visibleImages.value.map(({ image, bounds }) => ({ id: image.id, box: image, bounds })),
+  ...visibleOperations.value.map(({ node, bounds }) => ({ id: node.id, box: node, bounds })),
+])
+const eligiblePorts = computed(() => {
+  const origin = wireDrag.value?.origin
+  if (!origin) {
+    return visiblePorts.value
+  }
+  const fromImage = 'asset' in origin
+  return visiblePorts.value.filter(({ box }) =>
+    fromImage ? 'sourceId' in box && !runningCards.has(box) : 'asset' in box,
+  )
+})
+const magnet = computed(() =>
+  !wireDrag.value && pointerPosition.value && !gestureType.value
+    ? nearestPort(pointerPosition.value, visiblePorts.value)
+    : undefined,
+)
+
+function facingSide(from: CanvasBox, to: CanvasBox): PortSide {
+  return to.x + to.width / 2 >= from.x + from.width / 2 ? 'right' : 'left'
 }
 
-function connectBoxes(fromBox: CanvasBox, toBox: CanvasBox, yOffset = 0) {
-  const from = getImageBounds(fromBox)
-  const to = getImageBounds(toBox)
-  const forward = to.left + to.width / 2 >= from.left + from.width / 2
-  const startX = forward ? from.left + from.width : from.left
-  const startY = from.top + from.height / 2 + yOffset
-  const endX = forward ? to.left : to.left + to.width
-  const endY = to.top + to.height / 2 + yOffset
-  return buildCurve(startX, startY, endX, endY)
+function buildCurve(
+  start: CanvasPoint,
+  startSide: PortSide,
+  end: CanvasPoint,
+  endSide: PortSide,
+  bow = 0,
+) {
+  const { x: startX, y: startY } = start
+  const { x: endX, y: endY } = end
+  const dx = Math.abs(endX - startX)
+  const dy = Math.abs(endY - startY)
+  const controlOffset = Math.max(48, Math.min(168, dx * 0.45 + dy * 0.14))
+  const c1x = startSide === 'right' ? startX + controlOffset : startX - controlOffset
+  const c2x = endSide === 'left' ? endX - controlOffset : endX + controlOffset
+  const path = `M ${startX} ${startY} C ${c1x} ${startY + bow}, ${c2x} ${endY + bow}, ${endX} ${endY}`
+  return {
+    path,
+    midX: (startX + 3 * c1x + 3 * c2x + endX) / 8,
+    midY: (startY + endY) / 2 + 0.75 * bow,
+  }
 }
 
-const workflowEdges = computed<WorkflowEdge[]>(() => {
+function connectBoxes(fromBox: CanvasBox, toBox: CanvasBox, bow = 0) {
+  const side = facingSide(fromBox, toBox)
+  const endSide = side === 'left' ? 'right' : 'left'
+  const fromBounds = getImageBounds(fromBox)
+  const toBounds = getImageBounds(toBox)
+  return buildCurve(edgePoint(fromBounds, side), side, edgePoint(toBounds, endSide), endSide, bow)
+}
+
+const workflowConnections = computed(() => {
   const imagesById = new Map(props.session.images.map((image) => [image.id, image]))
   const imageByGalleryName = new Map<string, CanvasImage>()
   for (const image of props.session.images) {
@@ -292,7 +329,25 @@ const workflowEdges = computed<WorkflowEdge[]>(() => {
   }
   const opsById = new Map(props.session.operations.map((node) => [node.id, node]))
   const selectedId = props.session.selectedId
-  const edges: WorkflowEdge[] = []
+  const pairs = new Map<string, WorkflowConnection[]>()
+  function addConnection(
+    node: CanvasOperation,
+    image: CanvasImage,
+    output: boolean,
+    edge: Pick<WorkflowConnection, 'id' | 'tone' | 'label' | 'role'>,
+  ) {
+    const key = `${node.id}:${image.id}`
+    const pair = pairs.get(key) ?? []
+    pair.push({
+      ...edge,
+      from: output ? node : image,
+      to: output ? image : node,
+      imageId: image.id,
+      operationId: node.id,
+      active: selectedId === image.id || selectedId === node.id,
+    })
+    pairs.set(key, pair)
+  }
 
   for (const node of props.session.operations) {
     if (node.sourceId !== null) {
@@ -300,15 +355,10 @@ const workflowEdges = computed<WorkflowEdge[]>(() => {
       if (source) {
         const isImg2Img = isGenerateKind(node.kind)
         const role: CanvasWireRole = isImg2Img ? 'img2img' : 'source'
-        const curve = connectBoxes(source, node)
-        edges.push({
+        addConnection(node, source, false, {
           id: `src-${source.id}-${node.id}`,
-          ...curve,
-          active: selectedId === source.id || selectedId === node.id,
           tone: isImg2Img ? 'pink' : 'neutral',
           label: isImg2Img ? `图生图 · ${node.strength.toFixed(2)}` : '底图',
-          imageId: source.id,
-          operationId: node.id,
           role,
         })
       }
@@ -320,16 +370,10 @@ const workflowEdges = computed<WorkflowEdge[]>(() => {
       if (!source) {
         return
       }
-      const offset = node.sourceId === source.id ? 22 + index * 14 : index * 14
-      const curve = connectBoxes(source, node, offset)
-      edges.push({
+      addConnection(node, source, false, {
         id: `prec-${source.id}-${node.id}-${index}`,
-        ...curve,
-        active: selectedId === source.id || selectedId === node.id,
         tone: 'blue',
         label: `精确参考 · ${REFERENCE_LABELS[entry.mode]}`,
-        imageId: source.id,
-        operationId: node.id,
         role: 'precise',
       })
     })
@@ -340,16 +384,10 @@ const workflowEdges = computed<WorkflowEdge[]>(() => {
       if (!source) {
         return
       }
-      const offset = node.sourceId === source.id ? -22 - index * 14 : index * 14
-      const curve = connectBoxes(source, node, offset)
-      edges.push({
+      addConnection(node, source, false, {
         id: `vibe-${source.id}-${node.id}-${index}`,
-        ...curve,
-        active: selectedId === source.id || selectedId === node.id,
         tone: 'amber',
         label: `Vibe · ${entry.strength.toFixed(2)}`,
-        imageId: source.id,
-        operationId: node.id,
         role: 'vibe',
       })
     })
@@ -363,30 +401,49 @@ const workflowEdges = computed<WorkflowEdge[]>(() => {
     if (!producer) {
       continue
     }
-    const curve = connectBoxes(producer, image)
-    edges.push({
+    addConnection(producer, image, true, {
       id: `res-${producer.id}-${image.id}`,
-      ...curve,
-      active: selectedId === producer.id || selectedId === image.id,
       tone: 'neutral',
     })
   }
 
-  return edges
+  return Array.from(pairs.values()).flatMap((pair) =>
+    pair.map((edge, index) => ({ ...edge, bow: (index - (pair.length - 1) / 2) * 56 })),
+  )
 })
+
+const workflowEdges = computed(() => {
+  if (wireDrag.value) {
+    return []
+  }
+  return workflowConnections.value.map((edge) => ({
+    ...edge,
+    ...connectBoxes(edge.from, edge.to, edge.bow),
+  }))
+})
+
+function resizeOperation(event: PointerEvent, node: CanvasOperation) {
+  const source = props.session.images.find((image) => image.id === node.sourceId)
+  const hasInlineOutput =
+    node.outputMode !== 'branch' && allOperationOutputs(props.session, node).length > 0
+  const ratio =
+    source && !hasInlineOutput ? imageAspectRatio(source, node) : node.width / node.height
+  beginResize(event, node, ratio, 180, 760)
+}
 
 const wirePreviewPath = computed(() => {
   const drag = wireDrag.value
   if (!drag) {
     return ''
   }
-  const from = getImageBounds(drag.image)
-  return buildCurve(
-    from.left + from.width,
-    from.top + from.height / 2,
-    drag.pointer.x,
-    drag.pointer.y,
-  ).path
+  const bounds = getImageBounds(drag.origin)
+  const start = edgePoint(bounds, drag.side)
+  if (drag.target && drag.targetSide) {
+    const end = edgePoint(getImageBounds(drag.target), drag.targetSide)
+    return buildCurve(start, drag.side, end, drag.targetSide).path
+  }
+  const freeSide = drag.pointer.x >= start.x ? 'left' : 'right'
+  return buildCurve(start, drag.side, drag.pointer, freeSide).path
 })
 
 function localViewportPoint(clientX: number, clientY: number): CanvasPoint {
@@ -397,15 +454,13 @@ function localViewportPoint(clientX: number, clientY: number): CanvasPoint {
   }
 }
 
-function findOperationAtClient(clientX: number, clientY: number): CanvasOperation | null {
-  const element = document
-    .elementFromPoint(clientX, clientY)
-    ?.closest<HTMLElement>('[data-canvas-operation-id]')
-  if (!element) {
-    return null
+function trackCanvasPointer(event: PointerEvent) {
+  trackGesture(event)
+  if (!wireDrag.value) {
+    pointerPosition.value = gestureType.value
+      ? undefined
+      : localViewportPoint(event.clientX, event.clientY)
   }
-  const id = Number(element.dataset.canvasOperationId)
-  return props.session.operations.find((node) => node.id === id) ?? null
 }
 
 function handleWirePointerMove(event: PointerEvent) {
@@ -414,7 +469,13 @@ function handleWirePointerMove(event: PointerEvent) {
     return
   }
   drag.pointer = localViewportPoint(event.clientX, event.clientY)
-  drag.hoveredOperationId = findOperationAtClient(event.clientX, event.clientY)?.id ?? null
+  const element = document.elementFromPoint(event.clientX, event.clientY)
+  pointerPosition.value = viewport.value?.contains(element) ? drag.pointer : undefined
+  const owner = element?.closest<HTMLElement>('[data-port-node]')
+  drag.target = eligiblePorts.value.find(
+    (entry) => entry.id === Number(owner?.dataset.portNode),
+  )?.box
+  drag.targetSide = drag.target ? facingSide(drag.target, drag.origin) : undefined
 }
 
 function finishWireDrag(event: PointerEvent) {
@@ -422,23 +483,31 @@ function finishWireDrag(event: PointerEvent) {
   if (!drag || event.pointerId !== drag.pointerId) {
     return
   }
+  handleWirePointerMove(event)
   stopWireListeners()
-  const target = findOperationAtClient(event.clientX, event.clientY)
+  const target = drag.target
   wireDrag.value = null
   if (!target) {
     return
   }
+  const node = 'sourceId' in target ? target : drag.origin
+  const image = 'asset' in target ? target : drag.origin
+  if (!('sourceId' in node) || !('asset' in image) || runningCards.has(node)) {
+    return
+  }
   let role: CanvasWireRole = 'source'
-  if (isGenerateKind(target.kind)) {
-    const alreadyHasOtherBase = target.sourceId !== null && target.sourceId !== drag.image.id
+  if (isGenerateKind(node.kind)) {
+    const alreadyHasOtherBase = node.sourceId !== null && node.sourceId !== image.id
     role = alreadyHasOtherBase ? 'precise' : 'img2img'
   }
-  connectImageToOperation(target, drag.image, role)
-  selectImage(target)
-  const midpoint = connectBoxes(drag.image, target)
+  if (node.sourceId !== image.id || role === 'precise') {
+    connectImageToOperation(node, image, role)
+  }
+  selectImage(node)
+  const midpoint = connectBoxes(image, node)
   activeWireEditor.value = {
-    imageId: drag.image.id,
-    operationId: target.id,
+    imageId: image.id,
+    operationId: node.id,
     role,
     x: midpoint.midX,
     y: midpoint.midY,
@@ -458,25 +527,32 @@ function stopWireListeners() {
   window.removeEventListener('pointermove', handleWirePointerMove)
   window.removeEventListener('pointerup', finishWireDrag)
   window.removeEventListener('pointercancel', cancelWireDrag)
+  window.removeEventListener('blur', cancelWireDrag)
 }
 
-function startWireFromImage(image: CanvasImage, event: PointerEvent) {
-  if (event.button !== 0) {
+function startWire(
+  origin: CanvasImage | CanvasOperation,
+  event: PointerEvent,
+  side: PortSide = 'right',
+) {
+  if (event.button !== 0 || wireDrag.value || ('sourceId' in origin && runningCards.has(origin))) {
     return
   }
   activeWireEditor.value = null
+  focusViewport()
   wireDrag.value = {
     pointerId: event.pointerId,
-    image,
+    origin,
+    side,
     pointer: localViewportPoint(event.clientX, event.clientY),
-    hoveredOperationId: null,
   }
   window.addEventListener('pointermove', handleWirePointerMove)
   window.addEventListener('pointerup', finishWireDrag)
   window.addEventListener('pointercancel', cancelWireDrag)
+  window.addEventListener('blur', cancelWireDrag)
 }
 
-function openWireEditor(edge: WorkflowEdge) {
+function openWireEditor(edge: WorkflowConnection & { midX: number; midY: number }) {
   if (!edge.imageId || !edge.operationId || !edge.role) {
     return
   }
@@ -489,14 +565,21 @@ function openWireEditor(edge: WorkflowEdge) {
   }
 }
 
-function placeOperation(kind: CanvasTool, event?: MouseEvent, recipe?: NaiGenRequest) {
+function placeOperation(
+  kind: CanvasTool,
+  event?: MouseEvent,
+  recipe?: NaiGenRequest,
+  placement?: { point?: CanvasPoint; source?: CanvasImage },
+) {
   const session = props.session
-  const source = session.images.find((image) => image.id === session.selectedId)
+  const source = placement
+    ? placement.source
+    : session.images.find((image) => image.id === session.selectedId)
   const node = newOperation(kind, session.nextImageId++, source)
   if (kind === 'generate' && source && !event) {
-    node.sourceId = source.id
+    connectImageToOperation(node, source, 'img2img')
   }
-  const at = worldPoint(event)
+  const at = placement?.point ?? worldPoint(event)
   node.x = at.x - node.width / 2
   node.y = at.y - node.height / 2
   if (source && !event) {
@@ -509,7 +592,7 @@ function placeOperation(kind: CanvasTool, event?: MouseEvent, recipe?: NaiGenReq
   if (kind === 'inpaint' && source?.asset.width && source.asset.height) {
     Object.assign(node.request.params, { width: source.asset.width, height: source.asset.height })
   }
-  if (!event) {
+  if (!event && !placement?.point) {
     node.x = freePosition(session, node)
     const bounds = getImageBounds(node)
     if (
@@ -551,12 +634,12 @@ const dragPreview = computed(() => {
       kind: 'image' as const,
       label: item.asset.label ?? item.asset.name,
       meta: item.asset.width && item.asset.height ? `${item.asset.width}×${item.asset.height}` : '',
-      preview: previewFor(item.asset),
+      preview: imagePreview(item.asset),
       width,
       height,
     }
   }
-  if (item.material.thumbnail) {
+  if (item.material.imageUrl || item.material.thumbnail) {
     const { width, height } = previewImageDimensions(
       item.material.asset.width,
       item.material.asset.height,
@@ -565,7 +648,7 @@ const dragPreview = computed(() => {
       kind: 'image' as const,
       label: item.material.asset.label,
       meta: '',
-      preview: favoritePreview(item.material.thumbnail),
+      preview: favoritePreview(item.material.imageUrl || item.material.thumbnail),
       width,
       height,
     }
@@ -601,7 +684,7 @@ function dragGalleryAsset(event: DragEvent, asset: CanvasGalleryAsset) {
   if (!event.dataTransfer) {
     return
   }
-  event.dataTransfer.setData(dragAssetMime, JSON.stringify(asset))
+  event.dataTransfer.setData(DRAG_ASSET_MIME, JSON.stringify(asset))
   writeCanvasDrag(event, { kind: 'gallery', asset })
 }
 
@@ -614,7 +697,7 @@ function dragFavoriteMaterial(event: DragEvent, material: FavoriteMaterial) {
     JSON.stringify({
       favoriteId: material.asset.favoriteId,
       label: material.asset.label,
-      hasThumbnail: Boolean(material.thumbnail),
+      hasThumbnail: Boolean(material.imageUrl),
       request: material.request,
     }),
   )
@@ -645,9 +728,12 @@ async function pickFiles(event: Event) {
   const input = event.target as HTMLInputElement
   const files = Array.from(input.files ?? [])
   input.value = ''
+  const point = importPoint
+  importPoint = undefined
   try {
-    for (const file of files) {
-      await importFile(file)
+    for (const [index, file] of files.entries()) {
+      const at = point && { x: point.x + index * 24, y: point.y + index * 24 }
+      await importFile(file, at)
     }
   } catch (reason) {
     reportError(reason)
@@ -668,7 +754,7 @@ async function dropOnCanvas(event: DragEvent) {
     return
   }
 
-  const assetJson = transfer.getData(dragAssetMime)
+  const assetJson = transfer.getData(DRAG_ASSET_MIME)
   if (assetJson) {
     try {
       const asset = JSON.parse(assetJson) as CanvasGalleryAsset
@@ -719,8 +805,8 @@ function favoritePreview(url?: string): CanvasPreview {
 
 function imagePreview(asset: CanvasAsset) {
   return asset.kind === 'favorite'
-    ? favoritePreview(thumbnailFor(asset.favoriteId))
-    : previewFor(asset)
+    ? favoritePreview(favoriteUrlFor(asset.favoriteId))
+    : { state: 'ready' as const, url: canvasImageUrl(asset) }
 }
 
 function operationSourcePreview(node: CanvasOperation) {
@@ -771,7 +857,7 @@ function refreshMaterials() {
 
 async function placeFavorite() {
   const favorite = selectedFavorite.value
-  if (!favorite?.thumbnail) {
+  if (!favorite?.imageUrl) {
     return
   }
   try {
@@ -810,13 +896,55 @@ function openOperationDialog(node: CanvasOperation, tab: OperationDialogTab) {
   dialogTab.value = tab
 }
 
+function bindGallerySource(galleryImage: NaiImage) {
+  const card = dialogNode.value
+  if (!card || runningCards.has(card)) {
+    return
+  }
+  const session = props.session
+  let image = session.images.find(
+    (item) => item.asset.kind === 'gallery' && item.asset.name === galleryImage.name,
+  )
+  if (!image) {
+    const { width, height } = previewImageDimensions(galleryImage.width, galleryImage.height)
+    const y = card.y + (card.height - height) / 2
+    let x = card.x - width - 48
+    // 从盒子左侧向外找空位，保留已有节点的位置。
+    const row = [...session.operations, ...session.images]
+      .filter((item) => item.y < y + height + 24 && item.y + item.height + 24 > y)
+      .sort((first, second) => second.x - first.x)
+    for (const item of row) {
+      if (x < item.x + item.width + 24 && x + width + 24 > item.x) {
+        x = item.x - width - 48
+      }
+    }
+    addImage(
+      {
+        kind: 'gallery',
+        name: galleryImage.name,
+        width: galleryImage.width,
+        height: galleryImage.height,
+        modifiedAt: galleryImage.createdAt,
+      },
+      unobstructedWidth(),
+      { x: x + width / 2, y: y + height / 2 },
+    )
+    image = session.images.at(-1)
+    selectImage(card)
+  }
+  if (image) {
+    connectImageToOperation(card, image, 'img2img')
+    cardErrors.delete(card)
+  }
+}
+
 function closeOperationDialog() {
   dialogNode.value = null
   focusViewport()
 }
 
 function runDialogOperation() {
-  void toolbarRef.value?.runOperation()
+  void toolbarRef.value?.runOperation().catch(reportError)
 }
 
 async function openSelectedPrimaryTool(node: CanvasOperation) {
@@ -836,7 +964,21 @@ function closeAiDrawer() {
   focusViewport()
 }
 
-async function handleAiEdit(edit: CanvasAiEdit, done: (summaries: string[]) => void) {
+function focusAiNode(id: number, tab?: OperationDialogTab) {
+  const operation = props.session.operations.find((node) => node.id === id)
+  const box = operation ?? props.session.images.find((image) => image.id === id)
+  if (!box) {
+    toast('该节点已从画布移除')
+    return
+  }
+  selectImage(box)
+  fitImages(unobstructedWidth(), [box])
+  if (tab && operation) {
+    openOperationDialog(operation, tab)
+  }
+}
+
+async function handleAiEdit(edit: CanvasAiEdit, done: (targets: CanvasAiAppliedTarget[]) => void) {
   try {
     const result = await applyCanvasAiEdit(props.session, edit, worldPoint())
     if (result.selectedId !== null) {
@@ -851,7 +993,7 @@ async function handleAiEdit(edit: CanvasAiEdit, done: (summaries: string[]) => v
     if (result.summaries.length) {
       toast(`画布已更新：${result.summaries.slice(0, 2).join(' · ')}`)
     }
-    done(result.summaries)
+    done(result.targets)
   } catch (reason) {
     reportError(reason)
     done([])
@@ -871,9 +1013,320 @@ function resetZoom() {
   setZoom(1)
 }
 
-function triggerFileImport() {
+let importPoint: CanvasPoint | undefined
+
+function triggerFileImport(point?: CanvasPoint) {
+  importPoint = point
   imageInput.value?.click()
 }
+
+const contextMenu = ref<{ screen: CanvasPoint; world: CanvasPoint; serial: number }>()
+let menuSerial = 0
+function openCanvasMenu(event: MouseEvent) {
+  const element = event.target instanceof Element ? event.target : null
+  const imageId = Number(element?.closest<HTMLElement>('[data-image-id]')?.dataset.imageId)
+  const operationId = Number(
+    element?.closest<HTMLElement>('[data-canvas-operation-id]')?.dataset.canvasOperationId,
+  )
+  const session = props.session
+  selectImage(
+    session.images.find((image) => image.id === imageId) ??
+      session.operations.find((node) => node.id === operationId),
+  )
+  activeWireEditor.value = null
+  toolbarRef.value?.closeTool()
+  focusViewport()
+  contextMenu.value = {
+    screen: { x: event.clientX, y: event.clientY },
+    world: worldPoint(event),
+    serial: ++menuSerial,
+  }
+}
+
+function closeCanvasMenu() {
+  contextMenu.value = undefined
+}
+
+function removeSelected() {
+  const session = props.session
+  const image = session.images.find((entry) => entry.id === session.selectedId)
+  const producer = session.operations.find((node) => node.id === image?.operationId)
+  if (producer) {
+    producer.outputs = allOperationOutputs(session, producer)
+  }
+  removeSelectedNode()
+}
+
+function cloneValue<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function snapshotTarget(target: SelectedCanvasTarget): CanvasClipboardItem {
+  if (target.kind === 'image') {
+    return { kind: 'image', image: cloneValue(target.image) }
+  }
+  const source = props.session.images.find((image) => image.id === target.node.sourceId)
+  const node = cloneValue({
+    ...target.node,
+    outputs: [],
+    lastRun: undefined,
+    activeOutputId: undefined,
+  })
+  return { kind: 'operation', node, source: source && cloneValue(source) }
+}
+
+function placeClipboardItem(item: CanvasClipboardItem, point?: CanvasPoint) {
+  const session = props.session
+  const copy = cloneValue(item)
+  const box = copy.kind === 'operation' ? copy.node : copy.image
+  box.id = session.nextImageId++
+  if (point) {
+    box.x = point.x - box.width / 2
+    box.y = point.y - box.height / 2
+  } else {
+    box.x += box.width + 40
+    box.x = freePosition(session, box)
+  }
+  if (copy.kind === 'image') {
+    delete copy.image.operationId
+    session.images.push(copy.image)
+  } else {
+    const source = copy.source
+    if (source) {
+      const matching = session.images.filter(
+        (image) =>
+          image.asset.kind === source.asset.kind &&
+          assetTitle(image.asset) === assetTitle(source.asset),
+      )
+      let bound = matching.find((image) => image.id === source.id) ?? matching[0]
+      if (!bound) {
+        bound = { ...source, id: session.nextImageId++, x: box.x - source.width - 40, y: box.y }
+        delete bound.operationId
+        session.images.push(bound)
+      }
+      copy.node.sourceId = bound.id
+    } else {
+      copy.node.sourceId = null
+    }
+    session.operations.push(copy.node)
+  }
+  selectImage(box)
+  focusViewport()
+}
+
+function selectExtracted(image: CanvasImage) {
+  selectImage(image)
+  const bounds = getImageBounds(image)
+  if (
+    bounds.left < 0 ||
+    bounds.left + bounds.width > unobstructedWidth() ||
+    bounds.top < 50 ||
+    bounds.top + bounds.height > size.height
+  ) {
+    fitImages(unobstructedWidth(), [image])
+  }
+  focusViewport()
+}
+
+async function imageFileAction(action: 'copy' | 'save' | 'reveal', asset: CanvasAsset) {
+  const file =
+    asset.kind === 'gallery' ? asset : await window.canvasApi.favoriteImage(asset.favoriteId)
+  if (action === 'copy') {
+    const copied = await window.canvasApi.naiCopyImage(file.name)
+    toast(copied ? '图片已复制到系统剪贴板' : '未能复制图片')
+  } else if (action === 'save') {
+    if (await window.canvasApi.naiSaveAs(file.name)) {
+      toast('图片已另存')
+    }
+  } else {
+    await window.canvasApi.naiReveal(file.name)
+  }
+}
+
+async function createFromRecipe(image: CanvasImage) {
+  const recipe =
+    image.asset.kind === 'gallery' ? await window.canvasApi.naiRecipe(image.asset.name) : null
+  if (!recipe) {
+    toast('这张图片没有可载入的生成配方')
+    return
+  }
+  placeOperation('generate', undefined, recipe.request, {
+    point: { x: image.x + image.width + 168, y: image.y + 112 },
+  })
+}
+
+const menuGroups = computed<CanvasMenuItem[][]>(() => {
+  const session = props.session
+  const target = selectedTarget.value
+  const point = contextMenu.value?.world
+  const source = target?.kind === 'image' ? target.image : undefined
+  const newNodes: CanvasMenuItem = {
+    label: source ? '以此图新建' : '新建节点',
+    children: CANVAS_PALETTE_TOOLS.map((kind) => ({
+      label: source && kind === 'generate' ? '生图（图生图）' : operationLabel(kind),
+      run: () => placeOperation(kind, undefined, undefined, source ? { source } : { point }),
+    })),
+  }
+  const paste: CanvasMenuItem = {
+    label: '粘贴',
+    shortcut: 'Ctrl+V',
+    disabled: !canvasClipboard.value,
+    run: () => {
+      if (canvasClipboard.value) {
+        placeClipboardItem(canvasClipboard.value, point ?? worldPoint())
+      }
+    },
+  }
+  if (!target) {
+    return [
+      [newNodes],
+      [
+        {
+          label: '从素材库选择',
+          run: () => {
+            galleryOpen.value = true
+          },
+        },
+        { label: '本地上传图片', run: () => triggerFileImport(point) },
+      ],
+      [paste],
+      [
+        { label: '定位全部元素', run: recenterImages },
+        { label: '恢复 100% 缩放', run: resetZoom },
+      ],
+    ]
+  }
+  const copy: CanvasMenuItem = {
+    label: '复制',
+    shortcut: 'Ctrl+C',
+    run: () => {
+      canvasClipboard.value = snapshotTarget(target)
+      toast('已复制到画布剪贴板')
+    },
+  }
+  const duplicate: CanvasMenuItem = {
+    label: '创建副本',
+    shortcut: 'Ctrl+D',
+    run: () => placeClipboardItem(snapshotTarget(target)),
+  }
+  const remove: CanvasMenuItem = {
+    label: '删除',
+    shortcut: 'Delete',
+    danger: true,
+    run: removeSelected,
+    disabled: session.operations.some(
+      (node) =>
+        runningCards.has(node) &&
+        (node.id === session.selectedId || node.sourceId === session.selectedId),
+    ),
+  }
+  const fileItem = (
+    action: 'copy' | 'save' | 'reveal',
+    label: string,
+    asset?: CanvasAsset,
+  ): CanvasMenuItem => ({
+    label,
+    shortcut: action === 'copy' ? 'Ctrl+Shift+C' : undefined,
+    disabled: !asset,
+    run: () => asset && imageFileAction(action, asset),
+  })
+  if (target.kind === 'image') {
+    const image = target.image
+    return [
+      [copy, duplicate, fileItem('copy', '复制图片到系统剪贴板', image.asset), paste],
+      [newNodes, { label: '载入该图提示词新建生图盒', run: () => createFromRecipe(image) }],
+      [fileItem('save', '另存为…', image.asset), fileItem('reveal', '在文件夹中显示', image.asset)],
+      [remove],
+    ]
+  }
+  const node = target.node
+  const history = allOperationOutputs(session, node)
+  const output = activeOperationOutput(node, history)
+  const base = session.images.find((image) => image.id === node.sourceId)
+  const useBase = !!base && (!output || node.outputMode === 'branch')
+  const asset = useBase ? base.asset : output?.asset
+  const extract: CanvasMenuItem = {
+    label: '复制为图片',
+    disabled: !asset,
+    run: () => {
+      let image: CanvasImage | undefined
+      if (useBase) {
+        image = {
+          ...cloneValue(base),
+          id: session.nextImageId++,
+          x: node.x + node.width + 40,
+          y: node.y,
+        }
+        delete image.operationId
+        image.x = freePosition(session, image)
+        session.images.push(image)
+      } else {
+        image = extractOutputAsCanvasImage(session, node, output)
+      }
+      if (image) {
+        canvasClipboard.value = snapshotTarget({ kind: 'image', image })
+        selectExtracted(image)
+      }
+    },
+  }
+  const actions: CanvasMenuItem[] = [
+    {
+      label: '立即执行',
+      disabled: runningCards.has(node),
+      run: () => toolbarRef.value?.runOperation(),
+    },
+    { label: '编辑提示词与参数', run: () => openOperationDialog(node, 'prompt') },
+  ]
+  if (history.length) {
+    actions.push({
+      label: '查看历史版本 (' + history.length + ')',
+      run: () => toolbarRef.value?.openHistory(),
+    })
+  }
+  actions.push(fileItem('save', '另存图片…', output?.asset))
+  return [
+    [copy, duplicate, extract, fileItem('copy', '复制图片到系统剪贴板', asset), paste],
+    actions,
+    [remove],
+  ]
+})
+
+function handleCanvasShortcut(event: KeyboardEvent) {
+  const element = event.target instanceof Element ? event.target : null
+  if (
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.altKey ||
+    dialogNode.value ||
+    document.querySelector('dialog[open]') ||
+    element?.closest(
+      'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"], .ai-drawer, .canvas-gallery',
+    )
+  ) {
+    return
+  }
+  let shortcut: string
+  if ((event.ctrlKey || event.metaKey) && ['c', 'd', 'v'].includes(event.key.toLowerCase())) {
+    shortcut = 'Ctrl+' + (event.shiftKey ? 'Shift+' : '') + event.key.toUpperCase()
+  } else if (event.key === 'Delete' && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
+    shortcut = 'Delete'
+  } else {
+    return
+  }
+  const item = menuGroups.value.flat().find((entry) => entry.shortcut === shortcut)
+  if (!item?.run || item.disabled) {
+    return
+  }
+  event.preventDefault()
+  event.stopPropagation()
+  if (!event.repeat) {
+    closeCanvasMenu()
+    Promise.resolve().then(item.run).catch(reportError)
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', handleCanvasShortcut, true))
+onBeforeUnmount(() => window.removeEventListener('keydown', handleCanvasShortcut, true))
 
 function handleEscape(event: KeyboardEvent) {
   if (activeCanvasDrag.value) {
@@ -935,7 +1388,7 @@ onBeforeUnmount(() => {
               type="button"
               aria-label="导入本机图片"
               title="导入本机图片"
-              @click="triggerFileImport"
+              @click="triggerFileImport()"
             >
               <Icon
                 name="upload"
@@ -1104,7 +1557,7 @@ onBeforeUnmount(() => {
                   创建生图盒
                 </button>
                 <button
-                  v-if="selectedFavorite.thumbnail"
+                  v-if="selectedFavorite.imageUrl"
                   class="btn small"
                   type="button"
                   @click="placeFavorite"
@@ -1117,7 +1570,7 @@ onBeforeUnmount(() => {
                 </button>
               </div>
               <p
-                v-if="!selectedFavorite.thumbnail"
+                v-if="!selectedFavorite.imageUrl"
                 class="canvas-favorite-note"
               >
                 此收藏没有可用的图片预览。
@@ -1140,10 +1593,12 @@ onBeforeUnmount(() => {
         :style="canvasBackground"
         tabindex="0"
         aria-label="画布视口"
+        @contextmenu.prevent="openCanvasMenu"
         @dragover.prevent
         @drop.prevent="dropOnCanvas"
         @pointerdown="handleViewportPointerDown"
-        @pointermove="trackGesture"
+        @pointermove="trackCanvasPointer"
+        @pointerleave="pointerPosition = undefined"
         @pointerup="finishGesture"
         @pointercancel="cancelGesture"
         @lostpointercapture="cancelGesture"
@@ -1184,20 +1639,22 @@ onBeforeUnmount(() => {
           {{ edge.label }}
         </button>
 
-        <div
+        <CanvasPortNode
           v-for="{ image, bounds } in visibleImages"
           :key="image.id"
           class="canvas-image-wrap"
-          :style="{
-            left: `${bounds.left}px`,
-            top: `${bounds.top}px`,
-            width: `${bounds.width}px`,
-            height: `${bounds.height}px`,
-            zIndex: image.id === session.selectedId ? 2 : 1,
-          }"
+          :data-image-id="image.id"
+          :data-port-node="image.id"
+          :bounds="bounds"
+          :selected="image.id === session.selectedId"
+          :wiring="Boolean(wireDrag)"
+          :pull="magnet?.id === image.id ? magnet : undefined"
+          :label="`画布图片 ${image.id}`"
+          @wire="(event, side) => startWire(image, event, side)"
         >
           <button
             class="canvas-image"
+            :class="{ 'wire-hovered': wireDrag?.target?.id === image.id }"
             type="button"
             :data-canvas-image-id="image.id"
             :aria-label="`画布图片 ${image.id}`"
@@ -1231,41 +1688,42 @@ onBeforeUnmount(() => {
             </span>
           </button>
           <button
-            class="canvas-image-port"
+            class="canvas-resize-handle"
             type="button"
-            title="拖动连线到生图 / 重绘等盒子"
-            aria-label="拖出工作流连线"
-            @pointerdown.stop.prevent="startWireFromImage(image, $event)"
-          >
-            <Icon
-              name="plus"
-              :size="11"
-            />
-          </button>
-        </div>
+            aria-label="缩放图片"
+            @pointerdown.stop="beginResize($event, image, imageAspectRatio(image))"
+          />
+        </CanvasPortNode>
 
-        <CanvasOperationCard
+        <CanvasPortNode
           v-for="{ node, bounds } in visibleOperations"
           :key="'op-' + node.id"
-          :node="node"
-          :session="session"
-          :source-preview="operationSourcePreview(node)"
+          :data-port-node="node.id"
+          :bounds="bounds"
           :selected="node.id === session.selectedId"
-          :wire-accepting="Boolean(wireDrag)"
-          :wire-hovered="wireDrag?.hoveredOperationId === node.id"
-          :style="{
-            position: 'absolute',
-            left: bounds.left + 'px',
-            top: bounds.top + 'px',
-            width: node.width + 'px',
-            height: node.height + 'px',
-            transform: 'scale(' + zoom + ')',
-            zIndex: node.id === session.selectedId ? 2 : 1,
-          }"
-          @drag="beginGesture($event, node)"
-          @select="selectImage(node)"
-          @open-primary="openSelectedPrimaryTool(node)"
-        />
+          :wiring="Boolean(wireDrag)"
+          :pull="magnet?.id === node.id ? magnet : undefined"
+          :label="`操作盒 ${node.id}`"
+          @wire="(event, side) => startWire(node, event, side)"
+        >
+          <CanvasOperationCard
+            :node="node"
+            :session="session"
+            :source-preview="operationSourcePreview(node)"
+            :image-preview="imagePreview"
+            :selected="node.id === session.selectedId"
+            :wire-hovered="wireDrag?.target?.id === node.id"
+            :style="{
+              width: node.width + 'px',
+              height: node.height + 'px',
+              transform: 'scale(' + zoom + ')',
+            }"
+            @drag="beginGesture($event, node)"
+            @resize="resizeOperation($event, node)"
+            @select="selectImage(node)"
+            @open-primary="openSelectedPrimaryTool(node)"
+          />
+        </CanvasPortNode>
       </div>
 
       <div class="canvas-node-overlay">
@@ -1280,12 +1738,14 @@ onBeforeUnmount(() => {
             :viewport-size="size"
             :session="session"
             :title="title"
+            :history-preview="previewFor"
             :image-preview="imagePreview"
             @remove="removeSelected"
             @spawn-operation="placeOperation"
-            @start-wire="startWireFromImage"
+            @start-wire="startWire"
             @open-dialog="openOperationDialog"
             @show-result="showResult"
+            @extracted="selectExtracted"
             @dismiss="selectImage()"
           />
         </Transition>
@@ -1351,7 +1811,7 @@ onBeforeUnmount(() => {
           class="canvas-tool-btn"
           type="button"
           aria-label="导入本机图片"
-          @click="triggerFileImport"
+          @click="triggerFileImport()"
         >
           <Icon
             name="upload"
@@ -1465,8 +1925,18 @@ onBeforeUnmount(() => {
         @close="closeAiDrawer"
         @focus-classic="emit('exit')"
         @apply-edit="handleAiEdit"
+        @focus-node="focusAiNode"
+        @open-node="focusAiNode"
       />
     </Transition>
+
+    <CanvasContextMenu
+      v-if="contextMenu"
+      :key="contextMenu.serial"
+      :at="contextMenu.screen"
+      :groups="menuGroups"
+      @close="closeCanvasMenu"
+    />
 
     <CanvasOperationDialog
       :node="dialogNode"
@@ -1474,6 +1944,7 @@ onBeforeUnmount(() => {
       :session="session"
       @close="closeOperationDialog"
       @run="runDialogOperation"
+      @bind-gallery="bindGallerySource"
     />
 
     <Teleport to="body">

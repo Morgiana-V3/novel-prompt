@@ -161,10 +161,6 @@
 }
 
 /* ---------- 画布图片节点与连线端口 ---------- */
-.canvas-image-wrap {
-  position: absolute;
-}
-
 .canvas-image {
   position: relative;
   display: block;
@@ -246,50 +242,55 @@
 }
 
 .canvas-image[aria-pressed='true'] .canvas-image-frame,
+.canvas-image.wire-hovered .canvas-image-frame,
 .canvas-image:focus-visible .canvas-image-frame {
   border-color: var(--pink);
-  outline: 1.5px solid var(--pink);
-  outline-offset: 2px;
-  box-shadow: 0 8px 24px rgb(20 20 30 / 12%);
+  box-shadow: 0 8px 24px rgb(255 107 154 / 15%);
 }
 
-.canvas-image-port {
+.canvas-image:focus-visible {
+  outline: none;
+}
+
+.canvas-image-frame .canvas-thumbnail {
+  object-fit: cover;
+}
+
+.canvas-viewport :deep(.canvas-resize-handle) {
   position: absolute;
-  z-index: 4;
-  top: 50%;
-  right: -11px;
-  display: grid;
-  place-items: center;
+  z-index: 3;
+  right: 1px;
+  bottom: 1px;
   width: 22px;
   height: 22px;
-  border: 1.5px solid var(--line2);
-  border-radius: 50%;
-  background: var(--bg);
-  color: var(--text2);
-  box-shadow: var(--shadow-sm);
-  cursor: crosshair;
+  padding: 0;
+  border-radius: 0 0 10px;
+  background: transparent;
   opacity: 0;
-  transform: translateY(-50%) scale(0.86);
-  transition:
-    opacity var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out),
-    background-color var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out);
+  cursor: nwse-resize;
+  touch-action: none;
+  transition: opacity var(--dur-fast) var(--ease-out);
 }
 
-.canvas-image-wrap:hover .canvas-image-port,
-.canvas-image-wrap:has(.canvas-image[aria-pressed='true']) .canvas-image-port,
-.canvas-image-port:focus-visible {
+.canvas-viewport :deep(.canvas-resize-handle)::after {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid white;
+  border-bottom: 2px solid white;
+  border-radius: 0 0 6px;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 75%));
+  content: '';
+}
+
+.canvas-image-wrap:hover .canvas-resize-handle,
+.canvas-image-wrap:has(.canvas-image[aria-pressed='true']) .canvas-resize-handle,
+.operation-card:hover :deep(.canvas-resize-handle),
+.operation-card.selected :deep(.canvas-resize-handle),
+.canvas-viewport :deep(.canvas-resize-handle:focus-visible) {
   opacity: 1;
-  transform: translateY(-50%) scale(1);
-}
-
-.canvas-image-port:hover {
-  border-color: var(--pink);
-  background: var(--pink);
-  color: #fff;
-  transform: translateY(-50%) scale(1.1);
 }
 
 /* ---------- 左侧悬浮工具栏 ---------- */

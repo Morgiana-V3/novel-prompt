@@ -125,6 +125,7 @@ export async function renderPage(
         {
           ...options,
           workspaceId: id,
+          ...(selectedExecution.temporary ? { storage: 'temporary' as const } : {}),
         },
       )
       if (cancelled()) {

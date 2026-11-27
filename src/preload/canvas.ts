@@ -29,6 +29,7 @@ const sharedApi = {
 
 const canvasApi: CanvasWindowApi = {
   ...sharedApi,
+  skillsList: () => invoke('skills:list'),
   pagesCreate: workspaceApi.pagesCreate,
   pagesEdit: workspaceApi.pagesEdit,
   pagesGenerate: workspaceApi.pagesGenerate,
@@ -42,7 +43,12 @@ const canvasApi: CanvasWindowApi = {
   favoriteImage: (id) => invoke('canvas:favorite-image', id),
   askCanvasAi: (req) => invoke('ai:canvas-ask', req),
   collectionsList: () => invoke('collections:list'),
+  naiCopyImage: (name) => invoke('nai:copyImage', name),
   naiReadImage: (name) => invoke('nai:readImage', name),
+  naiReveal: (name) => invoke('nai:reveal', name),
+  naiSaveAs: (name) => invoke('nai:saveAs', name),
+  onConfirmations: applicationApi.onConfirmations,
+  replyConfirmation: (id, approved) => invoke('confirmations:reply', id, approved),
   recipesList: () => invoke('recipes:list'),
   onGalleryChanged: applicationApi.onGalleryChanged,
   onFavoritesChanged: applicationApi.onFavoritesChanged,

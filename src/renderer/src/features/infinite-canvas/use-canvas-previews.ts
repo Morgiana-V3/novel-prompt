@@ -8,6 +8,11 @@ const READ_CONCURRENCY = 4
 
 export type CanvasPreview = { state: 'loading' | 'failed' } | { state: 'ready'; url: string }
 
+export function canvasImageUrl(asset: CanvasGalleryAsset): string {
+  const version = asset.modifiedAt ? `?v=${asset.modifiedAt}` : ''
+  return `np-img://img/${encodeURIComponent(asset.name)}${version}`
+}
+
 function assetKey(asset: CanvasGalleryAsset): string {
   return `${asset.name}:${asset.modifiedAt ?? 'unlisted'}`
 }
@@ -109,11 +114,11 @@ export function useCanvasPreviews(getAssets: () => readonly CanvasGalleryAsset[]
   }
 
   watch(
-    getAssets,
+    () => getAssets().map((asset) => [assetKey(asset), asset] as const),
     (assets) => {
       const next = new Map<string, CanvasGalleryAsset>()
-      for (const asset of assets) {
-        next.set(assetKey(asset), asset)
+      for (const [key, asset] of assets) {
+        next.set(key, asset)
         if (next.size >= PREVIEW_LIMIT) {
           break
         }

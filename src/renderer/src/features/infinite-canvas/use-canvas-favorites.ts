@@ -9,6 +9,7 @@ const BATCH_SIZE = 20
 
 export interface FavoriteMaterial {
   asset: CanvasFavoriteAsset
+  imageUrl?: string
   thumbnail: string
   request: SavedRecipe['recipe']['request']
   prompt: string
@@ -25,8 +26,8 @@ function favoriteMaterial(recipe: SavedRecipe): FavoriteMaterial {
       height: request?.params?.height,
     },
     request,
-    thumbnail:
-      recipe.imageUrl && recipe.thumbnail?.startsWith('data:image/png;') ? recipe.thumbnail : '',
+    imageUrl: recipe.imageUrl,
+    thumbnail: recipe.thumbnail?.startsWith('data:image/png;') ? recipe.thumbnail : '',
     prompt: request?.base ?? '',
   }
 }
@@ -59,10 +60,10 @@ export function useCanvasFavorites(getSession: () => CanvasSession, isBrowsing: 
     selectedId.value = id
   }
 
-  function thumbnailFor(id: string) {
+  function favoriteUrlFor(id: string) {
     const material =
       materials.value.find(({ asset }) => asset.favoriteId === id) ?? placed.value.get(id)
-    return material?.thumbnail
+    return material?.imageUrl || material?.thumbnail
   }
 
   async function refreshFavorites() {
@@ -142,7 +143,7 @@ export function useCanvasFavorites(getSession: () => CanvasSession, isBrowsing: 
     displayedFavorites,
     selectedFavorite,
     selectFavorite,
-    thumbnailFor,
+    favoriteUrlFor,
     hasMore,
     totalCount,
     loadMore,

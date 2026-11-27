@@ -1,31 +1,38 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { pageImageToolSize } from '@shared/workspace/model'
 import Icon from '../../shared/ui/Icon.vue'
 import CanvasThumbnail from './CanvasThumbnail.vue'
 import {
   cardErrors,
   isGenerateKind,
   operationLabel,
+  operationSize,
   runningCards,
   TOOL_ICONS,
   TOOL_TONES,
 } from './operations'
-import type { CanvasOperation, CanvasSession } from './session'
+import {
+  activeOperationOutput,
+  allOperationOutputs,
+  type CanvasOperation,
+  type CanvasSession,
+  type CanvasAsset,
+} from './session'
 import type { CanvasPreview } from './use-canvas-previews'
 
 const props = defineProps<{
   node: CanvasOperation
   session: CanvasSession
   sourcePreview?: CanvasPreview
+  imagePreview?: (asset: CanvasAsset) => CanvasPreview | undefined
   selected: boolean
   preview?: boolean
-  wireAccepting?: boolean
   wireHovered?: boolean
 }>()
 
 const emit = defineEmits<{
   drag: [event: PointerEvent]
+  resize: [event: PointerEvent]
   select: []
   openPrimary: []
 }>()
@@ -36,21 +43,24 @@ const sourceImage = computed(() =>
   props.session.images.find((image) => image.id === props.node.sourceId),
 )
 const sourceAsset = computed(() => sourceImage.value?.asset)
-const resultCount = computed(
-  () => props.session.images.filter((image) => image.operationId === props.node.id).length,
+const outputs = computed(() => allOperationOutputs(props.session, props.node))
+const inlineOutput = computed(() =>
+  props.node.outputMode === 'branch' ? undefined : activeOperationOutput(props.node, outputs.value),
 )
-
 const promptExcerpt = computed(() => props.node.request.base.trim())
 const preciseCount = computed(() => props.node.request.params.preciseReferences?.length ?? 0)
 const vibeCount = computed(() => props.node.request.params.vibeReferences?.length ?? 0)
 
+const targetSize = computed(() => operationSize(props.node, sourceAsset.value))
 const summaryTag = computed(() => {
   const card = props.node
   const original = sourceAsset.value
+  const size = targetSize.value
+  const dimensions = size ? ` · ${size.width}×${size.height}` : ''
   if (isGenerateKind(card.kind)) {
     const model = card.request.version === 'v5' ? 'V5' : 'V4.5'
     if (original) {
-      return `图生图 · 强度 ${card.strength.toFixed(2)}`
+      return `图生图 · 强度 ${card.strength.toFixed(2)}${dimensions}`
     }
     const extras = [
       preciseCount.value ? `精确参考×${preciseCount.value}` : '',
@@ -62,7 +72,7 @@ const summaryTag = computed(() => {
     return `${model} · ${card.request.params.width}×${card.request.params.height}`
   }
   if (card.kind === 'inpaint') {
-    return card.strokes.length ? `遮罩 ${card.strokes.length} 笔` : '待涂抹遮罩'
+    return (card.strokes.length ? `遮罩 ${card.strokes.length} 笔` : '待涂抹遮罩') + dimensions
   }
   if (card.kind === 'outpaint') {
     const parts = [
@@ -71,10 +81,10 @@ const summaryTag = computed(() => {
       card.margins.top ? `上+${card.margins.top}` : '',
       card.margins.bottom ? `下+${card.margins.bottom}` : '',
     ].filter(Boolean)
-    return parts.length ? parts.join(' ') : '未设边距'
+    return (parts.length ? parts.join(' ') : '未设边距') + dimensions
   }
   if (card.kind === 'enhance') {
-    return `${card.scale}× · 强度 ${card.strength.toFixed(2)}`
+    return `${card.scale}× · 强度 ${card.strength.toFixed(2)}${dimensions}`
   }
   if (original?.width && original.height) {
     return `2× → ${original.width * 2}×${original.height * 2}`
@@ -84,14 +94,10 @@ const summaryTag = computed(() => {
 
 const outpaintInsetStyle = computed(() => {
   const original = sourceAsset.value
-  if (props.node.kind !== 'outpaint' || !original?.width || !original.height) {
+  const total = targetSize.value
+  if (props.node.kind !== 'outpaint' || !original?.width || !original.height || !total) {
     return undefined
   }
-  const total = pageImageToolSize(
-    { kind: 'outpaint', ...props.node.margins },
-    original.width,
-    original.height,
-  )
   return {
     left: `${(props.node.margins.left / total.width) * 100}%`,
     top: `${(props.node.margins.top / total.height) * 100}%`,
@@ -118,13 +124,13 @@ function handlePointerDown(event: PointerEvent) {
     :class="{
       selected,
       busy,
-      'wire-accepting': wireAccepting,
       'wire-hovered': wireHovered,
     }"
     :data-canvas-operation-id="node.id"
     tabindex="0"
     :aria-label="`${operationLabel(node.kind)} #${node.id}`"
     :aria-pressed="selected"
+    :aria-busy="busy"
     @pointerdown.stop="handlePointerDown"
     @focus="emit('select')"
     @click.stop="emit('select')"
@@ -155,23 +161,19 @@ function handlePointerDown(event: PointerEvent) {
       />
     </header>
 
-    <span
-      class="op-input-port"
-      aria-hidden="true"
-    />
-
     <div class="op-box-surface">
       <div
-        v-if="busy"
-        class="op-box-progress"
-        aria-hidden="true"
+        v-if="inlineOutput"
+        class="op-box-media"
       >
-        <span class="op-box-progress-bar" />
+        <CanvasThumbnail
+          :preview="imagePreview?.(inlineOutput.asset)"
+          show-error
+        />
       </div>
-
-      <template v-if="sourceAsset">
+      <template v-else-if="sourceAsset">
         <div
-          v-if="node.kind === 'outpaint' && outpaintInsetStyle"
+          v-if="node.kind === 'outpaint' && !outputs.length && outpaintInsetStyle"
           class="op-box-outpaint-stage"
         >
           <div class="op-box-outpaint-frame">
@@ -179,7 +181,10 @@ function handlePointerDown(event: PointerEvent) {
               class="op-box-outpaint-inner"
               :style="outpaintInsetStyle"
             >
-              <CanvasThumbnail :preview="sourcePreview" />
+              <CanvasThumbnail
+                :preview="sourcePreview"
+                show-error
+              />
             </div>
           </div>
         </div>
@@ -188,12 +193,15 @@ function handlePointerDown(event: PointerEvent) {
           v-else
           class="op-box-media"
         >
-          <CanvasThumbnail :preview="sourcePreview" />
+          <CanvasThumbnail
+            :preview="sourcePreview"
+            show-error
+          />
           <svg
             v-if="node.kind === 'inpaint' && sourceAsset.width && sourceAsset.height"
             class="op-box-mask-overlay"
             :viewBox="`0 0 ${sourceAsset.width} ${sourceAsset.height}`"
-            preserveAspectRatio="xMidYMid meet"
+            preserveAspectRatio="xMidYMid slice"
             aria-hidden="true"
           >
             <g
@@ -270,13 +278,16 @@ function handlePointerDown(event: PointerEvent) {
       </div>
 
       <span
-        v-if="resultCount > 0 && !busy"
+        v-if="outputs.length && !inlineOutput && !busy"
         class="op-box-result-badge"
       >
-        已出 {{ resultCount }} 张
+        已出 {{ outputs.length }} 张
       </span>
 
-      <footer class="op-box-meta-bar">
+      <footer
+        v-if="!inlineOutput || errorMessage"
+        class="op-box-meta-bar"
+      >
         <span
           v-if="errorMessage"
           class="op-box-chip is-error"
@@ -284,12 +295,7 @@ function handlePointerDown(event: PointerEvent) {
         >
           {{ errorMessage }}
         </span>
-        <span
-          v-else-if="busy"
-          class="op-box-chip is-busy"
-        >
-          正在执行…
-        </span>
+
         <span
           v-else
           class="op-box-chip"
@@ -298,6 +304,19 @@ function handlePointerDown(event: PointerEvent) {
         </span>
       </footer>
     </div>
+    <span
+      v-if="busy"
+      class="op-busy-ring"
+      aria-hidden="true"
+    />
+    <button
+      v-if="!preview"
+      class="canvas-resize-handle"
+      type="button"
+      aria-label="缩放操作盒子"
+      @pointerdown.stop="emit('resize', $event)"
+      @dblclick.stop
+    />
   </article>
 </template>
 
@@ -312,42 +331,6 @@ function handlePointerDown(event: PointerEvent) {
 
 .operation-card:active {
   cursor: grabbing;
-}
-
-.op-input-port {
-  position: absolute;
-  z-index: 4;
-  top: 50%;
-  left: -6px;
-  width: 12px;
-  height: 12px;
-  border: 2px solid var(--bg);
-  border-radius: 50%;
-  background: var(--line2);
-  box-shadow: var(--shadow-sm);
-  opacity: 0;
-  transform: translateY(-50%) scale(0.8);
-  pointer-events: none;
-  transition:
-    opacity var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out),
-    background-color var(--dur-fast) var(--ease-out);
-}
-
-.operation-card:hover .op-input-port,
-.operation-card.selected .op-input-port,
-.operation-card.wire-accepting .op-input-port {
-  opacity: 1;
-  transform: translateY(-50%) scale(1);
-}
-
-.operation-card.wire-accepting .op-input-port {
-  background: var(--pink);
-}
-
-.operation-card.wire-hovered .op-input-port {
-  background: var(--pink-deep);
-  transform: translateY(-50%) scale(1.3);
 }
 
 .op-box-caption {
@@ -454,34 +437,67 @@ function handlePointerDown(event: PointerEvent) {
     0 0 0 1px var(--pink-line);
 }
 
+.operation-card:focus-visible .op-box-surface,
 .operation-card.selected .op-box-surface,
 .operation-card.wire-hovered .op-box-surface {
   border-color: var(--pink);
-  outline: 1.5px solid var(--pink);
-  outline-offset: 2px;
-  box-shadow: 0 8px 24px rgb(20 20 30 / 11%);
+  box-shadow: 0 8px 24px rgb(255 107 154 / 15%);
 }
 
-.op-box-progress {
+.operation-card:focus-visible {
+  outline: none;
+}
+
+.operation-card.busy .op-box-surface {
+  border-color: var(--pink-line);
+  box-shadow: 0 0 9px color-mix(in srgb, var(--pink) 18%, transparent);
+}
+
+.op-busy-ring {
   position: absolute;
-  z-index: 3;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: 3px;
+  inset: -1px;
+  z-index: 4;
+  padding: 2px;
+  border-radius: 13px;
+  pointer-events: none;
   overflow: hidden;
-  background: var(--pink-soft);
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  container-type: size;
 }
 
-.op-box-progress-bar {
+.op-busy-ring::before {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 38%;
-  border-radius: 999px;
-  background: var(--pink);
-  animation: indeterminate 1.4s var(--ease-loop) infinite;
+  top: 50%;
+  left: 50%;
+  width: 145cqmax;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  content: '';
+  background: conic-gradient(
+    transparent 8%,
+    var(--pink-line) 20%,
+    var(--pink) 30%,
+    transparent 41% 60%,
+    var(--nl) 77%,
+    transparent 91%
+  );
+  animation: op-border-spin 2.2s linear infinite;
+}
+
+@keyframes op-border-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .op-busy-ring::before,
+  .op-box-busy-dot {
+    animation: none;
+  }
 }
 
 .op-box-media {
@@ -489,6 +505,10 @@ function handlePointerDown(event: PointerEvent) {
   flex: 1;
   min-height: 0;
   background: var(--panel);
+}
+
+.op-box-media :deep(.canvas-thumbnail) {
+  object-fit: cover;
 }
 
 .op-box-mask-overlay {
@@ -626,12 +646,6 @@ function handlePointerDown(event: PointerEvent) {
   white-space: nowrap;
   box-shadow: var(--shadow-sm);
   backdrop-filter: blur(10px);
-}
-
-.op-box-chip.is-busy {
-  border-color: var(--pink-line);
-  background: var(--pink-soft);
-  color: var(--pink-deep);
 }
 
 .op-box-chip.is-error {

@@ -14,6 +14,7 @@ export interface PaidOperation {
 interface OperationContext {
   origin: 'manual' | 'agent'
   signal?: AbortSignal
+  requesterId?: number
 }
 const context = new AsyncLocalStorage<OperationContext>()
 let authorize:
@@ -28,11 +29,16 @@ export const setOperationAuthorizer = (handler: NonNullable<typeof authorize>) =
 }
 export const withOperationContext = <T>(value: OperationContext, work: () => T): T =>
   context.run(
-    { ...value, origin: context.getStore()?.origin === 'agent' ? 'agent' : value.origin },
+    {
+      ...value,
+      origin: context.getStore()?.origin === 'agent' ? 'agent' : value.origin,
+      requesterId: value.requesterId ?? context.getStore()?.requesterId,
+    },
     work,
   )
 export const operationSignal = () => context.getStore()?.signal
 export const operationOrigin = () => context.getStore()?.origin ?? 'manual'
+export const operationRequesterId = () => context.getStore()?.requesterId
 export async function authorizePaidOperation(
   operation: PaidOperation,
   signal?: AbortSignal,

@@ -1,22 +1,37 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { DEFAULT_COLLECTION, type ImageCollection } from '@shared/images/collections'
 import { cleanErr } from '../../shared/lib/format'
 import { vSegIndicator } from '../../shared/lib/seg-indicator'
 import Icon from '../../shared/ui/Icon.vue'
 import type { IconName } from '../../shared/ui/icons'
 import type { OperationDialogTab } from './CanvasOperationDialog.vue'
+import { DRAG_ASSET_MIME, writeCanvasDrag } from './canvas-drag'
 import CanvasThumbnail from './CanvasThumbnail.vue'
-import { freePosition } from './layout'
+import { reportError, toast } from '../../shared/lib/notifications'
+import {
+  activeOperationOutput,
+  allOperationOutputs,
+  ensureOutputBranch,
+  extractOutputAsCanvasImage,
+  fitInlineOutput,
+  type CanvasOperationOutput,
+} from './session'
 import {
   cardErrors,
+  connectImageToOperation,
   executeCard,
+  fitOperationBoxToImage,
   isGenerateKind,
   operationLabel,
+  OperationInputError,
+  operationSize,
   runningCards,
   TOOL_ICONS,
 } from './operations'
 import type {
   CanvasAsset,
+  CanvasGalleryAsset,
   CanvasImage,
   CanvasOperation,
   CanvasSession,
@@ -32,7 +47,7 @@ import type { CanvasPreview } from './use-canvas-previews'
 export type SelectedCanvasTarget =
   { kind: 'image'; image: CanvasImage } | { kind: 'operation'; node: CanvasOperation }
 
-type QuickPopoverId = 'source' | 'margins' | 'enhance'
+type QuickPopoverId = 'source' | 'margins' | 'enhance' | 'history'
 type ToolbarActionId = QuickPopoverId | OperationDialogTab
 
 interface ToolActionSpec {
@@ -58,7 +73,7 @@ const OPERATION_ACTIONS: Record<CanvasTool, ToolActionSpec[]> = {
     {
       id: 'references',
       label: '参考图',
-      title: '精确参考与 Vibe',
+      title: '底图、精确参考与 Vibe',
       icon: 'layers',
       opensDialog: true,
     },
@@ -70,7 +85,7 @@ const OPERATION_ACTIONS: Record<CanvasTool, ToolActionSpec[]> = {
     {
       id: 'references',
       label: '参考图',
-      title: '精确参考与 Vibe',
+      title: '底图、精确参考与 Vibe',
       icon: 'layers',
       opensDialog: true,
     },
@@ -83,7 +98,7 @@ const OPERATION_ACTIONS: Record<CanvasTool, ToolActionSpec[]> = {
     {
       id: 'references',
       label: '参考图',
-      title: '精确参考与 Vibe',
+      title: '底图、精确参考与 Vibe',
       icon: 'layers',
       opensDialog: true,
     },
@@ -96,7 +111,7 @@ const OPERATION_ACTIONS: Record<CanvasTool, ToolActionSpec[]> = {
     {
       id: 'references',
       label: '参考图',
-      title: '精确参考与 Vibe',
+      title: '底图、精确参考与 Vibe',
       icon: 'layers',
       opensDialog: true,
     },
@@ -109,7 +124,7 @@ const OPERATION_ACTIONS: Record<CanvasTool, ToolActionSpec[]> = {
     {
       id: 'references',
       label: '参考图',
-      title: '精确参考与 Vibe',
+      title: '底图、精确参考与 Vibe',
       icon: 'layers',
       opensDialog: true,
     },
@@ -125,6 +140,7 @@ const props = defineProps<{
   viewportSize: ViewportExtent
   session: CanvasSession
   title: string
+  historyPreview: (asset: CanvasGalleryAsset) => CanvasPreview | undefined
   imagePreview: (asset: CanvasAsset) => CanvasPreview | undefined
 }>()
 
@@ -134,20 +150,109 @@ const emit = defineEmits<{
   startWire: [image: CanvasImage, event: PointerEvent]
   openDialog: [node: CanvasOperation, tab: OperationDialogTab]
   showResult: [operationId: number]
+  extracted: [image: CanvasImage]
   dismiss: []
 }>()
 
 const barRef = ref<HTMLElement | null>(null)
 const panelRef = ref<HTMLElement | null>(null)
 const activePopover = ref<QuickPopoverId | null>(null)
+const historyStart = ref(0)
 const recipeFeedback = ref('')
+const saveMenu = ref<HTMLElement>()
+const collections = ref<ImageCollection[]>([])
+const collectionError = ref('')
+let closeTimer: ReturnType<typeof setTimeout> | undefined
+let loadingCollections = false
 
 const operation = computed(() => (props.target.kind === 'operation' ? props.target.node : null))
 const targetKey = computed(() =>
   props.target.kind === 'image' ? `img-${props.target.image.id}` : `op-${props.target.node.id}`,
 )
 
+const collectionId = computed(() => operation.value?.request.collectionId ?? DEFAULT_COLLECTION)
+const saveOptions = computed(() => [
+  { id: DEFAULT_COLLECTION, name: '默认图集' },
+  ...collections.value.filter(({ id }) => id !== DEFAULT_COLLECTION),
+])
+const saveTitle = computed(() => {
+  if (operation.value?.saveToGallery === false) {
+    return '当前不保存到图集（点击恢复保存）'
+  }
+  const name = saveOptions.value.find(({ id }) => id === collectionId.value)?.name ?? '所选图集'
+  return `保存到：${name}（点击关闭保存，悬停切换图集）`
+})
+
+async function loadCollections() {
+  if (loadingCollections) {
+    return
+  }
+  loadingCollections = true
+  try {
+    collections.value = await window.canvasApi.collectionsList()
+    collectionError.value = ''
+  } catch (reason) {
+    collectionError.value = cleanErr(reason)
+  } finally {
+    loadingCollections = false
+  }
+}
+
+watch(
+  collectionId,
+  async (id) => {
+    if (id !== DEFAULT_COLLECTION) {
+      await loadCollections()
+    }
+  },
+  { immediate: true },
+)
+
+function cancelMenuTimer() {
+  clearTimeout(closeTimer)
+}
+
+function closeSaveMenu() {
+  cancelMenuTimer()
+  saveMenu.value?.hidePopover()
+}
+
+async function openSaveMenu() {
+  cancelMenuTimer()
+  if (saveMenu.value && !saveMenu.value.matches(':popover-open')) {
+    activePopover.value = null
+    saveMenu.value.showPopover()
+    await loadCollections()
+  }
+}
+
+function scheduleMenuClose() {
+  cancelMenuTimer()
+  closeTimer = setTimeout(closeSaveMenu, 140)
+}
+
+function chooseCollection(id: string | null) {
+  const card = operation.value
+  if (!card || busy.value) {
+    return
+  }
+  card.saveToGallery = id !== null
+  if (id !== null) {
+    card.request.collectionId = id === DEFAULT_COLLECTION ? undefined : id
+  }
+  closeSaveMenu()
+}
+
+function toggleSave() {
+  const card = operation.value
+  if (card && !busy.value) {
+    card.saveToGallery = card.saveToGallery === false
+  }
+}
+
+onBeforeUnmount(cancelMenuTimer)
 watch(targetKey, () => {
+  closeSaveMenu()
   activePopover.value = null
   recipeFeedback.value = ''
 })
@@ -175,6 +280,9 @@ const sourceAsset = computed(() => {
   }
   return props.session.images.find((image) => image.id === card.sourceId)?.asset
 })
+const targetSize = computed(
+  () => operation.value && operationSize(operation.value, sourceAsset.value),
+)
 const hasResults = computed(() => {
   const card = operation.value
   if (!card) {
@@ -185,9 +293,100 @@ const hasResults = computed(() => {
 const operationActions = computed(() =>
   operation.value ? OPERATION_ACTIONS[operation.value.kind] : [],
 )
-const activePopoverSpec = computed(() =>
-  operationActions.value.find((action) => action.id === activePopover.value),
+const outputs = computed(() =>
+  operation.value ? allOperationOutputs(props.session, operation.value) : [],
 )
+const activeOutput = computed(
+  () => operation.value && activeOperationOutput(operation.value, outputs.value),
+)
+const newestFirst = computed(() => [...outputs.value].reverse())
+const inline = computed(() => operation.value?.outputMode !== 'branch')
+const modeTitle = computed(() =>
+  inline.value
+    ? '输出展示：容器内（点击切换为连线输出）'
+    : '输出展示：连线到画布（点击切换为容器内）',
+)
+const historyAssets = computed(() => {
+  if (activePopover.value !== 'history') {
+    return []
+  }
+  const ordered = newestFirst.value
+  return ordered.slice(historyStart.value, historyStart.value + 24).map((output) => output.asset)
+})
+
+function trackHistoryScroll(event: Event) {
+  const scroller = event.currentTarget as HTMLElement
+  const row = scroller.querySelector<HTMLElement>('.history-card')
+  if (row) {
+    historyStart.value = Math.max(0, Math.floor(scroller.scrollTop / row.offsetHeight) - 1)
+  }
+}
+
+function openHistory() {
+  historyStart.value = 0
+  activePopover.value = 'history'
+}
+
+function toggleMode() {
+  const node = operation.value
+  if (!node) {
+    return
+  }
+  const session = props.session
+  const output = activeOutput.value ?? undefined
+  node.outputMode = inline.value ? 'branch' : 'inline'
+  if (node.outputMode === 'inline') {
+    fitInlineOutput(node, output)
+    return
+  }
+  const source = session.images.find((image) => image.id === node.sourceId)
+  if (source) {
+    fitOperationBoxToImage(node, source)
+  }
+  if (output) {
+    ensureOutputBranch(session, node, output)
+  }
+}
+
+function dragVersion(event: DragEvent, output: CanvasOperationOutput) {
+  event.dataTransfer?.setData(DRAG_ASSET_MIME, JSON.stringify(output.asset))
+  writeCanvasDrag(event, { kind: 'gallery', asset: output.asset })
+}
+
+function selectVersion(output: CanvasOperationOutput) {
+  const node = operation.value
+  if (node) {
+    node.outputs = outputs.value
+    node.activeOutputId = output.id
+    node.outputMode = 'inline'
+    fitInlineOutput(node, output)
+  }
+}
+
+function extractVersion(output: CanvasOperationOutput) {
+  if (operation.value) {
+    const image = extractOutputAsCanvasImage(props.session, operation.value, output)
+    if (image) {
+      emit('extracted', image)
+    }
+  }
+}
+
+function copyVersion(output: CanvasOperationOutput) {
+  window.canvasApi
+    .naiCopyImage(output.asset.name)
+    .then((copied) => {
+      toast(copied ? '图片已复制到系统剪贴板' : '未能复制图片')
+    })
+    .catch(reportError)
+}
+
+const activePopoverSpec = computed(() => {
+  if (activePopover.value === 'history') {
+    return { id: 'history', title: '历史生成版本', icon: 'history' as const }
+  }
+  return operationActions.value.find((action) => action.id === activePopover.value)
+})
 const currentError = computed(() =>
   operation.value ? (cardErrors.get(operation.value) ?? '') : '',
 )
@@ -205,11 +404,25 @@ function actionBadge(actionId: ToolbarActionId): string {
   }
   if (actionId === 'references') {
     const count =
+      Number(card.sourceId !== null) +
       (card.request.params.preciseReferences?.length ?? 0) +
       (card.request.params.vibeReferences?.length ?? 0)
     return count ? String(count) : ''
   }
   return ''
+}
+
+function actionTitle(action: ToolActionSpec) {
+  const card = operation.value
+  if (action.id !== 'references' || !card) {
+    return action.title
+  }
+  const source = card.sourceId === null ? '未绑定底图' : '底图 #' + card.sourceId
+  return [
+    source,
+    '精确参考 ' + (card.request.params.preciseReferences?.length ?? 0),
+    'Vibe ' + (card.request.params.vibeReferences?.length ?? 0),
+  ].join(' · ')
 }
 
 function actionHasDot(actionId: ToolbarActionId): boolean {
@@ -239,6 +452,10 @@ function triggerAction(action: ToolActionSpec) {
 }
 
 function closeTool(): boolean {
+  if (saveMenu.value?.matches(':popover-open')) {
+    closeSaveMenu()
+    return true
+  }
   if (activePopover.value) {
     activePopover.value = null
     return true
@@ -279,10 +496,13 @@ function selectSourceImage(imageId: number | null) {
   if (!card) {
     return
   }
-  card.sourceId = imageId
+  const source = props.session.images.find((image) => image.id === imageId)
   card.strokes = []
-  const nextAsset = props.session.images.find((image) => image.id === imageId)?.asset
-  syncSourceSize(card, nextAsset)
+  if (source) {
+    connectImageToOperation(card, source, 'source')
+  } else {
+    card.sourceId = null
+  }
   cardErrors.delete(card)
 }
 
@@ -326,23 +546,19 @@ async function runOperation() {
   }
   cardErrors.delete(card)
   try {
-    const startId = props.session.nextImageId
     await executeCard(props.session, card, props.title)
-    for (const image of props.session.images) {
-      if (image.operationId === card.id && image.id >= startId) {
-        image.x = freePosition(props.session, image)
-      }
-    }
     activePopover.value = null
   } catch (reason) {
     const message = cleanErr(reason)
     cardErrors.set(card, message)
-    if (message.includes('底图')) {
-      activePopover.value = 'source'
-    } else if (message.includes('重绘区域')) {
-      emit('openDialog', card, 'mask')
-    } else if (message.includes('提示词')) {
-      emit('openDialog', card, 'prompt')
+    if (reason instanceof OperationInputError && operation.value === card) {
+      const panel = reason.panel
+      if (panel === 'source' || panel === 'margins' || panel === 'enhance') {
+        activePopover.value = panel
+      } else {
+        activePopover.value = null
+        emit('openDialog', card, panel)
+      }
     }
   }
 }
@@ -354,7 +570,7 @@ function handleOverlayEscape(event: KeyboardEvent) {
   }
 }
 
-defineExpose({ openPrimaryTool, closeTool, runOperation })
+defineExpose({ openPrimaryTool, closeTool, runOperation, openHistory, historyAssets })
 </script>
 
 <template>
@@ -426,6 +642,7 @@ defineExpose({ openPrimaryTool, closeTool, runOperation })
           class="ctx-btn"
           :class="{ active: activePopover === action.id }"
           type="button"
+          :title="actionTitle(action)"
           :aria-expanded="!action.opensDialog ? activePopover === action.id : undefined"
           @click="triggerAction(action)"
         >
@@ -453,7 +670,107 @@ defineExpose({ openPrimaryTool, closeTool, runOperation })
         />
 
         <button
-          v-if="hasResults"
+          class="ctx-btn ctx-icon-only"
+          type="button"
+          :class="{ active: !inline }"
+          :title="modeTitle"
+          :aria-label="modeTitle"
+          :aria-pressed="!inline"
+          :disabled="busy"
+          @click="toggleMode"
+        >
+          <Icon
+            :name="inline ? 'image' : 'link'"
+            :size="16"
+          />
+        </button>
+        <button
+          v-if="outputs.length"
+          class="ctx-btn"
+          type="button"
+          title="历史生成版本"
+          :aria-expanded="activePopover === 'history'"
+          :class="{ active: activePopover === 'history' }"
+          @click="activePopover === 'history' ? closeTool() : openHistory()"
+        >
+          <Icon
+            name="history"
+            :size="15"
+          />
+          历史 <span class="ctx-badge">{{ outputs.length }}</span>
+        </button>
+        <button
+          class="ctx-btn ctx-icon-only ctx-save"
+          :class="{ 'is-off': operation.saveToGallery === false }"
+          type="button"
+          :title="saveTitle"
+          :aria-label="saveTitle"
+          :aria-pressed="operation.saveToGallery !== false"
+          :disabled="busy"
+          @pointerenter="openSaveMenu"
+          @pointerleave="scheduleMenuClose"
+          @keydown.down.prevent="openSaveMenu"
+          @keydown.esc="handleOverlayEscape"
+          @click="toggleSave"
+        >
+          <Icon
+            name="folder"
+            :size="16"
+          />
+          <span
+            v-if="operation.saveToGallery !== false && collectionId !== DEFAULT_COLLECTION"
+            class="ctx-dot"
+          />
+        </button>
+        <section
+          ref="saveMenu"
+          class="canvas-save-menu"
+          popover="auto"
+          aria-label="保存到图集"
+          @pointerenter="cancelMenuTimer"
+          @pointerleave="scheduleMenuClose"
+          @keydown.esc.stop="closeSaveMenu"
+        >
+          <h3>保存到图集</h3>
+          <p
+            v-if="collectionError"
+            role="alert"
+          >
+            {{ collectionError }}
+          </p>
+          <div class="save-collection-list">
+            <button
+              v-for="option in saveOptions"
+              :key="option.id"
+              type="button"
+              :aria-pressed="operation.saveToGallery !== false && collectionId === option.id"
+              @click="chooseCollection(option.id)"
+            >
+              <span>{{ option.name }}</span>
+              <Icon
+                v-if="operation.saveToGallery !== false && collectionId === option.id"
+                name="check"
+                :size="14"
+              />
+            </button>
+          </div>
+          <button
+            class="save-temporary"
+            type="button"
+            :aria-pressed="operation.saveToGallery === false"
+            @click="chooseCollection(null)"
+          >
+            <span>不保存到图集（仅临时）</span>
+            <Icon
+              v-if="operation.saveToGallery === false"
+              name="check"
+              :size="14"
+            />
+          </button>
+        </section>
+
+        <button
+          v-if="hasResults && !inline"
           class="ctx-btn"
           type="button"
           title="定位到生成结果"
@@ -469,7 +786,7 @@ defineExpose({ openPrimaryTool, closeTool, runOperation })
         <button
           class="btn small accent ctx-run"
           type="button"
-          :disabled="busy || (operation.kind !== 'generate' && !sourceAsset)"
+          :disabled="busy"
           @click="runOperation"
         >
           <Icon
@@ -511,6 +828,7 @@ defineExpose({ openPrimaryTool, closeTool, runOperation })
         class="canvas-tool-panel"
         :aria-label="activePopoverSpec.title"
         :style="placement.panel"
+        @keydown.esc.stop="handleOverlayEscape"
         @pointerdown.stop
         @wheel.stop
         @keydown.stop
@@ -535,187 +853,284 @@ defineExpose({ openPrimaryTool, closeTool, runOperation })
           </button>
         </header>
 
-        <p
-          v-if="currentError"
-          class="tool-panel-alert"
-          role="alert"
+        <div
+          class="tool-panel-scroll"
+          @scroll="trackHistoryScroll"
         >
-          {{ currentError }}
-        </p>
+          <div class="tool-panel-content">
+            <p
+              v-if="currentError"
+              class="tool-panel-alert"
+              role="alert"
+            >
+              {{ currentError }}
+            </p>
 
-        <div class="tool-panel-scroll">
-          <fieldset
-            class="tool-panel-body"
-            :disabled="busy"
-          >
-            <template v-if="activePopover === 'source'">
+            <p
+              v-if="activePopover === 'history'"
+              class="history-summary"
+            >
+              共 {{ outputs.length }} 版 · {{ inline ? '容器内展示' : '连线输出' }}
+            </p>
+            <div
+              v-if="activePopover === 'history'"
+              class="history-list"
+            >
+              <div
+                v-for="(output, index) in newestFirst"
+                :key="output.id"
+                class="history-card"
+                :class="{ 'is-active': inline && output.id === activeOutput?.id }"
+                draggable="true"
+                title="点击切换版本，或直接拖到画布中"
+                @dragstart="dragVersion($event, output)"
+              >
+                <button
+                  class="history-version"
+                  type="button"
+                  :aria-pressed="inline && output.id === activeOutput?.id"
+                  @click="selectVersion(output)"
+                >
+                  <span class="history-thumb"
+                    ><CanvasThumbnail
+                      :preview="historyPreview(output.asset)"
+                      show-error
+                  /></span>
+                  <span class="history-caption">
+                    <strong>第 {{ outputs.length - index }} 版</strong>
+                    <small>{{
+                      output.asset.width && output.asset.height
+                        ? output.asset.width + '×' + output.asset.height
+                        : '尺寸未知'
+                    }}</small>
+                    <small>{{
+                      output.createdAt ? new Date(output.createdAt).toLocaleString() : '时间未记录'
+                    }}</small>
+                  </span>
+                </button>
+                <div class="history-card-actions">
+                  <button
+                    class="icon-btn sm"
+                    type="button"
+                    title="放到画布（独立图片）"
+                    aria-label="放到画布（独立图片）"
+                    draggable="false"
+                    @pointerdown.stop.prevent
+                    @click.stop="extractVersion(output)"
+                  >
+                    <Icon
+                      name="plus"
+                      :size="15"
+                    />
+                  </button>
+                  <button
+                    class="icon-btn sm"
+                    type="button"
+                    title="复制图片"
+                    aria-label="复制图片"
+                    draggable="false"
+                    @pointerdown.stop.prevent
+                    @click.stop="copyVersion(output)"
+                  >
+                    <Icon
+                      name="copy"
+                      :size="14"
+                    />
+                  </button>
+                </div>
+              </div>
+            </div>
+            <fieldset
+              v-else
+              class="tool-panel-body"
+              :disabled="busy"
+            >
               <p
-                v-if="!session.images.length"
+                v-if="
+                  sourceAsset?.width &&
+                  sourceAsset.height &&
+                  targetSize &&
+                  ['outpaint', 'enhance', 'upscale'].includes(operation.kind)
+                "
                 class="tool-panel-empty"
               >
-                画布中还没有图片，先从左侧素材库拖入或本地导入一张图片。
+                原图 {{ sourceAsset.width }}×{{ sourceAsset.height }} →
+                {{ operationLabel(operation.kind) }}后 {{ targetSize.width }}×{{
+                  targetSize.height
+                }}
               </p>
-              <div
-                v-else
-                class="source-grid"
-              >
-                <button
-                  v-for="image in session.images"
-                  :key="image.id"
-                  class="source-item"
-                  :class="{ selected: operation.sourceId === image.id }"
-                  type="button"
-                  @click="selectSourceImage(image.id)"
+              <template v-if="activePopover === 'source'">
+                <p
+                  v-if="!session.images.length"
+                  class="tool-panel-empty"
                 >
-                  <span class="source-thumb">
-                    <CanvasThumbnail :preview="imagePreview(image.asset)" />
-                  </span>
-                  <span class="source-name">#{{ image.id }} {{ image.asset.label ?? '图片' }}</span>
-                </button>
-              </div>
-              <div
-                v-if="sourceAsset"
-                class="source-footer"
-              >
-                <button
-                  v-if="operation.kind !== 'upscale'"
-                  class="btn small"
-                  type="button"
-                  @click="useSourceRecipe"
-                >
-                  <Icon
-                    name="import"
-                    :size="13"
-                  />
-                  载入底图生图配置
-                </button>
-                <button
-                  class="btn small ghost"
-                  type="button"
-                  @click="selectSourceImage(null)"
-                >
-                  取消绑定
-                </button>
-                <span
-                  v-if="recipeFeedback"
-                  class="source-feedback"
-                >
-                  {{ recipeFeedback }}
-                </span>
-              </div>
-            </template>
-
-            <template v-else-if="activePopover === 'margins'">
-              <div class="margin-presets">
-                <button
-                  class="chip"
-                  type="button"
-                  @click="applyMarginPreset({ left: 0, right: 128, top: 0, bottom: 0 })"
-                >
-                  右侧 +128
-                </button>
-                <button
-                  class="chip"
-                  type="button"
-                  @click="applyMarginPreset({ left: 128, right: 128, top: 0, bottom: 0 })"
-                >
-                  左右 +128
-                </button>
-                <button
-                  class="chip"
-                  type="button"
-                  @click="applyMarginPreset({ left: 0, right: 0, top: 128, bottom: 128 })"
-                >
-                  上下 +128
-                </button>
-                <button
-                  class="chip"
-                  type="button"
-                  @click="applyMarginPreset({ left: 128, right: 128, top: 128, bottom: 128 })"
-                >
-                  四周 +128
-                </button>
-                <button
-                  class="chip"
-                  type="button"
-                  @click="applyMarginPreset({ left: 0, right: 0, top: 0, bottom: 0 })"
-                >
-                  清零
-                </button>
-              </div>
-              <div class="margin-grid">
-                <label
-                  v-for="(name, side) in MARGIN_SIDES"
-                  :key="side"
-                  class="tp-field"
-                >
-                  <span class="tp-label">{{ name }}侧扩展 (px)</span>
-                  <input
-                    v-model.number="operation.margins[side]"
-                    class="tp-input"
-                    type="number"
-                    min="0"
-                    step="64"
-                  />
-                </label>
-              </div>
-            </template>
-
-            <template v-else-if="activePopover === 'enhance'">
-              <div class="tp-field">
-                <span class="tp-label">增强倍率</span>
+                  画布中还没有图片，先从左侧素材库拖入或本地导入一张图片。
+                </p>
                 <div
-                  v-seg-indicator
-                  class="seg block"
+                  v-else
+                  class="source-grid"
                 >
                   <button
+                    v-for="image in session.images"
+                    :key="image.id"
+                    class="source-item"
+                    :class="{ selected: operation.sourceId === image.id }"
                     type="button"
-                    :class="{ on: operation.scale === 1 }"
-                    @click="setEnhanceScale(1)"
+                    @click="selectSourceImage(image.id)"
                   >
-                    1× 保持原尺寸
+                    <span class="source-thumb">
+                      <CanvasThumbnail :preview="imagePreview(image.asset)" />
+                    </span>
+                    <span class="source-name"
+                      >#{{ image.id }} {{ image.asset.label ?? '图片' }}</span
+                    >
+                  </button>
+                </div>
+                <div
+                  v-if="sourceAsset"
+                  class="source-footer"
+                >
+                  <button
+                    v-if="operation.kind !== 'upscale'"
+                    class="btn small"
+                    type="button"
+                    @click="useSourceRecipe"
+                  >
+                    <Icon
+                      name="import"
+                      :size="13"
+                    />
+                    载入底图生图配置
                   </button>
                   <button
+                    class="btn small ghost"
                     type="button"
-                    :class="{ on: operation.scale === 1.5 }"
-                    @click="setEnhanceScale(1.5)"
+                    @click="selectSourceImage(null)"
                   >
-                    1.5× 高清放大
+                    取消绑定
+                  </button>
+                  <span
+                    v-if="recipeFeedback"
+                    class="source-feedback"
+                  >
+                    {{ recipeFeedback }}
+                  </span>
+                </div>
+              </template>
+
+              <template v-else-if="activePopover === 'margins'">
+                <div class="margin-presets">
+                  <button
+                    class="chip"
+                    type="button"
+                    @click="applyMarginPreset({ left: 0, right: 128, top: 0, bottom: 0 })"
+                  >
+                    右侧 +128
+                  </button>
+                  <button
+                    class="chip"
+                    type="button"
+                    @click="applyMarginPreset({ left: 128, right: 128, top: 0, bottom: 0 })"
+                  >
+                    左右 +128
+                  </button>
+                  <button
+                    class="chip"
+                    type="button"
+                    @click="applyMarginPreset({ left: 0, right: 0, top: 128, bottom: 128 })"
+                  >
+                    上下 +128
+                  </button>
+                  <button
+                    class="chip"
+                    type="button"
+                    @click="applyMarginPreset({ left: 128, right: 128, top: 128, bottom: 128 })"
+                  >
+                    四周 +128
+                  </button>
+                  <button
+                    class="chip"
+                    type="button"
+                    @click="applyMarginPreset({ left: 0, right: 0, top: 0, bottom: 0 })"
+                  >
+                    清零
                   </button>
                 </div>
-              </div>
-              <div class="tp-range">
-                <div class="tp-range-head">
-                  <span class="tp-label">修改强度</span>
-                  <span class="tp-range-value">{{ operation.strength.toFixed(2) }}</span>
+                <div class="margin-grid">
+                  <label
+                    v-for="(name, side) in MARGIN_SIDES"
+                    :key="side"
+                    class="tp-field"
+                  >
+                    <span class="tp-label">{{ name }}侧扩展 (px)</span>
+                    <input
+                      v-model.number="operation.margins[side]"
+                      class="tp-input"
+                      type="number"
+                      min="0"
+                      max="2048"
+                      step="64"
+                    />
+                  </label>
                 </div>
-                <input
-                  v-model.number="operation.strength"
-                  class="range"
-                  aria-label="修改强度"
-                  type="range"
-                  min="0.01"
-                  max="0.99"
-                  step="0.01"
-                />
-              </div>
-              <div class="tp-range">
-                <div class="tp-range-head">
-                  <span class="tp-label">噪声</span>
-                  <span class="tp-range-value">{{ operation.noise.toFixed(2) }}</span>
+              </template>
+
+              <template v-else-if="activePopover === 'enhance'">
+                <div class="tp-field">
+                  <span class="tp-label">增强倍率</span>
+                  <div
+                    v-seg-indicator
+                    class="seg block"
+                  >
+                    <button
+                      type="button"
+                      :class="{ on: operation.scale === 1 }"
+                      @click="setEnhanceScale(1)"
+                    >
+                      1× 保持原尺寸
+                    </button>
+                    <button
+                      type="button"
+                      :class="{ on: operation.scale === 1.5 }"
+                      @click="setEnhanceScale(1.5)"
+                    >
+                      1.5× 高清放大
+                    </button>
+                  </div>
                 </div>
-                <input
-                  v-model.number="operation.noise"
-                  class="range"
-                  aria-label="噪声"
-                  type="range"
-                  min="0"
-                  max="0.99"
-                  step="0.01"
-                />
-              </div>
-            </template>
-          </fieldset>
+                <div class="tp-range">
+                  <div class="tp-range-head">
+                    <span class="tp-label">修改强度</span>
+                    <span class="tp-range-value">{{ operation.strength.toFixed(2) }}</span>
+                  </div>
+                  <input
+                    v-model.number="operation.strength"
+                    class="range"
+                    aria-label="修改强度"
+                    type="range"
+                    min="0.2"
+                    max="0.8"
+                    step="0.05"
+                  />
+                </div>
+                <div class="tp-range">
+                  <div class="tp-range-head">
+                    <span class="tp-label">噪声</span>
+                    <span class="tp-range-value">{{ operation.noise.toFixed(2) }}</span>
+                  </div>
+                  <input
+                    v-model.number="operation.noise"
+                    class="range"
+                    aria-label="噪声"
+                    type="range"
+                    min="0"
+                    max="0.5"
+                    step="0.05"
+                  />
+                </div>
+              </template>
+            </fieldset>
+          </div>
         </div>
       </section>
     </Transition>
@@ -831,6 +1246,101 @@ defineExpose({ openPrimaryTool, closeTool, runOperation })
   background: var(--line2);
 }
 
+.ctx-save {
+  position: relative;
+  anchor-name: --canvas-save;
+}
+
+.ctx-save .ctx-dot {
+  position: absolute;
+  top: 4px;
+  right: 3px;
+}
+
+.ctx-save.is-off {
+  background: var(--panel);
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.canvas-save-menu {
+  position: fixed;
+  position-anchor: --canvas-save;
+  inset: auto;
+  position-area: bottom span-left;
+  position-try-fallbacks:
+    flip-block,
+    flip-inline,
+    flip-block flip-inline;
+  justify-self: end;
+  width: 206px;
+  max-height: min(320px, 100%);
+  margin: 6px 0;
+  padding: 6px;
+  overflow: auto;
+  border: 1px solid var(--line2);
+  border-radius: 13px;
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow-pop);
+  pointer-events: auto;
+}
+
+.canvas-save-menu:popover-open {
+  animation: fade-up var(--dur-fast) var(--ease-out);
+}
+
+.canvas-save-menu h3,
+.canvas-save-menu p {
+  margin: 4px 9px 6px;
+  color: var(--text2);
+  font-size: 12px;
+}
+
+.canvas-save-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 7px;
+  color: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.canvas-save-menu button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-save-menu button .icon {
+  flex-shrink: 0;
+}
+
+.canvas-save-menu button:hover,
+.canvas-save-menu button:focus-visible {
+  background: var(--hover);
+}
+
+.canvas-save-menu button[aria-pressed='true'] {
+  color: var(--pink-deep);
+}
+
+.save-collection-list {
+  max-height: 196px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--line);
+}
+
+.save-temporary {
+  margin-top: 5px;
+}
+
 .ctx-run {
   height: 28px;
   padding: 0 11px;
@@ -881,8 +1391,13 @@ defineExpose({ openPrimaryTool, closeTool, runOperation })
   overflow-wrap: anywhere;
 }
 
+.tool-panel-content {
+  display: flow-root;
+}
+
 .tool-panel-scroll {
-  flex: 1;
+  scrollbar-gutter: stable;
+  flex: 0 1 auto;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
@@ -1056,5 +1571,82 @@ defineExpose({ openPrimaryTool, closeTool, runOperation })
 
 .tool-panel-leave-active {
   pointer-events: none;
+}
+
+.history-summary {
+  margin: 4px 12px;
+  color: var(--text2);
+  font-size: 12px;
+}
+
+.history-list {
+  padding: 0 8px 8px;
+}
+
+.history-card {
+  position: relative;
+  width: 100%;
+  padding-bottom: 6px;
+  user-select: none;
+  cursor: grab;
+}
+
+.history-version {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 70px;
+  padding: 6px 60px 6px 7px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+  text-align: left;
+  cursor: inherit;
+}
+
+.history-card:active {
+  cursor: grabbing;
+}
+
+.history-card.is-active .history-version {
+  border-color: var(--pink);
+  background: var(--pink-soft);
+  color: var(--pink-deep);
+}
+
+.history-card-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+}
+
+.history-card-actions .icon-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+}
+
+.history-thumb {
+  pointer-events: none;
+  flex: 0 0 50px;
+  height: 54px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--panel);
+}
+
+.history-caption {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.history-caption small {
+  color: var(--text2);
+  font-size: 10px;
 }
 </style>

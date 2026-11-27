@@ -8,6 +8,8 @@ import { reportError } from '../shared/lib/notifications'
 import { shellState } from '../shared/state/shell'
 import AnimatedNumber from '../shared/ui/AnimatedNumber.vue'
 import Icon from '../shared/ui/Icon.vue'
+import ConfirmDialog from '../shared/ui/ConfirmDialog.vue'
+import type { ConfirmationRequest } from '@shared/contracts/confirmation'
 
 const isMac = navigator.userAgent.includes('Macintosh')
 const { tabs, activeId, active, create, open, save, close } = useCanvasProjects()
@@ -18,6 +20,16 @@ const {
   tooltip: quotaTooltip,
   refresh: refreshQuota,
 } = useCanvasSubscription()
+
+const confirmations = ref<ConfirmationRequest[]>([])
+const confirmation = computed(() => confirmations.value[0])
+let offConfirmations: (() => void) | undefined
+
+function replyConfirmation(approved: boolean) {
+  if (confirmation.value) {
+    void window.canvasApi.replyConfirmation(confirmation.value.id, approved).catch(reportError)
+  }
+}
 
 const galleryOpen = ref(false)
 const tabStrip = ref<HTMLElement>()
@@ -152,11 +164,15 @@ function handleWindowFocus() {
 }
 
 onMounted(() => {
+  offConfirmations = window.canvasApi.onConfirmations?.((requests) => {
+    confirmations.value = requests
+  })
   void refreshQuota().catch(reportError)
   window.addEventListener('focus', handleWindowFocus)
 })
 
 onBeforeUnmount(() => {
+  offConfirmations?.()
   window.removeEventListener('focus', handleWindowFocus)
 })
 </script>
@@ -424,6 +440,20 @@ onBeforeUnmount(() => {
       {{ shellState.toast }}
     </p>
   </main>
+  <ConfirmDialog
+    v-if="confirmation"
+    :key="confirmation.id"
+    :title="confirmation.title"
+    :message="
+      confirmation.cost
+        ? confirmation.message
+        : [confirmation.message, confirmation.detail].filter(Boolean).join('\n\n')
+    "
+    :cost="confirmation.cost"
+    :confirm-label="confirmation.confirmLabel"
+    @confirm="replyConfirmation(true)"
+    @cancel="replyConfirmation(false)"
+  />
 </template>
 
 <style scoped>

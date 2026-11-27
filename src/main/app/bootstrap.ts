@@ -1,4 +1,5 @@
 import { requestConfirmation } from '../adapters/desktop/confirmations'
+import { operationRequesterId } from '../infrastructure/operation-policy'
 import { installOperationAuthorization } from './operation-authorization'
 import { migrateStorageOnStartup } from '../modules/settings/storage'
 import { readStorageLocation, storageRoot } from '../infrastructure/storage-root'
@@ -45,6 +46,15 @@ export function startApplication(): void {
   const windowManager = createWindowManager(() => desktop?.disconnected())
   const createWindow = windowManager.createWindow
   installOperationAuthorization((options, signal) => {
+    const requesterId = operationRequesterId()
+    const canvas = windowManager.canvas
+    if (requesterId && canvas && !canvas.isDestroyed() && canvas.webContents.id === requesterId) {
+      if (!canvas.isFocused()) {
+        canvas.show()
+        canvas.focus()
+      }
+      return requestConfirmation(canvas.webContents, options, signal)
+    }
     createWindow()
     const owner = windowManager.current?.webContents
     return owner ? requestConfirmation(owner, options, signal) : Promise.resolve(false)

@@ -2,6 +2,8 @@ import { shallowRef } from 'vue'
 import type { CanvasGalleryAsset, CanvasPoint, CanvasTool } from './session'
 import type { FavoriteMaterial } from './use-canvas-favorites'
 
+export const DRAG_ASSET_MIME = 'application/x-novelprompt-canvas-asset'
+
 export type CanvasDragItem =
   | { kind: 'tool'; tool: CanvasTool }
   | { kind: 'gallery'; asset: CanvasGalleryAsset }

@@ -3,7 +3,7 @@ import { imageLabel } from '../../../shared/lib/image-label'
 import { promptState } from '../state'
 import { imageState } from '../../generation/public'
 import { settingsState } from '../../settings/state'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, shallowRef, ref, watch } from 'vue'
 import { parsePosition, isGridPosition } from '@shared/generation/presets'
 import { pushHistory } from '../actions'
 import Icon from '../../../shared/ui/Icon.vue'
@@ -25,6 +25,33 @@ const props = defineProps<{
   image?: NaiImage | null
 }>()
 const emit = defineEmits<{ close: [] }>()
+const anchor = ref<HTMLElement>()
+const portal = shallowRef<HTMLDialogElement | 'body'>('body')
+const mask = ref<HTMLElement>()
+let returnFocus: HTMLElement | null = null
+
+function cancelPosition(event: Event) {
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  close()
+}
+
+function mountPortal() {
+  portal.value = anchor.value?.closest('dialog') ?? 'body'
+  if (portal.value !== 'body') {
+    returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    portal.value.addEventListener('cancel', cancelPosition, true)
+    queueMicrotask(() => mask.value?.focus({ preventScroll: true }))
+  }
+}
+
+function unmountPortal() {
+  if (portal.value !== 'body') {
+    portal.value.removeEventListener('cancel', cancelPosition, true)
+    queueMicrotask(() => returnFocus?.focus({ preventScroll: true }))
+  }
+}
+
 const opened = ref(true)
 const close = () => {
   opened.value = false
@@ -222,7 +249,11 @@ function onKey(event2: KeyboardEvent) {
     return
   }
   if (event2.key === 'Escape') {
-    close()
+    if (portal.value === 'body') {
+      close()
+    } else {
+      cancelPosition(event2)
+    }
     return
   }
   const target = event2.target as HTMLElement | null
@@ -305,20 +336,26 @@ watch(
 )
 
 onMounted(() => {
+  mountPortal()
   if (!props.characters) {
     pushHistory('编辑角色位置之前')
   }
-  window.addEventListener('keydown', onKey)
+  window.addEventListener('keydown', onKey, portal.value !== 'body')
   window.addEventListener('resize', onResize)
 })
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKey)
+  unmountPortal()
+  window.removeEventListener('keydown', onKey, portal.value !== 'body')
   window.removeEventListener('resize', onResize)
 })
 </script>
 
 <template>
-  <Teleport to="body">
+  <span
+    ref="anchor"
+    hidden
+  />
+  <Teleport :to="portal">
     <Transition
       name="modal"
       appear
@@ -326,10 +363,18 @@ onBeforeUnmount(() => {
     >
       <div
         v-if="opened"
+        ref="mask"
+        tabindex="-1"
         class="pos-mask"
-        @pointerdown.self="close()"
+        @pointerdown.stop
+        @click.stop.self="close"
       >
-        <div class="pos-dialog modal-panel">
+        <div
+          class="pos-dialog modal-panel"
+          role="dialog"
+          aria-label="角色位置"
+          aria-modal="true"
+        >
           <div class="pos-head">
             <span class="group-badge pink"
               ><Icon
@@ -406,7 +451,7 @@ onBeforeUnmount(() => {
                   }"
                   :title="`角色 ${d.i + 1}${d.set ? '' : '（未设置位置，拖动即可设置）'}`"
                   @pointerdown="onDotDown($event, d.i)"
-                  @pointermove="onDotMove($event, d.i)"
+                  @pointermove.stop="onDotMove($event, d.i)"
                   @pointerup="onDotUp($event, d.i)"
                   @pointercancel="onDotUp($event, d.i)"
                 >
@@ -572,6 +617,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+dialog > .pos-mask {
+  z-index: 200;
+}
+
 .pos-mask {
   position: fixed;
   inset: 0;

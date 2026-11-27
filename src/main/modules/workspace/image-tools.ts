@@ -26,8 +26,9 @@ export interface ImageToolOptions {
 }
 
 function checkTool(tool: PageImageTool): PageImageTool {
+  const temporary = tool?.temporary === true ? true : undefined
   if (tool?.kind === 'upscale') {
-    return { kind: 'upscale' }
+    return temporary ? { kind: 'upscale', temporary } : { kind: 'upscale' }
   }
   if (tool?.kind === 'outpaint') {
     return {
@@ -36,13 +37,20 @@ function checkTool(tool: PageImageTool): PageImageTool {
       right: Number(tool.right) || 0,
       top: Number(tool.top) || 0,
       bottom: Number(tool.bottom) || 0,
+      ...(temporary ? { temporary } : {}),
     }
   }
   if (tool?.kind === 'enhance') {
     if (![1, 1.5].includes(tool.scale)) {
       throw new Error('增强倍数只能是 1× 或 1.5×')
     }
-    return { kind: 'enhance', scale: tool.scale, strength: tool.strength, noise: tool.noise }
+    return {
+      kind: 'enhance',
+      scale: tool.scale,
+      strength: tool.strength,
+      noise: tool.noise,
+      ...(temporary ? { temporary } : {}),
+    }
   }
   throw new Error('请选择修图方式')
 }
@@ -154,6 +162,7 @@ async function executeTool(
       freeOnly: options.freeOnly,
       workspaceId: workspace.id,
       collectionId: workspace.collectionId,
+      temporary: tool.temporary,
     })
     options.onResult?.(result)
     return { ...result, images: [result.image] }
@@ -170,7 +179,11 @@ async function executeTool(
     throw new Error('生成后将超过 1000 张候选，请减少生成张数或新建项目')
   }
   const base = { ...draft, params, version: workspace.model, collectionId: workspace.collectionId }
-  const generateOptions = { freeOnly: options.freeOnly, workspaceId: workspace.id }
+  const generateOptions = {
+    freeOnly: options.freeOnly,
+    workspaceId: workspace.id,
+    ...(tool.temporary ? { storage: 'temporary' as const } : {}),
+  }
   let result
   if (tool.kind === 'outpaint') {
     const outpaint = buildOutpaintCanvas(sourceBytes, tool)

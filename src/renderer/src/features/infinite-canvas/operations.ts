@@ -1,13 +1,23 @@
 import { reactive } from 'vue'
 import { estimateGeneration, estimateLabel, estimateUpscale } from '@shared/generation/pricing'
-import type { PreciseReference } from '@shared/generation/references'
+import { V5_INPAINT_REFERENCE_NOTICE, type PreciseReference } from '@shared/generation/references'
 import type { VibeReference } from '@shared/generation/vibes'
-import { pageCurrent, pageImageToolSize, type PageRegion } from '@shared/workspace/model'
+import {
+  pageCurrent,
+  pageImageToolSize,
+  type PageImageTool,
+  type PageRegion,
+} from '@shared/workspace/model'
 import { cleanErr } from '../../shared/lib/format'
+import { toolBlockedReason } from '../workspace/image-tool-rules'
 import { DEFAULT_GEN } from '../generation/public'
 import { DEFAULT_PARAMS } from '../prompts/public/draft'
 import {
   CANVAS_TOOLS,
+  activeOperationOutput,
+  allOperationOutputs,
+  ensureOutputBranch,
+  fitInlineOutput,
   type CanvasAsset,
   type CanvasImage,
   type CanvasOperation,
@@ -48,6 +58,12 @@ export function connectImageToOperation(
 ): void {
   if (role === 'source' || role === 'img2img') {
     node.sourceId = image.id
+    const output = activeOperationOutput(node)
+    if (node.outputMode !== 'branch' && output) {
+      fitInlineOutput(node, output)
+    } else {
+      fitOperationBoxToImage(node, image)
+    }
     if (node.kind === 'inpaint') {
       node.strokes = []
       if (image.asset.width && image.asset.height) {
@@ -148,31 +164,46 @@ export const TOOL_TONES = {
 export const runningCards = reactive(new WeakSet<CanvasOperation>())
 export const cardErrors = reactive(new WeakMap<CanvasOperation, string>())
 
+function imageTool(node: CanvasOperation): PageImageTool | undefined {
+  if (node.kind === 'enhance') {
+    return { kind: node.kind, scale: node.scale, strength: node.strength, noise: node.noise }
+  }
+  if (node.kind === 'outpaint') {
+    return { kind: node.kind, ...node.margins }
+  }
+  if (node.kind === 'upscale') {
+    return { kind: node.kind }
+  }
+}
+
+export function operationSize(node: CanvasOperation, source?: CanvasAsset) {
+  if (isGenerateKind(node.kind)) {
+    const { width, height } = node.request.params
+    return { width, height }
+  }
+  if (!source?.width || !source.height) {
+    return undefined
+  }
+  const tool = imageTool(node)
+  return tool
+    ? pageImageToolSize(tool, source.width, source.height)
+    : { width: source.width, height: source.height }
+}
+
 export function estimateOperationPrice(node: CanvasOperation, source?: CanvasAsset): string {
   const params = node.request.params
-  let size = { width: params.width, height: params.height }
+  const size = operationSize(node, source)
+  if (!size) {
+    return '费用待确认'
+  }
   if (node.kind === 'upscale') {
     const cost = estimateUpscale(source?.width ?? 0, source?.height ?? 0)
     return cost === undefined ? '费用待确认' : '预计 ' + cost + ' Anlas'
   }
-  if (source?.width && source.height) {
-    if (node.kind === 'enhance') {
-      size = pageImageToolSize(
-        { kind: 'enhance', scale: node.scale, strength: node.strength, noise: node.noise },
-        source.width,
-        source.height,
-      )
-    }
-    if (node.kind === 'outpaint') {
-      size = pageImageToolSize({ kind: 'outpaint', ...node.margins }, source.width, source.height)
-    }
-    if (node.kind === 'inpaint') {
-      size = { width: source.width, height: source.height }
-    }
-  }
-  const img2img = ['img2img', 'enhance'].includes(node.kind)
-    ? { strength: node.strength }
-    : undefined
+  const img2img =
+    (isGenerateKind(node.kind) && source) || node.kind === 'enhance'
+      ? { strength: node.strength }
+      : undefined
   const inpaint = ['inpaint', 'outpaint'].includes(node.kind)
     ? { strength: node.kind === 'outpaint' ? 1 : node.strength }
     : undefined
@@ -186,26 +217,32 @@ export function estimateOperationPrice(node: CanvasOperation, source?: CanvasAss
   )
 }
 
-function defaultOperationBoxSize(kind: CanvasTool, source?: CanvasImage) {
-  if (kind !== 'generate' && source && source.width > 0 && source.height > 0) {
-    const ratio = source.width / source.height
-    const maxSide = 256
-    const width = Math.max(188, Math.round(maxSide * Math.min(1, ratio)))
-    const height = Math.max(188, Math.round(maxSide / Math.max(1, ratio)))
-    return { width, height }
+export function imageAspectRatio(image: CanvasImage, node?: CanvasOperation): number {
+  const size =
+    image.asset.width && image.asset.height
+      ? { width: image.asset.width, height: image.asset.height }
+      : image
+  const { width, height } = size
+  if (node?.kind === 'outpaint') {
+    const total = pageImageToolSize({ kind: 'outpaint', ...node.margins }, width, height)
+    return total.width / total.height
   }
-  return { width: 256, height: 224 }
+  return width / height
+}
+
+export function fitOperationBoxToImage(node: CanvasOperation, image: CanvasImage) {
+  node.width = node.width || 256
+  node.height = Math.max(120, Math.min(560, Math.round(node.width / imageAspectRatio(image, node))))
 }
 
 export function newOperation(kind: CanvasTool, id: number, source?: CanvasImage): CanvasOperation {
-  const { width, height } = defaultOperationBoxSize(kind, source)
-  return {
+  const node: CanvasOperation = {
     id,
     kind,
     x: 0,
     y: 0,
-    width,
-    height,
+    width: 256,
+    height: 224,
     sourceId: kind === 'generate' ? null : (source?.id ?? null),
     request: {
       base: '',
@@ -217,14 +254,91 @@ export function newOperation(kind: CanvasTool, id: number, source?: CanvasImage)
     strength: kind === 'inpaint' ? 1 : 0.6,
     noise: 0,
     scale: 1,
-    margins: { left: 0, right: 128, top: 0, bottom: 0 },
+    margins: { left: 0, right: 0, top: 0, bottom: 0 },
     strokes: [],
+    outputMode: 'inline',
+    outputs: [],
+  }
+  if (isGenerateKind(kind)) {
+    node.strength = 0.7
+    node.noise = 0.2
+  }
+  if (kind === 'enhance') {
+    node.scale = 1.5
+    node.strength = 0.5
+  }
+  if (source && node.sourceId !== null) {
+    fitOperationBoxToImage(node, source)
+  }
+  return node
+}
+
+export class OperationInputError extends Error {
+  constructor(
+    message: string,
+    readonly panel: 'source' | 'prompt' | 'mask' | 'margins' | 'references' | 'enhance',
+  ) {
+    super(message)
   }
 }
-function maskRegion(node: CanvasOperation, width: number, height: number): PageRegion {
-  if (!node.strokes.length) {
-    throw new Error('请先在底图上涂出重绘区域')
+
+function validateOperation(node: CanvasOperation, source?: CanvasAsset) {
+  if (
+    (!source && (node.sourceId !== null || !isGenerateKind(node.kind))) ||
+    source?.kind === 'favorite'
+  ) {
+    throw new OperationInputError('请选择画布上的一张底图', 'source')
   }
+  const { version, params } = node.request
+  if (
+    (node.kind === 'inpaint' || node.kind === 'outpaint') &&
+    version === 'v5' &&
+    params.preciseReferences?.length
+  ) {
+    throw new OperationInputError(V5_INPAINT_REFERENCE_NOTICE, 'references')
+  }
+  if (!source || isGenerateKind(node.kind)) {
+    return
+  }
+  const { width, height } = source
+  if (!width || !height) {
+    throw new OperationInputError('无法读取底图尺寸，请重新选择底图', 'source')
+  }
+  if (node.kind === 'inpaint') {
+    if (width * height > 4 * 1024 * 1024 || width % 64 || height % 64) {
+      throw new OperationInputError(
+        '重绘底图宽高须为 64 的倍数，总像素不能超过 4096×1024',
+        'source',
+      )
+    }
+    if (!node.strokes.some((stroke) => stroke.radius > 0 && stroke.points.length)) {
+      throw new OperationInputError('请先在底图上涂出重绘区域', 'mask')
+    }
+    return
+  }
+  const tool = imageTool(node)
+  if (!tool) {
+    return
+  }
+  if (
+    tool.kind === 'outpaint' &&
+    [tool.left, tool.right, tool.top, tool.bottom].some(
+      (value) => !Number.isInteger(value) || value < 0 || value > 2048 || value % 64 !== 0,
+    )
+  ) {
+    throw new OperationInputError('扩展边距须为 0–2048 之间的 64 的倍数', 'margins')
+  }
+  const reason = toolBlockedReason(tool, { ...params, version, width, height })
+  if (reason) {
+    if (tool.kind === 'enhance') {
+      throw new OperationInputError(reason, 'enhance')
+    }
+    const panel = tool.kind === 'outpaint' && !(width % 64 || height % 64) ? 'margins' : 'source'
+    throw new OperationInputError(reason, panel)
+  }
+}
+
+function maskRegion(node: CanvasOperation, width: number, height: number): PageRegion {
   const mask = document.createElement('canvas')
   mask.width = width
   mask.height = height
@@ -271,27 +385,37 @@ export async function executeCard(session: CanvasSession, node: CanvasOperation,
   runningCards.add(node)
   try {
     const request = JSON.parse(JSON.stringify(node.request)) as CanvasOperation['request']
+    const temporary = node.saveToGallery === false
+    const storage = temporary ? { temporary: true } : {}
     const source = session.images.find((image) => image.id === node.sourceId)?.asset
-    if (node.kind !== 'generate' && source?.kind !== 'gallery') {
-      throw new Error('请选择画布上的一张底图')
+    validateOperation(node, source)
+    const tool = imageTool(node)
+    const targetSize = operationSize(node, source)
+    if (targetSize && node.kind !== 'upscale') {
+      Object.assign(request.params, targetSize)
     }
-    if (!request.base.trim() && !request.characters.length && node.kind !== 'upscale') {
-      throw new Error('请填写主提示词或角色提示词')
+    let draft = { base: request.base, negative: request.negative, characters: request.characters }
+    if (
+      node.kind !== 'upscale' &&
+      source?.kind === 'gallery' &&
+      !draft.base.trim() &&
+      !draft.negative.trim() &&
+      !draft.characters.length
+    ) {
+      const recipe = await window.canvasApi.naiRecipe(source.name).catch(() => null)
+      if (recipe) {
+        const { base, negative, characters } = recipe.request
+        draft = { base, negative, characters }
+      }
     }
-    const draft = { base: request.base, negative: request.negative, characters: request.characters }
     const params = request.params
     let regions: PageRegion[] = []
-    if (node.kind === 'inpaint' && source) {
-      if (!source.width || !source.height || source.width * source.height > 4194304) {
-        throw new Error('无法在此底图尺寸上绘制遮罩')
-      }
-      Object.assign(params, { width: source.width, height: source.height })
+    if (node.kind === 'inpaint') {
       regions = [maskRegion(node, params.width, params.height)]
     }
-    const usesImg2Img =
-      (node.kind === 'generate' && source?.kind === 'gallery') || node.kind === 'img2img'
+    const usesImg2Img = isGenerateKind(node.kind) && source?.kind === 'gallery'
     let workspace = await window.canvasApi.pagesCreate(
-      source?.kind === 'gallery' && (usesImg2Img || node.kind !== 'generate') ? source.name : null,
+      source?.kind === 'gallery' ? source.name : null,
       params,
       request.version,
       draft,
@@ -310,7 +434,7 @@ export async function executeCard(session: CanvasSession, node: CanvasOperation,
       versionId: pageCurrent(workspace).id,
       editor: { draft, params, model: request.version, regions, strength: node.strength },
     })
-    if (request.collectionId) {
+    if (!temporary && request.collectionId) {
       workspace = await window.canvasApi.pagesEdit(workspace.id, workspace.revision, {
         type: 'collection',
         collectionId: request.collectionId,
@@ -318,21 +442,10 @@ export async function executeCard(session: CanvasSession, node: CanvasOperation,
     }
     const before = new Set(workspace.versions.map((version) => version.id))
     node.lastRun.message = '正在执行'
-    if (node.kind === 'outpaint') {
+    if (tool) {
       workspace = await window.canvasApi.pagesImageTool(workspace.id, workspace.revision, {
-        kind: 'outpaint',
-        ...node.margins,
-      })
-    } else if (node.kind === 'enhance') {
-      workspace = await window.canvasApi.pagesImageTool(workspace.id, workspace.revision, {
-        kind: 'enhance',
-        scale: node.scale,
-        strength: node.strength,
-        noise: node.noise,
-      })
-    } else if (node.kind === 'upscale') {
-      workspace = await window.canvasApi.pagesImageTool(workspace.id, workspace.revision, {
-        kind: 'upscale',
+        ...tool,
+        ...storage,
       })
     } else {
       const execution = usesImg2Img
@@ -341,39 +454,40 @@ export async function executeCard(session: CanvasSession, node: CanvasOperation,
             kind: node.kind === 'inpaint' ? ('inpaint' as const) : ('generate' as const),
             regionId: regions[0]?.id ?? null,
           }
-      workspace = await window.canvasApi.pagesGenerate(workspace.id, workspace.revision, execution)
+      workspace = await window.canvasApi.pagesGenerate(workspace.id, workspace.revision, {
+        ...execution,
+        ...storage,
+      })
     }
-    let offset = 0
-    const prior = session.images.filter((image) => image.operationId === node.id)
-    if (prior.length) {
-      offset = Math.max(0, ...prior.map((image) => image.x + image.width - node.x - node.width))
-    }
+    node.outputs = allOperationOutputs(session, node)
     for (const version of workspace.versions) {
       const image = version.image
       if (!image || before.has(version.id)) {
         continue
       }
-      const ratio = (image.width ?? 1) / (image.height ?? 1)
-      const width = 300 * Math.min(1, ratio)
-      const height = 300 / Math.max(1, ratio)
-      session.images.push({
-        id: session.nextImageId++,
+      const label = operationLabel(node.kind) + ' · ' + version.label
+      const output = {
+        id: crypto.randomUUID(),
         asset: {
-          kind: 'gallery',
+          kind: 'gallery' as const,
           name: image.name,
-          label: operationLabel(node.kind) + ' · ' + version.label,
+          label,
           width: image.width,
           height: image.height,
+          modifiedAt: image.createdAt,
         },
-        x: node.x + node.width + 40 + offset,
-        y: node.y,
-        width,
-        height,
-        operationId: node.id,
+        label,
         workspaceId: workspace.id,
         versionId: version.id,
-      })
-      offset += width + 24
+        createdAt: version.createdAt,
+      }
+      node.outputs.push(output)
+      node.activeOutputId = output.id
+      if (node.outputMode === 'branch') {
+        ensureOutputBranch(session, node, output)
+      } else {
+        fitInlineOutput(node, output)
+      }
     }
     node.lastRun.message = workspace.messages.at(-1)?.text ?? '执行完成'
   } catch (error) {

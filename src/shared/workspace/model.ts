@@ -61,9 +61,16 @@ export interface PageVersion {
 }
 /** 基于当前底稿图片的修图操作，对应 NovelAI 官方编辑器里的 Upscale、扩展画布与 Enhance。 */
 export type PageImageTool =
-  | { kind: 'upscale' }
-  | { kind: 'outpaint'; left: number; right: number; top: number; bottom: number }
-  | { kind: 'enhance'; scale: 1 | 1.5; strength: number; noise: number }
+  | { kind: 'upscale'; temporary?: boolean }
+  | {
+      kind: 'outpaint'
+      left: number
+      right: number
+      top: number
+      bottom: number
+      temporary?: boolean
+    }
+  | { kind: 'enhance'; scale: 1 | 1.5; strength: number; noise: number; temporary?: boolean }
 
 export const PAGE_IMAGE_TOOL_NAMES: Record<PageImageTool['kind'], string> = {
   upscale: '放大 2×',
@@ -110,8 +117,20 @@ export function pageImageToolSize(
 export type Img2ImgConfigSource = 'original' | 'creation'
 
 export type PageExecution =
-  | { kind: 'generate' | 'inpaint'; regionId: string | null; regionIds?: string[] }
-  | { kind: 'img2img'; regionId: null; regionIds?: []; strength: number; noise: number }
+  | {
+      kind: 'generate' | 'inpaint'
+      regionId: string | null
+      regionIds?: string[]
+      temporary?: boolean
+    }
+  | {
+      kind: 'img2img'
+      regionId: null
+      regionIds?: []
+      strength: number
+      noise: number
+      temporary?: boolean
+    }
 /** The observed image/recipe is frozen independently of the editable target. */
 export interface PageDiscussion {
   versionId: string

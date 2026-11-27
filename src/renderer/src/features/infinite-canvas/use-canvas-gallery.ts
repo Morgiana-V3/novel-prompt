@@ -66,12 +66,21 @@ export function useCanvasGallery(getSession: () => CanvasSession, isBrowsing: ()
       }
 
       const validImages = library.filter((image) => !image.missing)
-      const placedImages = new Map(validImages.map((image) => [image.name, image.createdAt]))
-      for (const image of getSession().images) {
-        if (image.asset.kind !== 'gallery') {
-          continue
+      const byName = new Map(validImages.map((image) => [image.name, image]))
+      const session = getSession()
+      const assets = [
+        ...session.images.map((image) => image.asset),
+        ...session.operations.flatMap((node) => (node.outputs ?? []).map((output) => output.asset)),
+      ]
+      for (const asset of assets) {
+        if (asset.kind === 'gallery') {
+          const record = byName.get(asset.name)
+          asset.modifiedAt = record?.createdAt
+          if (record?.width && record.height) {
+            asset.width = record.width
+            asset.height = record.height
+          }
         }
-        image.asset.modifiedAt = placedImages.get(image.asset.name)
       }
       collections.value = imageCollections
       images.value = validImages
@@ -106,7 +115,11 @@ export function useCanvasGallery(getSession: () => CanvasSession, isBrowsing: ()
 
   onMounted(() => {
     unsubscribe = window.canvasApi.onGalleryChanged(() => {
-      if (isBrowsing() || getSession().images.some(({ asset }) => asset.kind === 'gallery')) {
+      if (
+        isBrowsing() ||
+        getSession().images.some(({ asset }) => asset.kind === 'gallery') ||
+        getSession().operations.some((node) => node.outputs?.length)
+      ) {
         refreshGallery().catch(reportError)
       }
     })

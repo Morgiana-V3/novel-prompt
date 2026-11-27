@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, shallowRef, ref } from 'vue'
 import { parsePosition } from '@shared/generation/presets'
 import Icon from '../../../shared/ui/Icon.vue'
 
@@ -47,6 +47,33 @@ const showReference = ref(true)
 const failedReferences = ref<Record<string, string>>({})
 const emit = defineEmits<{ close: [] }>()
 // 先播离场过渡，结束后再通知父组件卸载
+const anchor = ref<HTMLElement>()
+const portal = shallowRef<HTMLDialogElement | 'body'>('body')
+const mask = ref<HTMLElement>()
+let returnFocus: HTMLElement | null = null
+
+function cancelPosition(event: Event) {
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  close()
+}
+
+function mountPortal() {
+  portal.value = anchor.value?.closest('dialog') ?? 'body'
+  if (portal.value !== 'body') {
+    returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    portal.value.addEventListener('cancel', cancelPosition, true)
+    queueMicrotask(() => mask.value?.focus({ preventScroll: true }))
+  }
+}
+
+function unmountPortal() {
+  if (portal.value !== 'body') {
+    portal.value.removeEventListener('cancel', cancelPosition, true)
+    queueMicrotask(() => returnFocus?.focus({ preventScroll: true }))
+  }
+}
+
 const opened = ref(true)
 const close = () => {
   opened.value = false
@@ -141,15 +168,29 @@ const autoNote = computed(() => {
 })
 function onKey(event: KeyboardEvent) {
   if (event.key === 'Escape') {
-    event.stopPropagation()
-    close()
+    if (portal.value === 'body') {
+      event.stopPropagation()
+      close()
+    } else {
+      cancelPosition(event)
+    }
   }
 }
-onMounted(() => document.addEventListener('keydown', onKey, true))
-onBeforeUnmount(() => document.removeEventListener('keydown', onKey, true))
+onMounted(() => {
+  mountPortal()
+  document.addEventListener('keydown', onKey, true)
+})
+onBeforeUnmount(() => {
+  unmountPortal()
+  document.removeEventListener('keydown', onKey, true)
+})
 </script>
 <template>
-  <Teleport to="body">
+  <span
+    ref="anchor"
+    hidden
+  />
+  <Teleport :to="portal">
     <Transition
       name="modal"
       appear
@@ -157,8 +198,11 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey, true))
     >
       <div
         v-if="opened"
+        ref="mask"
+        tabindex="-1"
         class="position-compare-mask"
-        @click.self="close"
+        @pointerdown.stop
+        @click.stop.self="close"
       >
         <section
           class="position-compare modal-panel"
@@ -261,6 +305,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey, true))
   </Teleport>
 </template>
 <style scoped>
+dialog > .position-compare-mask {
+  z-index: 200;
+}
+
 .position-compare-mask {
   position: fixed;
   inset: 0;

@@ -31,6 +31,7 @@ import { TAG_TOOL_DEFS, tagTool } from './tag-tools'
 import { ReadOnlyToolSession } from './tool-session'
 
 const MAX_ROUNDS = 6
+const MAX_EXPLICIT_SKILLS = 6
 const MAX_PREVIEW_PX = 960
 const VALID_OP_KINDS = new Set(['generate', 'inpaint', 'outpaint', 'enhance', 'upscale'] as const)
 const VALID_WIRE_ROLES = new Set<CanvasAiWireRole>(['img2img', 'precise', 'vibe', 'source'])
@@ -647,6 +648,22 @@ function buildSystemPrompt(mode: 'chat' | 'edit', version: NaiVersion, skillText
 ${editRules}`
 }
 
+function cleanSkillIds(input: unknown): string[] {
+  const ids = new Set<string>()
+  if (Array.isArray(input)) {
+    for (const value of input) {
+      const id = typeof value === 'string' ? value.trim() : ''
+      if (/^(?:builtin:)?[\w-]{1,64}$/u.test(id)) {
+        ids.add(id)
+        if (ids.size === MAX_EXPLICIT_SKILLS) {
+          break
+        }
+      }
+    }
+  }
+  return [...ids]
+}
+
 function buildContextPayload(req: CanvasAiRequest) {
   const refSet = new Set(req.referencedIds.slice(0, MAX_CANVAS_AI_REFERENCES))
   const referencedImages = req.canvas.images.filter((image) => refSet.has(image.id))
@@ -723,8 +740,17 @@ export async function askCanvasAi(
     }
   }
 
-  const { text: skillText, snapshot: skillSnapshot } = composeSkills('workspace', defaultVersion)
-  const systemText = buildSystemPrompt(req.mode, defaultVersion, skillText)
+  const explicitSkillIds = cleanSkillIds(req.skillIds)
+  const {
+    text: skillText,
+    snapshot: skillSnapshot,
+    explicitSkills,
+  } = composeSkills('workspace', defaultVersion, explicitSkillIds)
+  let systemText = buildSystemPrompt(req.mode, defaultVersion, skillText)
+  if (explicitSkills.length) {
+    const names = explicitSkills.map((skill) => skill.name).join('、')
+    systemText += `\n用户本轮显式指定了以下 Skill：${names}，请优先严格按照这些 Skill 的规则和流程完成本次任务。`
+  }
   const contextText = `当前画布上下文（JSON）：\n${JSON.stringify(buildContextPayload(req))}`
 
   const contextParts: ChatPart[] = [{ type: 'text', text: contextText }]

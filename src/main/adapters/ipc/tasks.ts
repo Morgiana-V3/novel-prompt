@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron'
+import { withOperationContext } from '../../infrastructure/operation-policy'
 import { createGenerationActions } from '../../modules/generation/task-actions'
 import { createPromptsActions } from '../../modules/prompts/task-actions'
 import { createTagsActions } from '../../modules/tags/task-actions'
@@ -24,7 +25,11 @@ export function registerTaskIpc(
   for (const [channel, action] of Object.entries(actions)) {
     // Each action is checked against IpcActions at definition; enumeration erases tuple correlation.
     const invoke = action as (...args: unknown[]) => unknown
-    ipcMain.handle(channel, (_event, ...args: unknown[]) => invoke(...args))
+    ipcMain.handle(channel, (event, ...args: unknown[]) =>
+      withOperationContext({ origin: 'manual', requesterId: event.sender.id }, () =>
+        invoke(...args),
+      ),
+    )
   }
   return tasks
 }

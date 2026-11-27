@@ -1,20 +1,19 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import type { ImageCollection } from '@shared/images/collections'
 import type { NaiImage } from '@shared/images/types'
 import type { InpaintDraft } from '@shared/prompts/types'
-import { cleanErr } from '../../shared/lib/format'
-import { vSegIndicator } from '../../shared/lib/seg-indicator'
+import { backdropCloser } from '../../shared/lib/dialog-motion'
 import Icon from '../../shared/ui/Icon.vue'
-import GenerationParameters from '../generation/components/GenerationParameters.vue'
-import PreciseReferences from '../generation/components/PreciseReferences.vue'
-import VibeReferences from '../generation/components/VibeReferences.vue'
+import CanvasOperationParams from './CanvasOperationParams.vue'
+import CanvasOperationReferences from './CanvasOperationReferences.vue'
 import { PromptEditor } from '../prompts/public/components'
+import { canvasImageUrl } from './use-canvas-previews'
 import CanvasMask from './CanvasMask.vue'
 import {
   cardErrors,
   isGenerateKind,
   operationLabel,
+  operationSize,
   runningCards,
   TOOL_ICONS,
   TOOL_TONES,
@@ -32,12 +31,12 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
   run: []
+  bindGallery: [image: NaiImage]
 }>()
 
 const dialogRef = ref<HTMLDialogElement | null>(null)
 const activeTab = ref<OperationDialogTab>('prompt')
-const collections = ref<ImageCollection[]>([])
-const collectionsLoaded = ref(false)
+const bindingImage = ref(false)
 const card = computed(() => props.node)
 
 const busy = computed(() => (props.node ? runningCards.has(props.node) : false))
@@ -55,13 +54,14 @@ const sourceImageForEditor = computed<NaiImage | null>(() => {
   }
   return {
     name: asset.name,
-    url: `np-img://image/${encodeURIComponent(asset.name)}`,
+    url: canvasImageUrl(asset),
     createdAt: asset.modifiedAt ?? 0,
     width: asset.width,
     height: asset.height,
   }
 })
 
+const targetSize = computed(() => card.value && operationSize(card.value, sourceAsset.value))
 const tabs = computed<{ id: OperationDialogTab; label: string }[]>(() => {
   if (!props.node || props.node.kind === 'upscale') {
     return []
@@ -70,7 +70,7 @@ const tabs = computed<{ id: OperationDialogTab; label: string }[]>(() => {
     { id: 'prompt', label: '提示词与角色' },
     ...(props.node.kind === 'inpaint' ? [{ id: 'mask' as const, label: '重绘遮罩' }] : []),
     { id: 'params', label: '生图参数' },
-    { id: 'references', label: '参考与 Vibe' },
+    { id: 'references', label: '底图与参考' },
   ]
 })
 
@@ -86,49 +86,20 @@ const promptDraft = computed<InpaintDraft>(() => {
   }
 })
 
-const showStrengthSlider = computed(() => {
-  const card = props.node
-  if (!card) {
-    return false
+const mode = computed(() => {
+  if (!card.value || !isGenerateKind(card.value.kind)) {
+    return ''
   }
-  if (card.kind === 'inpaint' || card.kind === 'enhance' || card.kind === 'img2img') {
-    return true
-  }
-  return isGenerateKind(card.kind) && card.sourceId !== null
+  return sourceAsset.value ? '图生图' : '文生图'
 })
 
-const showNoiseSlider = computed(() => {
-  const card = props.node
-  if (!card) {
-    return false
-  }
-  if (card.kind === 'enhance' || card.kind === 'img2img') {
-    return true
-  }
-  return isGenerateKind(card.kind) && card.sourceId !== null
-})
-
-const canRun = computed(() => {
-  const card = props.node
-  if (!card || busy.value) {
-    return false
-  }
-  return card.kind === 'generate' || Boolean(sourceAsset.value)
-})
-
-async function ensureCollections() {
-  if (collectionsLoaded.value) {
-    return
-  }
-  try {
-    collections.value = await window.canvasApi.collectionsList()
-    collectionsLoaded.value = true
-  } catch (reason) {
-    if (props.node) {
-      cardErrors.set(props.node, cleanErr(reason))
-    }
-  }
-}
+const canRun = computed(
+  () =>
+    card.value &&
+    !busy.value &&
+    !bindingImage.value &&
+    !(card.value.request.version === 'v5' && card.value.request.params.vibeReferences?.length),
+)
 
 watch(
   () => [props.node, props.initialTab] as const,
@@ -145,21 +116,15 @@ watch(
       : (tabs.value[0]?.id ?? 'prompt')
     activeTab.value = validTab
     await nextTick()
-    if (dialog && !dialog.open) {
-      dialog.showModal()
+    if (nextNode !== props.node) {
+      return
     }
-    if (validTab === 'params') {
-      void ensureCollections().catch(() => {})
+    if (dialogRef.value && !dialogRef.value.open) {
+      dialogRef.value.showModal()
     }
   },
   { immediate: true },
 )
-
-watch(activeTab, (tab) => {
-  if (tab === 'params') {
-    void ensureCollections().catch(() => {})
-  }
-})
 
 function updateDraft(patch: Partial<InpaintDraft>) {
   const current = card.value
@@ -184,18 +149,7 @@ function updateParams(patch: Partial<CanvasOperation['request']['params']>) {
   }
 }
 
-function setModelVersion(version: 'v4.5' | 'v5') {
-  const current = card.value
-  if (current && !busy.value) {
-    current.request.version = version
-  }
-}
-
-function handleBackdropClick(event: MouseEvent) {
-  if (event.target === dialogRef.value) {
-    emit('close')
-  }
-}
+const backdrop = backdropCloser(() => emit('close'))
 
 function handleRun() {
   emit('run')
@@ -208,8 +162,10 @@ function handleRun() {
     ref="dialogRef"
     class="op-dialog"
     aria-label="编辑盒子配置"
-    @cancel.prevent="emit('close')"
-    @click="handleBackdropClick"
+    @cancel.self.prevent="emit('close')"
+    @keydown.esc.stop
+    @pointerdown="backdrop.onPointerdown"
+    @click="backdrop.onClick"
   >
     <div
       v-if="card"
@@ -229,26 +185,15 @@ function handleRun() {
             />
           </span>
           <h2>{{ operationLabel(card.kind) }} #{{ card.id }}</h2>
-        </div>
-
-        <div
-          v-if="tabs.length > 1"
-          v-seg-indicator
-          class="seg op-dialog-tabs"
-          role="tablist"
-          aria-label="编辑分页"
-        >
-          <button
-            v-for="tab in tabs"
-            :key="tab.id"
-            type="button"
-            role="tab"
-            :aria-selected="activeTab === tab.id"
-            :class="{ on: activeTab === tab.id }"
-            @click="activeTab = tab.id"
+          <span
+            v-if="mode"
+            class="mode-pill"
+            >{{ mode }}</span
           >
-            {{ tab.label }}
-          </button>
+          <span class="format-pill"
+            >{{ card.request.version.toUpperCase() }} ·
+            {{ targetSize ? targetSize.width + '×' + targetSize.height : '待选择底图' }}</span
+          >
         </div>
 
         <button
@@ -264,6 +209,25 @@ function handleRun() {
           />
         </button>
       </header>
+      <div
+        v-if="tabs.length > 1"
+        class="op-dialog-tabs"
+        role="tablist"
+        aria-label="编辑分页"
+      >
+        <button
+          v-for="tab in tabs"
+          :key="tab.id"
+          type="button"
+          role="tab"
+          :disabled="bindingImage"
+          :aria-selected="activeTab === tab.id"
+          :class="{ on: activeTab === tab.id }"
+          @click="activeTab = tab.id"
+        >
+          {{ tab.label }}
+        </button>
+      </div>
 
       <p
         v-if="errorMessage"
@@ -273,7 +237,11 @@ function handleRun() {
         {{ errorMessage }}
       </p>
 
-      <div class="op-dialog-body scroll">
+      <div
+        :key="activeTab"
+        class="op-dialog-body scroll"
+        role="tabpanel"
+      >
         <div
           v-if="activeTab === 'prompt'"
           class="op-dialog-prompt"
@@ -298,7 +266,9 @@ function handleRun() {
         >
           <CanvasMask
             v-if="sourceAsset?.kind === 'gallery'"
+            :key="card.id + sourceAsset.name"
             v-model:strokes="card.strokes"
+            :disabled="busy"
             :source="sourceAsset"
           />
           <p
@@ -309,128 +279,23 @@ function handleRun() {
           </p>
         </div>
 
-        <div
+        <CanvasOperationParams
           v-else-if="activeTab === 'params'"
-          class="op-dialog-params"
-        >
-          <div class="op-dialog-row">
-            <div class="op-param-group">
-              <span class="op-param-label">生成模型</span>
-              <div
-                v-seg-indicator
-                class="seg block"
-              >
-                <button
-                  type="button"
-                  :disabled="busy"
-                  :class="{ on: card.request.version === 'v4.5' }"
-                  @click="setModelVersion('v4.5')"
-                >
-                  NovelAI V4.5 Full
-                </button>
-                <button
-                  type="button"
-                  :disabled="busy"
-                  :class="{ on: card.request.version === 'v5' }"
-                  @click="setModelVersion('v5')"
-                >
-                  NovelAI V5
-                </button>
-              </div>
-            </div>
-
-            <label class="op-param-group">
-              <span class="op-param-label">结果保存图集</span>
-              <select
-                v-model="card.request.collectionId"
-                class="input sm"
-                :disabled="busy"
-              >
-                <option :value="undefined">默认图集</option>
-                <option
-                  v-for="collection in collections.filter((item) => item.id !== 'default')"
-                  :key="collection.id"
-                  :value="collection.id"
-                >
-                  {{ collection.name }}
-                </option>
-              </select>
-            </label>
-          </div>
-
-          <div
-            v-if="showStrengthSlider"
-            class="op-dialog-row"
-          >
-            <div class="op-param-group">
-              <span class="op-param-label">修改强度 · {{ card.strength.toFixed(2) }}</span>
-              <input
-                v-model.number="card.strength"
-                class="range"
-                aria-label="修改强度"
-                type="range"
-                min="0.01"
-                :max="card.kind === 'inpaint' ? 1 : 0.99"
-                step="0.01"
-                :disabled="busy"
-              />
-            </div>
-            <div
-              v-if="showNoiseSlider"
-              class="op-param-group"
-            >
-              <span class="op-param-label">噪声 · {{ card.noise.toFixed(2) }}</span>
-              <input
-                v-model.number="card.noise"
-                class="range"
-                aria-label="噪声"
-                type="range"
-                min="0"
-                max="0.99"
-                step="0.01"
-                :disabled="busy"
-              />
-            </div>
-          </div>
-
-          <GenerationParameters
-            :gen="card.request.params"
-            :params="card.request.params"
-            expanded-sizes
-            prompt-presets-in-editor
-            :disabled="busy"
-            :size-locked="card.kind === 'inpaint'"
-            @change-gen="updateParams"
-            @change-params="updateParams"
-          />
-        </div>
-
-        <div
+          :card="card"
+          :source="sourceAsset"
+          :disabled="busy"
+          @references="activeTab = 'references'"
+        />
+        <CanvasOperationReferences
           v-else-if="activeTab === 'references'"
-          class="op-dialog-refs"
-        >
-          <PreciseReferences
-            show-heading
-            :images="card.request.params.preciseReferences ?? []"
-            :model="card.request.version"
-            :count="card.request.params.count"
-            :current="sourceImageForEditor"
-            :conflict="!!card.request.params.vibeReferences?.length"
-            :disabled="busy"
-            @change="updateParams({ preciseReferences: $event })"
-          />
-          <div class="op-dialog-vibe-block">
-            <h3 class="op-dialog-subhead">Vibe Transfer</h3>
-            <VibeReferences
-              :entries="card.request.params.vibeReferences ?? []"
-              :version="card.request.version"
-              :current="sourceImageForEditor"
-              :conflict="!!card.request.params.preciseReferences?.length"
-              :disabled="busy"
-              @change="updateParams({ vibeReferences: $event })"
-            />
-          </div>
-        </div>
+          :key="card.id"
+          :card="card"
+          :images="session.images"
+          :source="sourceImageForEditor"
+          :disabled="busy"
+          @pending="bindingImage = $event"
+          @bind-gallery="emit('bindGallery', $event)"
+        />
       </div>
 
       <footer class="op-dialog-footer">
@@ -463,12 +328,14 @@ function handleRun() {
 
 <style scoped>
 .op-dialog {
-  width: min(860px, calc(100vw - 48px));
-  height: min(740px, calc(100vh - 56px));
+  align-self: center;
+  width: min(680px, calc(100vw - 48px));
+  height: auto;
+  min-height: min(460px, calc(100vh - 56px));
   max-width: none;
-  max-height: none;
+  max-height: min(760px, calc(100vh - 56px));
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid var(--line2);
   border-radius: 18px;
   background: var(--bg);
@@ -485,8 +352,10 @@ function handleRun() {
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: 100%;
-  min-height: 0;
+  min-height: inherit;
+  max-height: inherit;
+  border-radius: inherit;
+  overflow: hidden;
 }
 
 .op-dialog-header {
@@ -540,10 +409,16 @@ function handleRun() {
 }
 
 .op-dialog-tabs {
-  margin: 0 auto;
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 5px 17px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
 }
 
 .op-dialog-close {
+  margin-left: auto;
   flex: 0 0 auto;
 }
 
@@ -558,25 +433,108 @@ function handleRun() {
 }
 
 .op-dialog-body {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
-  padding: 18px 20px 24px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 14px 18px;
+  background: var(--panel);
 }
 
-.op-dialog-prompt,
-.op-dialog-params,
-.op-dialog-refs {
+.op-dialog:has(> .pos-mask, > .position-compare-mask) .op-dialog-shell {
+  interactivity: inert;
+}
+
+.op-dialog-tabs button {
+  padding: 6px 12px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--text2);
+}
+
+.op-dialog-tabs button:hover {
+  background: var(--hover);
+}
+
+.op-dialog-tabs button.on {
+  color: var(--pink-deep);
+  background: var(--pink-soft);
+  font-weight: 650;
+}
+
+.mode-pill,
+.format-pill {
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text2);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.mode-pill {
+  background: var(--pink-soft);
+  color: var(--pink-deep);
+}
+
+.op-dialog-prompt {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
-.op-dialog-prompt :deep(.field) {
+.op-dialog-body :deep(.op-card) {
+  display: grid;
+  gap: 10px;
   margin: 0;
+  min-width: 0;
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--side);
 }
 
-.op-dialog-mask :deep(.canvas-mask) {
-  max-height: 460px;
+.op-dialog-body :deep(.op-card h3) {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.op-dialog-body :deep(.op-card h3 small) {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 450;
+}
+
+.op-dialog-body :deep(.source-card) {
+  background: var(--bg);
+  border-color: var(--pink-line);
+}
+
+.op-dialog-body :deep(.op-range) {
+  display: grid;
+  grid-template-columns: minmax(90px, 112px) minmax(60px, 210px) 48px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text2);
+}
+
+.op-dialog-body :deep(.op-range input) {
+  min-width: 0;
+  width: 100%;
+}
+
+.op-dialog-body :deep(.op-range output) {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--pink-soft);
+  color: var(--pink-deep);
+  font-family: var(--mono);
+  text-align: center;
 }
 
 .op-dialog-empty {
@@ -584,40 +542,6 @@ function handleRun() {
   color: var(--text2);
   font-size: 13px;
   text-align: center;
-}
-
-.op-dialog-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-}
-
-.op-param-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.op-param-label {
-  color: var(--text2);
-  font-size: 12px;
-  font-weight: 550;
-}
-
-.op-dialog-vibe-block {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-
-.op-dialog-subhead {
-  margin: 0;
-  color: var(--text2);
-  font-size: 12.5px;
-  font-weight: 650;
 }
 
 .op-dialog-footer {
@@ -642,9 +566,19 @@ function handleRun() {
   gap: 8px;
 }
 
-@media (width <= 680px) {
-  .op-dialog-row {
-    grid-template-columns: 1fr;
+@media (width <= 560px) {
+  .op-dialog-header,
+  .op-dialog-title-group {
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .op-dialog-tabs {
+    padding-inline: 8px;
+  }
+
+  .op-dialog-tabs button {
+    padding-inline: 7px;
   }
 }
 </style>

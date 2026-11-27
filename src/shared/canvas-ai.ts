@@ -172,6 +172,8 @@ export interface CanvasAiRequest {
   mode: CanvasAiMode
   messages: CanvasAiMessage[]
   referencedIds: number[]
+  /** 本轮显式指定的 Skill，按优先级排列，最多 6 个。 */
+  skillIds?: string[]
   canvas: CanvasAiSnapshot
 }
 

@@ -79,6 +79,17 @@ function imageSlots(session: CanvasSession) {
     })
   }
   for (const node of session.operations) {
+    for (const output of node.outputs ?? []) {
+      if (output?.asset?.kind === 'gallery' && typeof output.asset.name === 'string') {
+        const asset = output.asset
+        slots.push({
+          name: asset.name,
+          replace: (name: string) => {
+            asset.name = name
+          },
+        })
+      }
+    }
     for (const ref of [
       ...(node.request.params.preciseReferences ?? []),
       ...(node.request.params.vibeReferences ?? []),

@@ -8,16 +8,21 @@ const GRID_STEP_PX = 24
 const VIEWPORT_PADDING_PX = 120
 
 interface CanvasGesture {
+  mode: 'pan' | 'move' | 'resize'
   pointerId: number
   start: CanvasPoint
   origin: CanvasPoint
+  originSize?: { width: number; height: number }
+  aspectRatio?: number
+  minWidth?: number
+  maxWidth?: number
   image?: CanvasBox
 }
 
 export function useCanvasViewport(getSession: () => CanvasSession) {
   const viewport = ref<HTMLElement>()
   const size = reactive({ width: 0, height: 0 })
-  const gestureType = ref<'pan' | 'move'>()
+  const gestureType = ref<'pan' | 'move' | 'resize'>()
   let resizeObserver: ResizeObserver | undefined
   let gesture: CanvasGesture | undefined
   let pendingPoint: CanvasPoint | undefined
@@ -199,17 +204,60 @@ export function useCanvasViewport(getSession: () => CanvasSession) {
       selectImage(movingImage)
     }
     gesture = {
+      mode: movingImage ? 'move' : 'pan',
       pointerId: event.pointerId,
       start,
       origin: { x: target.x, y: target.y },
       image: movingImage,
     }
-    gestureType.value = movingImage ? 'move' : 'pan'
+    gestureType.value = gesture.mode
+    viewport.value.setPointerCapture(event.pointerId)
+  }
+
+  function beginResize(
+    event: PointerEvent,
+    box: CanvasBox,
+    aspectRatio: number,
+    minWidth = 120,
+    maxWidth = 1400,
+  ) {
+    if (!viewport.value || gesture || event.button !== 0) {
+      return
+    }
+    event.preventDefault()
+    event.stopPropagation()
+    focusViewport()
+    selectImage(box)
+    const safeRatio = Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : 1
+    gesture = {
+      mode: 'resize',
+      pointerId: event.pointerId,
+      start: localPoint(event),
+      origin: { x: box.x, y: box.y },
+      originSize: { width: box.width, height: box.height },
+      aspectRatio: safeRatio,
+      minWidth,
+      maxWidth,
+      image: box,
+    }
+    gestureType.value = 'resize'
     viewport.value.setPointerCapture(event.pointerId)
   }
 
   function applyGesture(point: CanvasPoint) {
     if (!gesture) {
+      return
+    }
+    if (gesture.mode === 'resize' && gesture.image && gesture.originSize && gesture.aspectRatio) {
+      const deltaX = (point.x - gesture.start.x) / zoom.value
+      const minW = gesture.minWidth ?? 120
+      const maxW = gesture.maxWidth ?? 1400
+      const nextWidth = Math.max(
+        minW,
+        Math.min(maxW, Math.round(gesture.originSize.width + deltaX)),
+      )
+      gesture.image.width = nextWidth
+      gesture.image.height = nextWidth / gesture.aspectRatio
       return
     }
     const target = gesture.image ?? getSession().camera
@@ -256,7 +304,11 @@ export function useCanvasViewport(getSession: () => CanvasSession) {
 
   function cancelGesture(event?: PointerEvent) {
     if (gesture && (!event || event.pointerId === gesture.pointerId)) {
-      applyGesture(gesture.start)
+      if (gesture.mode === 'resize' && gesture.image && gesture.originSize) {
+        Object.assign(gesture.image, gesture.originSize)
+      } else {
+        applyGesture(gesture.start)
+      }
       clearGesture()
       return true
     }
@@ -300,6 +352,7 @@ export function useCanvasViewport(getSession: () => CanvasSession) {
     addImage,
     removeSelected,
     beginGesture,
+    beginResize,
     trackGesture,
     finishGesture,
     cancelGesture,
