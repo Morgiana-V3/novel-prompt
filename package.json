@@ -39,6 +39,7 @@
     "screenshots": "node scripts/capture-screenshots.mjs",
     "screenshots:ai": "node scripts/capture-screenshots.mjs --ai",
     "dist": "electron-vite build && electron-builder --win --x64 --publish never",
+    "dist:mac": "electron-vite build && electron-builder --mac --arm64 --publish never",
     "check:quick": "node scripts/check.mjs quick",
     "check:full": "node scripts/check.mjs full",
     "format:check": "prettier --check \"src/**/*.{ts,cts,vue,css,less,cjs}\" \"scripts/*.{mjs,cjs}\" \"tests/**/*.{mjs,cjs}\" \"*.config.{ts,mjs}\"",
@@ -70,9 +71,6 @@
     },
     "files": [
       "out/**/*",
-      "!node_modules/onnxruntime-node/bin/napi-v6/linux/**",
-      "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
-      "!node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**",
       "!**/TODO.md"
     ],
     "extraResources": [
@@ -111,9 +109,24 @@
     ],
     "win": {
       "icon": "build/icon.ico",
+      "files": [
+        "!node_modules/onnxruntime-node/bin/napi-v6/linux/**",
+        "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
+        "!node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**"
+      ],
       "target": [
         "nsis",
         "portable"
+      ]
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "identity": "-",
+      "target": "dmg",
+      "artifactName": "NovelPrompt-${version}-mac-${arch}.${ext}",
+      "files": [
+        "!node_modules/onnxruntime-node/bin/napi-v6/linux/**",
+        "!node_modules/onnxruntime-node/bin/napi-v6/win32/**"
       ]
     },
     "nsis": {
